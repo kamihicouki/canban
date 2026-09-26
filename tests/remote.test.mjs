@@ -19,7 +19,7 @@ const host = { id: 'remote-ssh-discovered:fx', alias: 'fx', label: 'fx', local: 
 const newPool = (opts = {}) =>
   new RemotePool({ ssh: path.join(here, 'fake-ssh.sh'), extraArgs: { codexHome: fx.codexHome, claudeHome: fx.claudeHome, desktopDir: fx.desktopDir }, ...opts });
 
-const comparable = ({ id, host: _h, ...rest }) => rest;
+const comparable = ({ id, host: _h, rawStatus, statusMtimeMs, ...rest }) => rest;
 const byNative = (a, b) => (a.agent + a.nativeId < b.agent + b.nativeId ? -1 : 1);
 
 test('collect.py matches the local readers (parity)', async () => {

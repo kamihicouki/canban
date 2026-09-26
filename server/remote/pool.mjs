@@ -57,7 +57,9 @@ export class RemotePool {
         }
       });
       child.stdin.on('error', () => {});
-      child.stdin.end(`ARGS = ${JSON.stringify({ ...this.extraArgs, ...args })}\n${SCRIPT}`);
+      // Embed ARGS as a JSON string literal (valid in Python) and parse it there: raw JSON
+      // is not Python (true/false/null).
+      child.stdin.end(`ARGS = __import__('json').loads(${JSON.stringify(JSON.stringify({ ...this.extraArgs, ...args }))})\n${SCRIPT}`);
     });
   }
 

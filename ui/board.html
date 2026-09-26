@@ -227,6 +227,20 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .host-row { display: flex; align-items: center; gap: 8px; }
 .host-row .menu-item { flex: 1; min-width: 0; }
 .menu-item.active { background: var(--btn-subtle-hover); box-shadow: inset 3px 0 0 var(--accent); }
+.sdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; flex: none; }
+.s-running { background: var(--c-blue); box-shadow: 0 0 0 0 var(--c-blue); animation: pulse 1.6s infinite; }
+.s-waiting { background: var(--c-orange); }
+.s-completed { background: var(--c-green); }
+.s-aborted { background: var(--c-red); }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(87,157,255,.6); } 70% { box-shadow: 0 0 0 6px rgba(87,157,255,0); } 100% { box-shadow: 0 0 0 0 rgba(87,157,255,0); } }
+@media (prefers-reduced-motion: reduce) { .s-running { animation: none; } }
+.card.unread { box-shadow: inset 3px 0 0 var(--accent), var(--card-shadow); }
+.new-pill { background: var(--accent); color: #fff; font-weight: 600; }
+.status-bar { display: inline-flex; gap: 4px; }
+.status-chip { display: inline-flex; align-items: center; height: 28px; padding: 0 8px; border-radius: 14px; background: rgba(255,255,255,0.2); color: #fff; font-size: 12px; }
+.status-chip[aria-pressed="true"] { background: #fff; color: #172b4d; }
+.rule-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; }
+.toast-btn { margin-left: 8px; color: #fff; text-decoration: underline; font-weight: 600; }
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #172b4d; color: #fff; padding: 8px 16px; border-radius: 6px; z-index: 1100; box-shadow: 0 4px 8px #0004; }
 .toast.error { background: var(--danger); }
 .loading { color: #fff; padding: 24px; }
@@ -253,10 +267,13 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
     <option value="0">全期間</option>
   </select>
   <button id="optBtn" class="hbtn" aria-haspopup="true">表示 ▾</button>
+  <button id="rulesBtn" class="hbtn" title="自動移動ルール">⚡ ルール</button>
   <button id="labelsBtn" class="hbtn">ラベル</button>
   <button id="hostsBtn" class="hbtn" aria-haspopup="true">マシン ▾</button>
   <button id="settingsBtn" class="hbtn" title="再開の設定" aria-label="再開の設定">⚙ 再開</button>
   <span class="spacer"></span>
+  <span id="statusBar" class="status-bar" role="group" aria-label="実行状態"></span>
+  <button id="seenBtn" class="hbtn" title="新着をすべて既読にする" hidden>✓ 既読</button>
   <span id="stat" class="stat"></span>
   <button id="refresh" class="hbtn" title="再読み込み" aria-label="再読み込み">⟳</button>
 </header>
@@ -360,7 +377,7 @@ const store = {
 };
 const state = {
   board: null,
-  filters: Object.assign({ agent: 'all', host: '', project: '', q: '', days: 30, includeArchived: false, includeSubagents: false, includeHidden: false }, store.get('filters', {})),
+  filters: Object.assign({ agent: 'all', host: '', status: '', project: '', q: '', days: 30, includeArchived: false, includeSubagents: false, includeHidden: false }, store.get('filters', {})),
   shown: {},              // listId -> number of cards rendered
   labelsExpanded: store.get('labelsExpanded', false),
   drag: null,
@@ -426,6 +443,7 @@ async function load({ refresh = false } = {}) {
   const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, includeHidden: f.includeHidden, refresh };
   if (f.project) args.project = f.project;
   if (f.host) args.host = f.host;
+  if (f.status) args.status = f.status;
   try {
     const board = await bridge.callTool('canban_get_board', args);
     if (seq !== loadSeq) return;
@@ -461,6 +479,9 @@ function render() {
   $('#hostsBtn').textContent = `${activeHost ? activeHost.label : 'マシン'}${remoteOn ? `（+${remoteOn}）` : ''} ▾`;
   $('#hostsBtn').setAttribute('aria-pressed', String(!!activeHost));
   $('#stat').textContent = `表示 ${b.totals.shown} / Codex ${b.totals.codex}・Claude ${b.totals.claude}`;
+  renderStatusBar(b);
+  $('#seenBtn').hidden = !b.lists.some((l) => l.cards.some((c) => c.unread));
+  announceAutoMoves(b);
   const eb = $('#errbar');
   eb.hidden = !b.errors.length;
   eb.textContent = b.errors.join(' / ');
@@ -508,8 +529,8 @@ function renderList(list) {
 function renderCard(card, list) {
   const labelsById = new Map(state.board.labels.map((l) => [l.id, l]));
   const el = h('article', {
-    class: `card${card.archived ? ' is-archived' : ''}`, tabindex: 0, 'data-card-id': card.id,
-    'aria-label': card.title,
+    class: `card${card.archived ? ' is-archived' : ''}${card.unread ? ' unread' : ''}`, tabindex: 0, 'data-card-id': card.id,
+    'aria-label': `${card.title}（${STATUS_LABELS[card.status]}${card.unread ? '・新着' : ''}）`,
   });
   const labels = card.labels.map((id) => labelsById.get(id)).filter(Boolean);
   if (labels.length) {
@@ -517,8 +538,12 @@ function renderCard(card, list) {
       onclick: (e) => { e.stopPropagation(); state.labelsExpanded = !state.labelsExpanded; store.set('labelsExpanded', state.labelsExpanded); render(); } },
       labels.map((l) => h('span', { class: 'chip', style: { background: colorVar(l.color) }, text: state.labelsExpanded ? l.name : '' }))));
   }
-  el.append(h('div', { class: 'title', text: card.title }));
+  el.append(h('div', { class: 'title' },
+    card.status !== 'idle' ? h('span', { class: `sdot s-${card.status}`, title: STATUS_LABELS[card.status] }) : null,
+    card.title));
   const meta = h('div', { class: 'meta' },
+    card.unread ? h('span', { class: 'pill new-pill', text: '新着' }) : null,
+    card.autoMoved ? h('span', { class: 'pill', title: 'ルールで自動移動', text: '⚡' }) : null,
     h('span', { class: `badge ${card.agent}`, text: card.agent === 'codex' ? 'Codex' : 'Claude' }),
     card.host ? h('span', { class: 'host-chip', title: `SSH: ${card.host.alias}`, text: `⌂ ${card.host.label}` }) : null,
     card.project ? h('span', { class: 'ellipsis', title: card.cwd || '', text: `📁 ${card.project}` }) : null,
@@ -546,11 +571,10 @@ function renderCard(card, list) {
     if (e.key === 'Enter') openCard(card.id);
     const k = !e.metaKey && !e.ctrlKey && !e.altKey && CARD_KEYS[e.key.toLowerCase()];
     if (k) { e.preventDefault(); resume(card.id, k); }
-    if ((e.altKey || e.shiftKey) && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    if (ARROWS[e.key] && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
-      const lists = state.board.lists;
-      const i = lists.findIndex((l) => l.id === list.id) + (e.key === 'ArrowLeft' ? -1 : 1);
-      if (i >= 0 && i < lists.length) moveCard(card, list.id, lists[i].id, 0, true);
+      if (e.altKey) focusNeighbor(list.id, card.id, e.key);
+      else moveByKey(card, list.id, e.key);
     }
   });
   return el;
@@ -690,6 +714,7 @@ function labelsManager(anchor) {
 function closeModal() { document.querySelectorAll('.overlay').forEach((o) => o.remove()); state.modalOpen = false; }
 
 async function openCard(cardId) {
+  for (const l of state.board?.lists || []) for (const c of l.cards) if (c.id === cardId && c.unread) { c.unread = false; render(); }
   closePopover();
   closeModal();
   state.modalOpen = true;
@@ -804,12 +829,84 @@ function renderModal(modal, d) {
     h('button', { class: 'icon-btn close', 'aria-label': '閉じる', text: '✕', onclick: closeModal }),
     h('h2', { text: s.title }),
     h('div', { class: 'sub row' }, h('span', { class: `badge ${s.agent}`, text: s.agent === 'codex' ? 'Codex' : 'Claude' }),
-      s.host ? h('span', { class: 'host-chip', text: `⌂ ${s.host.label}` }) : null, 'リスト:', listSel),
+      s.host ? h('span', { class: 'host-chip', text: `⌂ ${s.host.label}` }) : null,
+      h('span', { class: 'row', style: { gap: '0' } }, h('span', { class: `sdot s-${s.status || 'idle'}` }), STATUS_LABELS[s.status || 'idle']),
+      'リスト:', listSel),
     h('div', { class: 'modal-grid' }, main, side),
   );
   modal.querySelector('.close').focus();
 }
 function kv(k, v) { return [h('dt', { text: k }), h('dd', { text: v })]; }
+
+// ======================================================================
+// Live status, unread and automatic-move rules
+// ======================================================================
+const STATUS_LABELS = { running: '実行中', waiting: '入力待ち', completed: '完了', aborted: '中断', idle: '待機' };
+const TRIGGER_LABELS = {
+  'status:running': '実行中になったら',
+  'status:waiting': '入力待ちになったら',
+  'status:completed': '完了したら',
+  'status:aborted': '中断したら',
+  activity: '新しい活動があったら',
+};
+function renderStatusBar(b) {
+  const bar = $('#statusBar');
+  bar.replaceChildren(...['running', 'waiting', 'completed', 'aborted'].filter((k) => b.statusCounts[k] || state.filters.status === k).map((k) =>
+    h('button', { class: 'status-chip', 'aria-pressed': String(state.filters.status === k), title: `${STATUS_LABELS[k]}だけを表示`,
+      onclick: () => { state.filters.status = state.filters.status === k ? '' : k; saveFilters(); state.shown = {}; load(); } },
+      h('span', { class: `sdot s-${k}` }), `${STATUS_LABELS[k]} ${b.statusCounts[k]}`)));
+}
+function hasLive(b) { return (b.statusCounts?.running || 0) + (b.statusCounts?.waiting || 0) > 0; }
+
+const announced = new Set();
+function announceAutoMoves(b) {
+  for (const m of b.recentAutoMoves || []) {
+    const key = `${m.cardId}@${m.at}`;
+    if (announced.has(key)) continue;
+    announced.add(key);
+    if (Date.now() - m.at > 90e3) continue; // only fresh moves get a toast
+    const list = b.lists.find((l) => l.id === m.toListId);
+    toastAction(`⚡「${m.title}」を「${list?.title ?? m.toListId}」へ移動しました`, '元に戻す', () =>
+      act('canban_undo_move', { cardId: m.cardId }, { okMsg: '元に戻しました' }));
+  }
+}
+function toastAction(msg, label, fn) {
+  document.querySelectorAll('.toast').forEach((t) => t.remove());
+  const t = h('div', { class: 'toast', role: 'status' }, msg, ' ',
+    h('button', { class: 'toast-btn', text: label, onclick: () => { t.remove(); fn(); } }));
+  document.body.append(t);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.remove(), 8000);
+}
+
+function rulesMenu(anchor) {
+  const b = state.board;
+  const listName = (id) => (id === 'any' ? 'どのリストでも' : b.lists.find((l) => l.id === id)?.title ?? '（削除済みリスト）');
+  const listSelect = (value, withAny) => {
+    const sel = h('select', { class: 'text-input' }, withAny ? h('option', { value: 'any', text: 'どのリストでも' }) : null,
+      b.lists.map((l) => h('option', { value: l.id, text: l.title })));
+    sel.value = value;
+    return sel;
+  };
+  const rows = b.settings.rules.map((r) => h('div', { class: 'rule-row' },
+    h('label', { class: 'row' },
+      h('input', { type: 'checkbox', checked: r.enabled, 'aria-label': 'ルールを有効にする',
+        onchange: (e) => act('canban_set_rule', { ...r, enabled: e.target.checked }).then(() => rulesMenu(anchor)) }),
+      h('span', { text: `${TRIGGER_LABELS[r.trigger]}、${listName(r.fromListId)} → ${listName(r.toListId)}` })),
+    h('button', { class: 'icon-btn', 'aria-label': 'ルールを削除', text: '🗑', onclick: () => act('canban_delete_rule', { ruleId: r.id }).then(() => rulesMenu(anchor)) })));
+  const trig = h('select', { class: 'text-input' }, Object.entries(TRIGGER_LABELS).map(([v, t]) => h('option', { value: v, text: t })));
+  const from = listSelect('any', true);
+  const to = listSelect(b.lists[1]?.id ?? b.lists[0].id, false);
+  const body = h('div', {},
+    rows.length ? rows : h('p', { class: 'muted', text: 'ルールはまだありません' }),
+    h('div', { class: 'sep' }),
+    h('div', { class: 'field-label', text: '新しいルール' }),
+    trig, h('div', { class: 'row', style: { marginTop: '6px' } }, from, h('span', { text: '→' }), to),
+    h('div', { class: 'row', style: { marginTop: '8px' } }, h('button', { class: 'btn-primary', text: '追加',
+      onclick: () => act('canban_set_rule', { enabled: true, trigger: trig.value, fromListId: from.value, toListId: to.value }, { okMsg: 'ルールを追加しました' }).then(() => rulesMenu(anchor)) })),
+    h('p', { class: 'muted', text: '状態が変わった瞬間にだけ動きます。ボードを閉じていても、Codex が起動していれば 60 秒ごとに評価されます。自動で動いたカードには ⚡ が付き、直後のお知らせから元に戻せます。' }));
+  popover(anchor, '自動移動ルール', body, { width: 400 });
+}
 
 // ======================================================================
 // Resume (desktop app / terminal) and its shortcuts
@@ -891,7 +988,7 @@ function settingsMenu(anchor) {
     h('div', { class: 'sep' }),
     h('div', { class: 'field-label', text: 'ショートカット' }),
     h('div', { class: 'muted', style: { whiteSpace: 'pre-line' }, text:
-      '再開ボタン: クリック=既定 / ⌥=もう一方の経路 / ⇧=新規ウィンドウ / ⌘=新規タブ / ⌃=既存ウィンドウ\nカード選択中: o=既定 d=デスクトップ t=ターミナル w=新規ウィンドウ n=新規タブ s=分割 e=既存ウィンドウ\nリモートのセッションは ssh 経由でターミナルに開きます。\n※ ターミナルの「新規タブ」はアクセシビリティ許可が必要な場合があります。' }),
+      '再開ボタン: クリック=既定 / ⌥=もう一方の経路 / ⇧=新規ウィンドウ / ⌘=新規タブ / ⌃=既存ウィンドウ\nカード選択中: o=既定 d=デスクトップ t=ターミナル w=新規ウィンドウ n=新規タブ s=分割 e=既存ウィンドウ\n移動: ←→=隣のリストへ ↑↓=リスト内で上下 Home/End=先頭/末尾（⌥+矢印はフォーカスだけ移動）\nリモートのセッションは ssh 経由でターミナルに開きます。\n※ ターミナルの「新規タブ」はアクセシビリティ許可が必要な場合があります。' }),
   );
   popover(anchor, '再開の設定', body, { width: 340 });
 }
@@ -1020,6 +1117,46 @@ function orderAt(listId, index, excludeId) {
   return 0;
 }
 
+// Keyboard: arrows move the focused card (←→ between lists, ↑↓ within a list,
+// Home/End to the top/bottom); ⌥ + arrows only move the focus.
+const ARROWS = { ArrowLeft: 1, ArrowRight: 1, ArrowUp: 1, ArrowDown: 1, Home: 1, End: 1 };
+function moveByKey(card, listId, key) {
+  const lists = state.board.lists;
+  const li = lists.findIndex((l) => l.id === listId);
+  const ci = lists[li].cards.findIndex((c) => c.id === card.id);
+  const others = lists[li].cards.length - 1;
+  if (key === 'ArrowLeft' || key === 'ArrowRight') {
+    const target = lists[li + (key === 'ArrowLeft' ? -1 : 1)];
+    if (target) moveCard(card, listId, target.id, Math.min(ci, target.cards.length), true);
+    return;
+  }
+  const index = key === 'ArrowUp' ? ci - 1 : key === 'ArrowDown' ? ci + 1 : key === 'Home' ? 0 : others;
+  if (index < 0 || index > others || index === ci) return;
+  moveCard(card, listId, listId, index, true);
+}
+function focusNeighbor(listId, cardId, key) {
+  const lists = state.board.lists;
+  const li = lists.findIndex((l) => l.id === listId);
+  const ci = lists[li].cards.findIndex((c) => c.id === cardId);
+  let tl = li, tc = ci;
+  if (key === 'ArrowLeft' || key === 'ArrowRight') {
+    const step = key === 'ArrowLeft' ? -1 : 1;
+    for (tl = li + step; lists[tl] && !lists[tl].cards.length; tl += step);
+    if (!lists[tl]) return;
+    tc = Math.min(ci, lists[tl].cards.length - 1);
+  } else if (key === 'ArrowUp' || key === 'Home') tc = key === 'Home' ? 0 : Math.max(0, ci - 1);
+  else tc = key === 'End' ? lists[li].cards.length - 1 : Math.min(lists[li].cards.length - 1, ci + 1);
+  const target = lists[tl].cards[tc];
+  if (!target) return;
+  ensureShown(lists[tl].id, tc);
+  $(`.card[data-card-id="${CSS.escape(target.id)}"]`)?.focus();
+}
+function ensureShown(listId, index) {
+  if (index < (state.shown[listId] || PAGE)) return;
+  state.shown[listId] = index + PAGE;
+  render();
+}
+
 function moveCard(card, fromListId, toListId, index, focusAfter = false) {
   const b = state.board;
   const order = orderAt(toListId, index, card.id);
@@ -1032,7 +1169,10 @@ function moveCard(card, fromListId, toListId, index, focusAfter = false) {
   to.cards.push(moved);
   to.cards.sort((a, c) => a.order - c.order);
   to.count = to.cards.length;
+  const newIndex = to.cards.findIndex((c) => c.id === card.id);
+  if (newIndex >= (state.shown[toListId] || PAGE)) state.shown[toListId] = newIndex + PAGE;
   render();
+  if (focusAfter) $(`.card[data-card-id="${CSS.escape(card.id)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   if (focusAfter) $(`.card[data-card-id="${CSS.escape(card.id)}"]`)?.focus();
   bridge.callTool('canban_move_card', { cardId: card.id, toList: toListId, order })
     .catch((e) => { toast(`移動に失敗しました: ${e.message}`, true); load(); });
@@ -1120,6 +1260,8 @@ $('#days').addEventListener('change', (e) => { state.filters.days = Number(e.tar
 $('#optBtn').addEventListener('click', (e) => optionsMenu(e.currentTarget));
 $('#labelsBtn').addEventListener('click', (e) => labelsManager(e.currentTarget));
 $('#hostsBtn').addEventListener('click', (e) => hostsMenu(e.currentTarget));
+$('#rulesBtn').addEventListener('click', (e) => rulesMenu(e.currentTarget));
+$('#seenBtn').addEventListener('click', () => act('canban_mark_all_seen', {}, { okMsg: 'すべて既読にしました' }));
 $('#settingsBtn').addEventListener('click', (e) => settingsMenu(e.currentTarget));
 $('#refresh').addEventListener('click', () => load({ refresh: true }).then(() => toast('最新の状態に更新しました')));
 
@@ -1141,7 +1283,13 @@ window.addEventListener('openai:set_globals', (e) => { const t = e.detail?.globa
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { if (!state.hostTheme) applyTheme(); });
 
 function idle() { return !state.drag && !state.modalOpen && !document.querySelector('.popover, .list-title-input, .composer'); }
-setInterval(() => { if (document.visibilityState === 'visible' && idle()) load(); }, 60000);
+let lastPoll = 0;
+setInterval(() => {
+  const every = state.board && hasLive(state.board) ? 15000 : 60000;
+  if (Date.now() - lastPoll < every || document.visibilityState !== 'visible' || !idle()) return;
+  lastPoll = Date.now();
+  load();
+}, 5000);
 window.addEventListener('focus', () => { if (idle()) load(); });
 window.addEventListener('resize', () => bridge.reportSize());
 

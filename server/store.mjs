@@ -24,10 +24,35 @@ function legacyFile(dir) {
   return path.join(os.homedir(), '.session-kanban', 'board.json');
 }
 
+export const RULE_TRIGGERS = ['status:running', 'status:waiting', 'status:completed', 'status:aborted', 'activity'];
+const HISTORY_MAX = 50;
+
+export function defaultRules() {
+  return [
+    { id: 'rule-running-doing', enabled: false, trigger: 'status:running', fromListId: 'inbox', toListId: 'doing' },
+    { id: 'rule-completed-review', enabled: false, trigger: 'status:completed', fromListId: 'doing', toListId: 'review' },
+  ];
+}
+
 export function defaultSettings() {
   return {
     // How "resume" opens a session: in the agent's desktop app or in a terminal.
     launch: { route: 'desktop', terminal: 'terminal', target: 'new-window' },
+    // Automatic moves on status transitions (all off by default).
+    rules: defaultRules(),
+    // Cards updated after this time (and after their own seenAt) are highlighted as new.
+    seenAllAt: null,
+  };
+}
+
+function normalizeRule(r) {
+  if (!r || typeof r.id !== 'string' || !RULE_TRIGGERS.includes(r.trigger) || typeof r.toListId !== 'string') return null;
+  return {
+    id: r.id,
+    enabled: !!r.enabled,
+    trigger: r.trigger,
+    fromListId: typeof r.fromListId === 'string' && r.fromListId ? r.fromListId : 'any',
+    toListId: r.toListId,
   };
 }
 
@@ -40,7 +65,19 @@ function normalizeSettings(s) {
       terminal: TERMINALS.includes(l.terminal) ? l.terminal : d.launch.terminal,
       target: TERMINAL_TARGETS.includes(l.target) ? l.target : d.launch.target,
     },
+    rules: Array.isArray(s?.rules) ? s.rules.map(normalizeRule).filter(Boolean) : d.rules,
+    seenAllAt: typeof s?.seenAllAt === 'number' ? s.seenAllAt : null,
   };
+}
+
+function placeCard(card, toListId, order, at = new Date().toISOString()) {
+  if (card.listId !== toListId) {
+    card.history = [...(card.history || []), { listId: toListId, at }].slice(-HISTORY_MAX);
+  }
+  card.listId = toListId;
+  if (typeof order === 'number' && Number.isFinite(order)) card.order = order;
+  else delete card.order;
+  card.updatedAt = at;
 }
 
 export function defaultState() {
@@ -115,17 +152,23 @@ export class Store {
 
   async save(state) {
     await fsp.mkdir(this.dir, { recursive: true });
-    const tmp = `${this.file}.${process.pid}.${Date.now()}.tmp`;
+    const tmp = `${this.file}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
     await fsp.writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
     await fsp.rename(tmp, this.file);
   }
 
-  // Read-modify-write so several server processes (multiple windows) stay consistent.
-  async mutate(fn) {
-    const state = this.load();
-    const result = fn(state);
-    await this.save(state);
-    return result;
+  // Read-modify-write, serialized within this process so concurrent tool calls
+  // cannot interleave; re-reading from disk keeps several processes consistent.
+  mutate(fn) {
+    const run = async () => {
+      const state = this.load();
+      const result = fn(state);
+      await this.save(state);
+      return result;
+    };
+    const p = (this.queue || Promise.resolve()).then(run, run);
+    this.queue = p.catch(() => {});
+    return p;
   }
 
   // ---- lists -------------------------------------------------------------
@@ -204,10 +247,8 @@ export class Store {
     return this.mutate((s) => {
       if (!s.lists.some((l) => l.id === toListId)) throw new Error('移動先のリストが見つかりません');
       const card = (s.cards[cardId] ||= {});
-      card.listId = toListId;
-      if (typeof order === 'number' && Number.isFinite(order)) card.order = order;
-      else delete card.order;
-      card.updatedAt = new Date().toISOString();
+      placeCard(card, toListId, order);
+      delete card.movedBy; // a manual move supersedes an automatic one
       return { cardId, ...card };
     });
   }
@@ -228,10 +269,80 @@ export class Store {
     });
   }
 
+  // ---- rule-driven moves -------------------------------------------------
+  // moves: [{cardId, toListId, order, ruleId}] — the previous placement is kept for undo.
+  applyAutoMoves(moves) {
+    if (!moves.length) return Promise.resolve([]);
+    return this.mutate((s) => {
+      const done = [];
+      const at = new Date().toISOString();
+      for (const m of moves) {
+        if (!s.lists.some((l) => l.id === m.toListId)) continue;
+        const card = (s.cards[m.cardId] ||= {});
+        const prev = { listId: card.listId ?? null, order: card.order ?? null };
+        placeCard(card, m.toListId, m.order, at);
+        card.movedBy = { ruleId: m.ruleId, at: Date.now(), prev };
+        done.push({ cardId: m.cardId, toListId: m.toListId, ruleId: m.ruleId });
+      }
+      return done;
+    });
+  }
+
+  async undoAutoMove({ cardId }) {
+    return this.mutate((s) => {
+      const card = s.cards[cardId];
+      if (!card?.movedBy) throw new Error('元に戻せる自動移動がありません');
+      const { prev } = card.movedBy;
+      delete card.movedBy;
+      if (prev.listId && s.lists.some((l) => l.id === prev.listId)) placeCard(card, prev.listId, prev.order ?? undefined);
+      else {
+        delete card.listId;
+        delete card.order;
+      }
+      return { cardId, listId: card.listId ?? s.defaultListId };
+    });
+  }
+
+  // ---- rules / seen -------------------------------------------------------
+  async setRule(rule) {
+    const r = normalizeRule({ id: rule.id || newId('rule'), ...rule });
+    if (!r) throw new Error('ルールの内容が正しくありません');
+    return this.mutate((s) => {
+      if (!s.lists.some((l) => l.id === r.toListId)) throw new Error('移動先のリストが見つかりません');
+      if (r.fromListId !== 'any' && !s.lists.some((l) => l.id === r.fromListId)) throw new Error('移動元のリストが見つかりません');
+      const i = s.settings.rules.findIndex((x) => x.id === r.id);
+      if (i >= 0) s.settings.rules[i] = r;
+      else s.settings.rules.push(r);
+      return r;
+    });
+  }
+
+  deleteRule({ ruleId }) {
+    return this.mutate((s) => {
+      s.settings.rules = s.settings.rules.filter((r) => r.id !== ruleId);
+      return { deleted: ruleId };
+    });
+  }
+
+  markSeen({ cardId }) {
+    return this.mutate((s) => {
+      const card = (s.cards[cardId] ||= {});
+      card.seenAt = Date.now();
+      return { cardId, seenAt: card.seenAt };
+    });
+  }
+
+  markAllSeen() {
+    return this.mutate((s) => {
+      s.settings.seenAllAt = Date.now();
+      return { seenAllAt: s.settings.seenAllAt };
+    });
+  }
+
   // ---- settings / remote hosts -----------------------------------------
   updateLaunchSettings(patch = {}) {
     return this.mutate((s) => {
-      s.settings = normalizeSettings({ launch: { ...s.settings.launch, ...patch } });
+      s.settings = normalizeSettings({ ...s.settings, launch: { ...s.settings.launch, ...patch } });
       return s.settings;
     });
   }

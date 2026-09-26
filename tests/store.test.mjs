@@ -85,3 +85,10 @@ test('remote hosts are opt-in', async () => {
   assert.equal(store.load().remoteHosts['remote-ssh-discovered:box'].enabled, true);
   await assert.rejects(store.setRemoteHost({ hostId: 'local', enabled: true }), /ホスト/);
 });
+
+test('concurrent mutations are serialized and none are lost', async () => {
+  const store = new Store(tmp());
+  await Promise.all(Array.from({ length: 20 }, (_, i) => store.moveCard({ cardId: `codex:${i}`, toListId: 'doing', order: i })));
+  const cards = store.load().cards;
+  assert.equal(Object.keys(cards).length, 20);
+});

@@ -6,7 +6,8 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { Store } from './store.mjs';
-import { buildBoard, sessionDetail, allSessions, findSession, hostsWithState, effectiveOrder } from './board.mjs';
+import { buildBoard, sessionDetail, allSessions, findSession, hostsWithState, effectiveOrder, tickRules } from './board.mjs';
+import { RULE_TRIGGERS } from './store.mjs';
 import { desktopLink, resumeCommand } from './agents.mjs';
 import { openUrl, runInTerminal, installedTerminals, setRunner, TERMINAL_LABELS } from './launcher.mjs';
 
@@ -34,6 +35,7 @@ const filterProps = {
   agent: { type: 'string', enum: ['all', 'codex', 'claude'], description: 'エージェントで絞り込み' },
   host: { type: 'string', description: "マシンで絞り込み（'local' またはリモート接続の hostId）" },
   project: { type: 'string', description: 'プロジェクト名（cwd のディレクトリ名）で絞り込み' },
+  status: { type: 'string', enum: ['running', 'waiting', 'completed', 'aborted', 'idle'], description: '実行状態で絞り込み' },
   q: { type: 'string', description: 'タイトル・最初の依頼・メモ・ラベルの部分一致検索' },
   includeArchived: { type: 'boolean' },
   includeSubagents: { type: 'boolean' },
@@ -117,9 +119,10 @@ const TOOLS = [
     _meta: appAndModel,
     handler: async ({ cardId, messages }) => {
       const d = await sessionDetail(store, cardId, { messages: Math.min(Number(messages) || 12, 40) });
+      await store.markSeen({ cardId });
       const s = d.session;
       const text = [
-        `${s.title} (${s.agent})`,
+        `${s.title} (${s.agent}, ${s.status || 'idle'})`,
         `リスト: ${d.list?.title ?? '-'} / プロジェクト: ${s.project ?? '-'} / ブランチ: ${s.branch ?? '-'}`,
         `更新: ${new Date(s.updatedAt || 0).toISOString()}`,
         d.card.note ? `メモ: ${d.card.note}` : null,
@@ -196,6 +199,7 @@ const TOOLS = [
     _meta: appAndModel,
     handler: async ({ cardId, route, terminal, target }) => {
       const { session, state } = await findSession(store, cardId);
+      await store.markSeen({ cardId });
       const prefs = state.settings.launch;
       let useRoute = route || prefs.route;
       const link = desktopLink(session);
@@ -239,6 +243,16 @@ const TOOLS = [
     terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
     target: { type: 'string', enum: ['new-window', 'new-tab', 'split', 'current'] },
   }, [], (a) => store.updateLaunchSettings(a)),
+  appTool('canban_set_rule', '自動移動ルールを保存', {
+    id: { type: 'string' },
+    enabled: { type: 'boolean' },
+    trigger: { type: 'string', enum: RULE_TRIGGERS },
+    fromListId: { type: 'string' },
+    toListId: { type: 'string' },
+  }, ['trigger', 'toListId'], (a) => store.setRule(a)),
+  appTool('canban_delete_rule', '自動移動ルールを削除', { ruleId: { type: 'string' } }, ['ruleId'], (a) => store.deleteRule(a)),
+  appTool('canban_undo_move', '自動移動を元に戻す', { cardId: { type: 'string' } }, ['cardId'], (a) => store.undoAutoMove(a)),
+  appTool('canban_mark_all_seen', 'すべて既読にする', {}, [], () => store.markAllSeen()),
   appTool('canban_create_list', 'リストを追加', { title: { type: 'string' }, color: { type: 'string' }, afterListId: { type: 'string' } }, ['title'], (a) => store.createList(a)),
   appTool('canban_update_list', 'リストを更新', { listId: { type: 'string' }, title: { type: 'string' }, color: { type: ['string', 'null'] }, wipLimit: { type: ['number', 'null'] } }, ['listId'], (a) => store.updateList(a)),
   appTool('canban_delete_list', 'リストを削除', { listId: { type: 'string' }, moveCardsTo: { type: 'string' } }, ['listId'], (a) => store.deleteList(a)),
@@ -379,4 +393,8 @@ async function onLine(line) {
     send({ jsonrpc: '2.0', id: msg.id, error: { code: err.rpcCode || -32603, message: err.message } });
   }
 }
+// Rules keep working while the board is closed (the server lives as long as Codex does).
+const RULE_TICK_MS = Number(process.env.CANBAN_RULE_TICK_MS) || 60000;
+setInterval(() => tickRules(store).catch((e) => log('rules:', e.message)), RULE_TICK_MS).unref();
+
 log(`started v${PKG.version}`);

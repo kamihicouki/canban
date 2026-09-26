@@ -7,6 +7,8 @@ import { LOCAL_HOST } from './sources/util.mjs';
 import { RemotePool } from './remote/pool.mjs';
 import { launchInfo } from './agents.mjs';
 import { installedTerminals } from './launcher.mjs';
+import { annotateStatus, STATUSES } from './status.mjs';
+import { RuleEngine } from './rules.mjs';
 
 const LOCAL_TTL_MS = 4000;
 let localCache = null;
@@ -29,6 +31,7 @@ export async function allSessions(state, { force = false } = {}) {
   const hosts = await hostsWithState(state);
   const enabled = hosts.filter((h) => h.enabled);
   const [local, remote] = await Promise.all([localSessions({ force }), pool.sessions(enabled, { force })]);
+  await annotateStatus([...local.sessions, ...remote]);
   const errors = [...local.errors];
   for (const h of enabled) {
     const st = pool.hostStatus(h.id);
@@ -46,6 +49,7 @@ function matches(session, card, f, labelsById) {
   if (f.agent && f.agent !== 'all' && session.agent !== f.agent) return false;
   if (f.host && (session.host?.id || 'local') !== f.host) return false;
   if (f.project && session.project !== f.project) return false;
+  if (f.status && (session.status || 'idle') !== f.status) return false;
   if (!f.includeArchived && session.archived) return false;
   if (!f.includeSubagents && session.subagent) return false;
   if (!f.includeHidden && card?.hidden) return false;
@@ -69,6 +73,7 @@ export function normalizeFilters(f = {}) {
     agent: ['codex', 'claude'].includes(f.agent) ? f.agent : 'all',
     host: typeof f.host === 'string' && f.host ? f.host : null,
     project: f.project || null,
+    status: STATUSES.includes(f.status) ? f.status : null,
     q: typeof f.q === 'string' ? f.q.trim() : '',
     includeArchived: !!f.includeArchived,
     includeSubagents: !!f.includeSubagents,
@@ -81,10 +86,62 @@ function hostView(h) {
   return { id: h.id, alias: h.alias, label: h.label, local: false, enabled: h.enabled, status: pool.hostStatus(h.id) };
 }
 
+const engines = new WeakMap();
+function engineFor(store) {
+  if (!engines.has(store)) engines.set(store, new RuleEngine(store));
+  return engines.get(store);
+}
+
+function listResolver(state) {
+  const ids = new Set(state.lists.map((l) => l.id));
+  return (id) => {
+    const l = state.cards[id]?.listId;
+    return l && ids.has(l) ? l : state.defaultListId;
+  };
+}
+
+// Evaluate the automatic-move rules against current statuses and apply the moves.
+export async function runRules(store, state, sessions, now = Date.now()) {
+  const listOf = listResolver(state);
+  const tops = new Map();
+  for (const s of sessions) {
+    const l = listOf(s.id);
+    const o = effectiveOrder(s, state.cards[s.id]);
+    if (!tops.has(l) || o < tops.get(l)) tops.set(l, o);
+  }
+  const moves = await engineFor(store).evaluate({
+    rules: state.settings.rules,
+    sessions,
+    listOf,
+    topOrder: (l) => {
+      const o = (tops.get(l) ?? 1000) - 1000;
+      tops.set(l, o);
+      return o;
+    },
+    now,
+  });
+  return store.applyAutoMoves(moves);
+}
+
+// Background evaluation so rules work while the board is closed.
+export async function tickRules(store) {
+  const state = store.load();
+  if (!state.settings.rules.some((r) => r.enabled)) return [];
+  const { sessions } = await allSessions(state);
+  return runRules(store, state, sessions);
+}
+
 export async function buildBoard(store, rawFilters = {}, { force = false } = {}) {
   const filters = normalizeFilters(rawFilters);
-  const state = store.load();
+  let state = store.load();
   const { sessions, errors, hosts } = await allSessions(state, { force });
+  if ((await runRules(store, state, sessions)).length) state = store.load();
+  if (state.settings.seenAllAt == null) {
+    await store.markAllSeen(); // first run: nothing is "new" yet
+    state = store.load();
+  }
+  const seenAll = state.settings.seenAllAt || 0;
+  const statusCounts = Object.fromEntries(STATUSES.map((k) => [k, 0]));
   const labelsById = new Map(state.labels.map((l) => [l.id, l]));
   const listIds = new Set(state.lists.map((l) => l.id));
   const buckets = new Map(state.lists.map((l) => [l.id, []]));
@@ -94,6 +151,7 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
   for (const s of sessions) {
     const card = state.cards[s.id];
     const visibleKind = (filters.includeSubagents || !s.subagent) && (filters.includeArchived || !s.archived);
+    if (visibleKind) statusCounts[s.status || 'idle']++;
     if (s.project && visibleKind) projects.set(s.project, (projects.get(s.project) || 0) + 1);
     if (visibleKind) hostCounts.set(s.host?.id || 'local', (hostCounts.get(s.host?.id || 'local') || 0) + 1);
     if (!matches(s, card, filters, labelsById)) continue;
@@ -124,6 +182,9 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
       due: card?.due || null,
       hidden: !!card?.hidden,
       placed: !!card?.listId,
+      status: s.status || 'idle',
+      unread: (s.updatedAt || 0) > Math.max(seenAll, card?.seenAt || 0),
+      autoMoved: card?.movedBy ? { ruleId: card.movedBy.ruleId, at: card.movedBy.at } : null,
     });
   }
 
@@ -142,6 +203,10 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
     hosts: [{ ...LOCAL_HOST, enabled: true, status: { state: 'ok' }, count: hostCounts.get('local') || 0 }, ...hosts.map((h) => ({ ...hostView(h), count: hostCounts.get(h.id) || 0 }))],
     settings: state.settings,
     terminals: installedTerminals(),
+    statusCounts,
+    recentAutoMoves: Object.entries(state.cards)
+      .filter(([, c]) => c.movedBy && Date.now() - c.movedBy.at < 5 * 60e3)
+      .map(([cardId, c]) => ({ cardId, toListId: c.listId, ruleId: c.movedBy.ruleId, at: c.movedBy.at, title: sessions.find((x) => x.id === cardId)?.title || cardId })),
     totals: {
       sessions: sessions.length,
       codex: sessions.filter((s) => s.agent === 'codex').length,

@@ -133,6 +133,9 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
     sourcePath: s.file || null,
     prUrl: s.prUrl || null,
     agentName: s.agentName || null,
+    desktopStatus: dm?.postTurnSummary?.status_category ?? dm?.statusCategory ?? null,
+    rawStatus: s.rawStatus ?? null,
+    statusMtimeMs: s.statusMtimeMs ?? null,
   };
 }
 

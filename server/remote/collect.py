@@ -1,6 +1,6 @@
 # Canban remote collector. Sent over `ssh <host> python3 -` and run with the Python 3
 # standard library only. It is strictly read-only: SQLite is opened with mode=ro and
-# files are opened for reading. The caller prepends `ARGS = {...}` to this file.
+# files are opened for reading. The caller prepends `ARGS = json.loads("...")` to this file.
 #
 # Output: a single JSON document on stdout.
 #   list     -> {"ok", "codex": {"rows", "error"}, "claude": {"summaries", "unchanged", "desktop", "error"}}
@@ -29,6 +29,9 @@ CODEX_COLUMNS = [
 ]
 SUMMARY_PROMPTS = 3
 TAIL_BYTES = 768 * 1024
+STATUS_TAIL_BYTES = 256 * 1024
+RECENT_MS = 24 * 3600 * 1000
+ASK_TOOLS = {"request_user_input", "AskUserQuestion", "ExitPlanMode"}
 TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$")
 
 def parse_ts(value):
@@ -81,9 +84,108 @@ def codex_rows():
             rows = [dict(zip(want, r)) for r in cur]
         finally:
             con.close()
+        now = now_ms()
+        for r in rows:
+            updated = r.get("updated_at_ms") or ((r.get("updated_at") or 0) * 1000)
+            r["rawStatus"], r["statusMtimeMs"] = raw_status_for(r.get("rollout_path"), "codex", updated, now)
         return {"rows": rows, "error": None}
     except Exception as e:  # noqa: BLE001
         return {"rows": [], "error": "Codex DB 読み取り失敗: %s" % e}
+
+# ---- live status (keep in sync with server/status.mjs) ---------------------
+def now_ms():
+    args = globals().get("ARGS") or {}
+    return args.get("now") or int(__import__("time").time() * 1000)
+
+
+def codex_raw_status(records):
+    state = "idle"
+    asks = set()
+    for o in records:
+        p = o.get("payload") if isinstance(o, dict) else None
+        if not isinstance(p, dict):
+            continue
+        if o.get("type") == "event_msg":
+            t = p.get("type")
+            if t == "task_started":
+                state = "running"
+            elif t == "task_complete":
+                state = "completed"
+            elif t == "turn_aborted":
+                state = "aborted"
+        elif o.get("type") == "response_item":
+            if p.get("type") == "function_call" and p.get("name") in ASK_TOOLS and p.get("call_id"):
+                asks.add(p["call_id"])
+            elif p.get("type") == "function_call_output" and p.get("call_id"):
+                asks.discard(p["call_id"])
+    if state == "running" and asks:
+        state = "waiting"
+    return state
+
+
+def claude_raw_status(records, desktop_status=None):
+    state = "idle"
+    asks = set()
+    for o in records:
+        if not isinstance(o, dict) or o.get("isSidechain") or o.get("type") not in ("user", "assistant"):
+            continue
+        msg = o.get("message") or {}
+        c = msg.get("content")
+        items = c if isinstance(c, list) else []
+        if o["type"] == "assistant":
+            for it in items:
+                if isinstance(it, dict) and it.get("type") == "tool_use" and it.get("name") in ASK_TOOLS and it.get("id"):
+                    asks.add(it["id"])
+            state = "completed" if msg.get("stop_reason") in ("end_turn", "stop_sequence") else "running"
+        else:
+            for it in items:
+                if isinstance(it, dict) and it.get("type") == "tool_result" and it.get("tool_use_id"):
+                    asks.discard(it["tool_use_id"])
+            text = c if isinstance(c, str) else "".join(it.get("text", "") for it in items if isinstance(it, dict) and it.get("type") == "text")
+            state = "aborted" if "[Request interrupted by user" in text else "running"
+    if state == "running" and asks:
+        state = "waiting"
+    if state == "completed" and desktop_status:
+        d = str(desktop_status).lower()
+        if re.search(r"input|waiting|question|blocked|needs", d):
+            state = "waiting"
+        elif re.search(r"error|fail", d):
+            state = "aborted"
+    return state
+
+
+def read_tail(path, nbytes):
+    with open(path, "rb") as fh:
+        fh.seek(0, os.SEEK_END)
+        size = fh.tell()
+        start = max(0, size - nbytes)
+        fh.seek(start)
+        data = fh.read().decode("utf-8", errors="replace")
+    lines = data.split("\n")
+    if start > 0:
+        lines = lines[1:]
+    out = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue
+    return out
+
+
+def raw_status_for(path, agent, updated_ms, now):
+    """(raw status, log mtime ms) for recently updated sessions; the caller settles it."""
+    if not path or updated_ms < now - RECENT_MS:
+        return None, None
+    try:
+        st = os.stat(path)
+        records = read_tail(path, STATUS_TAIL_BYTES)
+    except (OSError, ValueError):
+        return None, None
+    raw = codex_raw_status(records) if agent == "codex" else claude_raw_status(records)
+    return raw, st.st_mtime * 1000
 
 def text_of(content):
     if isinstance(content, str):
@@ -156,7 +258,7 @@ def desktop_meta():
                 except (OSError, ValueError):
                     continue
                 if isinstance(j, dict) and j.get("cliSessionId"):
-                    meta[j["cliSessionId"]] = {k: j.get(k) for k in ("sessionId", "title", "isArchived", "lastActivityAt", "cwd", "model")}
+                    meta[j["cliSessionId"]] = {k: j.get(k) for k in ("sessionId", "title", "isArchived", "lastActivityAt", "cwd", "model", "postTurnSummary")}
     return meta
 
 def claude_summaries(known):
@@ -185,6 +287,7 @@ def claude_summaries(known):
                 s["fileMtimeMs"] = sig[0]
                 s["fileBirthMs"] = getattr(st, "st_birthtime", st.st_mtime) * 1000
                 s["sig"] = sig
+                s["rawStatus"], s["statusMtimeMs"] = raw_status_for(fp, "claude", max(s["updatedAt"] or 0, sig[0]), now_ms())
                 out["summaries"].append(s)
     except Exception as e:  # noqa: BLE001
         out["error"] = "Claude セッション読み取り失敗: %s" % e
@@ -236,6 +339,9 @@ def main():
     mode = args.get("mode", "list")
     if mode == "list":
         result = {"ok": True, "codex": codex_rows(), "claude": claude_summaries(args.get("known") or {})}
+    elif mode == "status":  # used by the parity tests
+        recs = args.get("records") or []
+        result = {"ok": True, "raw": codex_raw_status(recs) if args.get("agent") == "codex" else claude_raw_status(recs)}
     elif mode == "messages":
         result = {"ok": True, "records": tail_records(args["path"], args.get("agent", "codex"))}
     else:

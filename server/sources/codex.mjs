@@ -61,6 +61,8 @@ export function normalizeCodexRow(r, host = LOCAL_HOST) {
     pinnedInAgent: !!r.is_pinned,
     preview: clip(firstPrompt || r.preview || '', 280),
     sourcePath: r.rollout_path || null,
+    rawStatus: r.rawStatus ?? null,
+    statusMtimeMs: r.statusMtimeMs ?? null,
   };
 }
 
