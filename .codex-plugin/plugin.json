@@ -1,0 +1,42 @@
+{
+  "name": "canban",
+  "version": "0.2.0",
+  "description": "Codex / Claude Code のセッション（ローカルと SSH リモート）を読み取り専用で集約し、Trello 風カンバンで管理する Codex アプリ。",
+  "author": {
+    "name": "kamihicouki",
+    "url": "https://github.com/kamihicouki"
+  },
+  "license": "MIT",
+  "keywords": [
+    "kanban",
+    "canban",
+    "sessions",
+    "codex",
+    "claude-code",
+    "mcp-app"
+  ],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Canban",
+    "shortDescription": "エージェントのセッションをカンバンで整理",
+    "longDescription": "Codex と Claude Code のセッション（このマシンと、Codex に登録済みの SSH リモート）を読み取り専用で一覧化し、Trello のようにリストを自由に追加してドラッグ＆ドロップで整理できます。デスクトップアプリやターミナルからワンクリックで再開できます。リスト・ラベル・メモなどは ~/.canban に別保存され、セッション本体は一切変更しません。",
+    "developerName": "kamihicouki",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read"
+    ],
+    "composerIcon": "./assets/canban.svg",
+    "logo": "./assets/canban.svg",
+    "brandColor": "#0079BF",
+    "defaultPrompt": [
+      "Canban を開いて",
+      "レビュー待ちのセッションを一覧にして",
+      "このリポジトリの最新セッションをターミナルで再開して"
+    ],
+    "screenshots": [],
+    "websiteURL": "https://github.com/kamihicouki/canban"
+  },
+  "homepage": "https://github.com/kamihicouki/canban",
+  "repository": "https://github.com/kamihicouki/canban"
+}

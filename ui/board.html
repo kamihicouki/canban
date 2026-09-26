@@ -1,0 +1,1160 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Canban</title>
+<style>
+:root {
+  --board-bg: #0079bf;
+  --board-bg-2: #5067c5;
+  --header-bg: rgba(0, 0, 0, 0.24);
+  --header-fg: #fff;
+  --list-bg: #f1f2f4;
+  --list-fg: #172b4d;
+  --list-muted: #44546f;
+  --card-bg: #fff;
+  --card-fg: #172b4d;
+  --card-muted: #626f86;
+  --card-shadow: 0 1px 1px #091e4240, 0 0 1px #091e424f;
+  --card-hover: #f7f8f9;
+  --input-bg: #fff;
+  --input-border: #8590a2;
+  --btn-subtle: rgba(9, 30, 66, 0.06);
+  --btn-subtle-hover: rgba(9, 30, 66, 0.14);
+  --modal-bg: #f1f2f4;
+  --modal-panel: #fff;
+  --overlay: rgba(0, 0, 0, 0.64);
+  --accent: #0c66e4;
+  --danger: #c9372c;
+  --warn-bg: #ffecb3;
+  --warn-fg: #7f5f01;
+  --focus: #388bff;
+  --codex: #10a37f;
+  --claude: #d97757;
+  --c-gray: #8590a2; --c-blue: #579dff; --c-green: #4bce97; --c-yellow: #f5cd47; --c-orange: #fea362;
+  --c-red: #f87168; --c-purple: #9f8fef; --c-pink: #e774bb; --c-sky: #6cc3e0; --c-lime: #94c748;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --board-bg: #1d2125;
+  --board-bg-2: #0b2a4a;
+  --header-bg: rgba(0, 0, 0, 0.35);
+  --list-bg: #101204;
+  --list-fg: #b6c2cf;
+  --list-muted: #8c9bab;
+  --card-bg: #22272b;
+  --card-fg: #b6c2cf;
+  --card-muted: #8c9bab;
+  --card-shadow: 0 1px 1px #03040480, 0 0 1px #03040480;
+  --card-hover: #2c333a;
+  --input-bg: #22272b;
+  --input-border: #738496;
+  --btn-subtle: rgba(161, 189, 217, 0.08);
+  --btn-subtle-hover: rgba(166, 197, 226, 0.16);
+  --modal-bg: #323940;
+  --modal-panel: #282e33;
+  --overlay: rgba(0, 0, 0, 0.72);
+  --accent: #579dff;
+  --danger: #f87168;
+  --warn-bg: #533f04;
+  --warn-fg: #f5cd47;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font: 14px/20px -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  background: linear-gradient(135deg, var(--board-bg), var(--board-bg-2));
+  color: var(--list-fg);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; border: 0; background: none; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+/* ---------- header ---------- */
+.topbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 12px; background: var(--header-bg); color: var(--header-fg);
+  backdrop-filter: blur(6px);
+}
+.topbar h1 { font-size: 18px; margin: 0 8px 0 4px; font-weight: 700; white-space: nowrap; }
+.topbar .spacer { flex: 1; }
+.hbtn, .hselect, .hsearch {
+  height: 32px; border-radius: 4px; background: rgba(255,255,255,0.2); color: #fff; border: 0; padding: 0 10px;
+}
+.hbtn:hover, .hselect:hover { background: rgba(255,255,255,0.3); }
+.hbtn[aria-pressed="true"] { background: #dfe1e6; color: #172b4d; }
+.hselect option { color: #172b4d; }
+#project { max-width: 240px; }
+.btn, .btn-primary, .btn-danger { white-space: nowrap; flex: none; }
+.hsearch { width: 220px; background: rgba(255,255,255,0.2); }
+.hsearch::placeholder { color: rgba(255,255,255,0.8); }
+.hsearch:focus { background: #fff; color: #172b4d; outline: none; }
+.seg { display: inline-flex; border-radius: 4px; overflow: hidden; }
+.seg button { height: 32px; padding: 0 10px; background: rgba(255,255,255,0.2); color: #fff; }
+.seg button + button { border-left: 1px solid rgba(255,255,255,0.15); }
+.seg button[aria-pressed="true"] { background: #dfe1e6; color: #172b4d; font-weight: 600; }
+.stat { font-size: 12px; opacity: 0.9; white-space: nowrap; }
+.errbar { background: var(--warn-bg); color: var(--warn-fg); padding: 6px 12px; font-size: 13px; }
+
+/* ---------- board ---------- */
+.board {
+  flex: 1; display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px; overflow-x: auto; overflow-y: hidden;
+}
+.list {
+  flex: 0 0 272px; max-height: 100%; display: flex; flex-direction: column;
+  background: var(--list-bg); border-radius: 12px; box-shadow: var(--card-shadow);
+}
+.list.dragging-list { opacity: 0.4; }
+.list-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 4px 12px; cursor: grab; }
+.list-head .stripe { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.list-title {
+  flex: 1; font-weight: 600; padding: 4px 6px; border-radius: 4px; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
+}
+.list-title-input { flex: 1; font-weight: 600; padding: 3px 6px; border-radius: 4px; border: 2px solid var(--focus); background: var(--input-bg); min-width: 0; }
+.count { font-size: 12px; color: var(--list-muted); padding: 0 4px; white-space: nowrap; }
+.count.over { color: #fff; background: var(--danger); border-radius: 10px; padding: 0 8px; }
+.icon-btn { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; color: var(--list-muted); }
+.icon-btn:hover { background: var(--btn-subtle-hover); }
+.default-tag { font-size: 11px; color: var(--list-muted); padding: 0 12px 4px; }
+.cards { flex: 1; overflow-y: auto; padding: 2px 8px 8px; display: flex; flex-direction: column; gap: 8px; min-height: 12px; }
+.list.over-wip { box-shadow: inset 0 0 0 2px var(--danger); }
+.more-btn { margin: 0 8px 8px; padding: 6px 8px; border-radius: 8px; text-align: left; color: var(--list-muted); }
+.more-btn:hover { background: var(--btn-subtle-hover); }
+
+.card {
+  background: var(--card-bg); color: var(--card-fg); border-radius: 8px; box-shadow: var(--card-shadow);
+  padding: 8px 10px; cursor: pointer; user-select: none; position: relative; touch-action: none;
+}
+.card:hover { background: var(--card-hover); }
+.card.is-archived { opacity: 0.6; }
+.card.drag-source { opacity: 0.25; }
+.card .labels { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.chip { height: 8px; min-width: 40px; border-radius: 4px; }
+.labels.expanded .chip { height: 16px; font-size: 12px; line-height: 16px; padding: 0 6px; color: #172b4d; font-weight: 600; min-width: 0; }
+.card .title { word-break: break-word; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.card .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; font-size: 12px; color: var(--card-muted); }
+.badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 3px; color: #fff; line-height: 16px; }
+.badge.codex { background: var(--codex); }
+.badge.claude { background: var(--claude); }
+.pill { display: inline-flex; align-items: center; gap: 3px; border-radius: 3px; padding: 0 4px; }
+.pill.prio-high { background: #ffd5d2; color: #ae2e24; }
+.pill.prio-medium { background: #fff7d6; color: #7f5f01; }
+.pill.prio-low { background: #dcfff1; color: #216e4e; }
+.pill.due-over { background: var(--danger); color: #fff; }
+.ellipsis { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.placeholder { border-radius: 8px; background: var(--btn-subtle-hover); flex: none; }
+.ghost {
+  position: fixed; z-index: 1000; pointer-events: none; transform: rotate(3deg);
+  box-shadow: 0 8px 16px -4px #091e4240, 0 0 1px #091e424f; opacity: 0.95;
+}
+
+.add-list { flex: 0 0 272px; }
+.add-list-btn {
+  width: 100%; text-align: left; padding: 10px 12px; border-radius: 12px; color: #fff;
+  background: rgba(255,255,255,0.24); font-weight: 500;
+}
+.add-list-btn:hover { background: rgba(255,255,255,0.32); }
+.composer { background: var(--list-bg); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.text-input {
+  width: 100%; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg);
+}
+.text-input:focus { outline: none; border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); }
+.row { display: flex; align-items: center; gap: 8px; }
+.btn-primary { background: var(--accent); color: #fff; padding: 6px 12px; border-radius: 4px; font-weight: 500; }
+.btn-primary:hover { filter: brightness(1.08); }
+.btn { background: var(--btn-subtle); padding: 6px 12px; border-radius: 4px; }
+.btn:hover { background: var(--btn-subtle-hover); }
+.btn-danger { background: var(--danger); color: #fff; padding: 6px 12px; border-radius: 4px; }
+
+/* ---------- popover ---------- */
+.popover {
+  position: fixed; z-index: 900; width: 304px; background: var(--modal-panel); color: var(--list-fg);
+  border-radius: 8px; box-shadow: 0 8px 12px #091e4226, 0 0 1px #091e424f; padding: 12px;
+}
+.popover h3 { margin: 0 0 8px; font-size: 14px; text-align: center; color: var(--list-muted); font-weight: 600; }
+.popover .close { position: absolute; right: 6px; top: 6px; }
+.menu-item { display: block; width: 100%; text-align: left; padding: 6px 12px; border-radius: 4px; }
+.menu-item:hover { background: var(--btn-subtle-hover); }
+.menu-item.danger { color: var(--danger); }
+.sep { height: 1px; background: var(--btn-subtle-hover); margin: 8px 0; }
+.swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.swatch { height: 28px; border-radius: 4px; }
+.swatch[aria-pressed="true"] { outline: 2px solid var(--focus); outline-offset: 1px; }
+.field-label { font-size: 12px; font-weight: 600; color: var(--list-muted); margin: 8px 0 4px; }
+
+/* ---------- modal ---------- */
+.overlay { position: fixed; inset: 0; background: var(--overlay); z-index: 800; display: flex; justify-content: center; align-items: flex-start; overflow-y: auto; padding: 48px 16px; }
+.modal { width: 840px; max-width: 100%; background: var(--modal-bg); color: var(--list-fg); border-radius: 12px; padding: 20px 24px 24px; position: relative; }
+.modal .close { position: absolute; right: 12px; top: 12px; }
+.modal h2 { margin: 0 40px 4px 0; font-size: 20px; line-height: 26px; word-break: break-word; }
+.modal .sub { color: var(--list-muted); font-size: 13px; }
+.modal-grid { display: grid; grid-template-columns: minmax(0, 1fr) 236px; gap: 24px; margin-top: 16px; }
+.section-title { font-weight: 600; margin: 16px 0 8px; display: flex; align-items: center; gap: 8px; }
+.kv { display: grid; grid-template-columns: 110px 1fr; gap: 4px 12px; font-size: 13px; }
+.kv dt { color: var(--list-muted); }
+.kv dd { margin: 0; word-break: break-all; }
+textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); }
+.side-btn { display: flex; width: 100%; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 4px; background: var(--btn-subtle); margin-bottom: 8px; text-align: left; }
+.side-btn:hover { background: var(--btn-subtle-hover); }
+.label-toggle { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px; border-radius: 4px; }
+.label-toggle:hover { background: var(--btn-subtle-hover); }
+.label-toggle .sw { flex: 1; height: 28px; border-radius: 4px; padding: 0 10px; line-height: 28px; color: #172b4d; font-weight: 600; text-align: left; }
+.msg { background: var(--modal-panel); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; white-space: pre-wrap; word-break: break-word; font-size: 13px; }
+.msg .who { font-size: 11px; font-weight: 700; color: var(--list-muted); margin-bottom: 2px; }
+.msg.user { border-left: 3px solid var(--accent); }
+.muted { color: var(--list-muted); font-size: 12px; }
+.readonly-note { font-size: 12px; color: var(--list-muted); margin-top: 4px; }
+
+.card-resume {
+  position: absolute; right: 6px; top: 6px; width: 26px; height: 26px; border-radius: 6px; display: none;
+  place-items: center; font-size: 11px; background: var(--card-bg); color: var(--card-muted); box-shadow: var(--card-shadow);
+}
+.card:hover .card-resume, .card:focus-within .card-resume, .card:focus .card-resume { display: grid; }
+.card-resume:hover { background: var(--accent); color: #fff; }
+.host-chip { display: inline-flex; align-items: center; border-radius: 3px; padding: 0 4px; background: var(--btn-subtle-hover); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resume-box { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.resume-main { width: 100%; padding: 8px 12px; display: flex; flex-direction: column; align-items: flex-start; line-height: 18px; }
+.resume-main small { opacity: 0.85; font-size: 11px; font-weight: 400; }
+.seg-row { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.seg-btn { white-space: nowrap; padding: 5px 6px; border-radius: 4px; background: var(--btn-subtle); font-size: 12px; }
+.seg-btn:hover:not(:disabled) { background: var(--btn-subtle-hover); }
+.seg-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.host-row { display: flex; align-items: center; gap: 8px; }
+.host-row .menu-item { flex: 1; min-width: 0; }
+.menu-item.active { background: var(--btn-subtle-hover); box-shadow: inset 3px 0 0 var(--accent); }
+.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #172b4d; color: #fff; padding: 8px 16px; border-radius: 6px; z-index: 1100; box-shadow: 0 4px 8px #0004; }
+.toast.error { background: var(--danger); }
+.loading { color: #fff; padding: 24px; }
+@media (max-width: 720px) {
+  .hsearch { width: 140px; }
+  .modal-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <h1>Canban</h1>
+  <input id="q" class="hsearch" type="search" placeholder="検索（タイトル・依頼・メモ）" aria-label="検索" />
+  <div class="seg" role="group" aria-label="エージェント">
+    <button data-agent="all" aria-pressed="true">すべて</button>
+    <button data-agent="codex" aria-pressed="false">Codex</button>
+    <button data-agent="claude" aria-pressed="false">Claude</button>
+  </div>
+  <select id="project" class="hselect" aria-label="プロジェクト"><option value="">すべてのプロジェクト</option></select>
+  <select id="days" class="hselect" aria-label="期間">
+    <option value="7">7日以内</option>
+    <option value="30" selected>30日以内</option>
+    <option value="90">90日以内</option>
+    <option value="0">全期間</option>
+  </select>
+  <button id="optBtn" class="hbtn" aria-haspopup="true">表示 ▾</button>
+  <button id="labelsBtn" class="hbtn">ラベル</button>
+  <button id="hostsBtn" class="hbtn" aria-haspopup="true">マシン ▾</button>
+  <button id="settingsBtn" class="hbtn" title="再開の設定" aria-label="再開の設定">⚙ 再開</button>
+  <span class="spacer"></span>
+  <span id="stat" class="stat"></span>
+  <button id="refresh" class="hbtn" title="再読み込み" aria-label="再読み込み">⟳</button>
+</header>
+<div id="errbar" class="errbar" hidden></div>
+<main id="board" class="board" aria-label="カンバンボード"><div class="loading">読み込み中…</div></main>
+
+<script>
+(() => {
+'use strict';
+
+// ======================================================================
+// Host bridge: MCP Apps (postMessage JSON-RPC) with window.openai fallback
+// ======================================================================
+const bridge = (() => {
+  let nextId = 1;
+  const waiting = new Map();
+  const listeners = {};
+  const on = (m, fn) => ((listeners[m] ||= []).push(fn));
+  const emit = (m, p) => (listeners[m] || []).forEach((fn) => { try { fn(p); } catch (e) { console.error(e); } });
+
+  function post(msg) { window.parent.postMessage(msg, '*'); }
+  function request(method, params, timeout = 60000) {
+    const id = nextId++;
+    post({ jsonrpc: '2.0', id, method, params });
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => { waiting.delete(id); reject(new Error(`${method} がタイムアウトしました`)); }, timeout);
+      waiting.set(id, { resolve: (v) => { clearTimeout(t); resolve(v); }, reject: (e) => { clearTimeout(t); reject(e); } });
+    });
+  }
+  function notify(method, params) { post({ jsonrpc: '2.0', method, params }); }
+
+  window.addEventListener('message', (ev) => {
+    if (ev.source !== window.parent) return;
+    const m = ev.data;
+    if (!m || m.jsonrpc !== '2.0') return;
+    if (m.id != null && (m.result !== undefined || m.error !== undefined) && waiting.has(m.id)) {
+      const w = waiting.get(m.id); waiting.delete(m.id);
+      m.error ? w.reject(new Error(m.error.message || 'Host error')) : w.resolve(m.result);
+      return;
+    }
+    if (m.method) {
+      emit(m.method, m.params);
+      if (m.id != null) post({ jsonrpc: '2.0', id: m.id, result: {} }); // ack host requests (e.g. teardown)
+    }
+  });
+
+  const openai = () => window.openai && typeof window.openai.callTool === 'function' ? window.openai : null;
+
+  async function init() {
+    if (openai()) {
+      return { theme: window.openai.theme, displayMode: window.openai.displayMode };
+    }
+    try {
+      const res = await request('ui/initialize', {
+        protocolVersion: '2026-01-26',
+        appInfo: { name: 'canban', version: '__CANBAN_VERSION__' },
+        appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] },
+      }, 8000);
+      notify('ui/notifications/initialized', {});
+      return res?.hostContext || {};
+    } catch (e) {
+      console.warn('ui/initialize failed', e);
+      return {};
+    }
+  }
+
+  async function callTool(name, args = {}) {
+    let res;
+    if (openai()) res = await window.openai.callTool(name, args);
+    else res = await request('tools/call', { name, arguments: args });
+    if (res?.isError) {
+      const text = (res.content || []).map((c) => c.text).filter(Boolean).join('\n');
+      throw new Error(text || `${name} failed`);
+    }
+    return res?.structuredContent ?? res;
+  }
+
+  function openLink(url) {
+    if (openai() && window.openai.openExternal) return window.openai.openExternal({ href: url });
+    return request('ui/open-link', { url }, 5000);
+  }
+  function requestFullscreen() {
+    if (openai() && window.openai.requestDisplayMode) return window.openai.requestDisplayMode({ mode: 'fullscreen' }).catch(() => {});
+    return request('ui/request-display-mode', { mode: 'fullscreen' }, 3000).catch(() => {});
+  }
+  function reportSize() {
+    notify('ui/notifications/size-changed', { width: document.documentElement.scrollWidth, height: Math.max(560, window.innerHeight) });
+  }
+  return { init, callTool, on, openLink, requestFullscreen, reportSize };
+})();
+
+// ======================================================================
+// State
+// ======================================================================
+const PAGE = 40;
+const COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
+const COLOR_NAMES = { gray: 'グレー', blue: '青', green: '緑', yellow: '黄', orange: 'オレンジ', red: '赤', purple: '紫', pink: 'ピンク', sky: '水色', lime: 'ライム' };
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(`sk:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(`sk:${k}`, JSON.stringify(v)); } catch {} },
+};
+const state = {
+  board: null,
+  filters: Object.assign({ agent: 'all', host: '', project: '', q: '', days: 30, includeArchived: false, includeSubagents: false, includeHidden: false }, store.get('filters', {})),
+  shown: {},              // listId -> number of cards rendered
+  labelsExpanded: store.get('labelsExpanded', false),
+  drag: null,
+  busy: false,
+};
+
+const $ = (s, el = document) => el.querySelector(s);
+function h(tag, attrs = {}, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k === 'text') el.textContent = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  return el;
+}
+const colorVar = (c) => (c ? `var(--c-${c})` : 'transparent');
+
+function relTime(ms) {
+  if (!ms) return '';
+  const d = (Date.now() - ms) / 1000;
+  if (d < 60) return 'たった今';
+  if (d < 3600) return `${Math.floor(d / 60)}分前`;
+  if (d < 86400) return `${Math.floor(d / 3600)}時間前`;
+  if (d < 86400 * 30) return `${Math.floor(d / 86400)}日前`;
+  return new Date(ms).toLocaleDateString('ja-JP');
+}
+const fmtDate = (ms) => (ms ? new Date(ms).toLocaleString('ja-JP') : '-');
+
+let toastTimer;
+function toast(msg, isError = false) {
+  document.querySelectorAll('.toast').forEach((t) => t.remove());
+  const t = h('div', { class: `toast${isError ? ' error' : ''}`, role: 'status', text: msg });
+  document.body.append(t);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.remove(), isError ? 5000 : 2200);
+}
+
+async function act(name, args, { reload = true, okMsg } = {}) {
+  try {
+    const res = await bridge.callTool(name, args);
+    if (okMsg) toast(okMsg);
+    if (reload) await load();
+    return res;
+  } catch (e) {
+    toast(e.message, true);
+    await load();
+    throw e;
+  }
+}
+
+// ======================================================================
+// Loading
+// ======================================================================
+let loadSeq = 0;
+async function load({ refresh = false } = {}) {
+  const seq = ++loadSeq;
+  const f = state.filters;
+  const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, includeHidden: f.includeHidden, refresh };
+  if (f.project) args.project = f.project;
+  if (f.host) args.host = f.host;
+  try {
+    const board = await bridge.callTool('canban_get_board', args);
+    if (seq !== loadSeq) return;
+    state.board = board;
+    render();
+  } catch (e) {
+    if (seq !== loadSeq) return;
+    $('#board').replaceChildren(h('div', { class: 'loading', text: `読み込みに失敗しました: ${e.message}` }));
+  }
+}
+
+function saveFilters() { store.set('filters', state.filters); }
+
+// ======================================================================
+// Rendering
+// ======================================================================
+function render() {
+  const b = state.board;
+  if (!b) return;
+  if (state.drag) return; // don't disturb an active drag
+
+  // header
+  document.querySelectorAll('.seg button').forEach((btn) => btn.setAttribute('aria-pressed', String(btn.dataset.agent === state.filters.agent)));
+  const sel = $('#project');
+  const cur = state.filters.project;
+  sel.replaceChildren(h('option', { value: '', text: 'すべてのプロジェクト' }),
+    ...b.projects.map((p) => h('option', { value: p.name, text: `${p.name} (${p.count})` })));
+  if (cur && !b.projects.some((p) => p.name === cur)) sel.append(h('option', { value: cur, text: cur }));
+  sel.value = cur || '';
+  $('#days').value = String(state.filters.days);
+  const activeHost = b.hosts.find((x) => (x.local ? 'local' : x.id) === state.filters.host);
+  const remoteOn = b.hosts.filter((x) => !x.local && x.enabled).length;
+  $('#hostsBtn').textContent = `${activeHost ? activeHost.label : 'マシン'}${remoteOn ? `（+${remoteOn}）` : ''} ▾`;
+  $('#hostsBtn').setAttribute('aria-pressed', String(!!activeHost));
+  $('#stat').textContent = `表示 ${b.totals.shown} / Codex ${b.totals.codex}・Claude ${b.totals.claude}`;
+  const eb = $('#errbar');
+  eb.hidden = !b.errors.length;
+  eb.textContent = b.errors.join(' / ');
+
+  const boardEl = $('#board');
+  const scroll = boardEl.scrollLeft;
+  const listScroll = {};
+  boardEl.querySelectorAll('.list').forEach((l) => (listScroll[l.dataset.listId] = $('.cards', l)?.scrollTop || 0));
+
+  const frag = document.createDocumentFragment();
+  for (const list of b.lists) frag.append(renderList(list));
+  frag.append(renderAddList());
+  boardEl.replaceChildren(frag);
+  boardEl.scrollLeft = scroll;
+  boardEl.querySelectorAll('.list').forEach((l) => { const c = $('.cards', l); if (c) c.scrollTop = listScroll[l.dataset.listId] || 0; });
+  bridge.reportSize();
+}
+
+function renderList(list) {
+  const over = list.wipLimit && list.count > list.wipLimit;
+  const el = h('section', { class: `list${over ? ' over-wip' : ''}`, 'data-list-id': list.id, 'aria-label': list.title });
+  const head = h('div', { class: 'list-head' },
+    h('span', { class: 'stripe', style: { background: colorVar(list.color) } }),
+    h('div', { class: 'list-title', tabindex: 0, title: 'クリックして名前を変更', text: list.title,
+      onclick: (e) => editListTitle(e.currentTarget, list),
+      onkeydown: (e) => { if (e.key === 'Enter') editListTitle(e.currentTarget, list); } }),
+    h('span', { class: `count${over ? ' over' : ''}`, text: list.wipLimit ? `${list.count} / ${list.wipLimit}` : String(list.count) }),
+    h('button', { class: 'icon-btn', 'aria-label': `${list.title} のメニュー`, text: '⋯', onclick: (e) => listMenu(e.currentTarget, list) }),
+  );
+  head.addEventListener('pointerdown', (e) => startListDrag(e, list, el));
+  el.append(head);
+  if (list.isDefault) el.append(h('div', { class: 'default-tag', text: '新しいセッションはここに入ります' }));
+
+  const cardsEl = h('div', { class: 'cards', 'data-list-id': list.id });
+  const n = state.shown[list.id] || PAGE;
+  for (const card of list.cards.slice(0, n)) cardsEl.append(renderCard(card, list));
+  el.append(cardsEl);
+  if (list.cards.length > n) {
+    el.append(h('button', { class: 'more-btn', text: `さらに表示（残り ${list.cards.length - n} 件）`,
+      onclick: () => { state.shown[list.id] = n + PAGE * 2; render(); } }));
+  }
+  return el;
+}
+
+function renderCard(card, list) {
+  const labelsById = new Map(state.board.labels.map((l) => [l.id, l]));
+  const el = h('article', {
+    class: `card${card.archived ? ' is-archived' : ''}`, tabindex: 0, 'data-card-id': card.id,
+    'aria-label': card.title,
+  });
+  const labels = card.labels.map((id) => labelsById.get(id)).filter(Boolean);
+  if (labels.length) {
+    el.append(h('div', { class: `labels${state.labelsExpanded ? ' expanded' : ''}`, title: 'クリックでラベル名を表示',
+      onclick: (e) => { e.stopPropagation(); state.labelsExpanded = !state.labelsExpanded; store.set('labelsExpanded', state.labelsExpanded); render(); } },
+      labels.map((l) => h('span', { class: 'chip', style: { background: colorVar(l.color) }, text: state.labelsExpanded ? l.name : '' }))));
+  }
+  el.append(h('div', { class: 'title', text: card.title }));
+  const meta = h('div', { class: 'meta' },
+    h('span', { class: `badge ${card.agent}`, text: card.agent === 'codex' ? 'Codex' : 'Claude' }),
+    card.host ? h('span', { class: 'host-chip', title: `SSH: ${card.host.alias}`, text: `⌂ ${card.host.label}` }) : null,
+    card.project ? h('span', { class: 'ellipsis', title: card.cwd || '', text: `📁 ${card.project}` }) : null,
+    card.branch ? h('span', { class: 'ellipsis', title: card.branch, text: `⎇ ${card.branch}` }) : null,
+    h('span', { title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }),
+  );
+  if (card.priority) meta.append(h('span', { class: `pill prio-${card.priority}`, text: { high: '優先度 高', medium: '優先度 中', low: '優先度 低' }[card.priority] }));
+  if (card.due) {
+    const overdue = Date.parse(card.due) < Date.now() - 86400000;
+    meta.append(h('span', { class: `pill${overdue ? ' due-over' : ''}`, text: `🕑 ${new Date(card.due).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}` }));
+  }
+  if (card.note) meta.append(h('span', { title: 'メモあり', text: '≡' }));
+  if (card.prUrl) meta.append(h('span', { title: card.prUrl, text: 'PR' }));
+  if (card.archived) meta.append(h('span', { text: 'アーカイブ済' }));
+  if (card.subagent) meta.append(h('span', { text: 'サブエージェント' }));
+  if (card.hidden) meta.append(h('span', { text: '非表示' }));
+  el.append(meta);
+
+  el.addEventListener('pointerdown', (e) => startCardDrag(e, card, el));
+  el.addEventListener('click', () => { if (!state.justDragged) openCard(card.id); });
+  el.append(h('button', { class: 'card-resume', title: `再開（${shortcutHelp()}）`, 'aria-label': `${card.title} を再開`, text: '▶',
+    onpointerdown: (e) => e.stopPropagation(),
+    onclick: (e) => { e.stopPropagation(); resume(card.id, optsFromEvent(e)); } }));
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') openCard(card.id);
+    const k = !e.metaKey && !e.ctrlKey && !e.altKey && CARD_KEYS[e.key.toLowerCase()];
+    if (k) { e.preventDefault(); resume(card.id, k); }
+    if ((e.altKey || e.shiftKey) && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      e.preventDefault();
+      const lists = state.board.lists;
+      const i = lists.findIndex((l) => l.id === list.id) + (e.key === 'ArrowLeft' ? -1 : 1);
+      if (i >= 0 && i < lists.length) moveCard(card, list.id, lists[i].id, 0, true);
+    }
+  });
+  return el;
+}
+
+function renderAddList() {
+  const wrap = h('div', { class: 'add-list' });
+  const btn = h('button', { class: 'add-list-btn', text: '＋ もう1つリストを追加' });
+  btn.onclick = () => {
+    const input = h('input', { class: 'text-input', placeholder: 'リスト名を入力…', maxlength: 80 });
+    const submit = async () => {
+      const title = input.value.trim();
+      if (!title) return input.focus();
+      input.disabled = true;
+      await act('canban_create_list', { title }).catch(() => {});
+      requestAnimationFrame(() => { const b = $('.add-list-btn'); b?.click(); $('#board').scrollLeft = 1e6; });
+    };
+    input.onkeydown = (e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') render(); };
+    wrap.replaceChildren(h('div', { class: 'composer' }, input,
+      h('div', { class: 'row' }, h('button', { class: 'btn-primary', text: 'リストを追加', onclick: submit }),
+        h('button', { class: 'icon-btn', 'aria-label': '閉じる', text: '✕', onclick: () => render() }))));
+    input.focus();
+  };
+  wrap.append(btn);
+  return wrap;
+}
+
+function editListTitle(titleEl, list) {
+  if (state.drag) return;
+  const input = h('input', { class: 'list-title-input', value: list.title, maxlength: 80, 'aria-label': 'リスト名' });
+  let done = false;
+  const commit = async (save) => {
+    if (done) return; done = true;
+    const v = input.value.trim();
+    if (save && v && v !== list.title) await act('canban_update_list', { listId: list.id, title: v }).catch(() => {});
+    else render();
+  };
+  input.onkeydown = (e) => { if (e.key === 'Enter') commit(true); if (e.key === 'Escape') commit(false); };
+  input.onblur = () => commit(true);
+  input.onpointerdown = (e) => e.stopPropagation();
+  titleEl.replaceWith(input);
+  input.select();
+}
+
+// ======================================================================
+// Popovers
+// ======================================================================
+function closePopover() { document.querySelectorAll('.popover').forEach((p) => p.remove()); }
+function popover(anchor, title, body, { width } = {}) {
+  closePopover();
+  const r = anchor.getBoundingClientRect();
+  const p = h('div', { class: 'popover', role: 'dialog', 'aria-label': title, style: width ? { width: `${width}px` } : null },
+    h('h3', { text: title }),
+    h('button', { class: 'icon-btn close', 'aria-label': '閉じる', text: '✕', onclick: closePopover }),
+    body);
+  document.body.append(p);
+  const left = Math.min(r.left, window.innerWidth - p.offsetWidth - 8);
+  const top = Math.min(r.bottom + 6, window.innerHeight - p.offsetHeight - 8);
+  p.style.left = `${Math.max(8, left)}px`;
+  p.style.top = `${Math.max(8, top)}px`;
+  setTimeout(() => {
+    const off = (e) => { if (!p.contains(e.target)) { closePopover(); document.removeEventListener('pointerdown', off, true); } };
+    document.addEventListener('pointerdown', off, true);
+  });
+  p.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePopover(); });
+  return p;
+}
+
+function listMenu(anchor, list) {
+  const b = state.board;
+  const wip = h('input', { class: 'text-input', type: 'number', min: 0, placeholder: 'なし', value: list.wipLimit ?? '' });
+  const body = h('div', {},
+    h('button', { class: 'menu-item', text: '名前を変更', onclick: () => { closePopover(); editListTitle($(`.list[data-list-id="${list.id}"] .list-title`), list); } }),
+    list.isDefault ? null : h('button', { class: 'menu-item', text: '新しいセッションの受け皿にする', onclick: () => { closePopover(); act('canban_set_default_list', { listId: list.id }, { okMsg: `「${list.title}」を既定リストにしました` }); } }),
+    h('div', { class: 'sep' }),
+    h('div', { class: 'field-label', text: 'リストの色' }),
+    h('div', { class: 'swatches' },
+      [null, ...COLORS].map((c) => h('button', { class: 'swatch', title: c ? COLOR_NAMES[c] : '色なし', 'aria-label': c ? COLOR_NAMES[c] : '色なし', 'aria-pressed': String((list.color || null) === c),
+        style: { background: c ? colorVar(c) : 'var(--btn-subtle-hover)' }, text: c ? '' : '✕',
+        onclick: () => { closePopover(); act('canban_update_list', { listId: list.id, color: c }); } }))),
+    h('div', { class: 'field-label', text: 'WIP 制限（カード数の上限）' }),
+    h('div', { class: 'row' }, wip, h('button', { class: 'btn', text: '保存', onclick: () => { closePopover(); act('canban_update_list', { listId: list.id, wipLimit: wip.value === '' ? null : Number(wip.value) }); } })),
+    h('div', { class: 'sep' }),
+    b.lists.length > 1 ? h('button', { class: 'menu-item danger', text: 'このリストを削除…', onclick: () => confirmDeleteList(anchor, list) }) : null,
+  );
+  popover(anchor, 'リストの操作', body);
+}
+
+function confirmDeleteList(anchor, list) {
+  const others = state.board.lists.filter((l) => l.id !== list.id);
+  const target = others.find((l) => l.isDefault) || others[0];
+  const sel = h('select', { class: 'text-input' }, others.map((l) => h('option', { value: l.id, text: l.title })));
+  sel.value = target.id;
+  popover(anchor, 'リストを削除', h('div', {},
+    h('p', { text: `「${list.title}」を削除します。含まれるカード（${list.count} 件）は次のリストへ移動します。セッション本体は削除されません。` }),
+    sel,
+    h('div', { class: 'row', style: { marginTop: '8px' } },
+      h('button', { class: 'btn-danger', text: '削除', onclick: () => { closePopover(); act('canban_delete_list', { listId: list.id, moveCardsTo: sel.value }, { okMsg: 'リストを削除しました' }); } }))));
+}
+
+function optionsMenu(anchor) {
+  const f = state.filters;
+  const opt = (key, label) => h('label', { class: 'menu-item row' },
+    h('input', { type: 'checkbox', checked: f[key], onchange: (e) => { f[key] = e.target.checked; saveFilters(); load(); } }), label);
+  popover(anchor, '表示オプション', h('div', {},
+    opt('includeArchived', 'アーカイブ済みセッションを表示'),
+    opt('includeSubagents', 'サブエージェント／レビュー用スレッドを表示'),
+    opt('includeHidden', 'ボードから隠したカードを表示'),
+    h('p', { class: 'muted', text: '期間フィルタは「未配置」のセッションにのみ適用されます。リストへ移動したカードは期間に関係なく表示されます。' })));
+}
+
+function labelsManager(anchor) {
+  const render_ = () => {
+    const rows = state.board.labels.map((l) => {
+      const name = h('input', { class: 'text-input', value: l.name, 'aria-label': 'ラベル名' });
+      name.onchange = () => act('canban_update_label', { labelId: l.id, name: name.value }).then(render_);
+      const color = h('select', { class: 'text-input', style: { width: '96px' }, 'aria-label': '色' }, COLORS.map((c) => h('option', { value: c, text: COLOR_NAMES[c] })));
+      color.value = l.color;
+      color.onchange = () => act('canban_update_label', { labelId: l.id, color: color.value }).then(render_);
+      return h('div', { class: 'row', style: { marginBottom: '6px' } },
+        h('span', { class: 'swatch', style: { width: '20px', height: '20px', background: colorVar(l.color), flex: 'none' } }), name, color,
+        h('button', { class: 'icon-btn', 'aria-label': `${l.name} を削除`, text: '🗑', onclick: () => act('canban_delete_label', { labelId: l.id }).then(render_) }));
+    });
+    const newName = h('input', { class: 'text-input', placeholder: '新しいラベル' });
+    const newColor = h('select', { class: 'text-input', style: { width: '96px' } }, COLORS.map((c) => h('option', { value: c, text: COLOR_NAMES[c] })));
+    newColor.value = 'blue';
+    const add = () => newName.value.trim() && act('canban_create_label', { name: newName.value, color: newColor.value }).then(render_);
+    newName.onkeydown = (e) => { if (e.key === 'Enter') add(); };
+    popover(anchor, 'ラベル', h('div', {}, rows, h('div', { class: 'sep' }), h('div', { class: 'row' }, newName, newColor), h('div', { class: 'row', style: { marginTop: '8px' } }, h('button', { class: 'btn-primary', text: '追加', onclick: add }))), { width: 360 });
+  };
+  render_();
+}
+
+// ======================================================================
+// Card detail modal (Trello "back of card")
+// ======================================================================
+function closeModal() { document.querySelectorAll('.overlay').forEach((o) => o.remove()); state.modalOpen = false; }
+
+async function openCard(cardId) {
+  closePopover();
+  closeModal();
+  state.modalOpen = true;
+  const overlay = h('div', { class: 'overlay', onclick: (e) => { if (e.target === overlay) closeModal(); } });
+  const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'セッション詳細' }, h('div', { class: 'muted', text: '読み込み中…' }));
+  overlay.append(modal);
+  overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+  document.body.append(overlay);
+  let d;
+  try {
+    d = await bridge.callTool('canban_get_session', { cardId, messages: 14 });
+  } catch (e) {
+    modal.replaceChildren(h('p', { text: `読み込みに失敗しました: ${e.message}` }));
+    return;
+  }
+  renderModal(modal, d);
+}
+
+function renderModal(modal, d) {
+  const s = d.session;
+  const b = state.board;
+  const labelsById = new Map(b.labels.map((l) => [l.id, l]));
+  const card = { ...d.card };
+
+  const listSel = h('select', { class: 'text-input', style: { width: 'auto' }, 'aria-label': 'リスト' }, b.lists.map((l) => h('option', { value: l.id, text: l.title })));
+  listSel.value = card.listId;
+  listSel.onchange = async () => {
+    await act('canban_move_card', { cardId: s.id, toList: listSel.value, position: 'top' }, { okMsg: 'カードを移動しました' });
+  };
+
+  const labelWrap = h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '4px' } });
+  const paintLabels = () => labelWrap.replaceChildren(...(card.labels.length ? card.labels.map((id) => labelsById.get(id)).filter(Boolean).map((l) =>
+    h('span', { class: 'chip', style: { background: colorVar(l.color), height: '24px', lineHeight: '24px', padding: '0 10px', color: '#172b4d', fontWeight: 600 }, text: l.name })) : [h('span', { class: 'muted', text: 'なし' })]));
+  paintLabels();
+
+  const note = h('textarea', { class: 'note', placeholder: 'メモを追加（このカンバンにだけ保存されます）', 'aria-label': 'メモ' });
+  note.value = card.note;
+  const saveNote = async () => { if (note.value !== card.note) { card.note = note.value; await act('canban_update_card', { cardId: s.id, note: note.value }, { okMsg: 'メモを保存しました' }); } };
+  note.addEventListener('blur', saveNote);
+  note.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) saveNote(); });
+
+  const prio = h('select', { class: 'text-input', 'aria-label': '優先度' },
+    h('option', { value: '', text: '未設定' }), h('option', { value: 'high', text: '高' }), h('option', { value: 'medium', text: '中' }), h('option', { value: 'low', text: '低' }));
+  prio.value = card.priority || '';
+  prio.onchange = () => act('canban_update_card', { cardId: s.id, priority: prio.value || null });
+  const due = h('input', { class: 'text-input', type: 'date', 'aria-label': '期限' });
+  due.value = card.due ? card.due.slice(0, 10) : '';
+  due.onchange = () => act('canban_update_card', { cardId: s.id, due: due.value || null });
+
+  const L = d.launch;
+  const term = currentTerminal(d.terminals, d.settings);
+  const targetBtn = (target, label) => {
+    const ok = !!term && term.targets.includes(target);
+    return h('button', { class: 'seg-btn', disabled: !ok, title: ok ? `${term.label} で${label}` : `${term ? term.label : 'ターミナル'}では未対応`, text: label,
+      onclick: () => resume(s.id, { route: 'terminal', target }) });
+  };
+  const resumeBox = h('div', { class: 'resume-box' },
+    h('button', { class: 'btn-primary resume-main', title: shortcutHelp(), onclick: (e) => resume(s.id, optsFromEvent(e)) },
+      h('span', { text: '▶ 再開' }), h('small', { text: `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替` })),
+    h('div', { class: 'field-label', text: 'デスクトップアプリ' }),
+    L.desktop
+      ? h('button', { class: 'side-btn', text: `↗ ${L.desktop.label}`, title: L.desktop.url, onclick: () => resume(s.id, { route: 'desktop' }) })
+      : h('div', { class: 'muted', text: s.host ? 'リモートのセッションはターミナルで再開します' : 'このセッションはデスクトップアプリでは開けません' }),
+    L.desktop && L.desktop.note ? h('div', { class: 'muted', text: L.desktop.note }) : null,
+    h('div', { class: 'field-label', text: `ターミナル${term ? `（${term.label}）` : ''}` }),
+    term ? h('div', { class: 'seg-row' }, targetBtn('new-window', '新規ウィンドウ'), targetBtn('new-tab', '新規タブ'), targetBtn('split', '分割'), targetBtn('current', '既存ウィンドウ'))
+      : h('div', { class: 'muted', text: '対応ターミナルが見つかりません' }),
+    h('button', { class: 'side-btn', text: '⧉ 再開コマンドをコピー', title: L.terminal.command, onclick: () => copyText(L.terminal.command, '再開コマンド') }),
+  );
+
+  const side = h('div', {},
+    h('div', { class: 'field-label', text: '再開' }), resumeBox,
+    h('div', { class: 'field-label', text: 'カードに追加' }),
+    h('button', { class: 'side-btn', text: '🏷 ラベル', onclick: (e) => labelPicker(e.currentTarget, s.id, card, paintLabels) }),
+    h('div', { class: 'field-label', text: '優先度' }), prio,
+    h('div', { class: 'field-label', text: '期限' }), due,
+    h('div', { class: 'field-label', text: 'その他' }),
+    s.prUrl ? h('button', { class: 'side-btn', text: '↗ PR を開く', onclick: () => bridge.openLink(s.prUrl).catch(() => copyText(s.prUrl, 'PR URL')) }) : null,
+    h('button', { class: 'side-btn', text: '⧉ セッション ID をコピー', onclick: () => copyText(s.nativeId, 'セッション ID') }),
+    s.sourcePath ? h('button', { class: 'side-btn', text: '⧉ ログのパスをコピー', onclick: () => copyText(s.sourcePath, 'パス') }) : null,
+    h('button', { class: 'side-btn', text: card.hidden ? '👁 ボードに再表示' : '🙈 ボードから隠す',
+      onclick: async () => { await act('canban_update_card', { cardId: s.id, hidden: !card.hidden }, { okMsg: card.hidden ? '再表示しました' : '隠しました' }); closeModal(); } }),
+  );
+
+  const msgs = d.recentMessages.length
+    ? d.recentMessages.map((m) => h('div', { class: `msg ${m.role}` }, h('div', { class: 'who', text: `${m.role === 'user' ? 'ユーザー' : 'エージェント'}${m.at ? ` · ${fmtDate(Date.parse(m.at))}` : ''}` }), m.text))
+    : [h('p', { class: 'muted', text: d.messagesError ? `メッセージを取得できませんでした: ${d.messagesError}` : 'メッセージはありません' })];
+
+  const main = h('div', {},
+    h('div', { class: 'section-title', text: 'ラベル' }), labelWrap,
+    h('div', { class: 'section-title', text: 'メモ' }), note,
+    h('div', { class: 'readonly-note', text: '⌘/Ctrl + Enter または フォーカスを外すと保存' }),
+    h('div', { class: 'section-title', text: '詳細' }),
+    h('dl', { class: 'kv' },
+      ...kv('エージェント', s.agent === 'codex' ? 'Codex' : 'Claude Code'),
+      ...kv('マシン', s.host ? `${s.host.label}（SSH: ${s.host.alias}）` : 'このマシン'),
+      ...kv('プロジェクト', s.project || '-'),
+      ...kv('作業ディレクトリ', s.cwd || '-'),
+      ...kv('ブランチ', s.branch || '-'),
+      ...kv('モデル', s.model || '-'),
+      ...kv('作成', fmtDate(s.createdAt)),
+      ...kv('最終更新', fmtDate(s.updatedAt)),
+      ...kv('状態', [s.archived ? 'アーカイブ済' : '進行中/未アーカイブ', s.subagent ? 'サブエージェント' : null, s.automation ? '自動実行' : null].filter(Boolean).join(' · ')),
+    ),
+    h('div', { class: 'section-title', text: '最初の依頼' }),
+    h('div', { class: 'msg user' }, s.preview || '-'),
+    h('div', { class: 'section-title', text: '直近のやりとり（読み取り専用）' }),
+    ...msgs,
+  );
+
+  modal.replaceChildren(
+    h('button', { class: 'icon-btn close', 'aria-label': '閉じる', text: '✕', onclick: closeModal }),
+    h('h2', { text: s.title }),
+    h('div', { class: 'sub row' }, h('span', { class: `badge ${s.agent}`, text: s.agent === 'codex' ? 'Codex' : 'Claude' }),
+      s.host ? h('span', { class: 'host-chip', text: `⌂ ${s.host.label}` }) : null, 'リスト:', listSel),
+    h('div', { class: 'modal-grid' }, main, side),
+  );
+  modal.querySelector('.close').focus();
+}
+function kv(k, v) { return [h('dt', { text: k }), h('dd', { text: v })]; }
+
+// ======================================================================
+// Resume (desktop app / terminal) and its shortcuts
+// ======================================================================
+const TARGET_LABELS = { 'new-window': '新規ウィンドウ', 'new-tab': '新規タブ', split: '分割', current: '既存ウィンドウ' };
+const TERMINAL_NAMES = { ghostty: 'Ghostty', terminal: 'Terminal.app', iterm: 'iTerm2' };
+function launchPrefs() { return state.board?.settings?.launch || { route: 'desktop', terminal: 'terminal', target: 'new-window' }; }
+function currentTerminal(terminals = state.board?.terminals || [], settings = state.board?.settings) {
+  const want = settings?.launch?.terminal;
+  return terminals.find((t) => t.id === want) || terminals[0] || null;
+}
+function routeLabel(route, launch) {
+  if (route === 'desktop' && launch && !launch.desktop) return 'ターミナル';
+  return route === 'desktop' ? 'デスクトップアプリ' : `ターミナル・${TARGET_LABELS[launchPrefs().target]}`;
+}
+// Click modifiers: ⌥ = the other route, ⇧ = terminal new window, ⌘ = terminal new tab, ⌃ = terminal existing window.
+function optsFromEvent(e) {
+  if (e.shiftKey) return { route: 'terminal', target: 'new-window' };
+  if (e.metaKey) return { route: 'terminal', target: 'new-tab' };
+  if (e.ctrlKey) return { route: 'terminal', target: 'current' };
+  if (e.altKey) return { route: launchPrefs().route === 'desktop' ? 'terminal' : 'desktop' };
+  return {};
+}
+// Keys on a focused card.
+const CARD_KEYS = {
+  o: {},
+  d: { route: 'desktop' },
+  t: { route: 'terminal' },
+  w: { route: 'terminal', target: 'new-window' },
+  n: { route: 'terminal', target: 'new-tab' },
+  s: { route: 'terminal', target: 'split' },
+  e: { route: 'terminal', target: 'current' },
+};
+function shortcutHelp() {
+  return 'クリック: 既定 / ⌥: もう一方の経路 / ⇧: 新規ウィンドウ / ⌘: 新規タブ / ⌃: 既存ウィンドウ';
+}
+async function resume(cardId, opts = {}) {
+  try {
+    const r = await bridge.callTool('canban_open_session', { cardId, ...opts });
+    if (r.route === 'desktop') toast(r.exact ? 'デスクトップアプリで開きました' : 'フォルダを開きました（続きはターミナルで再開できます）');
+    else toast(`${TERMINAL_NAMES[r.terminal] || 'ターミナル'}で再開しました（${TARGET_LABELS[r.target] || r.target}${r.fellBack ? '・未対応のため新規ウィンドウ' : ''}）`);
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+// Clipboard with a visible fallback (sandboxed iframes may block both clipboard and prompt()).
+async function copyText(text, label) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(`${label}をコピーしました`);
+    return;
+  } catch {}
+  const input = h('input', { class: 'text-input', readonly: true, value: text, 'aria-label': label });
+  const p = popover(document.activeElement || document.body, `${label}（⌘C でコピー）`, h('div', {}, input));
+  p.style.left = '50%'; p.style.top = '30%'; p.style.transform = 'translateX(-50%)';
+  input.focus(); input.select();
+}
+
+// ======================================================================
+// Settings & machines popovers
+// ======================================================================
+function settingsMenu(anchor) {
+  const b = state.board;
+  const L = launchPrefs();
+  const terms = b.terminals || [];
+  const radio = (name, value, label, checked, onchange, disabled = false) =>
+    h('label', { class: 'menu-item row' }, h('input', { type: 'radio', name, value, checked, disabled, onchange }), label);
+  const save = (patch) => act('canban_update_settings', patch, { okMsg: '既定を変更しました' }).then(() => settingsMenu(anchor));
+  const term = currentTerminal();
+  const body = h('div', {},
+    h('div', { class: 'field-label', text: '再開の既定' }),
+    radio('route', 'desktop', 'デスクトップアプリ（Codex / Claude）', L.route === 'desktop', () => save({ route: 'desktop' })),
+    radio('route', 'terminal', 'ターミナル', L.route === 'terminal', () => save({ route: 'terminal' })),
+    h('div', { class: 'field-label', text: 'ターミナル' }),
+    terms.length ? terms.map((t) => radio('term', t.id, t.label, (term && term.id) === t.id, () => save({ terminal: t.id }))) : h('div', { class: 'muted', text: '対応ターミナルが見つかりません（Ghostty / ターミナル / iTerm2）' }),
+    h('div', { class: 'field-label', text: '開き方' }),
+    Object.entries(TARGET_LABELS).map(([id, label]) => radio('target', id, label, L.target === id, () => save({ target: id }), !!term && !term.targets.includes(id))),
+    h('div', { class: 'sep' }),
+    h('div', { class: 'field-label', text: 'ショートカット' }),
+    h('div', { class: 'muted', style: { whiteSpace: 'pre-line' }, text:
+      '再開ボタン: クリック=既定 / ⌥=もう一方の経路 / ⇧=新規ウィンドウ / ⌘=新規タブ / ⌃=既存ウィンドウ\nカード選択中: o=既定 d=デスクトップ t=ターミナル w=新規ウィンドウ n=新規タブ s=分割 e=既存ウィンドウ\nリモートのセッションは ssh 経由でターミナルに開きます。\n※ ターミナルの「新規タブ」はアクセシビリティ許可が必要な場合があります。' }),
+  );
+  popover(anchor, '再開の設定', body, { width: 340 });
+}
+
+function hostsMenu(anchor) {
+  const b = state.board;
+  const statusText = (st) => ({ ok: '取得済み', connecting: '接続中…', error: 'エラー', idle: '未取得' })[st?.state] || '';
+  const rows = b.hosts.map((host) => {
+    const sel = (state.filters.host || '') === (host.local ? 'local' : host.id);
+    const toggle = host.local ? h('span', { class: 'muted', text: '常に有効' }) : h('label', { class: 'row' },
+      h('input', { type: 'checkbox', checked: host.enabled, 'aria-label': `${host.label} を読む`,
+        onchange: (e) => { toast(e.target.checked ? `${host.label} に接続しています…` : `${host.label} を無効にしました`); act('canban_set_remote_host', { hostId: host.id, enabled: e.target.checked }).then(() => hostsMenu(anchor)); } }), '読む');
+    return h('div', { class: 'host-row' },
+      h('button', { class: `menu-item${sel ? ' active' : ''}`, title: 'このマシンだけを表示', onclick: () => { state.filters.host = sel ? '' : (host.local ? 'local' : host.id); saveFilters(); closePopover(); load(); } },
+        h('div', { text: `${host.local ? '💻' : '⌂'} ${host.label}` }),
+        h('div', { class: 'muted', text: host.local ? `${host.count} 件` : host.enabled
+          ? `${statusText(host.status)}${host.status.fetchedAt ? `・${relTime(host.status.fetchedAt)}` : ''}・${host.count} 件${host.status.error ? `・${host.status.error}` : ''}`
+          : `SSH: ${host.alias}` })),
+      toggle);
+  });
+  const body = h('div', {},
+    rows.length > 1 ? rows : [rows, h('p', { class: 'muted', text: 'Codex アプリにリモート接続が登録されていません。' })],
+    h('div', { class: 'sep' }),
+    h('p', { class: 'muted', text: 'リモート接続は Codex アプリに登録済みのものです。有効にすると ssh（鍵認証）で python3 を使い、セッションを読み取り専用で取得します。名前をクリックするとそのマシンだけを表示します。' }));
+  popover(anchor, 'マシン', body, { width: 360 });
+}
+
+function labelPicker(anchor, cardId, card, repaint) {
+  const labels = state.board.labels;
+  const body = h('div', {}, labels.map((l) => {
+    const cb = h('input', { type: 'checkbox', checked: card.labels.includes(l.id), 'aria-label': l.name });
+    cb.onchange = async () => {
+      card.labels = cb.checked ? [...card.labels, l.id] : card.labels.filter((x) => x !== l.id);
+      repaint();
+      await act('canban_update_card', { cardId, labels: card.labels });
+    };
+    return h('label', { class: 'label-toggle' }, cb, h('span', { class: 'sw', style: { background: colorVar(l.color) }, text: l.name }));
+  }), h('div', { class: 'sep' }), h('button', { class: 'menu-item', text: 'ラベルを管理…', onclick: () => labelsManager(anchor) }));
+  popover(anchor, 'ラベル', body);
+}
+
+// ======================================================================
+// Drag & drop (pointer events; works inside sandboxed iframes)
+// ======================================================================
+function startCardDrag(e, card, el) {
+  if (e.button !== 0 || e.target.closest('.labels')) return;
+  const sx = e.clientX, sy = e.clientY;
+  const rect = el.getBoundingClientRect();
+  let started = false;
+  const move = (ev) => {
+    if (!started) {
+      if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 5) return;
+      started = true;
+      const ghost = el.cloneNode(true);
+      ghost.classList.add('ghost');
+      ghost.style.width = `${rect.width}px`;
+      document.body.append(ghost);
+      const ph = h('div', { class: 'placeholder', style: { height: `${rect.height}px` } });
+      el.after(ph);
+      el.classList.add('drag-source');
+      el.style.display = 'none';
+      state.drag = { type: 'card', card, el, ghost, ph, dx: sx - rect.left, dy: sy - rect.top, fromList: el.closest('.cards').dataset.listId };
+      try { el.setPointerCapture(e.pointerId); } catch {}
+    }
+    ev.preventDefault();
+    const d = state.drag;
+    d.ghost.style.left = `${ev.clientX - d.dx}px`;
+    d.ghost.style.top = `${ev.clientY - d.dy}px`;
+    placeCardPlaceholder(ev.clientX, ev.clientY);
+    autoScroll(ev.clientX, ev.clientY);
+  };
+  const up = () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    window.removeEventListener('pointercancel', up);
+    stopAutoScroll();
+    if (!started) return;
+    const d = state.drag;
+    const cardsEl = d.ph.parentElement;
+    const toList = cardsEl?.dataset.listId;
+    const idx = cardsEl ? [...cardsEl.children].filter((c) => c.classList.contains('card') || c === d.ph).indexOf(d.ph) : -1;
+    d.ghost.remove();
+    state.drag = null;
+    state.justDragged = true;
+    setTimeout(() => (state.justDragged = false), 0);
+    if (toList && idx >= 0) moveCard(card, d.fromList, toList, idx);
+    else render();
+  };
+  window.addEventListener('pointermove', move, { passive: false });
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
+}
+
+function placeCardPlaceholder(x, y) {
+  const d = state.drag;
+  const listEl = listAt(x, y);
+  if (!listEl) return;
+  const cardsEl = $('.cards', listEl);
+  const cards = [...cardsEl.querySelectorAll('.card:not(.drag-source)')];
+  let before = null;
+  for (const c of cards) {
+    const r = c.getBoundingClientRect();
+    if (y < r.top + r.height / 2) { before = c; break; }
+  }
+  if (before) { if (d.ph.nextSibling !== before) cardsEl.insertBefore(d.ph, before); }
+  else if (cardsEl.lastElementChild !== d.ph) cardsEl.append(d.ph);
+}
+
+function listAt(x, y) {
+  const lists = [...document.querySelectorAll('.list')];
+  for (const l of lists) {
+    const r = l.getBoundingClientRect();
+    if (x >= r.left - 6 && x <= r.right + 6) return l;
+  }
+  return null;
+}
+
+// Compute an order value between neighbours in the target list (orders ascend top→bottom).
+function orderAt(listId, index, excludeId) {
+  const list = state.board.lists.find((l) => l.id === listId);
+  const cards = list.cards.filter((c) => c.id !== excludeId);
+  const prev = cards[index - 1], next = cards[index];
+  if (prev && next) return (prev.order + next.order) / 2;
+  if (prev) return prev.order + 1000;
+  if (next) return next.order - 1000;
+  return 0;
+}
+
+function moveCard(card, fromListId, toListId, index, focusAfter = false) {
+  const b = state.board;
+  const order = orderAt(toListId, index, card.id);
+  // optimistic update
+  const from = b.lists.find((l) => l.id === fromListId);
+  const to = b.lists.find((l) => l.id === toListId);
+  from.cards = from.cards.filter((c) => c.id !== card.id);
+  from.count = from.cards.length;
+  const moved = { ...card, order, placed: true };
+  to.cards.push(moved);
+  to.cards.sort((a, c) => a.order - c.order);
+  to.count = to.cards.length;
+  render();
+  if (focusAfter) $(`.card[data-card-id="${CSS.escape(card.id)}"]`)?.focus();
+  bridge.callTool('canban_move_card', { cardId: card.id, toList: toListId, order })
+    .catch((e) => { toast(`移動に失敗しました: ${e.message}`, true); load(); });
+}
+
+function startListDrag(e, list, listEl) {
+  if (e.button !== 0 || e.target.closest('button, input, .list-title')) return;
+  const sx = e.clientX;
+  let started = false;
+  const move = (ev) => {
+    if (!started) {
+      if (Math.abs(ev.clientX - sx) < 6) return;
+      started = true;
+      listEl.classList.add('dragging-list');
+      state.drag = { type: 'list', list, listEl };
+    }
+    ev.preventDefault();
+    const boardEl = $('#board');
+    const others = [...boardEl.querySelectorAll('.list')].filter((l) => l !== listEl);
+    let before = null;
+    for (const o of others) {
+      const r = o.getBoundingClientRect();
+      if (ev.clientX < r.left + r.width / 2) { before = o; break; }
+    }
+    if (before) { if (listEl.nextSibling !== before) boardEl.insertBefore(listEl, before); }
+    else boardEl.insertBefore(listEl, $('.add-list', boardEl));
+    autoScroll(ev.clientX, ev.clientY);
+  };
+  const up = () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    stopAutoScroll();
+    if (!started) return;
+    listEl.classList.remove('dragging-list');
+    state.drag = null;
+    const ids = [...document.querySelectorAll('#board .list')].map((l) => l.dataset.listId);
+    const byId = new Map(state.board.lists.map((l) => [l.id, l]));
+    state.board.lists = ids.map((id) => byId.get(id));
+    render();
+    bridge.callTool('canban_reorder_lists', { listIds: ids }).catch((err) => { toast(err.message, true); load(); });
+  };
+  window.addEventListener('pointermove', move, { passive: false });
+  window.addEventListener('pointerup', up);
+}
+
+let scrollTimer = null, scrollVec = [0, 0, null];
+function autoScroll(x, y) {
+  const boardEl = $('#board');
+  const br = boardEl.getBoundingClientRect();
+  const edge = 60;
+  let dx = 0;
+  if (x < br.left + edge) dx = -18; else if (x > br.right - edge) dx = 18;
+  let dy = 0, cardsEl = null;
+  const listEl = state.drag?.type === 'card' ? listAt(x, y) : null;
+  if (listEl) {
+    cardsEl = $('.cards', listEl);
+    const r = cardsEl.getBoundingClientRect();
+    if (y < r.top + 40) dy = -14; else if (y > r.bottom - 40) dy = 14;
+  }
+  scrollVec = [dx, dy, cardsEl];
+  if ((dx || dy) && !scrollTimer) {
+    scrollTimer = setInterval(() => {
+      const [sx, sy, c] = scrollVec;
+      if (sx) boardEl.scrollLeft += sx;
+      if (sy && c) c.scrollTop += sy;
+    }, 16);
+  } else if (!dx && !dy) stopAutoScroll();
+}
+function stopAutoScroll() { clearInterval(scrollTimer); scrollTimer = null; }
+
+// ======================================================================
+// Header wiring
+// ======================================================================
+let qTimer;
+$('#q').value = state.filters.q || '';
+$('#q').addEventListener('input', (e) => {
+  clearTimeout(qTimer);
+  qTimer = setTimeout(() => { state.filters.q = e.target.value; saveFilters(); state.shown = {}; load(); }, 250);
+});
+document.querySelectorAll('.seg button').forEach((btn) => btn.addEventListener('click', () => {
+  state.filters.agent = btn.dataset.agent; saveFilters(); state.shown = {}; load();
+}));
+$('#project').addEventListener('change', (e) => { state.filters.project = e.target.value; saveFilters(); state.shown = {}; load(); });
+$('#days').addEventListener('change', (e) => { state.filters.days = Number(e.target.value); saveFilters(); state.shown = {}; load(); });
+$('#optBtn').addEventListener('click', (e) => optionsMenu(e.currentTarget));
+$('#labelsBtn').addEventListener('click', (e) => labelsManager(e.currentTarget));
+$('#hostsBtn').addEventListener('click', (e) => hostsMenu(e.currentTarget));
+$('#settingsBtn').addEventListener('click', (e) => settingsMenu(e.currentTarget));
+$('#refresh').addEventListener('click', () => load({ refresh: true }).then(() => toast('最新の状態に更新しました')));
+
+// board: wheel over empty space scrolls horizontally like Trello
+$('#board').addEventListener('wheel', (e) => {
+  if (e.target.closest('.cards')) return;
+  if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { $('#board').scrollLeft += e.deltaY; e.preventDefault(); }
+}, { passive: false });
+
+// ======================================================================
+// Theme & lifecycle
+// ======================================================================
+function applyTheme(t) {
+  const theme = t === 'dark' || t === 'light' ? t : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.dataset.theme = theme;
+}
+bridge.on('ui/notifications/host-context-changed', (p) => { if (p?.theme) applyTheme(p.theme); });
+window.addEventListener('openai:set_globals', (e) => { const t = e.detail?.globals?.theme; if (t) applyTheme(t); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { if (!state.hostTheme) applyTheme(); });
+
+function idle() { return !state.drag && !state.modalOpen && !document.querySelector('.popover, .list-title-input, .composer'); }
+setInterval(() => { if (document.visibilityState === 'visible' && idle()) load(); }, 60000);
+window.addEventListener('focus', () => { if (idle()) load(); });
+window.addEventListener('resize', () => bridge.reportSize());
+
+(async () => {
+  const ctx = await bridge.init();
+  state.hostTheme = ctx.theme;
+  applyTheme(ctx.theme);
+  if (ctx.displayMode === 'inline') {
+    $('#refresh').after(h('button', { class: 'hbtn', title: '全画面で開く', 'aria-label': '全画面で開く', text: '⤢', onclick: () => bridge.requestFullscreen() }));
+  }
+  await load();
+})();
+})();
+</script>
+</body>
+</html>

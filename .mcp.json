@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "canban": {
+      "command": "/bin/sh",
+      "args": [
+        "./scripts/launch.sh"
+      ],
+      "cwd": ".",
+      "env_vars": [
+        "HOME",
+        "USER",
+        "PATH",
+        "LANG",
+        "SSH_AUTH_SOCK",
+        "CODEX_HOME",
+        "CLAUDE_CONFIG_DIR",
+        "CANBAN_DATA_DIR"
+      ],
+      "startup_timeout_sec": 15,
+      "tool_timeout_sec": 60,
+      "default_tools_approval_mode": "approve"
+    }
+  }
+}
