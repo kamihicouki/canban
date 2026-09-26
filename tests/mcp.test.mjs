@@ -24,7 +24,7 @@ function rpc(method, params) {
 const call = async (name, args = {}) => (await rpc('tools/call', { name, arguments: args })).result;
 
 before(async () => {
-  child = spawn('/bin/sh', [path.join(root, 'scripts', 'launch.sh')], { cwd: root, env: { ...process.env, CANBAN_DATA_DIR: dataDir, CANBAN_CODEX_HOME: fx.codexHome, CANBAN_CLAUDE_HOME: fx.claudeHome, CANBAN_CLAUDE_DESKTOP_DIR: fx.desktopDir, CANBAN_LAUNCH_DRYRUN: '1' }, stdio: ['pipe', 'pipe', 'ignore'] });
+  child = spawn('/bin/sh', [path.join(root, 'scripts', 'launch.sh')], { cwd: root, env: { ...process.env, CANBAN_DATA_DIR: dataDir, CANBAN_CODEX_HOME: fx.codexHome, CANBAN_CLAUDE_HOME: fx.claudeHome, CANBAN_CLAUDE_DESKTOP_DIR: fx.desktopDir, CANBAN_LAUNCH_DRYRUN: '1', CANBAN_GH: path.join(root, 'tests', 'fake-gh.sh'), CANBAN_GLAB: path.join(root, 'tests', 'fake-glab.sh'), FAKE_GH_DATA: '/dev/null' }, stdio: ['pipe', 'pipe', 'ignore'] });
   readline.createInterface({ input: child.stdout }).on('line', (l) => {
     const m = JSON.parse(l);
     waiting.get(m.id)?.(m);

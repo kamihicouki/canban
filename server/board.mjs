@@ -9,10 +9,13 @@ import { launchInfo } from './agents.mjs';
 import { installedTerminals } from './launcher.mjs';
 import { annotateStatus, STATUSES } from './status.mjs';
 import { RuleEngine } from './rules.mjs';
+import { PrService } from './git.mjs';
 
 const LOCAL_TTL_MS = 4000;
 let localCache = null;
 export const pool = new RemotePool();
+export const prs = new PrService();
+const PR_WINDOW_MS = 30 * 86400e3; // look up PRs for sessions active in the last 30 days
 
 async function localSessions({ force = false } = {}) {
   if (!force && localCache && Date.now() - localCache.at < LOCAL_TTL_MS) return localCache.value;
@@ -31,7 +34,10 @@ export async function allSessions(state, { force = false } = {}) {
   const hosts = await hostsWithState(state);
   const enabled = hosts.filter((h) => h.enabled);
   const [local, remote] = await Promise.all([localSessions({ force }), pool.sessions(enabled, { force })]);
-  await annotateStatus([...local.sessions, ...remote]);
+  const all = [...local.sessions, ...remote];
+  await annotateStatus(all);
+  const now = Date.now();
+  await prs.annotate(all.filter((s) => (s.updatedAt || 0) >= now - PR_WINDOW_MS || state.cards[s.id]?.listId));
   const errors = [...local.errors];
   for (const h of enabled) {
     const st = pool.hostStatus(h.id);
@@ -94,6 +100,7 @@ export function normalizeFilters(f = {}) {
     includeArchived: !!f.includeArchived,
     includeSubagents: !!f.includeSubagents,
     includeHidden: !!f.includeHidden,
+    groupBranch: !!f.groupBranch,
     days: Number.isFinite(days) && days > 0 ? days : 0,
   };
 }
@@ -266,6 +273,8 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
       unread: (s.updatedAt || 0) > Math.max(seenAll, card?.seenAt || 0),
       autoMoved: card?.movedBy ? { ruleId: card.movedBy.ruleId, at: card.movedBy.at } : null,
       subagents: kids.length ? { total: kids.length, running: kids.filter((k) => k.status === 'running' || k.status === 'waiting').length } : null,
+      repo: s.repo || null,
+      pr: prView(s.pr),
     });
   }
 
@@ -298,11 +307,13 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
       status,
       unread: links.some((x) => (x.updatedAt || 0) > Math.max(seenAll, t.seenAt || 0)),
       autoMoved: t.movedBy ? { ruleId: t.movedBy.ruleId, at: t.movedBy.at } : null,
+      pr: prView(links.map((x) => x.pr).find(Boolean)),
     });
   }
 
   const lists = state.lists.map((l) => {
-    const cards = buckets.get(l.id).sort((a, b) => a.order - b.order);
+    let cards = buckets.get(l.id).sort((a, b) => a.order - b.order);
+    if (filters.groupBranch) cards = groupByBranch(cards);
     return { ...l, isDefault: l.id === state.defaultListId, count: cards.length, cards };
   });
 
@@ -317,6 +328,7 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
     settings: state.settings,
     terminals: installedTerminals(),
     statusCounts,
+    git: { available: prs.status.available, reason: prs.status.reason, github: prs.status.github, gitlab: prs.status.gitlab },
     folders: recentFolders(sessions),
     tasks: taskEntries(state).map(([id, t]) => ({ id, title: t.title })),
     recentAutoMoves: Object.entries(state.cards)
@@ -330,6 +342,33 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
     },
     errors,
   };
+}
+
+export function prView(pr) {
+  return pr ? { provider: pr.provider || 'github', number: pr.number, url: pr.url, title: pr.title, state: pr.state, isDraft: pr.isDraft, checks: pr.checks } : null;
+}
+
+const DEFAULT_BRANCH = new Set(['main', 'master', 'develop', 'trunk', 'HEAD', 'dev']);
+export const branchKey = (s) => (s.repo && s.branch && !DEFAULT_BRANCH.has(s.branch) ? `${s.repo}#${s.branch}` : null);
+
+// Collapse session cards that share repo + branch into the first one (in list order).
+function groupByBranch(cards) {
+  const lead = new Map();
+  const out = [];
+  for (const c of cards) {
+    const k = c.kind === 'task' ? null : branchKey(c);
+    if (!k) {
+      out.push(c);
+      continue;
+    }
+    const first = lead.get(k);
+    if (!first) {
+      const copy = { ...c, grouped: [] };
+      lead.set(k, copy);
+      out.push(copy);
+    } else first.grouped.push({ id: c.id, title: c.title, status: c.status, agent: c.agent });
+  }
+  return out;
 }
 
 // Folders sessions ran in, most recent first (targets for new sessions from task cards).
@@ -370,6 +409,11 @@ export async function sessionDetail(store, cardId, { messages = 12 } = {}) {
   const listId = listCard.listId && state.lists.some((l) => l.id === listCard.listId) ? listCard.listId : state.defaultListId;
   const { sessions: all } = await allSessions(state);
   const byId = new Map(all.map((x) => [x.id, x]));
+  const key = branchKey(s);
+  const sameBranch = key
+    ? all.filter((x) => x.id !== s.id && branchKey(x) === key).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 20)
+        .map((x) => ({ id: x.id, agent: x.agent, title: x.title, status: x.status || 'idle', updatedAt: x.updatedAt }))
+    : [];
   const children = (s.children || []).map((id) => byId.get(id)).filter(Boolean)
     .map((c) => ({ id: c.id, title: c.title, status: c.status || 'idle', updatedAt: c.updatedAt, agentName: c.agentName || null }));
   const { host: h, ...rest } = s;
@@ -379,6 +423,9 @@ export async function sessionDetail(store, cardId, { messages = 12 } = {}) {
     list: state.lists.find((l) => l.id === listId),
     task: taskId ? { id: taskId, title: state.cards[taskId].title } : null,
     children,
+    sameBranch,
+    pr: s.pr || null,
+    repo: s.repo || null,
     parentId: s.parentId || null,
     tasks: taskEntries(state).map(([id, t]) => ({ id, title: t.title })),
     launch: launchInfo(s),

@@ -16,7 +16,7 @@ export function codexHome() {
 export const CODEX_COLUMNS = [
   'id', 'rollout_path', 'created_at', 'updated_at', 'created_at_ms', 'updated_at_ms', 'source', 'thread_source',
   'cwd', 'title', 'name', 'archived', 'git_branch', 'model', 'first_user_message', 'preview', 'agent_role',
-  'agent_nickname', 'is_pinned',
+  'agent_nickname', 'is_pinned', 'git_origin_url',
 ];
 
 // Pick the highest-numbered state_<n>.sqlite so a schema bump keeps working.
@@ -52,6 +52,7 @@ export function normalizeCodexRow(r, host = LOCAL_HOST) {
     cwd: r.cwd || null,
     project: projectName(r.cwd),
     branch: r.git_branch || null,
+    gitOriginUrl: r.git_origin_url || null,
     model: r.model || null,
     createdAt,
     updatedAt,

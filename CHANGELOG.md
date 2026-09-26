@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0 — 2026-09-26
+- Git / PR integration for GitHub (`gh`) and GitLab (`glab`): repos come from Codex's recorded origin, Claude PR links or the folder's `remote.origin.url`; PRs/MRs are matched by branch (with per-branch lookups for older branches) and cached for 5 minutes, all in the background so the board never waits.
+- Cards show the PR/MR number with state colour and CI result; the detail lists checks / pipeline and the other sessions on the same branch.
+- New rule triggers: PR/MR opened, merged, closed; CI failed, CI passed (fire only on transitions after a baseline, never for old PRs when first seen).
+- View option to collapse sessions that share a repo + branch into one card.
+
 ## 0.4.0 — 2026-09-26
 - Task cards: "+ Add a card" at the bottom of every list (Trello-style, Enter to keep adding). Tasks have a title, description, labels, priority, due date and linked sessions.
 - Start a new Codex / Claude Code session from a task (desktop app deep link or terminal, local or on a remote host); the new session is linked to the task automatically once it appears (agent + machine + folder or prompt prefix, within an hour).

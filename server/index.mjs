@@ -41,6 +41,7 @@ const filterProps = {
   includeArchived: { type: 'boolean' },
   includeSubagents: { type: 'boolean' },
   includeHidden: { type: 'boolean' },
+  groupBranch: { type: 'boolean', description: '同じリポジトリ＋ブランチのセッションをまとめる' },
   days: { type: 'number', description: '未配置セッションの表示期間（日）。0 で無制限。既定 30' },
 };
 

@@ -24,7 +24,10 @@ function legacyFile(dir) {
   return path.join(os.homedir(), '.session-kanban', 'board.json');
 }
 
-export const RULE_TRIGGERS = ['status:running', 'status:waiting', 'status:completed', 'status:aborted', 'activity'];
+export const RULE_TRIGGERS = [
+  'status:running', 'status:waiting', 'status:completed', 'status:aborted', 'activity',
+  'pr:opened', 'pr:merged', 'pr:closed', 'ci:failed', 'ci:passed',
+];
 const HISTORY_MAX = 50;
 
 export function defaultRules() {

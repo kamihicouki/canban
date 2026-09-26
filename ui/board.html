@@ -261,6 +261,17 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .link-btn { color: var(--accent); text-align: left; }
 .link-btn:hover { text-decoration: underline; }
 .danger-text { color: var(--danger); }
+.pr-pill { display: inline-flex; align-items: center; gap: 2px; color: #fff; font-weight: 600; }
+.pr-open { background: #1f883d; }
+.pr-draft { background: #6e7781; }
+.pr-merged { background: #8250df; }
+.pr-closed { background: #cf222e; }
+.ck { font-weight: 700; }
+.pr-pill .ck-failing { color: #ffd7d5; }
+.check-row { font-size: 12px; }
+.check-row .ck-passing { color: var(--c-green); }
+.check-row .ck-failing { color: var(--danger); }
+.check-row .ck-pending { color: var(--c-orange); }
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #172b4d; color: #fff; padding: 8px 16px; border-radius: 6px; z-index: 1100; box-shadow: 0 4px 8px #0004; }
 .toast.error { background: var(--danger); }
 .loading { color: #fff; padding: 24px; }
@@ -397,7 +408,7 @@ const store = {
 };
 const state = {
   board: null,
-  filters: Object.assign({ agent: 'all', host: '', status: '', project: '', q: '', days: 30, includeArchived: false, includeSubagents: false, includeHidden: false }, store.get('filters', {})),
+  filters: Object.assign({ agent: 'all', host: '', status: '', project: '', q: '', days: 30, includeArchived: false, includeSubagents: false, includeHidden: false, groupBranch: false }, store.get('filters', {})),
   shown: {},              // listId -> number of cards rendered
   labelsExpanded: store.get('labelsExpanded', false),
   drag: null,
@@ -460,7 +471,7 @@ let loadSeq = 0;
 async function load({ refresh = false } = {}) {
   const seq = ++loadSeq;
   const f = state.filters;
-  const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, includeHidden: f.includeHidden, refresh };
+  const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, includeHidden: f.includeHidden, groupBranch: !!f.groupBranch, refresh };
   if (f.project) args.project = f.project;
   if (f.host) args.host = f.host;
   if (f.status) args.status = f.status;
@@ -606,7 +617,9 @@ function renderCard(card, list) {
     meta.append(h('span', { class: `pill${overdue ? ' due-over' : ''}`, text: `🕑 ${new Date(card.due).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}` }));
   }
   if (card.note) meta.append(h('span', { title: 'メモあり', text: '≡' }));
-  if (card.prUrl) meta.append(h('span', { title: card.prUrl, text: 'PR' }));
+  if (card.pr) meta.append(prPill(card.pr));
+  else if (card.prUrl) meta.append(h('span', { title: card.prUrl, text: 'PR' }));
+  if (card.grouped?.length) meta.append(h('span', { class: 'pill', title: card.grouped.map((g) => g.title).join('\n'), text: `＋${card.grouped.length} 同じブランチ` }));
   if (card.archived) meta.append(h('span', { text: 'アーカイブ済' }));
   if (card.subagent) meta.append(h('span', { text: 'サブエージェント' }));
   if (card.subagents) meta.append(h('span', { class: 'pill', title: 'このセッションが起動したサブエージェント', text: `🤖 ${card.subagents.total}${card.subagents.running ? `（動作中 ${card.subagents.running}）` : ''}` }));
@@ -685,6 +698,7 @@ function renderTaskCard(card, list) {
     card.autoMoved ? h('span', { class: 'pill', title: 'ルールで自動移動', text: '⚡' }) : null,
     card.description ? h('span', { title: '説明あり', text: '📝' }) : null);
   planMeta(meta, card);
+  if (card.pr) meta.append(prPill(card.pr));
   for (const p of card.pending) meta.append(h('span', { class: `pill${p.expired ? ' due-over' : ''}`, title: p.expired ? '開始したセッションが見つかりません。詳細から手動で紐付けてください' : '開始したセッションを待っています',
     text: `${p.expired ? '⚠' : '⏳'} ${p.agent === 'codex' ? 'Codex' : 'Claude'}` }));
   el.append(meta);
@@ -795,6 +809,7 @@ function optionsMenu(anchor) {
     opt('includeArchived', 'アーカイブ済みセッションを表示'),
     opt('includeSubagents', 'サブエージェント／レビュー用スレッドを表示'),
     opt('includeHidden', 'ボードから隠したカードを表示'),
+    opt('groupBranch', '同じリポジトリ＋ブランチのセッションをまとめる'),
     h('p', { class: 'muted', text: '期間フィルタは「未配置」のセッションにのみ適用されます。リストへ移動したカードは期間に関係なく表示されます。' })));
 }
 
@@ -950,6 +965,15 @@ function renderModal(modal, d) {
       h('span', { class: `sdot s-${c.status}` }), h('span', { class: 'ellipsis grow', text: c.agentName ? `${c.agentName}: ${c.title}` : c.title }),
       h('span', { class: 'muted', text: relTime(c.updatedAt) }))),
     d.parentId ? h('div', { class: 'msg' }, h('button', { class: 'link-btn', text: '↑ 親セッションを開く', onclick: () => openCard(d.parentId) })) : null,
+    d.pr ? h('div', { class: 'section-title' }, d.pr.provider === 'gitlab' ? 'マージリクエスト ' : 'プルリクエスト ', prPill(d.pr)) : null,
+    d.pr ? h('div', { class: 'msg' },
+      h('button', { class: 'link-btn', text: `${d.pr.title}`, onclick: () => bridge.openLink(d.pr.url).catch(() => copyText(d.pr.url, 'PR の URL')) }),
+      h('div', { class: 'muted', text: `${String(d.repo).replace(/^gitlab:/, 'GitLab: ')} · ${d.pr.branch}` }),
+      ...(d.pr.checkRuns || []).map((c) => h('div', { class: 'check-row' }, h('span', { class: `ck ck-${/fail|error|cancel|timed/.test(c.state) ? 'failing' : /success|pass|neutral|skipped/.test(c.state) ? 'passing' : 'pending'}`, text: /fail|error|cancel|timed/.test(c.state) ? '✗' : /success|pass|neutral|skipped/.test(c.state) ? '✓' : '●' }), ` ${c.name}`))) : null,
+    d.sameBranch && d.sameBranch.length ? h('div', { class: 'section-title', text: `同じブランチのセッション（${d.sameBranch.length}）` }) : null,
+    ...(d.sameBranch || []).map((c) => h('button', { class: 'sub-row', onclick: () => openCard(c.id) },
+      h('span', { class: `sdot s-${c.status}` }), h('span', { class: `badge ${c.agent}`, text: c.agent === 'codex' ? 'Codex' : 'Claude' }),
+      h('span', { class: 'ellipsis grow', text: c.title }), h('span', { class: 'muted', text: relTime(c.updatedAt) }))),
     h('div', { class: 'section-title', text: '最初の依頼' }),
     h('div', { class: 'msg user' }, s.preview || '-'),
     h('div', { class: 'section-title', text: '直近のやりとり（読み取り専用）' }),
@@ -1097,7 +1121,22 @@ const TRIGGER_LABELS = {
   'status:completed': '完了したら',
   'status:aborted': '中断したら',
   activity: '新しい活動があったら',
+  'pr:opened': 'PR / MR が作られたら',
+  'pr:merged': 'PR / MR がマージされたら',
+  'pr:closed': 'PR / MR が閉じられたら',
+  'ci:failed': 'CI が失敗したら',
+  'ci:passed': 'CI が通ったら',
 };
+const PR_STATE = { OPEN: ['open', 'オープン'], MERGED: ['merged', 'マージ済み'], CLOSED: ['closed', 'クローズ'] };
+const CHECK_ICON = { passing: ['✓', 'CI 成功'], failing: ['✗', 'CI 失敗'], pending: ['●', 'CI 実行中'] };
+function prPill(pr) {
+  const [cls, label] = pr.isDraft && pr.state === 'OPEN' ? ['draft', 'ドラフト'] : PR_STATE[pr.state] || ['open', pr.state];
+  const ck = CHECK_ICON[pr.checks];
+  return h('button', { class: `pill pr-pill pr-${cls}`, title: `${pr.title}\n${label}${ck ? ` / ${ck[1]}` : ''}\n${pr.url}`,
+    onpointerdown: (e) => e.stopPropagation(),
+    onclick: (e) => { e.stopPropagation(); bridge.openLink(pr.url).catch(() => copyText(pr.url, 'PR の URL')); } },
+    `${pr.provider === 'gitlab' ? '!' : '#'}${pr.number}`, ck ? h('span', { class: `ck ck-${pr.checks}`, text: ` ${ck[0]}` }) : null);
+}
 function renderStatusBar(b) {
   const bar = $('#statusBar');
   bar.replaceChildren(...['running', 'waiting', 'completed', 'aborted'].filter((k) => b.statusCounts[k] || state.filters.status === k).map((k) =>
@@ -1153,7 +1192,8 @@ function rulesMenu(anchor) {
     trig, h('div', { class: 'row', style: { marginTop: '6px' } }, from, h('span', { text: '→' }), to),
     h('div', { class: 'row', style: { marginTop: '8px' } }, h('button', { class: 'btn-primary', text: '追加',
       onclick: () => act('canban_set_rule', { enabled: true, trigger: trig.value, fromListId: from.value, toListId: to.value }, { okMsg: 'ルールを追加しました' }).then(() => rulesMenu(anchor)) })),
-    h('p', { class: 'muted', text: '状態が変わった瞬間にだけ動きます。ボードを閉じていても、Codex が起動していれば 60 秒ごとに評価されます。自動で動いたカードには ⚡ が付き、直後のお知らせから元に戻せます。' }));
+    h('p', { class: 'muted', text: '状態が変わった瞬間にだけ動きます。ボードを閉じていても、Codex が起動していれば 60 秒ごとに評価されます。自動で動いたカードには ⚡ が付き、直後のお知らせから元に戻せます。' }),
+    b.git && b.git.available === false ? h('p', { class: 'muted', text: `PR / CI のルールは使えません: ${b.git.reason}` }) : null);
   popover(anchor, '自動移動ルール', body, { width: 400 });
 }
 

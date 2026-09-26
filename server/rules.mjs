@@ -48,6 +48,8 @@ export class RuleEngine {
       const prev = cache.sessions[s.id];
       const status = s.status || 'idle';
       const triggers = [];
+      // undefined: PR data not loaded yet — neither fire nor overwrite the baseline
+      const pr = s.pr === undefined ? undefined : s.pr ? `${s.pr.state}|${s.pr.checks || ''}` : null;
       if (!prev) {
         // Sessions that appear after tracking began count as a transition from nothing.
         if ((s.createdAt || 0) >= cache.startedAt) {
@@ -57,8 +59,16 @@ export class RuleEngine {
       } else {
         if (prev.status !== status && status !== 'idle') triggers.push(`status:${status}`);
         if ((s.updatedAt || 0) > (prev.updatedAt || 0)) triggers.push('activity');
+        // PR / CI transitions (only once a baseline exists, so old PRs don't fire)
+        if (pr && prev.pr !== undefined && prev.pr !== pr) {
+          const [pState, pChecks] = (prev.pr || '|').split('|');
+          if (s.pr.state !== pState) triggers.push({ OPEN: 'pr:opened', MERGED: 'pr:merged', CLOSED: 'pr:closed' }[s.pr.state]);
+          if ((s.pr.checks || '') !== pChecks && s.pr.checks === 'failing') triggers.push('ci:failed');
+          if ((s.pr.checks || '') !== pChecks && s.pr.checks === 'passing') triggers.push('ci:passed');
+        }
       }
-      if (status !== 'idle' || (s.updatedAt || 0) >= now - TRACK_MS) cache.sessions[s.id] = { status, updatedAt: s.updatedAt || 0, seen: now };
+      const track = status !== 'idle' || (s.updatedAt || 0) >= now - TRACK_MS || (s.pr && s.pr.state === 'OPEN');
+      if (track) cache.sessions[s.id] = { status, updatedAt: s.updatedAt || 0, seen: now, pr: pr === undefined ? prev?.pr : pr };
       if (!triggers.length || !active.length) continue;
       const current = listOf(s.id);
       const rule = active.find(
