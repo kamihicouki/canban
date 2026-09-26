@@ -269,6 +269,100 @@ export class Store {
     });
   }
 
+  // ---- task cards (not backed by a session) -------------------------------
+  async createTask({ title, listId, description = '' }) {
+    title = String(title || '').trim();
+    if (!title) throw new Error('カード名を入力してください');
+    return this.mutate((s) => {
+      const lid = s.lists.some((l) => l.id === listId) ? listId : s.defaultListId;
+      const id = `task:${crypto.randomBytes(6).toString('hex')}`;
+      const card = { kind: 'task', title: title.slice(0, 300), description: String(description).slice(0, 20000), createdAt: Date.now(), links: [], pending: [] };
+      placeCard(card, lid, Date.now()); // positive orders sort after session cards: new tasks go to the bottom
+      s.cards[id] = card;
+      return { cardId: id, ...card };
+    });
+  }
+
+  updateTask({ cardId, title, description, target }) {
+    return this.mutate((s) => {
+      const card = s.cards[cardId];
+      if (card?.kind !== 'task') throw new Error('タスクカードが見つかりません');
+      if (title !== undefined) {
+        const t = String(title).trim();
+        if (!t) throw new Error('カード名を入力してください');
+        card.title = t.slice(0, 300);
+      }
+      if (description !== undefined) card.description = String(description ?? '').slice(0, 20000);
+      if (target !== undefined) {
+        card.target = target && typeof target === 'object'
+          ? { agent: ['codex', 'claude'].includes(target.agent) ? target.agent : 'codex', hostId: typeof target.hostId === 'string' ? target.hostId : 'local', cwd: typeof target.cwd === 'string' ? target.cwd : '' }
+          : null;
+      }
+      card.updatedAt = new Date().toISOString();
+      return { cardId, ...card };
+    });
+  }
+
+  deleteTask({ cardId }) {
+    return this.mutate((s) => {
+      if (s.cards[cardId]?.kind !== 'task') throw new Error('タスクカードが見つかりません');
+      delete s.cards[cardId];
+      return { deleted: cardId };
+    });
+  }
+
+  linkSession({ taskId, sessionId }) {
+    return this.mutate((s) => {
+      const task = s.cards[taskId];
+      if (task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
+      if (sessionId.startsWith('task:')) throw new Error('タスク同士は紐付けられません');
+      for (const c of Object.values(s.cards)) if (c.kind === 'task') c.links = (c.links || []).filter((x) => x !== sessionId);
+      task.links = [...(task.links || []), sessionId];
+      return { taskId, links: task.links };
+    });
+  }
+
+  unlinkSession({ taskId, sessionId }) {
+    return this.mutate((s) => {
+      const task = s.cards[taskId];
+      if (task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
+      task.links = (task.links || []).filter((x) => x !== sessionId);
+      return { taskId, links: task.links };
+    });
+  }
+
+  addPending({ taskId, pending }) {
+    return this.mutate((s) => {
+      const task = s.cards[taskId];
+      if (task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
+      task.pending = [...(task.pending || []), pending].slice(-10);
+      return { taskId, pending: task.pending };
+    });
+  }
+
+  clearPending({ taskId }) {
+    return this.mutate((s) => {
+      const task = s.cards[taskId];
+      if (task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
+      task.pending = [];
+      return { taskId };
+    });
+  }
+
+  // resolved: [{taskId, sessionId, startedAt}] — pending launches matched to real sessions.
+  resolvePending(resolved) {
+    if (!resolved.length) return Promise.resolve([]);
+    return this.mutate((s) => {
+      for (const r of resolved) {
+        const task = s.cards[r.taskId];
+        if (task?.kind !== 'task') continue;
+        task.pending = (task.pending || []).filter((p) => p.startedAt !== r.startedAt);
+        if (!(task.links || []).includes(r.sessionId)) task.links = [...(task.links || []), r.sessionId];
+      }
+      return resolved;
+    });
+  }
+
   // ---- rule-driven moves -------------------------------------------------
   // moves: [{cardId, toListId, order, ruleId}] — the previous placement is kept for undo.
   applyAutoMoves(moves) {

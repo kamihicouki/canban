@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { Store } from './store.mjs';
 import { buildBoard, sessionDetail, allSessions, findSession, hostsWithState, effectiveOrder, tickRules } from './board.mjs';
 import { RULE_TRIGGERS } from './store.mjs';
-import { desktopLink, resumeCommand } from './agents.mjs';
+import { desktopLink, resumeCommand, newSessionLink, newSessionCommand } from './agents.mjs';
+import { LOCAL_HOST } from './sources/util.mjs';
 import { openUrl, runInTerminal, installedTerminals, setRunner, TERMINAL_LABELS } from './launcher.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -154,7 +155,8 @@ const TOOLS = [
       const list = resolveList(state.lists, toList);
       if (!list) throw new Error(`リストが見つかりません: ${toList}`);
       const { sessions } = await allSessions(state);
-      if (!sessions.some((s) => s.id === cardId)) throw new Error(`セッションが見つかりません: ${cardId}`);
+      const isTask = state.cards[cardId]?.kind === 'task';
+      if (!isTask && !sessions.some((s) => s.id === cardId)) throw new Error(`カードが見つかりません: ${cardId}`);
       if (typeof order !== 'number') order = edgeOrder(state, sessions, list.id, cardId, position || 'top');
       const res = await store.moveCard({ cardId, toListId: list.id, order });
       return { text: `${cardId} を「${list.title}」へ移動しました`, structured: res };
@@ -243,6 +245,83 @@ const TOOLS = [
     terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
     target: { type: 'string', enum: ['new-window', 'new-tab', 'split', 'current'] },
   }, [], (a) => store.updateLaunchSettings(a)),
+  {
+    name: 'canban_create_task',
+    title: 'タスクカードを追加',
+    description: 'セッションに紐づかないタスクカードを作る（Trello のカードと同じ）。list はリスト ID か名前（省略時は既定のリスト）。',
+    inputSchema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, list: { type: 'string' } }, required: ['title'], additionalProperties: false },
+    _meta: appAndModel,
+    handler: async ({ title, description, list }) => {
+      const l = list ? resolveList(store.load().lists, list) : null;
+      const res = await store.createTask({ title, description, listId: l?.id });
+      return { text: `タスク「${res.title}」を作成しました（${res.cardId}）`, structured: res };
+    },
+  },
+  {
+    name: 'canban_start_session',
+    title: 'タスクからセッションを開始',
+    description:
+      'タスクカードから Codex / Claude Code の新しいセッションを開始し、開始したセッションを自動でカードに紐付ける。route=desktop はデスクトップアプリ、terminal はターミナル。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string' },
+        agent: { type: 'string', enum: ['codex', 'claude'] },
+        hostId: { type: 'string', description: "'local' またはリモート接続の hostId" },
+        cwd: { type: 'string', description: '作業フォルダ（そのマシン上の絶対パス）' },
+        prompt: { type: 'string' },
+        route: { type: 'string', enum: ['desktop', 'terminal'] },
+        terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
+        target: { type: 'string', enum: ['new-window', 'new-tab', 'split', 'current'] },
+      },
+      required: ['taskId', 'agent'],
+      additionalProperties: false,
+    },
+    _meta: appAndModel,
+    handler: async ({ taskId, agent, hostId = 'local', cwd = '', prompt, route, terminal, target }) => {
+      const state = store.load();
+      const task = state.cards[taskId];
+      if (task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
+      let host = LOCAL_HOST;
+      let remoteEnabled = true;
+      if (hostId && hostId !== 'local') {
+        const h = (await hostsWithState(state)).find((x) => x.id === hostId);
+        if (!h) throw new Error('Codex に登録されていない接続です');
+        host = { id: h.id, alias: h.alias, label: h.label, local: false, sshPort: h.sshPort };
+        remoteEnabled = h.enabled;
+      }
+      const text = String(prompt ?? [task.title, task.description].filter(Boolean).join('\n\n')).slice(0, 8000);
+      const prefs = state.settings.launch;
+      const useRoute = route || prefs.route;
+      let detail;
+      if (useRoute === 'desktop') {
+        const link = newSessionLink(agent, { host, cwd, prompt: text });
+        await openUrl(link.url);
+        detail = { route: 'desktop', url: link.url };
+      } else {
+        const term = terminal || prefs.terminal;
+        if (!installedTerminals().some((t) => t.id === term)) throw new Error(`${TERMINAL_LABELS[term] || term} が見つかりません。設定でターミナルを選んでください。`);
+        const command = newSessionCommand(agent, { host, cwd, prompt: text });
+        detail = { route: 'terminal', command, ...(await runInTerminal({ terminal: term, target: target || prefs.target, command })) };
+      }
+      await store.updateTask({ cardId: taskId, target: { agent, hostId: host.local === false ? host.id : 'local', cwd } });
+      await store.addPending({ taskId, pending: { agent, hostId: host.local === false ? host.id : 'local', cwd, prompt: text.slice(0, 200), startedAt: Date.now() } });
+      const note = remoteEnabled ? null : `${host.label} の読み取りがオフのため自動では紐付きません。「マシン」でオンにしてください。`;
+      return { text: `${agent === 'codex' ? 'Codex' : 'Claude'} でセッションを開始しました`, structured: { ...detail, note } };
+    },
+  },
+  {
+    name: 'canban_link_session',
+    title: 'セッションをタスクに紐付け',
+    description: '既存のセッションをタスクカードに紐付ける（紐付いたセッションはタスクカードの中に表示される）。',
+    inputSchema: { type: 'object', properties: { taskId: { type: 'string' }, sessionId: { type: 'string' } }, required: ['taskId', 'sessionId'], additionalProperties: false },
+    _meta: appAndModel,
+    handler: async (a) => ({ text: '紐付けました', structured: await store.linkSession(a) }),
+  },
+  appTool('canban_unlink_session', 'セッションの紐付けを解除', { taskId: { type: 'string' }, sessionId: { type: 'string' } }, ['taskId', 'sessionId'], (a) => store.unlinkSession(a)),
+  appTool('canban_update_task', 'タスクカードを更新', { cardId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' } }, ['cardId'], (a) => store.updateTask(a)),
+  appTool('canban_delete_task', 'タスクカードを削除', { cardId: { type: 'string' } }, ['cardId'], (a) => store.deleteTask(a)),
+  appTool('canban_clear_pending', '開始待ちを取り消す', { taskId: { type: 'string' } }, ['taskId'], (a) => store.clearPending(a)),
   appTool('canban_set_rule', '自動移動ルールを保存', {
     id: { type: 'string' },
     enabled: { type: 'boolean' },

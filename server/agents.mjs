@@ -7,6 +7,7 @@ export function shq(s) {
 }
 
 const CLAUDE_DESKTOP_ID = /^local_[A-Za-z0-9-]{1,64}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const AGENTS = {
   codex: {
@@ -28,12 +29,21 @@ export const AGENTS = {
       if (s.desktopSessionId && CLAUDE_DESKTOP_ID.test(s.desktopSessionId) && !s.archived) {
         return { url: `claude://code/continue?session=${s.desktopSessionId}`, exact: true, label: 'Claude で開く' };
       }
+      if (UUID.test(s.nativeId)) {
+        // Claude desktop imports the CLI transcript and opens it (the import is done by Claude itself).
+        return {
+          url: `claude://resume?session=${s.nativeId}`,
+          exact: true,
+          label: 'Claude で開く',
+          note: 'CLI のセッションを Claude デスクトップに取り込んで開きます。',
+        };
+      }
       if (!s.cwd) return null;
       return {
         url: `claude://code/new?folder=${encodeURIComponent(s.cwd)}`,
         exact: false,
         label: 'Claude でフォルダを開く',
-        note: 'このセッションは Claude デスクトップに記録が無いため、同じフォルダで新しいセッションを開きます。続きはターミナルで再開できます。',
+        note: 'このセッションは Claude デスクトップでは開けないため、同じフォルダで新しいセッションを開きます。続きはターミナルで再開できます。',
       };
     },
   },
@@ -52,4 +62,35 @@ export function desktopLink(s) {
 
 export function launchInfo(s) {
   return { desktop: desktopLink(s), terminal: { command: resumeCommand(s) } };
+}
+
+// ---- new sessions (task cards) ---------------------------------------------
+// host: { local } or { local:false, id, alias, sshPort? }; cwd: absolute folder on that host.
+export function newSessionLink(agent, { host, cwd, prompt }) {
+  const remote = host && host.local === false;
+  if (agent === 'codex') {
+    const url = new URL('codex://threads/new');
+    if (prompt) url.searchParams.set('prompt', prompt);
+    if (cwd) url.searchParams.set('path', cwd);
+    if (remote) url.searchParams.set('hostId', host.id);
+    return { url: url.toString(), label: 'Codex で開始' };
+  }
+  if (agent === 'claude') {
+    const url = new URL('claude://code/new');
+    if (prompt) url.searchParams.set('q', prompt);
+    if (remote) {
+      url.searchParams.set('ssh_host', host.alias);
+      if (host.sshPort) url.searchParams.set('ssh_port', String(host.sshPort));
+      if (cwd) url.searchParams.set('ssh_folder', cwd);
+    } else if (cwd) url.searchParams.set('folder', cwd);
+    return { url: url.toString(), label: 'Claude で開始' };
+  }
+  return null;
+}
+
+export function newSessionCommand(agent, { host, cwd, prompt }) {
+  const bin = agent === 'codex' ? 'codex' : agent === 'claude' ? 'claude' : null;
+  if (!bin) return null;
+  const inner = `${cwd ? `cd ${shq(cwd)} 2>/dev/null; ` : ''}${bin}${prompt ? ` ${shq(prompt)}` : ''}`;
+  return host && host.local === false ? `ssh -t ${shq(host.alias)} ${shq(inner)}` : inner;
 }

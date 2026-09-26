@@ -67,6 +67,22 @@ function matches(session, card, f, labelsById) {
   return true;
 }
 
+function matchesTask(t, links, status, f, labelsById) {
+  if (!f.includeHidden && t.hidden) return false;
+  if (f.status && status !== f.status) return false;
+  const anyLink = (pred) => links.some(pred);
+  if (f.agent && f.agent !== 'all' && !(anyLink((s) => s.agent === f.agent) || t.target?.agent === f.agent)) return false;
+  if (f.host && !(anyLink((s) => (s.host?.id || 'local') === f.host) || (t.target?.hostId || 'local') === f.host)) return false;
+  if (f.project && !anyLink((s) => s.project === f.project)) return false;
+  if (f.q) {
+    const q = f.q.toLowerCase();
+    const hay = [t.title, t.description, t.note, ...(t.labels || []).map((id) => labelsById.get(id)?.name || ''), ...links.map((s) => s.title)]
+      .filter(Boolean).join('\n').toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+
 export function normalizeFilters(f = {}) {
   const days = f.days === 0 || f.days === '0' ? 0 : Number(f.days ?? 30);
   return {
@@ -100,9 +116,58 @@ function listResolver(state) {
   };
 }
 
+// ---- task cards ----------------------------------------------------------
+export function taskEntries(state) {
+  return Object.entries(state.cards).filter(([, c]) => c.kind === 'task');
+}
+
+// session id -> task id for sessions linked to a task card
+export function linkedToTask(state) {
+  const m = new Map();
+  for (const [id, t] of taskEntries(state)) for (const sid of t.links || []) m.set(sid, id);
+  return m;
+}
+
+const PENDING_MS = 3600e3;
+const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+const sameCwd = (a, b) => !!a && !!b && a.replace(/\/+$/, '') === b.replace(/\/+$/, '');
+
+// Match sessions started from task cards ("pending" launches) to the sessions that appeared.
+export function matchPending(state, sessions) {
+  const used = new Set(linkedToTask(state).keys());
+  const resolved = [];
+  for (const [taskId, t] of taskEntries(state)) {
+    for (const p of t.pending || []) {
+      const head = norm(p.prompt).slice(0, 40);
+      const cands = sessions
+        .filter((s) =>
+          !used.has(s.id) &&
+          s.agent === p.agent &&
+          (s.host?.local === false ? s.host.id : 'local') === (p.hostId || 'local') &&
+          (s.createdAt || 0) >= p.startedAt - 10e3 &&
+          (s.createdAt || 0) <= p.startedAt + PENDING_MS &&
+          (sameCwd(s.cwd, p.cwd) || (head && norm(s.preview).startsWith(head))))
+        .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      if (cands[0]) {
+        used.add(cands[0].id);
+        resolved.push({ taskId, sessionId: cands[0].id, startedAt: p.startedAt });
+      }
+    }
+  }
+  return resolved;
+}
+
+const STATUS_RANK = { running: 4, waiting: 5, aborted: 3, completed: 2, idle: 1 };
+function aggregateStatus(list) {
+  return list.reduce((best, s) => (STATUS_RANK[s] > STATUS_RANK[best] ? s : best), 'idle');
+}
+
 // Evaluate the automatic-move rules against current statuses and apply the moves.
+// A session linked to a task card moves the task card instead.
 export async function runRules(store, state, sessions, now = Date.now()) {
-  const listOf = listResolver(state);
+  const toTask = linkedToTask(state);
+  const baseListOf = listResolver(state);
+  const listOf = (id) => baseListOf(toTask.get(id) || id);
   const tops = new Map();
   for (const s of sessions) {
     const l = listOf(s.id);
@@ -120,14 +185,24 @@ export async function runRules(store, state, sessions, now = Date.now()) {
     },
     now,
   });
-  return store.applyAutoMoves(moves);
+  const seen = new Set();
+  const mapped = [];
+  for (const m of moves) {
+    const cardId = toTask.get(m.cardId) || m.cardId;
+    if (seen.has(cardId)) continue;
+    seen.add(cardId);
+    mapped.push({ ...m, cardId });
+  }
+  return store.applyAutoMoves(mapped);
 }
 
 // Background evaluation so rules work while the board is closed.
 export async function tickRules(store) {
-  const state = store.load();
-  if (!state.settings.rules.some((r) => r.enabled)) return [];
+  let state = store.load();
+  const pendingTasks = taskEntries(state).some(([, t]) => t.pending?.length);
+  if (!pendingTasks && !state.settings.rules.some((r) => r.enabled)) return [];
   const { sessions } = await allSessions(state);
+  if ((await store.resolvePending(matchPending(state, sessions))).length) state = store.load();
   return runRules(store, state, sessions);
 }
 
@@ -135,7 +210,10 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
   const filters = normalizeFilters(rawFilters);
   let state = store.load();
   const { sessions, errors, hosts } = await allSessions(state, { force });
+  if ((await store.resolvePending(matchPending(state, sessions))).length) state = store.load();
   if ((await runRules(store, state, sessions)).length) state = store.load();
+  const byId = new Map(sessions.map((x) => [x.id, x]));
+  const toTask = linkedToTask(state);
   if (state.settings.seenAllAt == null) {
     await store.markAllSeen(); // first run: nothing is "new" yet
     state = store.load();
@@ -154,8 +232,10 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
     if (visibleKind) statusCounts[s.status || 'idle']++;
     if (s.project && visibleKind) projects.set(s.project, (projects.get(s.project) || 0) + 1);
     if (visibleKind) hostCounts.set(s.host?.id || 'local', (hostCounts.get(s.host?.id || 'local') || 0) + 1);
+    if (toTask.has(s.id)) continue; // shown inside its task card
     if (!matches(s, card, filters, labelsById)) continue;
     const listId = card?.listId && listIds.has(card.listId) ? card.listId : state.defaultListId;
+    const kids = (s.children || []).map((id) => byId.get(id)).filter(Boolean);
     const launch = launchInfo(s);
     buckets.get(listId).push({
       id: s.id,
@@ -185,6 +265,39 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
       status: s.status || 'idle',
       unread: (s.updatedAt || 0) > Math.max(seenAll, card?.seenAt || 0),
       autoMoved: card?.movedBy ? { ruleId: card.movedBy.ruleId, at: card.movedBy.at } : null,
+      subagents: kids.length ? { total: kids.length, running: kids.filter((k) => k.status === 'running' || k.status === 'waiting').length } : null,
+    });
+  }
+
+  // Task cards: user-created cards that may have sessions linked to them.
+  const now = Date.now();
+  for (const [id, t] of taskEntries(state)) {
+    const links = (t.links || []).map((sid) => byId.get(sid)).filter(Boolean);
+    const status = aggregateStatus(links.map((x) => x.status || 'idle'));
+    const updatedAt = Math.max(t.createdAt || 0, ...links.map((x) => x.updatedAt || 0));
+    if (!matchesTask(t, links, status, filters, labelsById)) continue;
+    const listId = t.listId && listIds.has(t.listId) ? t.listId : state.defaultListId;
+    buckets.get(listId).push({
+      id,
+      kind: 'task',
+      title: t.title,
+      description: t.description || '',
+      target: t.target || null,
+      links: links.map((x) => ({ id: x.id, agent: x.agent, title: x.title, status: x.status || 'idle', host: x.host?.local === false ? { label: x.host.label } : null, updatedAt: x.updatedAt })),
+      missingLinks: (t.links || []).length - links.length,
+      pending: (t.pending || []).map((p) => ({ agent: p.agent, startedAt: p.startedAt, expired: now - p.startedAt > PENDING_MS })),
+      createdAt: t.createdAt,
+      updatedAt,
+      order: typeof t.order === 'number' ? t.order : t.createdAt || 0,
+      labels: t.labels || [],
+      note: t.note || '',
+      priority: t.priority || null,
+      due: t.due || null,
+      hidden: !!t.hidden,
+      placed: true,
+      status,
+      unread: links.some((x) => (x.updatedAt || 0) > Math.max(seenAll, t.seenAt || 0)),
+      autoMoved: t.movedBy ? { ruleId: t.movedBy.ruleId, at: t.movedBy.at } : null,
     });
   }
 
@@ -204,9 +317,11 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
     settings: state.settings,
     terminals: installedTerminals(),
     statusCounts,
+    folders: recentFolders(sessions),
+    tasks: taskEntries(state).map(([id, t]) => ({ id, title: t.title })),
     recentAutoMoves: Object.entries(state.cards)
       .filter(([, c]) => c.movedBy && Date.now() - c.movedBy.at < 5 * 60e3)
-      .map(([cardId, c]) => ({ cardId, toListId: c.listId, ruleId: c.movedBy.ruleId, at: c.movedBy.at, title: sessions.find((x) => x.id === cardId)?.title || cardId })),
+      .map(([cardId, c]) => ({ cardId, toListId: c.listId, ruleId: c.movedBy.ruleId, at: c.movedBy.at, title: byId.get(cardId)?.title || state.cards[cardId]?.title || cardId })),
     totals: {
       sessions: sessions.length,
       codex: sessions.filter((s) => s.agent === 'codex').length,
@@ -215,6 +330,19 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
     },
     errors,
   };
+}
+
+// Folders sessions ran in, most recent first (targets for new sessions from task cards).
+function recentFolders(sessions, limit = 60) {
+  const seen = new Map();
+  for (const s of [...sessions].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))) {
+    if (!s.cwd || s.subagent) continue;
+    const hostId = s.host?.local === false ? s.host.id : 'local';
+    const key = `${hostId}\u0000${s.cwd}`;
+    if (!seen.has(key)) seen.set(key, { hostId, hostLabel: s.host?.label || 'このマシン', cwd: s.cwd, project: s.project });
+    if (seen.size >= limit) break;
+  }
+  return [...seen.values()];
 }
 
 export async function findSession(store, cardId) {
@@ -236,12 +364,23 @@ export async function sessionDetail(store, cardId, { messages = 12 } = {}) {
   } catch (e) {
     messagesError = e.message;
   }
-  const listId = card.listId && state.lists.some((l) => l.id === card.listId) ? card.listId : state.defaultListId;
+  const toTask = linkedToTask(state);
+  const taskId = toTask.get(cardId) || null;
+  const listCard = taskId ? state.cards[taskId] : card;
+  const listId = listCard.listId && state.lists.some((l) => l.id === listCard.listId) ? listCard.listId : state.defaultListId;
+  const { sessions: all } = await allSessions(state);
+  const byId = new Map(all.map((x) => [x.id, x]));
+  const children = (s.children || []).map((id) => byId.get(id)).filter(Boolean)
+    .map((c) => ({ id: c.id, title: c.title, status: c.status || 'idle', updatedAt: c.updatedAt, agentName: c.agentName || null }));
   const { host: h, ...rest } = s;
   return {
     session: { ...rest, host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null },
     card: { listId, labels: card.labels || [], note: card.note || '', priority: card.priority || null, due: card.due || null, hidden: !!card.hidden },
     list: state.lists.find((l) => l.id === listId),
+    task: taskId ? { id: taskId, title: state.cards[taskId].title } : null,
+    children,
+    parentId: s.parentId || null,
+    tasks: taskEntries(state).map(([id, t]) => ({ id, title: t.title })),
     launch: launchInfo(s),
     settings: state.settings,
     terminals: installedTerminals(),

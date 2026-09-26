@@ -82,15 +82,18 @@ def codex_rows():
             want = [c for c in CODEX_COLUMNS if c in cols]
             cur = con.execute("SELECT %s FROM threads" % ", ".join(want))
             rows = [dict(zip(want, r)) for r in cur]
+            edges = []
+            if con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='thread_spawn_edges'").fetchone():
+                edges = [{"parent": p, "child": c} for p, c in con.execute("SELECT parent_thread_id, child_thread_id FROM thread_spawn_edges")]
         finally:
             con.close()
         now = now_ms()
         for r in rows:
             updated = r.get("updated_at_ms") or ((r.get("updated_at") or 0) * 1000)
             r["rawStatus"], r["statusMtimeMs"] = raw_status_for(r.get("rollout_path"), "codex", updated, now)
-        return {"rows": rows, "error": None}
+        return {"rows": rows, "edges": edges, "error": None}
     except Exception as e:  # noqa: BLE001
-        return {"rows": [], "error": "Codex DB 読み取り失敗: %s" % e}
+        return {"rows": [], "edges": [], "error": "Codex DB 読み取り失敗: %s" % e}
 
 # ---- live status (keep in sync with server/status.mjs) ---------------------
 def now_ms():

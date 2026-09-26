@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0 — 2026-09-26
+- Task cards: "+ Add a card" at the bottom of every list (Trello-style, Enter to keep adding). Tasks have a title, description, labels, priority, due date and linked sessions.
+- Start a new Codex / Claude Code session from a task (desktop app deep link or terminal, local or on a remote host); the new session is linked to the task automatically once it appears (agent + machine + folder or prompt prefix, within an hour).
+- Link existing sessions by dragging a session card onto a task card, or from the session detail. Linked sessions are shown inside the task, and rules move the task card.
+- Codex sub-agents are shown on their parent card (🤖 count, running count) and listed in the detail.
+- CLI-only Claude Code sessions now open in the Claude desktop app via `claude://resume?session=<id>`.
+
 ## 0.3.0 — 2026-09-26
 - Keyboard: arrow keys move the focused card (←→ between lists, ↑↓ within a list, Home/End); ⌥ + arrows move focus only.
 - Live status for recent sessions (running / waiting for input / completed / aborted) from the tail of each log, locally and on remote hosts (Python collector kept in parity with the JS rules and tested).

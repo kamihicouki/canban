@@ -5,13 +5,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { normalizeCodexRow, codexMessagesFromRecords } from '../sources/codex.mjs';
+import { normalizeCodexRow, codexMessagesFromRecords, attachSpawnEdges } from '../sources/codex.mjs';
 import { normalizeClaudeSummary, claudeMessagesFromRecords } from '../sources/claude.mjs';
 
 const SCRIPT = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'collect.py'), 'utf8');
 
 export function hostRef(h) {
-  return { id: h.id, alias: h.alias, label: h.label, local: false };
+  return { id: h.id, alias: h.alias, label: h.label, local: false, sshPort: h.sshPort ?? null };
 }
 
 export class RemotePool {
@@ -87,6 +87,7 @@ export class RemotePool {
         ...(res.codex?.rows || []).map((r) => normalizeCodexRow(r, ref)),
         ...[...summaries.values()].map((s) => normalizeClaudeSummary(s, desktop[s.sessionId], ref)).filter(Boolean),
       ];
+      attachSpawnEdges(sessions, res.codex?.edges, ref);
       const errors = [res.codex?.error, res.claude?.error].filter(Boolean);
       this.cache.set(host.id, { sessions, summaries, fetchedAt: Date.now(), errors });
       this.status.set(host.id, { state: errors.length ? 'error' : 'ok', error: errors.join(' / ') || null, fetchedAt: Date.now(), count: sessions.length });

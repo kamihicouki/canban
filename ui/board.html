@@ -105,7 +105,7 @@ button { cursor: pointer; border: 0; background: none; }
   padding: 12px; overflow-x: auto; overflow-y: hidden;
 }
 .list {
-  flex: 0 0 272px; max-height: 100%; display: flex; flex-direction: column;
+  flex: 0 0 272px; width: 272px; min-width: 0; max-height: 100%; display: flex; flex-direction: column;
   background: var(--list-bg); border-radius: 12px; box-shadow: var(--card-shadow);
 }
 .list.dragging-list { opacity: 0.4; }
@@ -241,6 +241,26 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .status-chip[aria-pressed="true"] { background: #fff; color: #172b4d; }
 .rule-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; }
 .toast-btn { margin-left: 8px; color: #fff; text-decoration: underline; font-weight: 600; }
+.card.task { border-top: 3px solid var(--c-purple); }
+.task-badge { background: var(--c-purple); }
+.task-links { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+.task-link { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--card-muted); min-width: 0; overflow: hidden; white-space: nowrap; }
+.task-link .host-chip { flex: none; max-width: 90px; }
+.ellipsis.grow { max-width: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grow { flex: 1; min-width: 0; }
+.drop-target { outline: 2px dashed var(--accent); outline-offset: 2px; }
+.add-card { padding: 0 8px 8px; }
+.add-card-btn { width: 100%; text-align: left; padding: 6px 8px; border-radius: 8px; color: var(--list-muted); }
+.add-card-btn:hover { background: var(--btn-subtle-hover); }
+.card-composer { padding: 0; background: none; }
+.title-input { width: calc(100% - 40px); font-size: 20px; font-weight: 700; border: 0; background: transparent; color: inherit; padding: 2px 4px; border-radius: 4px; }
+.title-input:focus { background: var(--input-bg); outline: 2px solid var(--focus); }
+.start-grid { display: grid; grid-template-columns: 140px 1fr; gap: 6px; margin-bottom: 6px; }
+.start-grid input { grid-column: 1 / -1; }
+.sub-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 6px 8px; border-radius: 6px; background: var(--modal-panel); margin-bottom: 4px; font-size: 13px; }
+.link-btn { color: var(--accent); text-align: left; }
+.link-btn:hover { text-decoration: underline; }
+.danger-text { color: var(--danger); }
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #172b4d; color: #fff; padding: 8px 16px; border-radius: 6px; z-index: 1100; box-shadow: 0 4px 8px #0004; }
 .toast.error { background: var(--danger); }
 .loading { color: #fff; padding: 24px; }
@@ -491,10 +511,12 @@ function render() {
   const listScroll = {};
   boardEl.querySelectorAll('.list').forEach((l) => (listScroll[l.dataset.listId] = $('.cards', l)?.scrollTop || 0));
 
+  const focused = document.activeElement;
   const frag = document.createDocumentFragment();
   for (const list of b.lists) frag.append(renderList(list));
   frag.append(renderAddList());
   boardEl.replaceChildren(frag);
+  if (focused && focused !== document.body && boardEl.contains(focused)) focused.focus({ preventScroll: true });
   boardEl.scrollLeft = scroll;
   boardEl.querySelectorAll('.list').forEach((l) => { const c = $('.cards', l); if (c) c.scrollTop = listScroll[l.dataset.listId] || 0; });
   bridge.reportSize();
@@ -523,21 +545,49 @@ function renderList(list) {
     el.append(h('button', { class: 'more-btn', text: `さらに表示（残り ${list.cards.length - n} 件）`,
       onclick: () => { state.shown[list.id] = n + PAGE * 2; render(); } }));
   }
+  el.append(renderAddCard(list));
   return el;
 }
 
+// Trello-style "+ Add a card" at the bottom of every list (creates a task card).
+// An open composer survives re-renders (same element), so typing isn't interrupted.
+function renderAddCard(list) {
+  if (state.addCard?.listId === list.id) return state.addCard.wrap;
+  const wrap = h('div', { class: 'add-card' });
+  const open = () => {
+    const input = h('textarea', { class: 'text-input', rows: 2, placeholder: 'タスクのタイトルを入力…（Enter で追加）', maxlength: 300 });
+    const close = () => { state.addCard = null; render(); };
+    const submit = async () => {
+      const title = input.value.trim();
+      if (!title) return input.focus();
+      input.value = '';
+      input.focus();
+      await act('canban_create_task', { title, list: list.id }).catch(() => {});
+      const c = $(`.list[data-list-id="${CSS.escape(list.id)}"] .cards`);
+      if (c) c.scrollTop = c.scrollHeight;
+    };
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); }
+      if (e.key === 'Escape') close();
+    };
+    wrap.replaceChildren(h('div', { class: 'composer card-composer' }, input,
+      h('div', { class: 'row' }, h('button', { class: 'btn-primary', text: 'カードを追加', onclick: submit }),
+        h('button', { class: 'icon-btn', 'aria-label': '閉じる', text: '✕', onclick: close }))));
+    state.addCard = { listId: list.id, wrap, input };
+    input.focus();
+  };
+  wrap.append(h('button', { class: 'add-card-btn', text: '＋ カードを追加', onclick: open }));
+  return wrap;
+}
+
 function renderCard(card, list) {
-  const labelsById = new Map(state.board.labels.map((l) => [l.id, l]));
+  if (card.kind === 'task') return renderTaskCard(card, list);
   const el = h('article', {
     class: `card${card.archived ? ' is-archived' : ''}${card.unread ? ' unread' : ''}`, tabindex: 0, 'data-card-id': card.id,
     'aria-label': `${card.title}（${STATUS_LABELS[card.status]}${card.unread ? '・新着' : ''}）`,
   });
-  const labels = card.labels.map((id) => labelsById.get(id)).filter(Boolean);
-  if (labels.length) {
-    el.append(h('div', { class: `labels${state.labelsExpanded ? ' expanded' : ''}`, title: 'クリックでラベル名を表示',
-      onclick: (e) => { e.stopPropagation(); state.labelsExpanded = !state.labelsExpanded; store.set('labelsExpanded', state.labelsExpanded); render(); } },
-      labels.map((l) => h('span', { class: 'chip', style: { background: colorVar(l.color) }, text: state.labelsExpanded ? l.name : '' }))));
-  }
+  const lbl = cardLabels(card);
+  if (lbl) el.append(lbl);
   el.append(h('div', { class: 'title' },
     card.status !== 'idle' ? h('span', { class: `sdot s-${card.status}`, title: STATUS_LABELS[card.status] }) : null,
     card.title));
@@ -559,18 +609,27 @@ function renderCard(card, list) {
   if (card.prUrl) meta.append(h('span', { title: card.prUrl, text: 'PR' }));
   if (card.archived) meta.append(h('span', { text: 'アーカイブ済' }));
   if (card.subagent) meta.append(h('span', { text: 'サブエージェント' }));
+  if (card.subagents) meta.append(h('span', { class: 'pill', title: 'このセッションが起動したサブエージェント', text: `🤖 ${card.subagents.total}${card.subagents.running ? `（動作中 ${card.subagents.running}）` : ''}` }));
   if (card.hidden) meta.append(h('span', { text: '非表示' }));
   el.append(meta);
 
+  return attachCardBehavior(el, card, list, (opts) => resume(card.id, opts));
+}
+
+// Shared by session and task cards: drag, click to open, ▶ resume, keyboard.
+function attachCardBehavior(el, card, list, onResume) {
   el.addEventListener('pointerdown', (e) => startCardDrag(e, card, el));
   el.addEventListener('click', () => { if (!state.justDragged) openCard(card.id); });
-  el.append(h('button', { class: 'card-resume', title: `再開（${shortcutHelp()}）`, 'aria-label': `${card.title} を再開`, text: '▶',
-    onpointerdown: (e) => e.stopPropagation(),
-    onclick: (e) => { e.stopPropagation(); resume(card.id, optsFromEvent(e)); } }));
+  if (onResume) {
+    el.append(h('button', { class: 'card-resume', title: `再開（${shortcutHelp()}）`, 'aria-label': `${card.title} を再開`, text: '▶',
+      onpointerdown: (e) => e.stopPropagation(),
+      onclick: (e) => { e.stopPropagation(); onResume(optsFromEvent(e)); } }));
+  }
   el.addEventListener('keydown', (e) => {
+    if (e.target !== el) return;
     if (e.key === 'Enter') openCard(card.id);
-    const k = !e.metaKey && !e.ctrlKey && !e.altKey && CARD_KEYS[e.key.toLowerCase()];
-    if (k) { e.preventDefault(); resume(card.id, k); }
+    const k = onResume && !e.metaKey && !e.ctrlKey && !e.altKey && CARD_KEYS[e.key.toLowerCase()];
+    if (k) { e.preventDefault(); onResume(k); }
     if (ARROWS[e.key] && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
       if (e.altKey) focusNeighbor(list.id, card.id, e.key);
@@ -578,6 +637,59 @@ function renderCard(card, list) {
     }
   });
   return el;
+}
+
+function cardLabels(card) {
+  const labelsById = new Map(state.board.labels.map((l) => [l.id, l]));
+  const labels = card.labels.map((id) => labelsById.get(id)).filter(Boolean);
+  if (!labels.length) return null;
+  return h('div', { class: `labels${state.labelsExpanded ? ' expanded' : ''}`, title: 'クリックでラベル名を表示',
+    onclick: (e) => { e.stopPropagation(); state.labelsExpanded = !state.labelsExpanded; store.set('labelsExpanded', state.labelsExpanded); render(); } },
+    labels.map((l) => h('span', { class: 'chip', style: { background: colorVar(l.color) }, text: state.labelsExpanded ? l.name : '' })));
+}
+
+function planMeta(meta, card) {
+  if (card.priority) meta.append(h('span', { class: `pill prio-${card.priority}`, text: { high: '優先度 高', medium: '優先度 中', low: '優先度 低' }[card.priority] }));
+  if (card.due) {
+    const overdue = Date.parse(card.due) < Date.now() - 86400000;
+    meta.append(h('span', { class: `pill${overdue ? ' due-over' : ''}`, text: `🕑 ${new Date(card.due).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}` }));
+  }
+  if (card.note) meta.append(h('span', { title: 'メモあり', text: '≡' }));
+}
+
+// A task card: user-made, with its linked sessions listed inside.
+function renderTaskCard(card, list) {
+  const el = h('article', {
+    class: `card task${card.unread ? ' unread' : ''}`, tabindex: 0, 'data-card-id': card.id,
+    'aria-label': `${card.title}（タスク・${STATUS_LABELS[card.status]}）`,
+  });
+  const lbl = cardLabels(card);
+  if (lbl) el.append(lbl);
+  el.append(h('div', { class: 'title' },
+    card.status !== 'idle' ? h('span', { class: `sdot s-${card.status}`, title: STATUS_LABELS[card.status] }) : null, card.title));
+  if (card.links.length) {
+    const box = h('div', { class: 'task-links' });
+    for (const l of card.links.slice(0, 3)) {
+      box.append(h('div', { class: 'task-link', title: l.title },
+        h('span', { class: `sdot s-${l.status}` }),
+        h('span', { class: `badge ${l.agent}`, text: l.agent === 'codex' ? 'Codex' : 'Claude' }),
+        l.host ? h('span', { class: 'host-chip', text: `⌂ ${l.host.label}` }) : null,
+        h('span', { class: 'ellipsis grow', text: l.title })));
+    }
+    if (card.links.length > 3) box.append(h('div', { class: 'muted', text: `ほか ${card.links.length - 3} 件` }));
+    el.append(box);
+  }
+  const meta = h('div', { class: 'meta' },
+    h('span', { class: 'badge task-badge', text: 'タスク' }),
+    card.unread ? h('span', { class: 'pill new-pill', text: '新着' }) : null,
+    card.autoMoved ? h('span', { class: 'pill', title: 'ルールで自動移動', text: '⚡' }) : null,
+    card.description ? h('span', { title: '説明あり', text: '📝' }) : null);
+  planMeta(meta, card);
+  for (const p of card.pending) meta.append(h('span', { class: `pill${p.expired ? ' due-over' : ''}`, title: p.expired ? '開始したセッションが見つかりません。詳細から手動で紐付けてください' : '開始したセッションを待っています',
+    text: `${p.expired ? '⚠' : '⏳'} ${p.agent === 'codex' ? 'Codex' : 'Claude'}` }));
+  el.append(meta);
+  const latest = [...card.links].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+  return attachCardBehavior(el, card, list, latest ? (opts) => resume(latest.id, opts) : null);
 }
 
 function renderAddList() {
@@ -714,6 +826,7 @@ function labelsManager(anchor) {
 function closeModal() { document.querySelectorAll('.overlay').forEach((o) => o.remove()); state.modalOpen = false; }
 
 async function openCard(cardId) {
+  if (cardId.startsWith('task:')) return openTaskModal(cardId);
   for (const l of state.board?.lists || []) for (const c of l.cards) if (c.id === cardId && c.unread) { c.unread = false; render(); }
   closePopover();
   closeModal();
@@ -785,8 +898,20 @@ function renderModal(modal, d) {
     h('button', { class: 'side-btn', text: '⧉ 再開コマンドをコピー', title: L.terminal.command, onclick: () => copyText(L.terminal.command, '再開コマンド') }),
   );
 
+  const taskSel = h('select', { class: 'text-input', 'aria-label': 'タスクに紐付け' },
+    h('option', { value: '', text: d.task ? `紐付け中: ${d.task.title}` : '（タスクに紐付けない）' }),
+    (d.tasks || []).filter((t) => !d.task || t.id !== d.task.id).map((t) => h('option', { value: t.id, text: t.title })),
+    d.task ? h('option', { value: '__unlink', text: '紐付けを解除' }) : null);
+  taskSel.onchange = async () => {
+    const v = taskSel.value;
+    if (!v) return;
+    if (v === '__unlink') await act('canban_unlink_session', { taskId: d.task.id, sessionId: s.id }, { okMsg: '紐付けを解除しました' });
+    else await act('canban_link_session', { taskId: v, sessionId: s.id }, { okMsg: 'タスクに紐付けました' });
+    closeModal();
+  };
   const side = h('div', {},
     h('div', { class: 'field-label', text: '再開' }), resumeBox,
+    h('div', { class: 'field-label', text: 'タスク' }), taskSel,
     h('div', { class: 'field-label', text: 'カードに追加' }),
     h('button', { class: 'side-btn', text: '🏷 ラベル', onclick: (e) => labelPicker(e.currentTarget, s.id, card, paintLabels) }),
     h('div', { class: 'field-label', text: '優先度' }), prio,
@@ -819,6 +944,12 @@ function renderModal(modal, d) {
       ...kv('最終更新', fmtDate(s.updatedAt)),
       ...kv('状態', [s.archived ? 'アーカイブ済' : '進行中/未アーカイブ', s.subagent ? 'サブエージェント' : null, s.automation ? '自動実行' : null].filter(Boolean).join(' · ')),
     ),
+    d.task ? h('div', { class: 'msg' }, 'このセッションはタスク ', h('button', { class: 'link-btn', text: `「${d.task.title}」`, onclick: () => openCard(d.task.id) }), ' に紐付いています。') : null,
+    d.children && d.children.length ? h('div', { class: 'section-title', text: `サブエージェント（${d.children.length}）` }) : null,
+    ...(d.children || []).map((c) => h('button', { class: 'sub-row', onclick: () => openCard(c.id) },
+      h('span', { class: `sdot s-${c.status}` }), h('span', { class: 'ellipsis grow', text: c.agentName ? `${c.agentName}: ${c.title}` : c.title }),
+      h('span', { class: 'muted', text: relTime(c.updatedAt) }))),
+    d.parentId ? h('div', { class: 'msg' }, h('button', { class: 'link-btn', text: '↑ 親セッションを開く', onclick: () => openCard(d.parentId) })) : null,
     h('div', { class: 'section-title', text: '最初の依頼' }),
     h('div', { class: 'msg user' }, s.preview || '-'),
     h('div', { class: 'section-title', text: '直近のやりとり（読み取り専用）' }),
@@ -836,6 +967,124 @@ function renderModal(modal, d) {
   );
   modal.querySelector('.close').focus();
 }
+// ======================================================================
+// Task card detail
+// ======================================================================
+function findCard(cardId) {
+  for (const l of state.board.lists) for (const c of l.cards) if (c.id === cardId) return { card: c, list: l };
+  return null;
+}
+
+function openTaskModal(cardId) {
+  const found = findCard(cardId);
+  if (!found) return toast('カードが見つかりません（絞り込みを確認してください）', true);
+  const { card, list } = found;
+  const b = state.board;
+  closePopover();
+  closeModal();
+  state.modalOpen = true;
+  const overlay = h('div', { class: 'overlay', onclick: (e) => { if (e.target === overlay) closeModal(); } });
+  overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+  const title = h('input', { class: 'title-input', value: card.title, maxlength: 300, 'aria-label': 'タイトル' });
+  title.onchange = () => title.value.trim() && act('canban_update_task', { cardId, title: title.value });
+  const desc = h('textarea', { class: 'note', placeholder: '説明（新しいセッションへの依頼文にも使われます）', 'aria-label': '説明' });
+  desc.value = card.description;
+  desc.onblur = () => desc.value !== card.description && act('canban_update_task', { cardId, description: desc.value }, { okMsg: '保存しました' });
+
+  const listSel = h('select', { class: 'text-input', style: { width: 'auto' }, 'aria-label': 'リスト' }, b.lists.map((l) => h('option', { value: l.id, text: l.title })));
+  listSel.value = list.id;
+  listSel.onchange = () => act('canban_move_card', { cardId, toList: listSel.value, position: 'top' }, { okMsg: 'カードを移動しました' });
+
+  // --- start a new session
+  const t = card.target || {};
+  const agentSel = h('select', { class: 'text-input', 'aria-label': 'エージェント' }, h('option', { value: 'codex', text: 'Codex' }), h('option', { value: 'claude', text: 'Claude Code' }));
+  agentSel.value = t.agent || 'codex';
+  const hostSel = h('select', { class: 'text-input', 'aria-label': 'マシン' }, b.hosts.map((x) => h('option', { value: x.local ? 'local' : x.id, text: x.local ? 'このマシン' : `⌂ ${x.label}${x.enabled ? '' : '（読み取りオフ）'}` })));
+  hostSel.value = t.hostId || 'local';
+  const dl = h('datalist', { id: `folders-${cardId}` });
+  const cwd = h('input', { class: 'text-input', list: dl.id, placeholder: '作業フォルダ（絶対パス）', value: t.cwd || '', 'aria-label': '作業フォルダ' });
+  const fillFolders = () => dl.replaceChildren(...b.folders.filter((f) => f.hostId === hostSel.value).map((f) => h('option', { value: f.cwd, label: f.project || '' })));
+  hostSel.onchange = fillFolders;
+  fillFolders();
+  const prompt = h('textarea', { class: 'note', 'aria-label': '依頼文' });
+  prompt.value = [card.title, card.description].filter(Boolean).join('\n\n');
+  const start = async (opts = {}) => {
+    try {
+      const r = await bridge.callTool('canban_start_session', { taskId: cardId, agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim(), prompt: prompt.value, ...opts });
+      toast(r.note || `${agentSel.value === 'codex' ? 'Codex' : 'Claude'} で開始しました。セッションが現れると自動で紐付きます`, !!r.note);
+      closeModal();
+      load();
+    } catch (e) {
+      toast(e.message, true);
+    }
+  };
+
+  const linkRows = card.links.map((l) => h('div', { class: 'sub-row' },
+    h('span', { class: `sdot s-${l.status}` }),
+    h('span', { class: `badge ${l.agent}`, text: l.agent === 'codex' ? 'Codex' : 'Claude' }),
+    l.host ? h('span', { class: 'host-chip', text: `⌂ ${l.host.label}` }) : null,
+    h('button', { class: 'link-btn ellipsis grow', text: l.title, title: '詳細を開く', onclick: () => openCard(l.id) }),
+    h('span', { class: 'muted', text: `${STATUS_LABELS[l.status]}・${relTime(l.updatedAt)}` }),
+    h('button', { class: 'seg-btn', title: shortcutHelp(), text: '▶ 再開', onclick: (e) => resume(l.id, optsFromEvent(e)) }),
+    h('button', { class: 'icon-btn', 'aria-label': '紐付けを解除', title: '紐付けを解除', text: '✕',
+      onclick: () => act('canban_unlink_session', { taskId: cardId, sessionId: l.id }, { okMsg: '紐付けを解除しました' }).then(() => openTaskModal(cardId)) })));
+  const pendingRows = card.pending.length ? [h('div', { class: 'msg' },
+    card.pending.map((p) => `${p.expired ? '⚠ 見つかりません' : '⏳ 開始待ち'}: ${p.agent === 'codex' ? 'Codex' : 'Claude'}（${relTime(p.startedAt)}）`).join(' / '), ' ',
+    h('button', { class: 'link-btn', text: '取り消す', onclick: () => act('canban_clear_pending', { taskId: cardId }).then(() => openTaskModal(cardId)) }))] : [];
+
+  const prio = h('select', { class: 'text-input', 'aria-label': '優先度' },
+    h('option', { value: '', text: '未設定' }), h('option', { value: 'high', text: '高' }), h('option', { value: 'medium', text: '中' }), h('option', { value: 'low', text: '低' }));
+  prio.value = card.priority || '';
+  prio.onchange = () => act('canban_update_card', { cardId, priority: prio.value || null });
+  const due = h('input', { class: 'text-input', type: 'date', 'aria-label': '期限' });
+  due.value = card.due ? card.due.slice(0, 10) : '';
+  due.onchange = () => act('canban_update_card', { cardId, due: due.value || null });
+  const labelState = { labels: [...card.labels] };
+
+  const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'タスクの詳細' },
+    h('button', { class: 'icon-btn close', 'aria-label': '閉じる', text: '✕', onclick: closeModal }),
+    title,
+    h('div', { class: 'sub row' }, h('span', { class: 'badge task-badge', text: 'タスク' }),
+      h('span', { class: 'row', style: { gap: '0' } }, h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]), 'リスト:', listSel),
+    h('div', { class: 'modal-grid' },
+      h('div', {},
+        h('div', { class: 'section-title', text: '説明' }), desc,
+        h('div', { class: 'section-title', text: `紐付いたセッション（${card.links.length}）` }),
+        linkRows.length ? linkRows : h('p', { class: 'muted', text: 'まだありません。下から開始するか、ボード上のセッションカードをこのカードへドラッグしてください。' }),
+        ...pendingRows,
+        h('div', { class: 'section-title', text: '新しいセッションを開始' }),
+        h('div', { class: 'start-grid' }, agentSel, hostSel, cwd, dl),
+        prompt,
+        h('div', { class: 'row', style: { marginTop: '8px', flexWrap: 'wrap' } },
+          h('button', { class: 'btn-primary', title: shortcutHelp(), text: `▶ 開始（${routeLabel(b.settings.launch.route, { desktop: true })}）`, onclick: (e) => start(optsFromEvent(e)) }),
+          h('button', { class: 'btn', text: 'デスクトップアプリで', onclick: () => start({ route: 'desktop' }) }),
+          h('button', { class: 'btn', text: 'ターミナルで', onclick: () => start({ route: 'terminal' }) })),
+        h('p', { class: 'muted', text: '開始したセッションは、エージェント・マシン・フォルダ・依頼文の書き出しが一致すると自動でこのカードに紐付きます。' })),
+      h('div', {},
+        h('div', { class: 'field-label', text: 'カードに追加' }),
+        h('button', { class: 'side-btn', text: '🏷 ラベル', onclick: (e) => labelPicker(e.currentTarget, cardId, labelState, () => {}) }),
+        h('div', { class: 'field-label', text: '優先度' }), prio,
+        h('div', { class: 'field-label', text: '期限' }), due,
+        h('div', { class: 'field-label', text: 'その他' }),
+        h('button', { class: 'side-btn', text: card.hidden ? '👁 ボードに再表示' : '🙈 ボードから隠す',
+          onclick: async () => { await act('canban_update_card', { cardId, hidden: !card.hidden }); closeModal(); } }),
+        h('button', { class: 'side-btn danger-text', text: '🗑 カードを削除',
+          onclick: async () => { if (confirmInline(modal, 'このタスクカードを削除します。紐付いたセッション自体は消えません。')) { await act('canban_delete_task', { cardId }, { okMsg: '削除しました' }); closeModal(); } } }))));
+  overlay.append(modal);
+  document.body.append(overlay);
+  title.focus();
+}
+
+// Two-step confirm without window.confirm (blocked in sandboxed iframes).
+function confirmInline(host, message) {
+  if (host.dataset.confirming === message) { delete host.dataset.confirming; return true; }
+  host.dataset.confirming = message;
+  toast(`${message} もう一度押すと実行します`);
+  setTimeout(() => { if (host.dataset.confirming === message) delete host.dataset.confirming; }, 4000);
+  return false;
+}
+
 function kv(k, v) { return [h('dt', { text: k }), h('dd', { text: v })]; }
 
 // ======================================================================
@@ -1057,7 +1306,24 @@ function startCardDrag(e, card, el) {
     const d = state.drag;
     d.ghost.style.left = `${ev.clientX - d.dx}px`;
     d.ghost.style.top = `${ev.clientY - d.dy}px`;
-    placeCardPlaceholder(ev.clientX, ev.clientY);
+    // Dropping a session card onto the middle of a task card links it to the task;
+    // near a card's edges it is a normal move. Decide before moving the placeholder.
+    let under = null;
+    if (card.kind !== 'task') {
+      d.ph.style.display = 'none';
+      const t = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.card.task');
+      if (t) {
+        const r = t.getBoundingClientRect();
+        if (ev.clientY > r.top + r.height * 0.2 && ev.clientY < r.bottom - r.height * 0.2) under = t;
+      }
+    }
+    if (d.dropTask !== under) {
+      d.dropTask?.classList.remove('drop-target');
+      d.dropTask = under;
+      d.dropTask?.classList.add('drop-target');
+    }
+    d.ph.style.display = d.dropTask ? 'none' : '';
+    if (!d.dropTask) placeCardPlaceholder(ev.clientX, ev.clientY);
     autoScroll(ev.clientX, ev.clientY);
   };
   const up = () => {
@@ -1074,6 +1340,12 @@ function startCardDrag(e, card, el) {
     state.drag = null;
     state.justDragged = true;
     setTimeout(() => (state.justDragged = false), 0);
+    if (d.dropTask) {
+      const taskId = d.dropTask.dataset.cardId;
+      d.dropTask.classList.remove('drop-target');
+      act('canban_link_session', { taskId, sessionId: card.id }, { okMsg: 'タスクに紐付けました' }).catch(() => {});
+      return;
+    }
     if (toList && idx >= 0) moveCard(card, d.fromList, toList, idx);
     else render();
   };

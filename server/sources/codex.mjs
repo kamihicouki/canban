@@ -70,14 +70,33 @@ export async function listCodexSessions({ home = codexHome() } = {}) {
   const dbPath = await findStateDb(home);
   if (!dbPath || !exists(dbPath)) return { sessions: [], error: null };
   try {
-    const rows = queryReadOnly(dbPath, (db) => {
+    const { rows, edges } = queryReadOnly(dbPath, (db) => {
       const cols = new Set(db.prepare('PRAGMA table_info(threads)').all().map((c) => c.name));
       const want = CODEX_COLUMNS.filter((c) => cols.has(c));
-      return db.prepare(`SELECT ${want.join(', ')} FROM threads`).all();
+      const hasEdges = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='thread_spawn_edges'").get();
+      return {
+        rows: db.prepare(`SELECT ${want.join(', ')} FROM threads`).all(),
+        edges: hasEdges ? db.prepare('SELECT parent_thread_id AS parent, child_thread_id AS child FROM thread_spawn_edges').all() : [],
+      };
     });
-    return { sessions: rows.map((r) => normalizeCodexRow(r)), error: null };
+    const sessions = rows.map((r) => normalizeCodexRow(r));
+    attachSpawnEdges(sessions, edges);
+    return { sessions, error: null };
   } catch (err) {
     return { sessions: [], error: `Codex DB 読み取り失敗: ${err.message}` };
+  }
+}
+
+// Link sub-agent threads to their parent (same host): parent.children / child.parentId.
+export function attachSpawnEdges(sessions, edges, host = LOCAL_HOST) {
+  if (!edges?.length) return;
+  const byNative = new Map(sessions.filter((s) => s.agent === 'codex').map((s) => [s.nativeId, s]));
+  for (const { parent, child } of edges) {
+    const p = byNative.get(parent);
+    const c = byNative.get(child);
+    if (!p || !c) continue;
+    (p.children ||= []).push(sessionKey('codex', host, child));
+    c.parentId = sessionKey('codex', host, parent);
   }
 }
 

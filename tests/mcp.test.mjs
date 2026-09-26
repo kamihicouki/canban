@@ -98,3 +98,23 @@ test('settings and hosts tools', async () => {
   const bad = await call('canban_set_remote_host', { hostId: 'remote-ssh-discovered:nope', enabled: true });
   assert.equal(bad.isError, true);
 });
+
+test('task flow: create, start (dry-run), link, board shows the session inside the task', async () => {
+  const created = await call('canban_create_task', { title: 'README を直す', list: 'doing' });
+  const taskId = created.structuredContent.cardId;
+  const started = await call('canban_start_session', { taskId, agent: 'claude', cwd: '/r/web', route: 'desktop' });
+  assert.ok(!started.isError, started.content?.[0]?.text);
+  assert.equal(started.structuredContent.url, 'claude://code/new?q=README+%E3%82%92%E7%9B%B4%E3%81%99&folder=%2Fr%2Fweb');
+  let board = (await call('canban_get_board', { days: 0 })).structuredContent;
+  let task = board.lists.flatMap((l) => l.cards).find((c) => c.id === taskId);
+  assert.equal(task.kind, 'task');
+  assert.equal(task.pending.length, 1);
+  await call('canban_link_session', { taskId, sessionId: 'claude:c1' });
+  board = (await call('canban_get_board', { days: 0, includeArchived: true })).structuredContent;
+  const all = board.lists.flatMap((l) => l.cards);
+  task = all.find((c) => c.id === taskId);
+  assert.deepEqual(task.links.map((l) => l.id), ['claude:c1']);
+  assert.ok(!all.some((c) => c.id === 'claude:c1'), 'linked session is not shown as its own card');
+  const d = (await call('canban_get_session', { cardId: 'claude:c1' })).structuredContent;
+  assert.equal(d.task.id, taskId);
+});

@@ -29,6 +29,7 @@ export async function listRemoteHosts({ home = codexHome() } = {}) {
       alias,
       label: (typeof c.displayName === 'string' && c.displayName) || alias,
       local: false,
+      sshPort: Number.isInteger(c.sshPort) ? c.sshPort : null,
       sshArgs,
     });
   }
