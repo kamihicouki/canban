@@ -56,6 +56,7 @@ export function newSummary(sessionId) {
     updatedAt: null,
     prUrl: null,
     turns: 0,
+    tokens: 0,
   };
 }
 
@@ -78,9 +79,14 @@ export function foldSummary(s, o) {
     case 'pr-link':
       if (o.prUrl) s.prUrl = o.prUrl;
       break;
-    case 'assistant':
+    case 'assistant': {
       if (o.message?.model) s.model = o.message.model;
+      const u = o.message?.usage;
+      if (u && typeof u === 'object') {
+        for (const k of ['input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens']) s.tokens += Number(u[k]) || 0;
+      }
       break;
+    }
     case 'user':
       if (isHumanPrompt(o)) {
         s.turns++;
@@ -133,6 +139,7 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
     sourcePath: s.file || null,
     prUrl: s.prUrl || null,
     agentName: s.agentName || null,
+    tokens: s.tokens || 0,
     desktopStatus: dm?.postTurnSummary?.status_category ?? dm?.statusCategory ?? null,
     rawStatus: s.rawStatus ?? null,
     statusMtimeMs: s.statusMtimeMs ?? null,

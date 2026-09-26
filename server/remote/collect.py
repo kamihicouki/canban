@@ -25,7 +25,7 @@ if isinstance(globals().get("ARGS"), dict):
 CODEX_COLUMNS = [
     "id", "rollout_path", "created_at", "updated_at", "created_at_ms", "updated_at_ms", "source", "thread_source",
     "cwd", "title", "name", "archived", "git_branch", "model", "first_user_message", "preview", "agent_role",
-    "agent_nickname", "is_pinned", "git_origin_url",
+    "agent_nickname", "is_pinned", "git_origin_url", "tokens_used",
 ]
 SUMMARY_PROMPTS = 3
 TAIL_BYTES = 768 * 1024
@@ -208,7 +208,7 @@ def is_human_prompt(o):
 def summarize(path, session_id):
     s = {
         "sessionId": session_id, "cwd": None, "branch": None, "prompts": [], "customTitle": None, "agentName": None,
-        "model": None, "createdAt": None, "updatedAt": None, "prUrl": None, "turns": 0,
+        "model": None, "createdAt": None, "updatedAt": None, "prUrl": None, "turns": 0, "tokens": 0,
     }
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
         for line in fh:
@@ -238,8 +238,13 @@ def summarize(path, session_id):
                 s["agentName"] = o["agentName"]
             elif t == "pr-link" and o.get("prUrl"):
                 s["prUrl"] = o["prUrl"]
-            elif t == "assistant" and (o.get("message") or {}).get("model"):
-                s["model"] = o["message"]["model"]
+            elif t == "assistant":
+                msg = o.get("message") or {}
+                if msg.get("model"):
+                    s["model"] = msg["model"]
+                u = msg.get("usage") or {}
+                if isinstance(u, dict):
+                    s["tokens"] += sum(int(u.get(k) or 0) for k in ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
             elif t == "user" and is_human_prompt(o):
                 s["turns"] += 1
                 if len(s["prompts"]) < SUMMARY_PROMPTS:
@@ -337,6 +342,42 @@ def tail_records(path, agent):
             out.append(o)
     return out
 
+def contains(path, needle):
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - 4 * 1024 * 1024))
+            return needle in fh.read().decode("utf-8", errors="replace").lower()
+    except OSError:
+        return False
+
+
+def search(q, days, limit):
+    q = q.strip().lower()
+    out = {"codex": [], "claude": []}
+    if len(q) < 3:
+        return out
+    cutoff = __import__("time").time() - days * 86400
+    roots = [(os.path.join(CODEX_HOME, "sessions"), "codex"), (os.path.join(CLAUDE_HOME, "projects"), "claude")]
+    for root, agent in roots:
+        for dirpath, _dirs, files in os.walk(root):
+            for f in files:
+                if not f.endswith(".jsonl"):
+                    continue
+                fp = os.path.join(dirpath, f)
+                try:
+                    if os.stat(fp).st_mtime < cutoff:
+                        continue
+                except OSError:
+                    continue
+                if contains(fp, q):
+                    out[agent].append(fp if agent == "codex" else f[: -len(".jsonl")])
+                    if len(out["codex"]) + len(out["claude"]) >= limit:
+                        return out
+    return out
+
+
 def main():
     args = globals().get("ARGS") or {}
     mode = args.get("mode", "list")
@@ -345,6 +386,8 @@ def main():
     elif mode == "status":  # used by the parity tests
         recs = args.get("records") or []
         result = {"ok": True, "raw": codex_raw_status(recs) if args.get("agent") == "codex" else claude_raw_status(recs)}
+    elif mode == "search":  # substring search over recent conversations
+        result = {"ok": True, **search(args.get("q") or "", int(args.get("days") or 30), int(args.get("limit") or 100))}
     elif mode == "messages":
         result = {"ok": True, "records": tail_records(args["path"], args.get("agent", "codex"))}
     else:

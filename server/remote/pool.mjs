@@ -111,6 +111,24 @@ export class RemotePool {
     return hosts.flatMap((h) => this.cache.get(h.id)?.sessions || []);
   }
 
+  // Substring search on a remote host; maps hits to session ids of the cached listing.
+  async search(host, q) {
+    const key = `${host.id}\u0000${q}`;
+    const hit = (this.searchCache ||= new Map()).get(key);
+    if (hit && Date.now() - hit.at < 60e3) return hit.ids;
+    const res = await this.run(host, { mode: 'search', q, days: 30, limit: 100 });
+    const sessions = this.cache.get(host.id)?.sessions || [];
+    const ids = new Set();
+    if (res.ok) {
+      const byPath = new Map(sessions.filter((s) => s.agent === 'codex').map((s) => [s.sourcePath, s.id]));
+      const byNative = new Map(sessions.filter((s) => s.agent === 'claude').map((s) => [s.nativeId, s.id]));
+      for (const p of res.codex || []) if (byPath.has(p)) ids.add(byPath.get(p));
+      for (const n of res.claude || []) if (byNative.has(n)) ids.add(byNative.get(n));
+    }
+    this.searchCache.set(key, { at: Date.now(), ids });
+    return ids;
+  }
+
   hostStatus(hostId) {
     return this.status.get(hostId) || { state: 'idle', error: null, fetchedAt: null, count: 0 };
   }

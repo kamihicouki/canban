@@ -6,8 +6,9 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { Store } from './store.mjs';
-import { buildBoard, sessionDetail, allSessions, findSession, hostsWithState, effectiveOrder, tickRules } from './board.mjs';
+import { buildBoard, sessionDetail, allSessions, findSession, hostsWithState, effectiveOrder, tickRules, tickSearch } from './board.mjs';
 import { RULE_TRIGGERS } from './store.mjs';
+import { computeStats } from './stats.mjs';
 import { desktopLink, resumeCommand, newSessionLink, newSessionCommand } from './agents.mjs';
 import { LOCAL_HOST } from './sources/util.mjs';
 import { openUrl, runInTerminal, installedTerminals, setRunner, TERMINAL_LABELS } from './launcher.mjs';
@@ -42,6 +43,7 @@ const filterProps = {
   includeSubagents: { type: 'boolean' },
   includeHidden: { type: 'boolean' },
   groupBranch: { type: 'boolean', description: '同じリポジトリ＋ブランチのセッションをまとめる' },
+  fulltext: { type: 'boolean', description: 'q を会話の本文でも検索する（3 文字以上）' },
   days: { type: 'number', description: '未配置セッションの表示期間（日）。0 で無制限。既定 30' },
 };
 
@@ -323,6 +325,23 @@ const TOOLS = [
   appTool('canban_update_task', 'タスクカードを更新', { cardId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' } }, ['cardId'], (a) => store.updateTask(a)),
   appTool('canban_delete_task', 'タスクカードを削除', { cardId: { type: 'string' } }, ['cardId'], (a) => store.deleteTask(a)),
   appTool('canban_clear_pending', '開始待ちを取り消す', { taskId: { type: 'string' } }, ['taskId'], (a) => store.clearPending(a)),
+  {
+    name: 'canban_get_stats',
+    title: '分析',
+    description: 'セッション数・トークン量の推移、プロジェクト／マシン別の内訳、リストの滞留時間、完了までのサイクルタイムを返す。',
+    inputSchema: { type: 'object', properties: { days: { type: 'number' }, agent: filterProps.agent, host: filterProps.host, project: filterProps.project, includeSubagents: { type: 'boolean' } }, additionalProperties: false },
+    annotations: { readOnlyHint: true },
+    _meta: appAndModel,
+    handler: async (args) => {
+      const state = store.load();
+      const { sessions } = await allSessions(state);
+      const days = Math.min(Math.max(Number(args.days) || 30, 1), 365);
+      const st = computeStats(state, sessions, { ...args, days });
+      return { text: `直近 ${days} 日: ${st.totals.sessions} セッション / ${st.totals.tokens.toLocaleString()} トークン`, structured: st };
+    },
+  },
+  appTool('canban_save_view', 'ビューを保存', { id: { type: 'string' }, name: { type: 'string' }, filters: { type: 'object' } }, ['name', 'filters'], (a) => store.saveView(a)),
+  appTool('canban_delete_view', 'ビューを削除', { viewId: { type: 'string' } }, ['viewId'], (a) => store.deleteView(a)),
   appTool('canban_set_rule', '自動移動ルールを保存', {
     id: { type: 'string' },
     enabled: { type: 'boolean' },
@@ -476,5 +495,11 @@ async function onLine(line) {
 // Rules keep working while the board is closed (the server lives as long as Codex does).
 const RULE_TICK_MS = Number(process.env.CANBAN_RULE_TICK_MS) || 60000;
 setInterval(() => tickRules(store).catch((e) => log('rules:', e.message)), RULE_TICK_MS).unref();
+// Full-text index: first pass shortly after start, then incremental steps.
+if (process.env.CANBAN_SEARCH_INDEX !== '0') {
+  const indexStep = () => tickSearch(store).catch((e) => log('search:', e.message));
+  setTimeout(indexStep, 15000).unref();
+  setInterval(indexStep, 60000).unref();
+}
 
 log(`started v${PKG.version}`);

@@ -45,7 +45,17 @@ export function defaultSettings() {
     rules: defaultRules(),
     // Cards updated after this time (and after their own seenAt) are highlighted as new.
     seenAllAt: null,
+    // Saved views: named filter / swimlane presets.
+    views: [],
   };
+}
+
+const VIEW_FILTER_KEYS = ['agent', 'host', 'status', 'project', 'q', 'days', 'includeArchived', 'includeSubagents', 'includeHidden', 'groupBranch', 'fulltext', 'swimlane'];
+function normalizeView(v) {
+  if (!v || typeof v.id !== 'string' || !String(v.name || '').trim()) return null;
+  const filters = {};
+  for (const k of VIEW_FILTER_KEYS) if (v.filters && v.filters[k] !== undefined) filters[k] = v.filters[k];
+  return { id: v.id, name: String(v.name).trim().slice(0, 60), filters };
 }
 
 function normalizeRule(r) {
@@ -70,6 +80,7 @@ function normalizeSettings(s) {
     },
     rules: Array.isArray(s?.rules) ? s.rules.map(normalizeRule).filter(Boolean) : d.rules,
     seenAllAt: typeof s?.seenAllAt === 'number' ? s.seenAllAt : null,
+    views: Array.isArray(s?.views) ? s.views.map(normalizeView).filter(Boolean).slice(0, 20) : [],
   };
 }
 
@@ -418,6 +429,25 @@ export class Store {
     return this.mutate((s) => {
       s.settings.rules = s.settings.rules.filter((r) => r.id !== ruleId);
       return { deleted: ruleId };
+    });
+  }
+
+  async saveView({ id, name, filters }) {
+    const v = normalizeView({ id: id || newId('view'), name, filters });
+    if (!v) throw new Error('ビュー名を入力してください');
+    return this.mutate((s) => {
+      const i = s.settings.views.findIndex((x) => x.id === v.id);
+      if (i >= 0) s.settings.views[i] = v;
+      else if (s.settings.views.length >= 20) throw new Error('ビューは 20 個まで保存できます');
+      else s.settings.views.push(v);
+      return v;
+    });
+  }
+
+  deleteView({ viewId }) {
+    return this.mutate((s) => {
+      s.settings.views = s.settings.views.filter((v) => v.id !== viewId);
+      return { deleted: viewId };
     });
   }
 

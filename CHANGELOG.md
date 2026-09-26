@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0 — 2026-09-26
+- Analytics view: sessions per day (stacked by agent), token usage, per-project and per-machine breakdowns, time spent in lists, cycle time to the last list and weekly completions. Charts have hover tooltips and a table view; the Codex/Claude colours are validated for colour-vision deficiencies in light and dark mode.
+- Full-text search over conversations (toggle "本文"): a background FTS5 trigram index in `~/.canban/search.sqlite` (last 90 days, incremental) with highlighted snippets on cards; enabled remote hosts are searched on demand.
+- Swimlanes by project, machine, agent or label (drag and drop keeps working across lanes).
+- Saved views (filters, search, swimlane, view options) with 1–9 shortcuts.
+- Token counts for Claude Code sessions (from message usage) and Codex (`tokens_used`), kept in parity with the remote collector.
+
 ## 0.5.0 — 2026-09-26
 - Git / PR integration for GitHub (`gh`) and GitLab (`glab`): repos come from Codex's recorded origin, Claude PR links or the folder's `remote.origin.url`; PRs/MRs are matched by branch (with per-branch lookups for older branches) and cached for 5 minutes, all in the background so the board never waits.
 - Cards show the PR/MR number with state colour and CI result; the detail lists checks / pipeline and the other sessions on the same branch.

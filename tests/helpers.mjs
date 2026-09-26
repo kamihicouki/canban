@@ -40,7 +40,7 @@ export function makeFixtures() {
   fs.writeFileSync(
     path.join(proj, 'c1.jsonl'),
     line({ type: 'user', cwd: '/r/web', gitBranch: 'main', timestamp: '2026-09-21T00:00:00Z', message: { role: 'user', content: 'トップページを速くして' } }) +
-      line({ type: 'assistant', timestamp: '2026-09-21T00:00:05.250Z', message: { model: 'claude-opus-5-5', content: [{ type: 'text', text: '計測します' }] } }) +
+      line({ type: 'assistant', timestamp: '2026-09-21T00:00:05.250Z', message: { model: 'claude-opus-5-5', usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100 }, content: [{ type: 'text', text: '計測します' }] } }) +
       line({ type: 'user', timestamp: '2026-09-21T00:00:06Z', message: { content: [{ type: 'tool_result', content: 'x' }] } }) +
       line({ type: 'custom-title', customTitle: 'トップページ高速化', sessionId: 'c1' }) +
       line({ type: 'pr-link', prUrl: 'https://github.com/o/r/pull/1', sessionId: 'c1' }),

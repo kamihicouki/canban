@@ -10,6 +10,7 @@ import { installedTerminals } from './launcher.mjs';
 import { annotateStatus, STATUSES } from './status.mjs';
 import { RuleEngine } from './rules.mjs';
 import { PrService } from './git.mjs';
+import { SearchIndex } from './search.mjs';
 
 const LOCAL_TTL_MS = 4000;
 let localCache = null;
@@ -51,7 +52,7 @@ export function effectiveOrder(session, card) {
   return typeof card?.order === 'number' ? card.order : -(session.updatedAt || 0);
 }
 
-function matches(session, card, f, labelsById) {
+function matches(session, card, f, labelsById, hits) {
   if (f.agent && f.agent !== 'all' && session.agent !== f.agent) return false;
   if (f.host && (session.host?.id || 'local') !== f.host) return false;
   if (f.project && session.project !== f.project) return false;
@@ -68,7 +69,7 @@ function matches(session, card, f, labelsById) {
       .filter(Boolean)
       .join('\n')
       .toLowerCase();
-    if (!hay.includes(q)) return false;
+    if (!hay.includes(q) && !hits?.has(session.id)) return false;
   }
   return true;
 }
@@ -101,12 +102,35 @@ export function normalizeFilters(f = {}) {
     includeSubagents: !!f.includeSubagents,
     includeHidden: !!f.includeHidden,
     groupBranch: !!f.groupBranch,
+    fulltext: !!f.fulltext,
     days: Number.isFinite(days) && days > 0 ? days : 0,
   };
 }
 
 function hostView(h) {
   return { id: h.id, alias: h.alias, label: h.label, local: false, enabled: h.enabled, status: pool.hostStatus(h.id) };
+}
+
+const searches = new Map();
+export function searchFor(store) {
+  if (!searches.has(store.dir)) searches.set(store.dir, new SearchIndex(store.dir));
+  return searches.get(store.dir);
+}
+
+// Background indexing step for full-text search (local sessions).
+export async function tickSearch(store) {
+  const state = store.load();
+  const { sessions } = await allSessions(state);
+  return searchFor(store).step(sessions);
+}
+
+// Full-text hits: id -> snippet (local index + enabled remote hosts).
+async function fullTextHits(store, q, hosts) {
+  const hits = new Map(searchFor(store).query(q).map((r) => [r.id, r.snippet]));
+  const enabled = hosts.filter((h) => h.enabled);
+  const remote = await Promise.all(enabled.map((h) => pool.search(h, q).catch(() => new Set())));
+  for (const ids of remote) for (const id of ids) if (!hits.has(id)) hits.set(id, null);
+  return hits;
 }
 
 const engines = new WeakMap();
@@ -221,6 +245,7 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
   if ((await runRules(store, state, sessions)).length) state = store.load();
   const byId = new Map(sessions.map((x) => [x.id, x]));
   const toTask = linkedToTask(state);
+  const hits = filters.fulltext && [...filters.q].length >= 3 ? await fullTextHits(store, filters.q, hosts) : null;
   if (state.settings.seenAllAt == null) {
     await store.markAllSeen(); // first run: nothing is "new" yet
     state = store.load();
@@ -240,7 +265,7 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
     if (s.project && visibleKind) projects.set(s.project, (projects.get(s.project) || 0) + 1);
     if (visibleKind) hostCounts.set(s.host?.id || 'local', (hostCounts.get(s.host?.id || 'local') || 0) + 1);
     if (toTask.has(s.id)) continue; // shown inside its task card
-    if (!matches(s, card, filters, labelsById)) continue;
+    if (!matches(s, card, filters, labelsById, hits)) continue;
     const listId = card?.listId && listIds.has(card.listId) ? card.listId : state.defaultListId;
     const kids = (s.children || []).map((id) => byId.get(id)).filter(Boolean);
     const launch = launchInfo(s);
@@ -275,6 +300,7 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
       subagents: kids.length ? { total: kids.length, running: kids.filter((k) => k.status === 'running' || k.status === 'waiting').length } : null,
       repo: s.repo || null,
       pr: prView(s.pr),
+      snippet: hits?.get(s.id) || null,
     });
   }
 
@@ -328,6 +354,7 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
     settings: state.settings,
     terminals: installedTerminals(),
     statusCounts,
+    search: searchFor(store).progress,
     git: { available: prs.status.available, reason: prs.status.reason, github: prs.status.github, gitlab: prs.status.gitlab },
     folders: recentFolders(sessions),
     tasks: taskEntries(state).map(([id, t]) => ({ id, title: t.title })),

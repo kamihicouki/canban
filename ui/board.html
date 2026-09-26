@@ -30,8 +30,8 @@
   --warn-bg: #ffecb3;
   --warn-fg: #7f5f01;
   --focus: #388bff;
-  --codex: #10a37f;
-  --claude: #d97757;
+  --codex: #12a381;
+  --claude: #d46f4c;
   --c-gray: #8590a2; --c-blue: #579dff; --c-green: #4bce97; --c-yellow: #f5cd47; --c-orange: #fea362;
   --c-red: #f87168; --c-purple: #9f8fef; --c-pink: #e774bb; --c-sky: #6cc3e0; --c-lime: #94c748;
   color-scheme: light;
@@ -272,6 +272,50 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .check-row .ck-passing { color: var(--c-green); }
 .check-row .ck-failing { color: var(--danger); }
 .check-row .ck-pending { color: var(--c-orange); }
+.ft-toggle { display: inline-flex; align-items: center; gap: 4px; color: #fff; font-size: 12px; margin-left: -4px; }
+.snippet { margin-top: 6px; font-size: 12px; color: var(--card-muted); line-height: 17px; word-break: break-word; }
+.snippet mark { background: #ffe58f; color: #172b4d; border-radius: 2px; padding: 0 1px; }
+.kbd { display: inline-block; min-width: 16px; font-size: 11px; color: var(--list-muted); border: 1px solid var(--btn-subtle-hover); border-radius: 3px; text-align: center; }
+.board.with-lanes { flex-direction: column; align-items: stretch; overflow: auto; }
+.lane { flex: none; }
+.lane-head { display: flex; align-items: center; gap: 8px; color: #fff; font-weight: 700; padding: 4px 6px; border-radius: 6px; }
+.lane-head:hover { background: rgba(255,255,255,0.14); }
+.lane-head .count { color: rgba(255,255,255,0.85); }
+.lane-lists { display: flex; align-items: flex-start; gap: 12px; padding: 4px 0 8px; }
+.lane .list { max-height: none; }
+.lane .cards { overflow: visible; }
+.board.analytics-mode { display: block; overflow-y: auto; }
+.analytics { padding: 4px 8px 24px; position: relative; color: var(--list-fg); }
+.analytics h2 { color: #fff; margin: 0; font-size: 18px; }
+.analytics-bar { margin-bottom: 12px; flex-wrap: wrap; }
+.analytics-bar .muted { color: rgba(255,255,255,0.85); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.tile, .panel { background: var(--list-bg); border-radius: 12px; padding: 12px 16px; box-shadow: var(--card-shadow); }
+.tile-label { font-size: 12px; color: var(--list-muted); }
+.tile-value { font-size: 26px; font-weight: 700; line-height: 34px; }
+.tile-sub { font-size: 12px; color: var(--list-muted); }
+.panel { margin-bottom: 12px; overflow-x: auto; }
+.panel h3 { margin: 0 0 8px; font-size: 14px; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
+.panel-grid .panel { margin-bottom: 0; }
+.panel-grid + .panel-grid { margin-top: 12px; }
+.legend { display: flex; gap: 12px; font-size: 12px; color: var(--list-muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+svg .grid { stroke: var(--btn-subtle-hover); stroke-width: 1; }
+svg .axis { fill: var(--list-muted); font-size: 11px; }
+.viz-tip { position: absolute; z-index: 5; pointer-events: none; background: var(--modal-panel); color: var(--list-fg); border-radius: 6px; padding: 6px 10px; font-size: 12px; box-shadow: 0 4px 12px #0003; }
+.viz-tip .tip-head { font-weight: 700; }
+.hbars { display: flex; flex-direction: column; gap: 6px; }
+.hbar-row { display: grid; grid-template-columns: 140px 1fr 120px; align-items: center; gap: 8px; font-size: 12px; }
+.hbar { display: flex; gap: 2px; height: 12px; }
+.hbar span { height: 100%; border-radius: 0; }
+.hbar span:last-child { border-radius: 0 4px 4px 0; }
+.hbar-val { color: var(--list-muted); text-align: right; white-space: nowrap; }
+table.plain, .viz-table table { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.plain th, table.plain td, .viz-table th, .viz-table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--btn-subtle-hover); }
+table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.viz-table { margin-top: 8px; font-size: 12px; }
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #172b4d; color: #fff; padding: 8px 16px; border-radius: 6px; z-index: 1100; box-shadow: 0 4px 8px #0004; }
 .toast.error { background: var(--danger); }
 .loading { color: #fff; padding: 24px; }
@@ -285,6 +329,7 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 <header class="topbar">
   <h1>Canban</h1>
   <input id="q" class="hsearch" type="search" placeholder="検索（タイトル・依頼・メモ）" aria-label="検索" />
+  <label class="ft-toggle" title="会話の本文も検索する（3 文字以上）"><input id="fulltext" type="checkbox" /> 本文</label>
   <div class="seg" role="group" aria-label="エージェント">
     <button data-agent="all" aria-pressed="true">すべて</button>
     <button data-agent="codex" aria-pressed="false">Codex</button>
@@ -299,6 +344,8 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
   </select>
   <button id="optBtn" class="hbtn" aria-haspopup="true">表示 ▾</button>
   <button id="rulesBtn" class="hbtn" title="自動移動ルール">⚡ ルール</button>
+  <button id="viewsBtn" class="hbtn" aria-haspopup="true" title="保存したビュー（1〜9 キーで切り替え）">ビュー ▾</button>
+  <button id="analyticsBtn" class="hbtn" aria-pressed="false" title="ボード / 分析 の切り替え">📊 分析</button>
   <button id="labelsBtn" class="hbtn">ラベル</button>
   <button id="hostsBtn" class="hbtn" aria-haspopup="true">マシン ▾</button>
   <button id="settingsBtn" class="hbtn" title="再開の設定" aria-label="再開の設定">⚙ 再開</button>
@@ -408,7 +455,8 @@ const store = {
 };
 const state = {
   board: null,
-  filters: Object.assign({ agent: 'all', host: '', status: '', project: '', q: '', days: 30, includeArchived: false, includeSubagents: false, includeHidden: false, groupBranch: false }, store.get('filters', {})),
+  filters: Object.assign({ agent: 'all', host: '', status: '', project: '', q: '', days: 30, includeArchived: false, includeSubagents: false, includeHidden: false, groupBranch: false, fulltext: false, swimlane: '' }, store.get('filters', {})),
+  view: store.get('view', 'board'),
   shown: {},              // listId -> number of cards rendered
   labelsExpanded: store.get('labelsExpanded', false),
   drag: null,
@@ -469,9 +517,10 @@ async function act(name, args, { reload = true, okMsg } = {}) {
 // ======================================================================
 let loadSeq = 0;
 async function load({ refresh = false } = {}) {
+  if (state.view === 'analytics') return loadAnalytics();
   const seq = ++loadSeq;
   const f = state.filters;
-  const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, includeHidden: f.includeHidden, groupBranch: !!f.groupBranch, refresh };
+  const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, includeHidden: f.includeHidden, groupBranch: !!f.groupBranch, fulltext: !!f.fulltext, refresh };
   if (f.project) args.project = f.project;
   if (f.host) args.host = f.host;
   if (f.status) args.status = f.status;
@@ -493,7 +542,7 @@ function saveFilters() { store.set('filters', state.filters); }
 // ======================================================================
 function render() {
   const b = state.board;
-  if (!b) return;
+  if (!b || state.view === 'analytics') return;
   if (state.drag) return; // don't disturb an active drag
 
   // header
@@ -520,20 +569,27 @@ function render() {
   const boardEl = $('#board');
   const scroll = boardEl.scrollLeft;
   const listScroll = {};
+  const scrollTop = boardEl.scrollTop;
   boardEl.querySelectorAll('.list').forEach((l) => (listScroll[l.dataset.listId] = $('.cards', l)?.scrollTop || 0));
 
   const focused = document.activeElement;
   const frag = document.createDocumentFragment();
-  for (const list of b.lists) frag.append(renderList(list));
-  frag.append(renderAddList());
+  boardEl.classList.remove('analytics-mode');
+  boardEl.classList.toggle('with-lanes', !!state.filters.swimlane);
+  if (state.filters.swimlane) for (const lane of buildLanes(b, state.filters.swimlane)) frag.append(renderLane(lane));
+  else {
+    for (const list of b.lists) frag.append(renderList(list));
+    frag.append(renderAddList());
+  }
   boardEl.replaceChildren(frag);
   if (focused && focused !== document.body && boardEl.contains(focused)) focused.focus({ preventScroll: true });
   boardEl.scrollLeft = scroll;
+  boardEl.scrollTop = scrollTop;
   boardEl.querySelectorAll('.list').forEach((l) => { const c = $('.cards', l); if (c) c.scrollTop = listScroll[l.dataset.listId] || 0; });
   bridge.reportSize();
 }
 
-function renderList(list) {
+function renderList(list, { inLane = false } = {}) {
   const over = list.wipLimit && list.count > list.wipLimit;
   const el = h('section', { class: `list${over ? ' over-wip' : ''}`, 'data-list-id': list.id, 'aria-label': list.title });
   const head = h('div', { class: 'list-head' },
@@ -546,7 +602,7 @@ function renderList(list) {
   );
   head.addEventListener('pointerdown', (e) => startListDrag(e, list, el));
   el.append(head);
-  if (list.isDefault) el.append(h('div', { class: 'default-tag', text: '新しいセッションはここに入ります' }));
+  if (list.isDefault && !inLane) el.append(h('div', { class: 'default-tag', text: '新しいセッションはここに入ります' }));
 
   const cardsEl = h('div', { class: 'cards', 'data-list-id': list.id });
   const n = state.shown[list.id] || PAGE;
@@ -556,7 +612,7 @@ function renderList(list) {
     el.append(h('button', { class: 'more-btn', text: `さらに表示（残り ${list.cards.length - n} 件）`,
       onclick: () => { state.shown[list.id] = n + PAGE * 2; render(); } }));
   }
-  el.append(renderAddCard(list));
+  if (!inLane) el.append(renderAddCard(list));
   return el;
 }
 
@@ -625,6 +681,7 @@ function renderCard(card, list) {
   if (card.subagents) meta.append(h('span', { class: 'pill', title: 'このセッションが起動したサブエージェント', text: `🤖 ${card.subagents.total}${card.subagents.running ? `（動作中 ${card.subagents.running}）` : ''}` }));
   if (card.hidden) meta.append(h('span', { text: '非表示' }));
   el.append(meta);
+  if (card.snippet) el.append(renderSnippet(card.snippet));
 
   return attachCardBehavior(el, card, list, (opts) => resume(card.id, opts));
 }
@@ -810,6 +867,14 @@ function optionsMenu(anchor) {
     opt('includeSubagents', 'サブエージェント／レビュー用スレッドを表示'),
     opt('includeHidden', 'ボードから隠したカードを表示'),
     opt('groupBranch', '同じリポジトリ＋ブランチのセッションをまとめる'),
+    h('div', { class: 'field-label', text: 'スイムレーン（行で分ける）' }),
+    (() => {
+      const sel = h('select', { class: 'text-input' }, Object.entries(LANE_MODES).map(([v, t]) => h('option', { value: v, text: t })));
+      sel.value = f.swimlane || '';
+      sel.onchange = () => { f.swimlane = sel.value; saveFilters(); render(); };
+      return sel;
+    })(),
+    state.board?.search ? h('p', { class: 'muted', text: `本文検索の索引: ${state.board.search.indexed} / ${state.board.search.total} セッション（直近 90 日、バックグラウンドで更新）` }) : null,
     h('p', { class: 'muted', text: '期間フィルタは「未配置」のセッションにのみ適用されます。リストへ移動したカードは期間に関係なく表示されます。' })));
 }
 
@@ -991,6 +1056,226 @@ function renderModal(modal, d) {
   );
   modal.querySelector('.close').focus();
 }
+// ======================================================================
+// Swimlanes, snippets, saved views
+// ======================================================================
+const LANE_MODES = { '': 'なし', project: 'プロジェクト', host: 'マシン', agent: 'エージェント', label: 'ラベル' };
+function laneKey(card, mode) {
+  if (mode === 'agent') return card.kind === 'task' ? 'タスク' : card.agent === 'codex' ? 'Codex' : 'Claude Code';
+  if (mode === 'host') return card.kind === 'task' ? (card.links[0]?.host?.label || 'このマシン') : card.host?.label || 'このマシン';
+  if (mode === 'label') {
+    const l = state.board.labels.find((x) => card.labels.includes(x.id));
+    return l ? l.name : 'ラベルなし';
+  }
+  return card.project || (card.kind === 'task' ? 'タスク' : '（プロジェクトなし）');
+}
+function buildLanes(b, mode) {
+  const lanes = new Map();
+  for (const l of b.lists) for (const c of l.cards) {
+    const k = laneKey(c, mode);
+    if (!lanes.has(k)) lanes.set(k, { name: k, count: 0 });
+    lanes.get(k).count++;
+  }
+  return [...lanes.values()].sort((a, c) => c.count - a.count).map((lane) => ({
+    ...lane,
+    lists: b.lists.map((l) => {
+      const cards = l.cards.filter((c) => laneKey(c, mode) === lane.name);
+      return { ...l, cards, count: cards.length };
+    }),
+  }));
+}
+const collapsedLanes = new Set(store.get('collapsedLanes', []));
+function renderLane(lane) {
+  const collapsed = collapsedLanes.has(lane.name);
+  const toggle = () => {
+    collapsed ? collapsedLanes.delete(lane.name) : collapsedLanes.add(lane.name);
+    store.set('collapsedLanes', [...collapsedLanes]);
+    render();
+  };
+  return h('section', { class: `lane${collapsed ? ' collapsed' : ''}`, 'aria-label': lane.name },
+    h('button', { class: 'lane-head', 'aria-expanded': String(!collapsed), onclick: toggle },
+      h('span', { text: collapsed ? '▸' : '▾' }), h('span', { class: 'lane-name', text: lane.name }), h('span', { class: 'count', text: `${lane.count}` })),
+    collapsed ? null : h('div', { class: 'lane-lists' }, lane.lists.map((l) => renderList(l, { inLane: true }))));
+}
+
+// "…[match]…" from the index → text with <mark>
+function renderSnippet(snip) {
+  const el = h('div', { class: 'snippet' });
+  String(snip).split(/(\[[^\]]*\])/).forEach((part) => {
+    if (/^\[.*\]$/.test(part)) el.append(h('mark', { text: part.slice(1, -1) }));
+    else if (part) el.append(part);
+  });
+  return el;
+}
+
+function syncHeaderInputs() {
+  $('#q').value = state.filters.q || '';
+  $('#fulltext').checked = !!state.filters.fulltext;
+}
+function applyView(v) {
+  state.filters = { agent: 'all', host: '', status: '', project: '', q: '', days: 30, includeArchived: false, includeSubagents: false, includeHidden: false, groupBranch: false, fulltext: false, swimlane: '', ...v.filters };
+  saveFilters();
+  syncHeaderInputs();
+  state.shown = {};
+  toast(`ビュー「${v.name}」`);
+  load();
+}
+function viewsMenu(anchor) {
+  const views = state.board?.settings?.views || [];
+  const name = h('input', { class: 'text-input', placeholder: '今の表示に名前を付けて保存', maxlength: 60 });
+  const save = () => name.value.trim() && act('canban_save_view', { name: name.value, filters: state.filters }, { okMsg: 'ビューを保存しました' }).then(() => viewsMenu(anchor));
+  name.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) save(); };
+  popover(anchor, 'ビュー', h('div', {},
+    views.length ? views.map((v, i) => h('div', { class: 'rule-row' },
+      h('button', { class: 'menu-item', onclick: () => { closePopover(); applyView(v); } }, h('span', { class: 'kbd', text: i < 9 ? String(i + 1) : '' }), ` ${v.name}`),
+      h('button', { class: 'icon-btn', 'aria-label': `${v.name} を削除`, text: '🗑', onclick: () => act('canban_delete_view', { viewId: v.id }).then(() => viewsMenu(anchor)) })))
+      : h('p', { class: 'muted', text: '保存したビューはまだありません' }),
+    h('div', { class: 'sep' }), name,
+    h('div', { class: 'row', style: { marginTop: '8px' } }, h('button', { class: 'btn-primary', text: '保存', onclick: save })),
+    h('p', { class: 'muted', text: '絞り込み・検索・スイムレーン・表示オプションを保存します。数字キー 1〜9 で切り替えられます。' })), { width: 320 });
+}
+
+// ======================================================================
+// Analytics view
+// ======================================================================
+const VIZ = { codex: '#12a381', claude: '#d46f4c' }; // validated categorical pair (light + dark)
+const fmtNum = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n));
+function fmtDur(ms) {
+  if (ms == null) return '—';
+  const h = ms / 3600e3;
+  return h < 1 ? `${Math.round(ms / 60e3)} 分` : h < 48 ? `${h.toFixed(1)} 時間` : `${(h / 24).toFixed(1)} 日`;
+}
+async function loadAnalytics() {
+  const seq = ++loadSeq;
+  const f = state.filters;
+  const args = { days: state.analyticsDays || 30, agent: f.agent };
+  if (f.host) args.host = f.host;
+  if (f.project) args.project = f.project;
+  try {
+    if (!state.board) state.board = await bridge.callTool('canban_get_board', { days: 30 }); // header menus need it
+    const st = await bridge.callTool('canban_get_stats', args);
+    if (seq === loadSeq && state.view === 'analytics') renderAnalytics(st);
+  } catch (e) {
+    $('#board').replaceChildren(h('div', { class: 'loading', text: `分析を読み込めませんでした: ${e.message}` }));
+  }
+}
+function svgEl(tag, attrs = {}) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+// Rect with only the top corners rounded (data end), square at the baseline.
+function topRounded(x, y, w, hgt, r) {
+  r = Math.min(r, w / 2, hgt);
+  return `M${x},${y + hgt}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + hgt}Z`;
+}
+function niceMax(v) {
+  if (v <= 4) return 4;
+  const p = 10 ** Math.floor(Math.log10(v));
+  return Math.ceil(v / p / (v / p > 5 ? 2 : 1)) * p * (v / p > 5 ? 2 : 1);
+}
+function dailyChart(st, tip) {
+  const W = Math.max(480, Math.min(1100, $('#board').clientWidth - 72));
+  const H = 220, L = 36, R = 8, T = 8, B = 26;
+  const data = st.daily;
+  const max = niceMax(Math.max(1, ...data.map((d) => d.codex + d.claude)));
+  const bw = (W - L - R) / data.length;
+  const barW = Math.max(3, Math.min(18, bw * 0.62));
+  const y = (v) => T + (H - T - B) * (1 - v / max);
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'img', 'aria-label': '日別のセッション数（Codex / Claude の積み上げ）' });
+  for (let i = 0; i <= 4; i++) {
+    const v = (max / 4) * i;
+    svg.append(svgEl('line', { x1: L, x2: W - R, y1: y(v), y2: y(v), class: 'grid' }));
+    const t = svgEl('text', { x: L - 6, y: y(v) + 4, 'text-anchor': 'end', class: 'axis' });
+    t.textContent = Math.round(v);
+    svg.append(t);
+  }
+  data.forEach((d, i) => {
+    const cx = L + bw * i + bw / 2;
+    const x = cx - barW / 2;
+    const hCodex = (H - T - B) * (d.codex / max);
+    const hClaude = (H - T - B) * (d.claude / max);
+    const base = H - B;
+    const gap = d.codex && d.claude ? 2 : 0;
+    if (d.codex) svg.append(svgEl('path', { d: d.claude ? `M${x},${base}h${barW}v${-hCodex}h${-barW}Z` : topRounded(x, base - hCodex, barW, hCodex, 4), fill: VIZ.codex }));
+    if (d.claude) svg.append(svgEl('path', { d: topRounded(x, base - hCodex - gap - hClaude, barW, hClaude, 4), fill: VIZ.claude }));
+    if (i % Math.ceil(data.length / 8) === 0 || i === data.length - 1) {
+      const t = svgEl('text', { x: cx, y: H - 8, 'text-anchor': 'middle', class: 'axis' });
+      t.textContent = d.date.slice(5).replace('-', '/');
+      svg.append(t);
+    }
+    const hit = svgEl('rect', { x: L + bw * i, y: T, width: bw, height: H - T - B, fill: 'transparent', class: 'hit' });
+    hit.addEventListener('mouseenter', (e) => tip.show(e, [`${d.date}`, `Codex ${d.codex}`, `Claude ${d.claude}`, `トークン ${fmtNum(d.tokens)}`]));
+    hit.addEventListener('mousemove', (e) => tip.move(e));
+    hit.addEventListener('mouseleave', () => tip.hide());
+    svg.append(hit);
+  });
+  return svg;
+}
+function makeTip(host) {
+  const el = h('div', { class: 'viz-tip', role: 'tooltip', hidden: true });
+  host.append(el);
+  return {
+    show(e, lines) { el.replaceChildren(...lines.map((l, i) => h('div', { class: i ? '' : 'tip-head', text: l }))); el.hidden = false; this.move(e); },
+    move(e) { const r = host.getBoundingClientRect(); el.style.left = `${e.clientX - r.left + 12}px`; el.style.top = `${e.clientY - r.top + 12}px`; },
+    hide() { el.hidden = true; },
+  };
+}
+function breakdownRows(rows, tip) {
+  const max = Math.max(1, ...rows.map((r) => r.sessions));
+  return h('div', { class: 'hbars' }, rows.map((r) => {
+    const bar = h('div', { class: 'hbar' },
+      r.codex ? h('span', { style: { width: `${(r.codex / max) * 100}%`, background: VIZ.codex } }) : null,
+      r.claude ? h('span', { style: { width: `${(r.claude / max) * 100}%`, background: VIZ.claude } }) : null);
+    const row = h('div', { class: 'hbar-row' }, h('span', { class: 'hbar-name ellipsis', title: r.name, text: r.name }), bar,
+      h('span', { class: 'hbar-val', text: `${r.sessions} 件 · ${fmtNum(r.tokens)}` }));
+    row.addEventListener('mouseenter', (e) => tip.show(e, [r.name, `Codex ${r.codex || 0} / Claude ${r.claude || 0}`, `トークン ${r.tokens.toLocaleString()}`]));
+    row.addEventListener('mousemove', (e) => tip.move(e));
+    row.addEventListener('mouseleave', () => tip.hide());
+    return row;
+  }));
+}
+function renderAnalytics(st) {
+  const boardEl = $('#board');
+  boardEl.classList.remove('with-lanes');
+  boardEl.classList.add('analytics-mode');
+  const page = h('div', { class: 'analytics' });
+  const tip = makeTip(page);
+  const daysSeg = h('div', { class: 'seg', role: 'group', 'aria-label': '期間' }, [7, 30, 90].map((d) =>
+    h('button', { 'aria-pressed': String((state.analyticsDays || 30) === d), text: `${d}日`, onclick: () => { state.analyticsDays = d; load(); } })));
+  const legend = h('div', { class: 'legend' },
+    h('span', {}, h('i', { style: { background: VIZ.codex } }), 'Codex'), h('span', {}, h('i', { style: { background: VIZ.claude } }), 'Claude Code'));
+  const tile = (label, value, sub) => h('div', { class: 'tile' }, h('div', { class: 'tile-label', text: label }), h('div', { class: 'tile-value', text: value }), sub ? h('div', { class: 'tile-sub', text: sub }) : null);
+  const table = h('details', { class: 'viz-table' }, h('summary', { text: '表で見る' }),
+    h('table', {}, h('thead', {}, h('tr', {}, ['日付', 'Codex', 'Claude', 'トークン'].map((t) => h('th', { text: t })))),
+      h('tbody', {}, st.daily.map((d) => h('tr', {}, [d.date, d.codex, d.claude, d.tokens.toLocaleString()].map((v) => h('td', { text: String(v) })))))));
+  const lists = h('table', { class: 'plain' },
+    h('thead', {}, h('tr', {}, ['リスト', 'カード', '滞留（中央値）'].map((t) => h('th', { text: t })))),
+    h('tbody', {}, st.lists.map((l) => h('tr', {},
+      h('td', {}, h('span', { class: 'stripe', style: { background: colorVar(l.color) } }), ` ${l.title}`), h('td', { text: String(l.cards) }), h('td', { text: fmtDur(l.medianDwellMs) })))));
+  const wmax = Math.max(1, ...st.cycle.weekly.map((w) => w.count));
+  const weekly = st.cycle.weekly.length ? h('div', { class: 'hbars' }, st.cycle.weekly.map((w) => h('div', { class: 'hbar-row' },
+    h('span', { class: 'hbar-name', text: `${w.week.slice(5).replace('-', '/')} 週` }),
+    h('div', { class: 'hbar' }, h('span', { style: { width: `${(w.count / wmax) * 100}%`, background: 'var(--c-blue)' } })),
+    h('span', { class: 'hbar-val', text: `${w.count} 件` })))) : h('p', { class: 'muted', text: 'まだ完了したカードの記録がありません（カードを最後のリストへ移すと記録されます）' });
+  page.append(
+    h('div', { class: 'row analytics-bar' }, h('h2', { text: '分析' }), daysSeg,
+      h('span', { class: 'muted', text: 'エージェント・マシン・プロジェクトの絞り込みはヘッダの設定に従います' })),
+    h('div', { class: 'tiles' },
+      tile('セッション', st.totals.sessions.toLocaleString(), `Codex ${st.totals.codex} / Claude ${st.totals.claude}`),
+      tile('トークン', fmtNum(st.totals.tokens), st.totals.tokens.toLocaleString()),
+      tile(`「${st.lists.find((l) => l.id === st.cycle.doneListId)?.title ?? '最後のリスト'}」へ移動`, `${st.cycle.count} 件`, `直近 ${st.days} 日`),
+      tile('サイクルタイム（中央値）', fmtDur(st.cycle.medianMs), '最初の配置 → 最後のリスト')),
+    h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', { text: '日別のセッション数' }), legend), dailyChart(st, tip), table),
+    h('div', { class: 'panel-grid' },
+      h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', { text: 'プロジェクト別' }), legend.cloneNode(true)), breakdownRows(st.projects, tip)),
+      h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', { text: 'マシン別' }), legend.cloneNode(true)), breakdownRows(st.hosts, tip))),
+    h('div', { class: 'panel-grid' },
+      h('section', { class: 'panel' }, h('h3', { text: 'リストの滞留時間' }), lists),
+      h('section', { class: 'panel' }, h('h3', { text: '週ごとの完了数' }), weekly)));
+  boardEl.replaceChildren(page);
+}
+
 // ======================================================================
 // Task card detail
 // ======================================================================
@@ -1375,7 +1660,18 @@ function startCardDrag(e, card, el) {
     const d = state.drag;
     const cardsEl = d.ph.parentElement;
     const toList = cardsEl?.dataset.listId;
-    const idx = cardsEl ? [...cardsEl.children].filter((c) => c.classList.contains('card') || c === d.ph).indexOf(d.ph) : -1;
+    // Index in the full list from the placeholder's neighbours (works with swimlanes too).
+    let idx = -1;
+    if (cardsEl) {
+      const rest = state.board.lists.find((l) => l.id === toList).cards.filter((c) => c.id !== card.id);
+      const near = (dir) => { let n = d.ph[dir]; while (n && (!n.classList.contains('card') || n.classList.contains('drag-source'))) n = n[dir]; return n; };
+      const next = near('nextElementSibling');
+      const prev = near('previousElementSibling');
+      if (next) idx = rest.findIndex((c) => c.id === next.dataset.cardId);
+      else if (prev) idx = rest.findIndex((c) => c.id === prev.dataset.cardId) + 1;
+      else idx = rest.length;
+      if (idx < 0) idx = rest.length;
+    }
     d.ghost.remove();
     state.drag = null;
     state.justDragged = true;
@@ -1410,12 +1706,13 @@ function placeCardPlaceholder(x, y) {
 }
 
 function listAt(x, y) {
-  const lists = [...document.querySelectorAll('.list')];
-  for (const l of lists) {
+  const cols = [...document.querySelectorAll('.list')].filter((l) => {
     const r = l.getBoundingClientRect();
-    if (x >= r.left - 6 && x <= r.right + 6) return l;
-  }
-  return null;
+    return x >= r.left - 6 && x <= r.right + 6;
+  });
+  if (cols.length <= 1) return cols[0] || null;
+  // swimlanes: several columns share x — pick the one in the lane under the pointer
+  return cols.find((l) => { const r = (l.closest('.lane') || l).getBoundingClientRect(); return y >= r.top && y <= r.bottom; }) || null;
 }
 
 // Compute an order value between neighbours in the target list (orders ascend top→bottom).
@@ -1491,7 +1788,7 @@ function moveCard(card, fromListId, toListId, index, focusAfter = false) {
 }
 
 function startListDrag(e, list, listEl) {
-  if (e.button !== 0 || e.target.closest('button, input, .list-title')) return;
+  if (e.button !== 0 || e.target.closest('button, input, .list-title') || state.filters.swimlane) return;
   const sx = e.clientX;
   let started = false;
   const move = (ev) => {
@@ -1573,13 +1870,36 @@ $('#optBtn').addEventListener('click', (e) => optionsMenu(e.currentTarget));
 $('#labelsBtn').addEventListener('click', (e) => labelsManager(e.currentTarget));
 $('#hostsBtn').addEventListener('click', (e) => hostsMenu(e.currentTarget));
 $('#rulesBtn').addEventListener('click', (e) => rulesMenu(e.currentTarget));
+$('#viewsBtn').addEventListener('click', (e) => viewsMenu(e.currentTarget));
+$('#fulltext').checked = !!state.filters.fulltext;
+$('#fulltext').addEventListener('change', (e) => { state.filters.fulltext = e.target.checked; saveFilters(); if (state.filters.q) load(); });
+function syncViewButton() {
+  $('#analyticsBtn').setAttribute('aria-pressed', String(state.view === 'analytics'));
+  $('#analyticsBtn').textContent = state.view === 'analytics' ? '▦ ボード' : '📊 分析';
+}
+syncViewButton();
+$('#analyticsBtn').addEventListener('click', () => {
+  state.view = state.view === 'analytics' ? 'board' : 'analytics';
+  store.set('view', state.view);
+  syncViewButton();
+  if (state.view === 'board' && state.board) render();
+  load();
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.querySelector('.popover')) closePopover(); });
+// 1–9: switch saved views (when not typing)
+document.addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey || state.modalOpen || e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  if (!/^[1-9]$/.test(e.key) || e.target.classList?.contains('card')) return;
+  const v = state.board?.settings?.views?.[Number(e.key) - 1];
+  if (v) applyView(v);
+});
 $('#seenBtn').addEventListener('click', () => act('canban_mark_all_seen', {}, { okMsg: 'すべて既読にしました' }));
 $('#settingsBtn').addEventListener('click', (e) => settingsMenu(e.currentTarget));
 $('#refresh').addEventListener('click', () => load({ refresh: true }).then(() => toast('最新の状態に更新しました')));
 
 // board: wheel over empty space scrolls horizontally like Trello
 $('#board').addEventListener('wheel', (e) => {
-  if (e.target.closest('.cards')) return;
+  if (e.target.closest('.cards') || state.view === 'analytics' || state.filters.swimlane) return;
   if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { $('#board').scrollLeft += e.deltaY; e.preventDefault(); }
 }, { passive: false });
 
