@@ -72,3 +72,15 @@ test('invalid rules are rejected; launch settings keep rules', async () => {
   await store.updateLaunchSettings({ route: 'terminal' });
   assert.ok(store.load().settings.rules.some((r) => r.id === 'x'));
 });
+
+test('Codex section moves fire section:<id> rules, also for long-idle threads', async () => {
+  const { store, run } = await setup([rule('section:sec-done', 'any', 'done')]);
+  await assert.rejects(store.setRule({ trigger: 'section:../x', toListId: 'done' }), /自動化/);
+  const t0 = 1_800_000_000_000;
+  const old = { id: 'codex:old', createdAt: t0 - 9e9, updatedAt: t0 - 9e9, status: 'idle' }; // untouched for months
+  assert.deepEqual(await run([{ ...old, codexSection: { id: 'sec-doing', name: 'doing' } }], t0), []); // baseline
+  assert.deepEqual(await run([{ ...old, codexSection: { id: 'sec-doing', name: 'doing' } }], t0 + 1000), []);
+  const m = await run([{ ...old, codexSection: { id: 'sec-done', name: 'done' } }], t0 + 2000);
+  assert.deepEqual(m.map((x) => [x.cardId, x.toListId]), [['codex:old', 'done']]);
+  assert.deepEqual(await run([{ ...old, codexSection: { id: 'sec-done', name: 'done' } }], t0 + 3000), []); // no repeat
+});

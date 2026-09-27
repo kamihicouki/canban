@@ -625,6 +625,7 @@ async function load({ refresh = false } = {}) {
   const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, includeHidden: f.includeHidden, pinnedOnly: !!f.pinnedOnly, groupBranch: !!f.groupBranch, fulltext: !!f.fulltext, refresh };
   if (f.project) args.project = f.project;
   if (f.folder) args.folder = f.folder;
+  if (f.section) args.section = f.section;
   if (f.directory) args.directory = f.directory;
   if (f.host) args.host = f.host;
   if (f.status) args.status = f.status;
@@ -774,6 +775,7 @@ function renderCard(card, list) {
     card.unread ? h('span', { class: 'pill new-pill', text: '新着' }) : null,
     card.autoMoved ? h('span', { class: 'pill', title: `${T.automation}で移動`, text: '⚡' }) : null,
     card.pinnedInAgent ? h('span', { class: 'pill', title: 'Codex アプリでピン留め', text: '📌' }) : null,
+    card.codexSection ? h('span', { class: 'pill', title: 'Codex のセクション（サイドバーの見出し）', text: `§ ${card.codexSection.name}` }) : null,
     h('span', { class: `badge ${card.agent}`, text: card.agent === 'codex' ? 'Codex' : 'Claude' }),
     card.host ? h('span', { class: 'host-chip', title: `SSH: ${card.host.alias}`, text: `⌂ ${card.host.label}` }) : null,
     card.directory ? dirPill(card.directory, card.project) : card.project ? h('span', { class: 'ellipsis', title: card.codexProject ? `Codex のプロジェクト（${T.folder}: ${card.folder || '-'}）` : card.cwd || '', text: `📁 ${card.project}` }) : null,
@@ -1494,10 +1496,14 @@ function watchRequests(modal, d) {
 // ======================================================================
 // Swimlanes, snippets, saved views
 // ======================================================================
-const LANE_MODES = { '': 'なし', directory: `${T.category}`, project: 'プロジェクト', host: 'マシン', agent: 'AI Apps', label: 'ラベル' };
+const LANE_MODES = { '': 'なし', directory: `${T.category}`, project: 'プロジェクト', section: 'Codex セクション', host: 'マシン', agent: 'AI Apps', label: 'ラベル' };
 const NO_DIR = `（${T.category}なし）`;
 function laneKey(card, mode) {
   if (mode === 'directory') return card.directory ? card.directory.name : NO_DIR;
+  if (mode === 'section') {
+    const sec = card.kind === 'task' ? null : card.codexSection;
+    return sec ? `§ ${sec.name}` : '（セクションなし）';
+  }
   if (mode === 'agent') return card.kind === 'task' ? `${T.taskCard}` : card.agent === 'codex' ? 'Codex' : 'Claude Code';
   if (mode === 'host') return card.kind === 'task' ? (card.links[0]?.host?.label || 'このマシン') : card.host?.label || 'このマシン';
   if (mode === 'label') {
@@ -1601,7 +1607,8 @@ function setAllLanes(collapse) {
 function scopeLabel(b) {
   const f = state.filters;
   const dir = f.directory === '__none' ? `${T.category}なし` : b?.directories.find((d) => d.id === f.directory)?.name;
-  const parts = [dir && `📂 ${dir}`, f.project && `📁 ${f.project}`, f.folder && `🗂 ${f.folder}`].filter(Boolean);
+  const sec = f.section === '__none' ? 'セクションなし' : b?.codexSections?.find((x) => x.id === f.section)?.name;
+  const parts = [dir && `📂 ${dir}`, f.project && `📁 ${f.project}`, f.folder && `🗂 ${f.folder}`, sec && `§ ${sec}`].filter(Boolean);
   return parts.length ? parts.join(' · ') : '📁 すべて';
 }
 function setScope(patch) {
@@ -1616,15 +1623,17 @@ function scopePicker(anchor) {
   const f = state.filters;
   picker(anchor, {
     title: `${T.category}・プロジェクトで絞り込み`, width: 340,
-    selected: [f.directory ? `d:${f.directory}` : null, f.project ? `p:${f.project}` : null, f.folder ? `f:${f.folder}` : null, !f.directory && !f.project && !f.folder ? '' : null].filter((x) => x != null),
+    selected: [f.directory ? `d:${f.directory}` : null, f.project ? `p:${f.project}` : null, f.folder ? `f:${f.folder}` : null, f.section ? `s:${f.section}` : null, !f.directory && !f.project && !f.folder && !f.section ? '' : null].filter((x) => x != null),
     items: [
       { value: '', label: 'すべて（絞り込みを解除）' },
       ...directoryItems(false).map((it) => ({ ...it, value: `d:${it.value}`, group: `${T.category}` })),
       ...b.projects.map((p) => ({ value: `p:${p.name}`, label: p.name, hint: p.count, group: 'プロジェクト（Codex のプロジェクト、なければフォルダ名）' })),
       ...(b.folders || []).map((x) => ({ value: `f:${x.name}`, label: x.name, hint: x.count, group: `${T.folder}（Codex のプロジェクトに入っているもの）` })),
+      ...(b.codexSections || []).map((x) => ({ value: `s:${x.id}`, label: `§ ${x.name}`, hint: x.count, group: 'Codex セクション' })),
     ],
     onPick: (v) => {
-      if (!v) return setScope({ directory: '', project: '', folder: '' });
+      if (!v) return setScope({ directory: '', project: '', folder: '', section: '' });
+      if (v.startsWith('s:')) return setScope({ section: f.section === v.slice(2) ? '' : v.slice(2) });
       if (v.startsWith('d:')) setScope({ directory: f.directory === v.slice(2) ? '' : v.slice(2) });
       else if (v.startsWith('f:')) setScope({ folder: f.folder === v.slice(2) ? '' : v.slice(2) });
       else setScope({ project: f.project === v.slice(2) ? '' : v.slice(2) });
@@ -2058,6 +2067,14 @@ function kv(k, v) { return [h('dt', { text: k }), h('dd', { text: v })]; }
 // Live status, unread and automatic-move rules
 // ======================================================================
 const STATUS_LABELS = { running: '実行中', waiting: '入力待ち', completed: '完了', aborted: '中断', idle: '待機' };
+// Codex sections as triggers: "moved into § doing" (names come from the board).
+function triggerLabel(t) {
+  if (t.startsWith('section:')) {
+    const sec = state.board?.codexSections?.find((x) => x.id === t.slice(8));
+    return `Codex のセクション「${sec ? sec.name : t.slice(8, 16)}」に入ったら`;
+  }
+  return TRIGGER_LABELS[t] || t;
+}
 const TRIGGER_LABELS = {
   'status:running': '実行中になったら',
   'status:waiting': '入力待ちになったら',
@@ -2115,13 +2132,14 @@ function rulesMenu(anchor) {
   const listName = (id) => (id === 'any' ? 'どのリストでも' : b.lists.find((l) => l.id === id)?.title ?? '（削除済みリスト）');
   const listSelect = (value, withAny) => pickerButton({ title: withAny ? '移動元のリスト' : '移動先のリスト', value,
     items: () => [withAny ? { value: 'any', label: 'どのリストでも' } : null, ...b.lists.map((l) => ({ value: l.id, label: l.title, color: l.color }))].filter(Boolean) });
-  const rows = b.settings.rules.map((r) => h('div', { class: 'rule-row', 'data-key': `${TRIGGER_LABELS[r.trigger]} ${listName(r.fromListId)} ${listName(r.toListId)}` },
+  const rows = b.settings.rules.map((r) => h('div', { class: 'rule-row', 'data-key': `${triggerLabel(r.trigger)} ${listName(r.fromListId)} ${listName(r.toListId)}` },
     h('label', { class: 'row' },
       h('input', { type: 'checkbox', checked: r.enabled, 'aria-label': `この${T.automation}を有効にする`,
         onchange: (e) => act('canban_set_rule', { ...r, enabled: e.target.checked }).then(() => rulesMenu(anchor)) }),
-      h('span', { text: `${TRIGGER_LABELS[r.trigger]}、${listName(r.fromListId)} → ${listName(r.toListId)}` })),
+      h('span', { text: `${triggerLabel(r.trigger)}、${listName(r.fromListId)} → ${listName(r.toListId)}` })),
     h('button', { class: 'icon-btn', 'aria-label': `この${T.automation}を削除`, text: '🗑', onclick: () => act('canban_delete_rule', { ruleId: r.id }).then(() => rulesMenu(anchor)) })));
-  const trig = pickerButton({ title: 'きっかけ', value: 'status:completed', items: () => Object.entries(TRIGGER_LABELS).map(([value, label]) => ({ value, label })) });
+  const trig = pickerButton({ title: 'きっかけ', value: 'status:completed', items: () => [...Object.entries(TRIGGER_LABELS).map(([value, label]) => ({ value, label })),
+    ...(b.codexSections || []).map((x) => ({ value: `section:${x.id}`, label: triggerLabel(`section:${x.id}`), group: 'Codex セクション' }))] });
   const from = listSelect('any', true);
   const to = listSelect(b.lists[1]?.id ?? b.lists[0].id, false);
   const body = h('div', {},

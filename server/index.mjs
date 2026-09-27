@@ -44,6 +44,7 @@ const filterProps = {
   host: { type: 'string', description: "マシンで絞り込み（'local' またはリモート接続の hostId）" },
   project: { type: 'string', description: 'プロジェクトで絞り込み（Codex のプロジェクト名。Codex のプロジェクトに入っていないセッションは作業フォルダ名）' },
   folder: { type: 'string', description: '作業フォルダ名（cwd の末尾）で絞り込み' },
+  section: { type: 'string', description: "Codex のセクション ID で絞り込み。'__none' でセクションなし" },
   directory: { type: 'string', description: "Canban のカテゴリ（ユーザーが作る、1 枚に 1 つのまとまり。API 上の名前は directory）の ID で絞り込み。'__none' でカテゴリなし" },
   status: { type: 'string', enum: ['running', 'waiting', 'completed', 'aborted', 'idle'], description: '実行状態で絞り込み' },
   q: { type: 'string', description: 'タイトル・最初の依頼・メモ・ラベルの部分一致検索' },
@@ -453,7 +454,7 @@ const TOOLS = [
   appTool('canban_set_rule', '自動化（カードの自動移動）を保存', {
     id: { type: 'string' },
     enabled: { type: 'boolean' },
-    trigger: { type: 'string', enum: RULE_TRIGGERS },
+    trigger: { type: 'string', description: `${RULE_TRIGGERS.join(' / ')}、または section:<Codex のセクション ID>` },
     fromListId: { type: 'string' },
     toListId: { type: 'string' },
   }, ['trigger', 'toListId'], (a) => store.setRule(a)),

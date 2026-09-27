@@ -78,3 +78,22 @@ test('a missing or broken file is an empty state', async () => {
   assert.equal((await codexAppState({ home: empty })).assignments.size, 0);
   fs.rmSync(empty, { recursive: true, force: true });
 });
+
+test('Codex sections are read, and a move between sections is seen without an updated_at change', async () => {
+  const { listCodexSessions, codexListCounters } = await import('../server/sources/codex.mjs');
+  const h = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-sections-'));
+  const db = new DatabaseSync(path.join(h, 'state_5.sqlite'));
+  db.exec(`CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT, created_at INTEGER, updated_at INTEGER, cwd TEXT, title TEXT, archived INTEGER, thread_section_id TEXT);
+    CREATE INDEX idx_threads_updated_at ON threads(updated_at DESC, id DESC);
+    CREATE TABLE thread_sections (id TEXT PRIMARY KEY, name TEXT);
+    INSERT INTO thread_sections VALUES ('s-doing', 'doing'), ('s-done', 'done');
+    INSERT INTO threads VALUES ('a', '', 1, 1000, '/r/x', 'A', 0, 's-doing'), ('b', '', 1, 1000, '/r/x', 'B', 0, NULL);`);
+  const get = async () => Object.fromEntries((await listCodexSessions({ home: h })).sessions.map((s) => [s.nativeId, s.codexSection?.name ?? null]));
+  assert.deepEqual(await get(), { a: 'doing', b: null });
+  const full = codexListCounters.full;
+  db.exec("UPDATE threads SET thread_section_id = 's-done' WHERE id = 'a'"); // updated_at untouched
+  db.close();
+  assert.deepEqual(await get(), { a: 'done', b: null });
+  assert.equal(codexListCounters.full, full, 'read as a delta, not a full reload');
+  fs.rmSync(h, { recursive: true, force: true });
+});

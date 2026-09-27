@@ -27,11 +27,12 @@ export function makeFixtures() {
   const db = new DatabaseSync(path.join(codexHome, 'state_5.sqlite'));
   db.exec(`CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT, created_at INTEGER, updated_at INTEGER, updated_at_ms INTEGER,
     source TEXT, thread_source TEXT, cwd TEXT, title TEXT, name TEXT, archived INTEGER, git_branch TEXT, model TEXT,
-    first_user_message TEXT, preview TEXT, agent_role TEXT, is_pinned INTEGER)`);
-  const ins = db.prepare('INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-  ins.run('t1', rollout, 1790000000, 1790000100, 1790000100123, 'vscode', 'user', '/Users/x/.codex/worktrees/0346/demo-app', 'ログインを直して', 'ログイン修正', 0, 'fix/login', 'gpt-6-sol', 'ログインを直して', '', null, 1);
-  ins.run('t2', '', 1790000000, 1790000000, null, '{"subagent":{"other":"guardian"}}', 'subagent', '/r/app', 'review', null, 0, null, null, '', '', 'guardian', 0);
-  ins.run('t3', '', 1790000000, 1790000000, null, 'cli', null, '/r/app', '<system-reminder>x</system-reminder>\n調査', null, 1, null, null, '', '', null, 0);
+    first_user_message TEXT, preview TEXT, agent_role TEXT, is_pinned INTEGER, thread_section_id TEXT)`);
+  db.exec("CREATE TABLE thread_sections (id TEXT PRIMARY KEY, name TEXT); INSERT INTO thread_sections VALUES ('sec-1', 'doing');");
+  const ins = db.prepare('INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+  ins.run('t1', rollout, 1790000000, 1790000100, 1790000100123, 'vscode', 'user', '/Users/x/.codex/worktrees/0346/demo-app', 'ログインを直して', 'ログイン修正', 0, 'fix/login', 'gpt-6-sol', 'ログインを直して', '', null, 1, 'sec-1');
+  ins.run('t2', '', 1790000000, 1790000000, null, '{"subagent":{"other":"guardian"}}', 'subagent', '/r/app', 'review', null, 0, null, null, '', '', 'guardian', 0, null);
+  ins.run('t3', '', 1790000000, 1790000000, null, 'cli', null, '/r/app', '<system-reminder>x</system-reminder>\n調査', null, 1, null, null, '', '', null, 0, null);
   db.close();
 
   // Codex app state: t1 is pinned in the Codex app

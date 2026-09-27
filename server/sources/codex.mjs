@@ -16,7 +16,7 @@ export function codexHome() {
 export const CODEX_COLUMNS = [
   'id', 'rollout_path', 'created_at', 'updated_at', 'created_at_ms', 'updated_at_ms', 'source', 'thread_source',
   'cwd', 'title', 'name', 'archived', 'git_branch', 'model', 'first_user_message', 'preview', 'agent_role',
-  'agent_nickname', 'is_pinned', 'git_origin_url', 'tokens_used', 'sandbox_policy', 'approval_mode',
+  'agent_nickname', 'is_pinned', 'git_origin_url', 'tokens_used', 'sandbox_policy', 'approval_mode', 'thread_section_id',
 ];
 
 // Pick the highest-numbered state_<n>.sqlite so a schema bump keeps working.
@@ -54,6 +54,8 @@ export function normalizeCodexRow(r, host = LOCAL_HOST) {
     branch: r.git_branch || null,
     gitOriginUrl: r.git_origin_url || null,
     tokens: Number(r.tokens_used) || 0,
+    // Codex sidebar section (remote rows carry the name; local ones get it from the section map)
+    codexSection: r.thread_section_id ? { id: r.thread_section_id, name: r.section_name || null } : null,
     sandboxPolicy: r.sandbox_policy || null,
     approvalMode: r.approval_mode || null,
     model: r.model || null,
@@ -104,7 +106,7 @@ export async function listCodexSessions({ home = codexHome(), now = Date.now() }
   try {
     const c = await cachedThreads(home, now);
     if (!c) return { sessions: [], error: null };
-    const sessions = [...c.rows.values()].map((x) => ({ ...x }));
+    const sessions = [...c.rows.values()].map((x) => ({ ...x, codexSection: c.sections.get(x.nativeId) || null }));
     attachSpawnEdges(sessions, c.edges);
     return { sessions, error: null };
   } catch (err) {
@@ -117,7 +119,7 @@ export async function findCodexSession(nativeId, { home = codexHome(), now = Dat
   const c = await cachedThreads(home, now);
   const s = c?.rows.get(nativeId);
   if (!s) return null;
-  return { ...s, subagent: s.subagent || c.edges.some((e) => e.child === nativeId) };
+  return { ...s, codexSection: c.sections.get(nativeId) || null, subagent: s.subagent || c.edges.some((e) => e.child === nativeId) };
 }
 
 function readThreads(dbPath, prev, sig, now) {
@@ -127,6 +129,15 @@ function readThreads(dbPath, prev, sig, now) {
     const hasEdges = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='thread_spawn_edges'").get();
     const edges = hasEdges ? db.prepare('SELECT parent_thread_id AS parent, child_thread_id AS child FROM thread_spawn_edges').all() : [];
     const maxU = db.prepare('SELECT max(updated_at) AS u FROM threads').get()?.u ?? 0;
+    // Section membership is re-read on every change (moving a thread between sections
+    // does not necessarily bump updated_at); a partial covering index makes it ~1 ms.
+    const sections = new Map();
+    if (cols.has('thread_section_id') && db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='thread_sections'").get()) {
+      const names = new Map(db.prepare('SELECT id, name FROM thread_sections').all().map((r) => [r.id, r.name]));
+      for (const r of db.prepare('SELECT id, thread_section_id AS sid FROM threads WHERE thread_section_id IS NOT NULL').all()) {
+        if (names.has(r.sid)) sections.set(r.id, { id: r.sid, name: names.get(r.sid) });
+      }
+    }
     const incremental = prev && now - prev.fullAt < FULL_REFRESH_MS && cols.has('updated_at');
     if (incremental) {
       const rows = new Map(prev.rows);
@@ -139,12 +150,12 @@ function readThreads(dbPath, prev, sig, now) {
       const count = db.prepare('SELECT count(*) AS n FROM threads').get().n;
       if (rows.size === count) {
         codexListCounters.delta++;
-        return { sig, maxU, rows, edges, fullAt: prev.fullAt };
+        return { sig, maxU, rows, edges, sections, fullAt: prev.fullAt };
       }
     }
     codexListCounters.full++;
     const rows = new Map(db.prepare(`SELECT ${want.join(', ')} FROM threads`).all().map((r) => [r.id, normalizeCodexRow(r)]));
-    return { sig, maxU, rows, edges, fullAt: now };
+    return { sig, maxU, rows, edges, sections, fullAt: now };
   });
 }
 

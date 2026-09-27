@@ -70,7 +70,7 @@ function normalizeDispatch(x) {
   };
 }
 
-const VIEW_FILTER_KEYS = ['agent', 'host', 'status', 'project', 'folder', 'directory', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'includeHidden', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
+const VIEW_FILTER_KEYS = ['agent', 'host', 'status', 'project', 'folder', 'section', 'directory', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'includeHidden', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
 function normalizeView(v) {
   if (!v || typeof v.id !== 'string' || !String(v.name || '').trim()) return null;
   const filters = {};
@@ -78,8 +78,13 @@ function normalizeView(v) {
   return { id: v.id, name: String(v.name).trim().slice(0, 60), filters };
 }
 
+// `section:<id>`: a Codex thread entered that sidebar section (Codex sections play
+// the role of lists, so this keeps the two in step without managing both by hand).
+export const SECTION_TRIGGER = /^section:[A-Za-z0-9-]{1,64}$/;
+export const isRuleTrigger = (t) => RULE_TRIGGERS.includes(t) || (typeof t === 'string' && SECTION_TRIGGER.test(t));
+
 function normalizeRule(r) {
-  if (!r || typeof r.id !== 'string' || !RULE_TRIGGERS.includes(r.trigger) || typeof r.toListId !== 'string') return null;
+  if (!r || typeof r.id !== 'string' || !isRuleTrigger(r.trigger) || typeof r.toListId !== 'string') return null;
   return {
     id: r.id,
     enabled: !!r.enabled,

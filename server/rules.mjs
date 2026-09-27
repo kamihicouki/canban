@@ -50,6 +50,7 @@ export class RuleEngine {
       const triggers = [];
       // undefined: PR data not loaded yet — neither fire nor overwrite the baseline
       const pr = s.pr === undefined ? undefined : s.pr ? `${s.pr.state}|${s.pr.checks || ''}` : null;
+      const section = s.codexSection?.id ?? null;
       if (!prev) {
         // Sessions that appear after tracking began count as a transition from nothing.
         if ((s.createdAt || 0) >= cache.startedAt) {
@@ -66,9 +67,12 @@ export class RuleEngine {
           if ((s.pr.checks || '') !== pChecks && s.pr.checks === 'failing') triggers.push('ci:failed');
           if ((s.pr.checks || '') !== pChecks && s.pr.checks === 'passing') triggers.push('ci:passed');
         }
+        // Codex section moves (once a baseline exists: 'section' in prev)
+        if ('section' in prev && section && prev.section !== section) triggers.push(`section:${section}`);
       }
-      const track = status !== 'idle' || (s.updatedAt || 0) >= now - TRACK_MS || (s.pr && s.pr.state === 'OPEN');
-      if (track) cache.sessions[s.id] = { status, updatedAt: s.updatedAt || 0, seen: now, pr: pr === undefined ? prev?.pr : pr };
+      // Threads in a Codex section are tracked too: they can be moved long after their last activity.
+      const track = status !== 'idle' || (s.updatedAt || 0) >= now - TRACK_MS || (s.pr && s.pr.state === 'OPEN') || section || prev?.section;
+      if (track) cache.sessions[s.id] = { status, updatedAt: s.updatedAt || 0, seen: now, pr: pr === undefined ? prev?.pr : pr, section };
       if (!triggers.length || !active.length) continue;
       const current = listOf(s.id);
       const rule = active.find(

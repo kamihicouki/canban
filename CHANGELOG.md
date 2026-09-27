@@ -15,6 +15,10 @@
   - Codex pins come from the Codex app (`pinned-thread-ids`; the DB column is no longer used). Pinned threads show 📌 and can be filtered ("Codex アプリでピン留めしたものだけ").
   - Claude sessions without desktop metadata on disk (common with recent Claude desktop versions) show their archived state as unknown instead of "not archived". The "close it in the app first" hint relies on the transcript's `entrypoint`.
   - Folder and pin filters now also apply to task cards.
+- Codex sections (the sidebar headings, e.g. "doing" / "done"):
+  - Cards show "§ name". Sections are a scope filter and a swimlane mode.
+  - A new automation trigger, "Codex のセクション『…』に入ったら" (`section:<id>`), moves the card when the thread is moved between sections in Codex, so lists and sections no longer have to be kept in step by hand. Threads in a section are tracked even when long idle.
+  - Section membership is re-read (about 1 ms, partial index) on every DB change, because moving a thread does not bump `updated_at`. It is in parity with the remote collector.
 - Requests are not sent to a Codex thread that has follow-ups waiting in the Codex app's own queue ("⏭ Codex キュー N" on the card), so the two queues never interleave.
 
 ## 0.8.0 — 2026-09-27

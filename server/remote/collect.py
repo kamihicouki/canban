@@ -25,7 +25,7 @@ if isinstance(globals().get("ARGS"), dict):
 CODEX_COLUMNS = [
     "id", "rollout_path", "created_at", "updated_at", "created_at_ms", "updated_at_ms", "source", "thread_source",
     "cwd", "title", "name", "archived", "git_branch", "model", "first_user_message", "preview", "agent_role",
-    "agent_nickname", "is_pinned", "git_origin_url", "tokens_used", "sandbox_policy", "approval_mode",
+    "agent_nickname", "is_pinned", "git_origin_url", "tokens_used", "sandbox_policy", "approval_mode", "thread_section_id",
 ]
 SUMMARY_PROMPTS = 3
 TAIL_BYTES = 768 * 1024
@@ -82,6 +82,14 @@ def codex_rows():
             want = [c for c in CODEX_COLUMNS if c in cols]
             cur = con.execute("SELECT %s FROM threads" % ", ".join(want))
             rows = [dict(zip(want, r)) for r in cur]
+            if "thread_section_id" in cols and con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='thread_sections'").fetchone():
+                names = dict(con.execute("SELECT id, name FROM thread_sections"))
+                for r in rows:
+                    sid = r.get("thread_section_id")
+                    if sid and sid not in names:
+                        r["thread_section_id"] = None  # unknown section: same as the local reader
+                    elif sid:
+                        r["section_name"] = names[sid]
             edges = []
             if con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='thread_spawn_edges'").fetchone():
                 edges = [{"parent": p, "child": c} for p, c in con.execute("SELECT parent_thread_id, child_thread_id FROM thread_spawn_edges")]

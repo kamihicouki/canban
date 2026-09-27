@@ -75,6 +75,7 @@ function matches(session, card, f, labelsById, hits, dir) {
   if (f.host && (session.host?.id || 'local') !== f.host) return false;
   if (f.project && session.project !== f.project) return false;
   if (f.folder && session.folder !== f.folder) return false;
+  if (f.section && (f.section === '__none' ? session.codexSection : session.codexSection?.id !== f.section)) return false;
   if (!matchesDirectory(f, dir)) return false;
   if (f.status && (session.status || 'idle') !== f.status) return false;
   if (!f.includeArchived && session.archived) return false;
@@ -102,6 +103,7 @@ function matchesTask(t, links, status, f, labelsById, dir) {
   const anyLink = (pred) => links.some(pred);
   if (f.pinnedOnly && !anyLink((s) => s.pinnedInAgent)) return false;
   if (f.folder && !anyLink((s) => s.folder === f.folder)) return false;
+  if (f.section && !anyLink((s) => (f.section === '__none' ? !s.codexSection : s.codexSection?.id === f.section))) return false;
   if (f.agent && f.agent !== 'all' && !(anyLink((s) => s.agent === f.agent) || t.target?.agent === f.agent)) return false;
   if (f.host && !(anyLink((s) => (s.host?.id || 'local') === f.host) || (t.target?.hostId || 'local') === f.host)) return false;
   if (f.project && !anyLink((s) => s.project === f.project)) return false;
@@ -121,6 +123,7 @@ export function normalizeFilters(f = {}) {
     host: typeof f.host === 'string' && f.host ? f.host : null,
     project: f.project || null,
     folder: typeof f.folder === 'string' && f.folder ? f.folder : null,
+    section: typeof f.section === 'string' && f.section ? f.section : null,
     directory: typeof f.directory === 'string' && f.directory ? f.directory : null,
     status: STATUSES.includes(f.status) ? f.status : null,
     q: typeof f.q === 'string' ? f.q.trim() : '',
@@ -298,6 +301,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
   const buckets = new Map(state.lists.map((l) => [l.id, []]));
   const projects = new Map();
   const folders = new Map(); // folder names hidden behind a Codex project
+  const sections = new Map(); // Codex sidebar sections
   const dirCounts = new Map();
   const hostCounts = new Map();
 
@@ -307,6 +311,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
     if (visibleKind) statusCounts[s.status || 'idle']++;
     if (s.project && visibleKind) projects.set(s.project, (projects.get(s.project) || 0) + 1);
     if (s.folder && s.folder !== s.project && visibleKind) folders.set(s.folder, (folders.get(s.folder) || 0) + 1);
+    if (s.codexSection) sections.set(s.codexSection.id, { ...s.codexSection, count: (sections.get(s.codexSection.id)?.count || 0) + 1 });
     if (visibleKind) hostCounts.set(s.host?.id || 'local', (hostCounts.get(s.host?.id || 'local') || 0) + 1);
     const dir = resolveDirectory(state, card, s.cwd);
     if (dir && visibleKind && !toTask.has(s.id)) dirCounts.set(dir.id, (dirCounts.get(dir.id) || 0) + 1);
@@ -348,6 +353,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       requests: reqs.get(s.id) || null,
       codexFollowUps: s.codexFollowUps || 0,
       pinnedInAgent: !!s.pinnedInAgent,
+      codexSection: s.codexSection || null,
       autoMoved: card?.movedBy ? { ruleId: card.movedBy.ruleId, at: card.movedBy.at } : null,
       subagents: kids.length ? { total: kids.length, running: kids.filter((k) => k.status === 'running' || k.status === 'waiting').length } : null,
       repo: s.repo || null,
@@ -407,6 +413,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
     directories: state.directories.map((d) => ({ ...d, count: dirCounts.get(d.id) || 0 })),
     defaultListId: state.defaultListId,
     projects: [...projects.entries()].sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count })),
+    codexSections: [...sections.values()].sort((a, b) => b.count - a.count),
     folders: [...folders.entries()].sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count })),
     codexProjects: codexProjectList(app, sessions).map(({ id, name, roots, hostId, count }) => ({ id, name, roots, hostId, count })),
     hosts: [{ ...LOCAL_HOST, enabled: true, status: { state: 'ok' }, count: hostCounts.get('local') || 0 }, ...hosts.map((h) => ({ ...hostView(h), count: hostCounts.get(h.id) || 0 }))],
