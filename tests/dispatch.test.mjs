@@ -58,7 +58,10 @@ before(async () => {
     full: rollout('full', [turnContext({ type: 'danger-full-access' }, 'never'), event('task_complete')], old),
     db: rollout('db', [event('task_complete')], old),
     fresh: rollout('fresh', [turnContext({ type: 'read-only' }), event('task_complete')], 0),
+    fu: rollout('fu', [turnContext({ type: 'read-only' }), event('task_complete')], old),
   };
+  // The Codex app has a follow-up queued for th-fu.
+  fs.writeFileSync(path.join(codexHome, '.codex-global-state.json'), JSON.stringify({ 'queued-follow-ups': { 'th-fu': [{ id: 'f1', text: 'app follow-up', createdAt: 1 }] } }));
   const db = new DatabaseSync(path.join(codexHome, 'state_5.sqlite'));
   db.exec(`CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT, created_at INTEGER, updated_at INTEGER, updated_at_ms INTEGER,
     source TEXT, cwd TEXT, title TEXT, archived INTEGER, first_user_message TEXT, sandbox_policy TEXT, approval_mode TEXT);
@@ -307,6 +310,18 @@ test('model requests are rate limited per session', async () => {
   } finally {
     await store.updateDispatchSettings({ modelPerHour: 10, allowModel: true });
   }
+});
+
+test('threads with a follow-up queued in the Codex app are not sent to', async () => {
+  const d = freshDispatcher();
+  await assert.rejects(d.submit({ cardId: 'codex:th-fu', prompt: 'x', when: 'now' }), /フォローアップが 1 件待機中/);
+  const r = await d.submit({ cardId: 'codex:th-fu', prompt: 'later' });
+  await d.tick();
+  const cur = d.requests.get(r.id);
+  assert.equal(cur.state, 'queued');
+  assert.match(cur.blockedReason, /Codex アプリにフォローアップ/);
+  assert.equal(runs().length, 0);
+  d.requests.cancel(r.id);
 });
 
 // ---- cost ----------------------------------------------------------------------

@@ -342,6 +342,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       status: s.status || 'idle',
       unread: (s.updatedAt || 0) > Math.max(seenAll, card?.seenAt || 0),
       requests: reqs.get(s.id) || null,
+      codexFollowUps: s.codexFollowUps || 0,
       autoMoved: card?.movedBy ? { ruleId: card.movedBy.ruleId, at: card.movedBy.at } : null,
       subagents: kids.length ? { total: kids.length, running: kids.filter((k) => k.status === 'running' || k.status === 'waiting').length } : null,
       repo: s.repo || null,

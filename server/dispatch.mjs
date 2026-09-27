@@ -196,6 +196,8 @@ export function staticProblem(session) {
 
 // Checks that may pass later (a queued request waits for them).
 export function timingProblem(session, insp, now = Date.now()) {
+  // The Codex app has its own follow-up queue per thread; never interleave with it.
+  if (session.codexFollowUps) return `Codex アプリにフォローアップが ${session.codexFollowUps} 件待機中です（アプリで送るか消してから）`;
   const st = liveStatus(session, insp, now);
   if (st === 'running') return 'セッションが実行中です';
   if (st === 'waiting') return 'セッションが入力待ちです（アプリかターミナルで答えてください）';

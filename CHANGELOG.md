@@ -11,6 +11,7 @@
   - Folder names stay available as **フォルダ**: detail, tooltip and a scope filter.
   - A Codex project can be turned into a カテゴリ with its folders ("⇣ Codex" in the sidebar).
   - The app state file (over 1 MB) is parsed once per change and shared with the remote-host list; it used to be parsed on every board load. Warm `allSessions` went from 281 ms to 10 ms.
+- Requests are not sent to a Codex thread that has follow-ups waiting in the Codex app's own queue ("⏭ Codex キュー N" on the card), so the two queues never interleave.
 
 ## 0.8.0 — 2026-09-27
 - Send prompts to existing sessions from the board ("指示を送る" in the session detail) or from the model (`canban_send_prompt`): send now, or queue them to run one at a time when the session is free.

@@ -793,6 +793,7 @@ function renderCard(card, list) {
   if (card.subagents) meta.append(h('span', { class: 'pill', title: 'このセッションが起動したサブエージェント', text: `🤖 ${card.subagents.total}${card.subagents.running ? `（動作中 ${card.subagents.running}）` : ''}` }));
   if (card.hidden) meta.append(h('span', { text: '非表示' }));
   if (card.requests) meta.append(requestPill(card.requests));
+  if (card.codexFollowUps) meta.append(h('span', { class: 'pill', title: 'Codex アプリのキューにフォローアップが待機しています（Canban からは送りません）', text: `⏭ Codex キュー ${card.codexFollowUps}` }));
   el.append(meta);
   if (card.snippet) el.append(renderSnippet(card.snippet));
 
@@ -1382,7 +1383,7 @@ function renderDispatch(d) {
     : h('span', { class: 'perm-chip', text: s.host ? '🔒 権限は送信時にリモートで確認します' : '🔒 権限を確認できません' });
   const ta = h('textarea', { placeholder: 'このセッションに送るプロンプト（⌘/Ctrl + Enter で今すぐ送信）', 'aria-label': '送るプロンプト' });
   const ack = p?.elevated ? h('input', { type: 'checkbox', 'aria-label': '制限なしで実行されることを確認しました' }) : null;
-  const busy = s.status === 'running' || s.status === 'waiting';
+  const busy = s.status === 'running' || s.status === 'waiting' || !!s.codexFollowUps;
   const send = async (when) => {
     const prompt = ta.value.trim();
     if (!prompt) return ta.focus();
@@ -1409,7 +1410,9 @@ function renderDispatch(d) {
       h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap', marginBottom: '6px' } }, permChip),
       ta,
       ack ? h('label', { class: 'send-note row', style: { gap: '6px' } }, ack, 'このセッションはサンドボックス／確認なしで動いています。そのまま実行されることを確認しました') : null,
-      busy ? h('div', { class: 'muted', style: { marginTop: '6px' }, text: `セッションが${s.status === 'running' ? '実行中' : '入力待ち'}のため、今すぐは送れません。キューに追加すると空いたときに送ります。` }) : null,
+      busy ? h('div', { class: 'muted', style: { marginTop: '6px' }, text: s.codexFollowUps
+        ? `Codex アプリのキューにフォローアップが ${s.codexFollowUps} 件あります。二重に送らないよう、アプリ側で送るか消すまで Canban からは送りません（キューに追加した分は待機します）。`
+        : `セッションが${s.status === 'running' ? '実行中' : '入力待ち'}のため、今すぐは送れません。キューに追加すると空いたときに送ります。` }) : null,
       h('div', { class: 'send-actions' },
         h('button', { class: 'btn-primary', disabled: busy, text: '▶ 今すぐ送信', onclick: () => send('now') }),
         h('button', { class: 'side-btn', style: { width: 'auto', marginBottom: 0 }, text: '＋ キューに追加', onclick: () => send('queue') }),
