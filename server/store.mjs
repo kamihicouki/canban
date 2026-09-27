@@ -47,6 +47,26 @@ export function defaultSettings() {
     seenAllAt: null,
     // Saved views: named filter / swimlane presets.
     views: [],
+    // Sending prompts to sessions (headless turns through the agents' CLIs).
+    dispatch: defaultDispatch(),
+  };
+}
+
+export function defaultDispatch() {
+  return { enabled: true, maxLocal: 2, maxPerHost: 1, allowModel: true, allowModelElevated: false, modelPerHour: 10 };
+}
+
+const clampInt = (v, lo, hi, d) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Math.round(Number(v)))) : d);
+function normalizeDispatch(x) {
+  const d = defaultDispatch();
+  const b = (k) => (typeof x?.[k] === 'boolean' ? x[k] : d[k]);
+  return {
+    enabled: b('enabled'),
+    maxLocal: clampInt(x?.maxLocal, 1, 8, d.maxLocal),
+    maxPerHost: clampInt(x?.maxPerHost, 1, 4, d.maxPerHost),
+    allowModel: b('allowModel'),
+    allowModelElevated: b('allowModelElevated'),
+    modelPerHour: clampInt(x?.modelPerHour, 0, 100, d.modelPerHour),
   };
 }
 
@@ -81,6 +101,7 @@ function normalizeSettings(s) {
     rules: Array.isArray(s?.rules) ? s.rules.map(normalizeRule).filter(Boolean) : d.rules,
     seenAllAt: typeof s?.seenAllAt === 'number' ? s.seenAllAt : null,
     views: Array.isArray(s?.views) ? s.views.map(normalizeView).filter(Boolean).slice(0, 20) : [],
+    dispatch: normalizeDispatch(s?.dispatch),
   };
 }
 
@@ -508,6 +529,13 @@ export class Store {
     return this.mutate((s) => {
       s.settings = normalizeSettings({ ...s.settings, launch: { ...s.settings.launch, ...patch } });
       return s.settings;
+    });
+  }
+
+  updateDispatchSettings(patch = {}) {
+    return this.mutate((s) => {
+      s.settings = normalizeSettings({ ...s.settings, dispatch: { ...s.settings.dispatch, ...patch } });
+      return s.settings.dispatch;
     });
   }
 

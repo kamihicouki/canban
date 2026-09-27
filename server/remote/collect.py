@@ -25,7 +25,7 @@ if isinstance(globals().get("ARGS"), dict):
 CODEX_COLUMNS = [
     "id", "rollout_path", "created_at", "updated_at", "created_at_ms", "updated_at_ms", "source", "thread_source",
     "cwd", "title", "name", "archived", "git_branch", "model", "first_user_message", "preview", "agent_role",
-    "agent_nickname", "is_pinned", "git_origin_url", "tokens_used",
+    "agent_nickname", "is_pinned", "git_origin_url", "tokens_used", "sandbox_policy", "approval_mode",
 ]
 SUMMARY_PROMPTS = 3
 TAIL_BYTES = 768 * 1024

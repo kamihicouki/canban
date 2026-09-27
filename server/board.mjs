@@ -1,7 +1,10 @@
 // Combines read-only session listings (local + enabled remote hosts) with the
 // Canban store into a board snapshot.
-import { listCodexSessions, codexSessionMessages } from './sources/codex.mjs';
-import { listClaudeSessions, claudeSessionMessages } from './sources/claude.mjs';
+import { listCodexSessions, codexMessagesFromRecords } from './sources/codex.mjs';
+import { listClaudeSessions, claudeMessagesFromRecords } from './sources/claude.mjs';
+import { exists, readTailJsonLines } from './sources/readonly.mjs';
+import { permissionFor } from './permissions.mjs';
+import { RequestStore, requestSummary } from './requests.mjs';
 import { listRemoteHosts } from './sources/remotes.mjs';
 import { LOCAL_HOST } from './sources/util.mjs';
 import { RemotePool } from './remote/pool.mjs';
@@ -12,6 +15,7 @@ import { RuleEngine } from './rules.mjs';
 import { PrService } from './git.mjs';
 import { SearchIndex } from './search.mjs';
 import { resolveDirectory } from './store.mjs';
+import { perf } from './perf.mjs';
 
 const LOCAL_TTL_MS = 4000;
 let localCache = null;
@@ -21,7 +25,7 @@ const PR_WINDOW_MS = 30 * 86400e3; // look up PRs for sessions active in the las
 
 async function localSessions({ force = false } = {}) {
   if (!force && localCache && Date.now() - localCache.at < LOCAL_TTL_MS) return localCache.value;
-  const [codex, claude] = await Promise.all([listCodexSessions(), listClaudeSessions()]);
+  const [codex, claude] = await Promise.all([perf.timed('codex.list', () => listCodexSessions()), perf.timed('claude.list', () => listClaudeSessions())]);
   const value = { sessions: [...codex.sessions, ...claude.sessions], errors: [codex.error, claude.error].filter(Boolean) };
   localCache = { at: Date.now(), value };
   return value;
@@ -32,12 +36,16 @@ export async function hostsWithState(state) {
   return remotes.map((h) => ({ ...h, enabled: !!state.remoteHosts?.[h.id]?.enabled, status: pool.hostStatus(h.id) }));
 }
 
-export async function allSessions(state, { force = false } = {}) {
+export function allSessions(state, opts) {
+  return perf.timed('sessions.all', () => allSessionsImpl(state, opts));
+}
+
+async function allSessionsImpl(state, { force = false } = {}) {
   const hosts = await hostsWithState(state);
   const enabled = hosts.filter((h) => h.enabled);
-  const [local, remote] = await Promise.all([localSessions({ force }), pool.sessions(enabled, { force })]);
+  const [local, remote] = await Promise.all([localSessions({ force }), perf.timed('remote.list', () => pool.sessions(enabled, { force }))]);
   const all = [...local.sessions, ...remote];
-  await annotateStatus(all);
+  await perf.timed('status', () => annotateStatus(all));
   const now = Date.now();
   await prs.annotate(all.filter((s) => (s.updatedAt || 0) >= now - PR_WINDOW_MS || state.cards[s.id]?.listId));
   const errors = [...local.errors];
@@ -128,7 +136,11 @@ export function searchFor(store) {
 }
 
 // Background indexing step for full-text search (local sessions).
-export async function tickSearch(store) {
+export function tickSearch(...args) {
+  return perf.timed('tick.search', () => tickSearchImpl(...args));
+}
+
+async function tickSearchImpl(store) {
   const state = store.load();
   const { sessions } = await allSessions(state);
   return searchFor(store).step(sessions);
@@ -238,7 +250,11 @@ export async function runRules(store, state, sessions, now = Date.now()) {
 }
 
 // Background evaluation so rules work while the board is closed.
-export async function tickRules(store) {
+export function tickRules(...args) {
+  return perf.timed('tick.rules', () => tickRulesImpl(...args));
+}
+
+async function tickRulesImpl(store) {
   let state = store.load();
   const pendingTasks = taskEntries(state).some(([, t]) => t.pending?.length);
   if (!pendingTasks && !state.settings.rules.some((r) => r.enabled)) return [];
@@ -247,7 +263,11 @@ export async function tickRules(store) {
   return runRules(store, state, sessions);
 }
 
-export async function buildBoard(store, rawFilters = {}, { force = false } = {}) {
+export function buildBoard(...args) {
+  return perf.timed('buildBoard', () => buildBoardImpl(...args));
+}
+
+async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
   const filters = normalizeFilters(rawFilters);
   let state = store.load();
   const { sessions, errors, hosts } = await allSessions(state, { force });
@@ -262,6 +282,8 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
   }
   const seenAll = state.settings.seenAllAt || 0;
   const statusCounts = Object.fromEntries(STATUSES.map((k) => [k, 0]));
+  const { requests: allRequests, paused } = requestsFor(store.dir).load();
+  const reqs = requestSummary(allRequests, paused);
   const labelsById = new Map(state.labels.map((l) => [l.id, l]));
   const listIds = new Set(state.lists.map((l) => l.id));
   const buckets = new Map(state.lists.map((l) => [l.id, []]));
@@ -310,6 +332,7 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
       placed: !!card?.listId,
       status: s.status || 'idle',
       unread: (s.updatedAt || 0) > Math.max(seenAll, card?.seenAt || 0),
+      requests: reqs.get(s.id) || null,
       autoMoved: card?.movedBy ? { ruleId: card.movedBy.ruleId, at: card.movedBy.at } : null,
       subagents: kids.length ? { total: kids.length, running: kids.filter((k) => k.status === 'running' || k.status === 'waiting').length } : null,
       repo: s.repo || null,
@@ -387,7 +410,30 @@ export async function buildBoard(store, rawFilters = {}, { force = false } = {})
       shown: lists.reduce((n, l) => n + l.count, 0),
     },
     errors,
+    perf: { slow: perf.recentSlow() },
   };
+}
+
+// Queue, history and the inherited permissions for the detail's "send" section.
+function dispatchView(dir, state, cardId, permission) {
+  const rs = requestsFor(dir);
+  const { requests, paused } = rs.load();
+  const mine = requests.filter((r) => r.cardId === cardId);
+  const view = (r) => ({ ...r, logPath: r.hostId === 'local' ? r.logPath : null });
+  return {
+    settings: state.settings.dispatch,
+    permission,
+    paused: paused[cardId] || null,
+    queue: mine.filter((r) => r.state === 'queued').sort((a, b) => a.order - b.order || a.createdAt - b.createdAt).map(view),
+    active: mine.filter((r) => r.state === 'starting' || r.state === 'running').map(view),
+    history: mine.filter((r) => !['queued', 'starting', 'running'].includes(r.state)).sort((a, b) => (b.endedAt || b.createdAt) - (a.endedAt || a.createdAt)).slice(0, 20).map(view),
+  };
+}
+
+const requestStores = new Map();
+export function requestsFor(dir) {
+  if (!requestStores.has(dir)) requestStores.set(dir, new RequestStore(dir));
+  return requestStores.get(dir);
 }
 
 export function prView(pr) {
@@ -438,14 +484,24 @@ export async function findSession(store, cardId) {
   return { session: s, state, host: s.host?.local === false ? hosts.find((h) => h.id === s.host.id) : null };
 }
 
-export async function sessionDetail(store, cardId, { messages = 12 } = {}) {
+export function sessionDetail(...args) {
+  return perf.timed('sessionDetail', () => sessionDetailImpl(...args));
+}
+
+async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   const { session: s, state, host } = await findSession(store, cardId);
   const card = state.cards[cardId] || {};
   let recent = [];
+  let permission = null; // remote: checked when sending (saves an ssh round trip)
   let messagesError = null;
   try {
     if (host) recent = await pool.messages(host, s, messages);
-    else recent = s.agent === 'codex' ? await codexSessionMessages(s.sourcePath, messages) : await claudeSessionMessages(s.sourcePath, messages);
+    else if (s.sourcePath && exists(s.sourcePath)) {
+      // One tail read serves both the messages and the permissions shown for sending.
+      const records = await readTailJsonLines(s.sourcePath, 768 * 1024);
+      recent = s.agent === 'codex' ? codexMessagesFromRecords(records, messages) : claudeMessagesFromRecords(records, messages);
+      permission = permissionFor(s, records);
+    }
   } catch (e) {
     messagesError = e.message;
   }
@@ -482,5 +538,6 @@ export async function sessionDetail(store, cardId, { messages = 12 } = {}) {
     terminals: installedTerminals(),
     recentMessages: recent,
     messagesError,
+    dispatch: dispatchView(store.dir, state, cardId, permission),
   };
 }

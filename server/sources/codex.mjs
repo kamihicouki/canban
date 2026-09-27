@@ -4,7 +4,7 @@
 // Row normalization and message extraction are shared with the remote collector.
 import path from 'node:path';
 import os from 'node:os';
-import { exists, listDir, queryReadOnly, readTailJsonLines } from './readonly.mjs';
+import { exists, listDir, queryReadOnly, readTailJsonLines, stat } from './readonly.mjs';
 import { projectName, clip, cleanPrompt, firstLine, LOCAL_HOST, sessionKey } from './util.mjs';
 
 export function codexHome() {
@@ -16,7 +16,7 @@ export function codexHome() {
 export const CODEX_COLUMNS = [
   'id', 'rollout_path', 'created_at', 'updated_at', 'created_at_ms', 'updated_at_ms', 'source', 'thread_source',
   'cwd', 'title', 'name', 'archived', 'git_branch', 'model', 'first_user_message', 'preview', 'agent_role',
-  'agent_nickname', 'is_pinned', 'git_origin_url', 'tokens_used',
+  'agent_nickname', 'is_pinned', 'git_origin_url', 'tokens_used', 'sandbox_policy', 'approval_mode',
 ];
 
 // Pick the highest-numbered state_<n>.sqlite so a schema bump keeps working.
@@ -54,6 +54,8 @@ export function normalizeCodexRow(r, host = LOCAL_HOST) {
     branch: r.git_branch || null,
     gitOriginUrl: r.git_origin_url || null,
     tokens: Number(r.tokens_used) || 0,
+    sandboxPolicy: r.sandbox_policy || null,
+    approvalMode: r.approval_mode || null,
     model: r.model || null,
     createdAt,
     updatedAt,
@@ -68,25 +70,82 @@ export function normalizeCodexRow(r, host = LOCAL_HOST) {
   };
 }
 
-export async function listCodexSessions({ home = codexHome() } = {}) {
+// Listing is incremental: reading every row costs seconds on a large history (and
+// blocks the event loop), so rows are cached per DB and refreshed by `updated_at`
+// (indexed). Nothing is queried while the DB and its WAL are unchanged; a full
+// read happens on first use, when rows disappear, and every FULL_REFRESH_MS.
+const FULL_REFRESH_MS = 30 * 60e3;
+const listCache = new Map(); // dbPath -> { sig, maxU, rows: Map(id -> session), edges, fullAt }
+export const codexListCounters = { full: 0, delta: 0, skipped: 0 };
+
+async function dbSignature(dbPath) {
+  const parts = await Promise.all([dbPath, `${dbPath}-wal`].map(async (p) => {
+    const st = await stat(p);
+    return st ? `${st.mtimeMs}:${st.size}` : '-';
+  }));
+  return parts.join('|');
+}
+
+async function cachedThreads(home, now) {
   const dbPath = await findStateDb(home);
-  if (!dbPath || !exists(dbPath)) return { sessions: [], error: null };
+  if (!dbPath || !exists(dbPath)) return null;
+  const sig = await dbSignature(dbPath);
+  let c = listCache.get(dbPath);
+  if (c && c.sig === sig && now - c.fullAt < FULL_REFRESH_MS) codexListCounters.skipped++;
+  else {
+    listCache.delete(dbPath);
+    c = readThreads(dbPath, c, sig, now);
+  }
+  listCache.set(dbPath, c);
+  return c;
+}
+
+export async function listCodexSessions({ home = codexHome(), now = Date.now() } = {}) {
   try {
-    const { rows, edges } = queryReadOnly(dbPath, (db) => {
-      const cols = new Set(db.prepare('PRAGMA table_info(threads)').all().map((c) => c.name));
-      const want = CODEX_COLUMNS.filter((c) => cols.has(c));
-      const hasEdges = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='thread_spawn_edges'").get();
-      return {
-        rows: db.prepare(`SELECT ${want.join(', ')} FROM threads`).all(),
-        edges: hasEdges ? db.prepare('SELECT parent_thread_id AS parent, child_thread_id AS child FROM thread_spawn_edges').all() : [],
-      };
-    });
-    const sessions = rows.map((r) => normalizeCodexRow(r));
-    attachSpawnEdges(sessions, edges);
+    const c = await cachedThreads(home, now);
+    if (!c) return { sessions: [], error: null };
+    const sessions = [...c.rows.values()].map((x) => ({ ...x }));
+    attachSpawnEdges(sessions, c.edges);
     return { sessions, error: null };
   } catch (err) {
     return { sessions: [], error: `Codex DB 読み取り失敗: ${err.message}` };
   }
+}
+
+// One thread from the same cache, without copying the whole listing (dispatch ticks).
+export async function findCodexSession(nativeId, { home = codexHome(), now = Date.now() } = {}) {
+  const c = await cachedThreads(home, now);
+  const s = c?.rows.get(nativeId);
+  if (!s) return null;
+  return { ...s, subagent: s.subagent || c.edges.some((e) => e.child === nativeId) };
+}
+
+function readThreads(dbPath, prev, sig, now) {
+  return queryReadOnly(dbPath, (db) => {
+    const cols = new Set(db.prepare('PRAGMA table_info(threads)').all().map((c) => c.name));
+    const want = CODEX_COLUMNS.filter((c) => cols.has(c));
+    const hasEdges = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='thread_spawn_edges'").get();
+    const edges = hasEdges ? db.prepare('SELECT parent_thread_id AS parent, child_thread_id AS child FROM thread_spawn_edges').all() : [];
+    const maxU = db.prepare('SELECT max(updated_at) AS u FROM threads').get()?.u ?? 0;
+    const incremental = prev && now - prev.fullAt < FULL_REFRESH_MS && cols.has('updated_at');
+    if (incremental) {
+      const rows = new Map(prev.rows);
+      for (const r of db.prepare(`SELECT ${want.join(', ')} FROM threads WHERE updated_at >= ?`).all(prev.maxU - 1)) rows.set(r.id, normalizeCodexRow(r));
+      // Archiving does not necessarily bump updated_at: refresh the flag from its index.
+      if (cols.has('archived')) {
+        const archived = new Set(db.prepare('SELECT id FROM threads WHERE archived = 1').all().map((r) => r.id));
+        for (const [id, s] of rows) if (s.archived !== archived.has(id)) rows.set(id, { ...s, archived: archived.has(id) });
+      }
+      const count = db.prepare('SELECT count(*) AS n FROM threads').get().n;
+      if (rows.size === count) {
+        codexListCounters.delta++;
+        return { sig, maxU, rows, edges, fullAt: prev.fullAt };
+      }
+    }
+    codexListCounters.full++;
+    const rows = new Map(db.prepare(`SELECT ${want.join(', ')} FROM threads`).all().map((r) => [r.id, normalizeCodexRow(r)]));
+    return { sig, maxU, rows, edges, fullAt: now };
+  });
 }
 
 // Link sub-agent threads to their parent (same host): parent.children / child.parentId.

@@ -74,6 +74,54 @@ test('unreachable and slow hosts report an error without throwing', async () => 
   assert.match(pool.hostStatus('h-slow').error, /タイムアウト/);
 });
 
+test('dispatch.py: inspect reads only agent logs; start / poll / stop run the CLI detached', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const { parseRunLog } = await import('../server/dispatch.mjs');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-rdispatch-'));
+  const agentLog = path.join(tmp, 'agent.jsonl');
+  const pool = newPool();
+  pool.dispatchArgs = { runsDir: path.join(tmp, 'runs'), bin: path.join(here, 'fake-codex.sh') };
+  const env = { FAKE_AGENT_LOG: process.env.FAKE_AGENT_LOG, CLAUDECODE: process.env.CLAUDECODE };
+  process.env.FAKE_AGENT_LOG = agentLog;
+  process.env.CLAUDECODE = '1';
+  try {
+    const insp = await pool.dispatch(host, { mode: 'inspect', path: fx.rollout });
+    assert.ok(insp.records.length > 0 && insp.mtimeMs > 0);
+    await assert.rejects(pool.dispatch(host, { mode: 'inspect', path: '/etc/hosts' }), /outside/);
+    await assert.rejects(pool.dispatch(host, { mode: 'start', id: '../../x', binName: 'codex', args: [], cwd: tmp, prompt: 'x' }), /bad request id/);
+    await assert.rejects(pool.dispatch(host, { mode: 'start', id: 'req-a-00', binName: 'sh', args: [], cwd: tmp, prompt: 'x' }), /unknown agent/);
+
+    const id = 'req-abc-0123abcd';
+    const started = await pool.dispatch(host, { mode: 'start', id, binName: 'codex', args: ['exec', 'resume', 'nid-1', '-'], cwd: tmp, prompt: 'リモートへ "送る"' });
+    assert.ok(started.pid > 0);
+    let st;
+    for (let i = 0; i < 100; i++) {
+      st = (await pool.dispatch(host, { mode: 'poll', runs: [{ id, pid: started.pid }] })).runs[id];
+      if (!st.alive) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.equal(st.alive, false);
+    assert.equal(parseRunLog('codex', st.log).ok, true);
+    const [run] = fs.readFileSync(agentLog, 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(run.prompt, 'リモートへ "送る"');
+    assert.equal(run.claudecode, null, 'agent env is scrubbed on the remote side too');
+
+    process.env.FAKE_AGENT_SLEEP = '5';
+    const long = await pool.dispatch(host, { mode: 'start', id: 'req-abc-0000ffff', binName: 'codex', args: ['exec', 'resume', 'nid-2', '-'], cwd: tmp, prompt: 'long' });
+    delete process.env.FAKE_AGENT_SLEEP;
+    await new Promise((r) => setTimeout(r, 200));
+    await assert.rejects(pool.dispatch(host, { mode: 'stop', pid: long.pid, needle: 'nid-other' }), /Canban が起動したものではありません/);
+    assert.equal((await pool.dispatch(host, { mode: 'stop', pid: long.pid, needle: 'nid-2' })).stopped, true);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal((await pool.dispatch(host, { mode: 'poll', runs: [{ id: 'req-abc-0000ffff', pid: long.pid }] })).runs['req-abc-0000ffff'].alive, false);
+  } finally {
+    for (const [k, v] of Object.entries(env)) (v == null ? delete process.env[k] : (process.env[k] = v));
+    delete process.env.FAKE_AGENT_SLEEP;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('fixtures stay byte-for-byte unchanged', () => {
   assert.deepEqual(fx.snapshot(), before);
 });

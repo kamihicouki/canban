@@ -49,6 +49,31 @@ export const AGENTS = {
   },
 };
 
+// ---- headless turns (requests) -------------------------------------------
+// argv (no shell) for one non-interactive turn in an existing session; the prompt is
+// written to stdin. `permission` comes from permissions.mjs and is never raised here.
+export const HEADLESS = {
+  codex: {
+    bin: 'codex',
+    args(s, p) {
+      const args = ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', `sandbox_mode="${p.sandbox}"`, '-c', 'approval_policy="never"'];
+      if (p.sandbox === 'workspace-write' && typeof p.network === 'boolean') args.push('-c', `sandbox_workspace_write.network_access=${p.network}`);
+      return [...args, s.nativeId, '-'];
+    },
+  },
+  claude: {
+    bin: 'claude',
+    // `json` prints one result object at the end, which keeps run logs small.
+    args: (s, p) => ['-p', '--resume', s.nativeId, '--output-format', 'json', '--permission-mode', p.mode],
+  },
+};
+
+export function headlessArgs(s, permission) {
+  const h = HEADLESS[s.agent];
+  if (!h || !s.nativeId) return null;
+  return { bin: h.bin, args: h.args(s, permission) };
+}
+
 export function resumeCommand(s) {
   const agent = AGENTS[s.agent];
   if (!agent) return null;

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.8.0 — 2026-09-27
+- Send prompts to existing sessions from the board ("指示を送る" in the session detail) or from the model (`canban_send_prompt`): send now, or queue them to run one at a time when the session is free.
+  - Delivered as one headless turn through the agent's own CLI (`codex exec resume` / `claude -p --resume`). The prompt goes on stdin; Canban still never writes agent files itself.
+  - Permissions are inherited from the session and never raised: Codex uses the sandbox of the latest turn with approvals turned into failures; Claude Code uses the latest `permissionMode`.
+  - Sessions without a sandbox need a confirmation for every prompt, and the model cannot send to them by default.
+  - Safety gates: nothing is sent while a session is running, waiting for input or was just written; "send now" checks that the session did not change since you looked. One request per session at a time, guarded by a lock shared by all Canban servers. Failures pause the session's queue.
+  - Queue: edit, reorder, cancel, stop and resume. Cards show 📨 queued / ▶ running. Results and run logs are kept per session.
+  - Remote hosts are supported through a separate `server/remote/dispatch.py` (the collector stays read-only).
+  - Settings: on/off, concurrency (local / per host), model access, model rate limit.
+- Performance:
+  - Only one Canban server (an elected leader) runs background work. Codex starts one server per thread, and each of them used to index and evaluate rules on its own.
+  - The Codex session list is read incrementally. An unchanged database is not queried at all. The full read (about 2.4 s and blocking on a large history) now happens only at startup and every 30 minutes. Warm board loads went from about 1.3 s to about 0.1 s on a 6,000-session history.
+  - Built-in timings with budgets (`docs/performance.md`), a "⚠ 遅い処理" indicator with details, and `npm run bench`.
+
 ## 0.7.0 — 2026-09-27
 - Directories: a Canban-only, single-membership grouping for session and task cards, shown on cards in place of the project.
   - Assign with `g`, from the card detail, by dropping a card on a directory in the sidebar, or by dragging it between directory swimlanes.

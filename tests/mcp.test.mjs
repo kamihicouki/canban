@@ -137,3 +137,23 @@ test('task flow: create, start (dry-run), link, board shows the session inside t
   const d = (await call('canban_get_session', { cardId: 'claude:c1' })).structuredContent;
   assert.equal(d.task.id, taskId);
 });
+
+test('requests: model tools are visible, UI-only ones are not; gates answer with a reason', async () => {
+  const { result } = await rpc('tools/list');
+  const vis = (n) => result.tools.find((t) => t.name === n)?._meta?.ui?.visibility?.join();
+  assert.equal(vis('canban_send_prompt'), 'model,app');
+  assert.equal(vis('canban_list_requests'), 'model,app');
+  for (const n of ['canban_dispatch', 'canban_stop_request', 'canban_update_dispatch_settings', 'canban_get_perf']) assert.equal(vis(n), 'app', n);
+  // Fixture sessions live in folders that do not exist here: refused before anything runs.
+  const sent = await call('canban_send_prompt', { cardId: 'claude:c2', prompt: 'hi', when: 'now' });
+  assert.equal(sent.isError, true);
+  assert.match(sent.content[0].text, /作業フォルダがありません/);
+  const list = await call('canban_list_requests', {});
+  assert.deepEqual(list.structuredContent.requests, []);
+  const d = (await call('canban_get_session', { cardId: 'claude:c2' })).structuredContent;
+  assert.equal(d.dispatch.permission.mode, 'default');
+  assert.deepEqual(d.dispatch.queue, []);
+  const perf = (await call('canban_get_perf', {})).structuredContent;
+  assert.equal(perf.leader, true);
+  assert.ok(perf.ops.buildBoard.count > 0);
+});

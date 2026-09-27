@@ -1,7 +1,7 @@
 {
   "name": "canban",
-  "version": "0.7.0",
-  "description": "Codex / Claude Code のセッション（ローカルと SSH リモート）を読み取り専用で集約し、Trello 風カンバンで管理する Codex アプリ。",
+  "version": "0.8.0",
+  "description": "Codex / Claude Code のセッション（ローカルと SSH リモート）を集約して Trello 風カンバンで管理し、既存セッションへの指示の送信・キューもできる Codex アプリ。",
   "author": {
     "name": "kamihicouki",
     "url": "https://github.com/kamihicouki"
@@ -19,12 +19,13 @@
   "interface": {
     "displayName": "Canban",
     "shortDescription": "エージェントのセッションをカンバンで整理",
-    "longDescription": "Codex と Claude Code のセッション（このマシンと、Codex に登録済みの SSH リモート）を読み取り専用で一覧化し、Trello のようにリストを自由に追加してドラッグ＆ドロップで整理できます。デスクトップアプリやターミナルからワンクリックで再開できます。リスト・ラベル・メモなどは ~/.canban に別保存され、セッション本体は一切変更しません。",
+    "longDescription": "Codex と Claude Code のセッション（このマシンと、Codex に登録済みの SSH リモート）を一覧化し、Trello のようにリストを自由に追加してドラッグ＆ドロップで整理できます。デスクトップアプリやターミナルからワンクリックで再開でき、既存のセッションに指示を送ったりキューに積んだりもできます（エージェント公式 CLI で 1 ターンずつ、権限はセッションの設定のまま）。リスト・ラベル・メモなどは ~/.canban に別保存され、Canban がセッションのファイルを直接書き換えることはありません。",
     "developerName": "kamihicouki",
     "category": "Productivity",
     "capabilities": [
       "Interactive",
-      "Read"
+      "Read",
+      "Write"
     ],
     "composerIcon": "./assets/canban.svg",
     "logo": "./assets/canban.svg",
@@ -32,7 +33,8 @@
     "defaultPrompt": [
       "Canban を開いて",
       "レビュー待ちのセッションを一覧にして",
-      "このリポジトリの最新セッションをターミナルで再開して"
+      "このリポジトリの最新セッションをターミナルで再開して",
+      "レビュー待ちのセッションに「テストを追加して」とキューで送って"
     ],
     "screenshots": [],
     "websiteURL": "https://github.com/kamihicouki/canban"

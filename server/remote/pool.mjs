@@ -8,7 +8,10 @@ import { fileURLToPath } from 'node:url';
 import { normalizeCodexRow, codexMessagesFromRecords, attachSpawnEdges } from '../sources/codex.mjs';
 import { normalizeClaudeSummary, claudeMessagesFromRecords } from '../sources/claude.mjs';
 
-const SCRIPT = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'collect.py'), 'utf8');
+const here = path.dirname(fileURLToPath(import.meta.url));
+const SCRIPT = fs.readFileSync(path.join(here, 'collect.py'), 'utf8');
+// Starts / polls / stops headless turns; kept apart from the read-only collector.
+const DISPATCH_SCRIPT = fs.readFileSync(path.join(here, 'dispatch.py'), 'utf8');
 
 export function hostRef(h) {
   return { id: h.id, alias: h.alias, label: h.label, local: false, sshPort: h.sshPort ?? null };
@@ -25,7 +28,7 @@ export class RemotePool {
     this.inflight = new Map();
   }
 
-  run(host, args) {
+  run(host, args, script = SCRIPT) {
     return new Promise((resolve) => {
       const sshArgs = [...(host.sshArgs || []), '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-T', '--', host.alias, 'python3', '-'];
       const child = spawn(this.ssh, sshArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -59,7 +62,7 @@ export class RemotePool {
       child.stdin.on('error', () => {});
       // Embed ARGS as a JSON string literal (valid in Python) and parse it there: raw JSON
       // is not Python (true/false/null).
-      child.stdin.end(`ARGS = __import__('json').loads(${JSON.stringify(JSON.stringify({ ...this.extraArgs, ...args }))})\n${SCRIPT}`);
+      child.stdin.end(`ARGS = __import__('json').loads(${JSON.stringify(JSON.stringify({ ...this.extraArgs, ...args }))})\n${script}`);
     });
   }
 
@@ -127,6 +130,13 @@ export class RemotePool {
     }
     this.searchCache.set(key, { at: Date.now(), ids });
     return ids;
+  }
+
+  // One call to dispatch.py (mode: inspect | start | poll | stop).
+  async dispatch(host, args) {
+    const res = await this.run(host, { ...(this.dispatchArgs || {}), ...args }, DISPATCH_SCRIPT);
+    if (!res.ok) throw new Error(`${host.label}: ${res.error}`);
+    return res;
   }
 
   hostStatus(hostId) {

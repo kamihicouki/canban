@@ -7,9 +7,10 @@
 - **このマシン**と、Codex アプリに登録済みの **SSH リモート接続**上のセッションを、ひとつのボードで扱えます。
 - リストは自由に追加・改名・並べ替え・削除できます。カードはドラッグ＆ドロップで移動できます。ラベル・メモ・優先度・期限・WIP 制限にも対応しています。
 - カードから**ワンクリックでセッションを再開**できます。再開先は、Codex / Claude のデスクトップアプリか、ターミナル（新規ウィンドウ / 新規タブ / 分割 / 既存ウィンドウ）を選べます。
-- セッション本体は**一切書き換えません**（読み取り専用）。Canban 側の情報は `~/.canban/board.json` にだけ保存します。
+- カードから既存のセッションに**指示（プロンプト）を送れます**。今すぐ送るか、キューに積んでセッションが空いたら順に送ります。送信はエージェント公式の CLI で 1 ターンずつ行い、権限はそのセッションの設定をそのまま引き継ぎます。
+- Canban がセッションのファイルを**直接書き換えることはありません**。Canban 側の情報は `~/.canban/` にだけ保存します。
 
-> English summary: Canban is a Codex desktop sidebar app that puts your Codex and Claude Code sessions — local and on SSH hosts registered in Codex — on a Trello-style board. It never modifies agent data (read-only), stores its own state in `~/.canban`, and can resume any session in the agent's desktop app or in your terminal (new window / tab / split / current window). Requires Node.js ≥ 22.13.
+> English summary: Canban is a Codex desktop sidebar app that puts your Codex and Claude Code sessions — local and on SSH hosts registered in Codex — on a Trello-style board. It never writes agent data itself, stores its own state in `~/.canban`, and can resume any session in the agent's desktop app or in your terminal (new window / tab / split / current window). It can also send a prompt (now or queued) to an existing session: one headless turn through the agent's own CLI (`codex exec resume` / `claude -p --resume`), with the session's own sandbox / permission mode. Requires Node.js ≥ 22.13.
 
 ## 必要なもの
 
@@ -172,6 +173,32 @@
   - 左のサイドバーから各レーンへ移動できます。⌥ + クリックか「◎ これだけ」で、そのレーンだけを表示します。すべて展開 / すべてたたむ もサイドバーから行えます。
 - **保存ビュー**: 「ビュー」メニューで、今の絞り込み・検索・スイムレーン・表示オプションを名前を付けて保存できます。`1`〜`9` キーで切り替えられます。
 
+### セッションに指示を送る
+
+セッションの詳細の下にある「指示を送る」から、既存のセッションにプロンプトを送れます。
+
+- **今すぐ送信**: その場で 1 ターン実行します。**キューに追加**: セッションが空いたら、積んだ順に 1 件ずつ送ります。
+- 送信は、エージェント公式の CLI をヘッドレスで再開して行います（Codex は `codex exec resume <id> -`、Claude Code は `claude -p --resume <id>`）。プロンプトは標準入力で渡し、コマンドライン引数やシェル文字列には載せません。結果（最終メッセージの先頭）は履歴に残り、会話そのものはいつもどおりボードから読めます。
+- **権限はそのセッションの設定を引き継ぎ、引き上げません。** Codex は最新ターンのサンドボックス（read-only / workspace-write / danger-full-access）で実行し、承認が必要な操作は失敗させます（ヘッドレスでは答えられないため）。Claude Code は最新の `permissionMode` で実行します。ワークスペースの設定（`.claude/settings*.json` など）は CLI 自身が読み込みます。
+- 制限なし（`danger-full-access` / `bypassPermissions`）のセッションは ⚠ で表示し、送るたびに確認が必要です。
+- 次の場合は送りません。
+  - セッションが実行中か、入力待ちのとき。
+  - ログが更新されてから 20 秒たっていないとき。
+  - 画面を開いたあとにセッションが更新されたとき（最新を確認してから送ります）。
+  - サブエージェントやアーカイブ済みのセッション。
+  - 同じセッションで別の指示が実行中のとき。
+- 失敗・停止したら、そのセッションのキューは一時停止します。勝手に次を流しません。待機中の指示は編集・並べ替え・取り消しでき、実行中のものは停止できます。
+- Codex / Claude アプリでそのセッションを開いたまま送ると、アプリ側の表示と履歴がずれることがあります。閉じてから送ってください。
+- エージェント（モデル）からは `canban_send_prompt` で送れます。モデルからの送信は、セッションあたり 1 時間 10 件までに制限しています。制限なしのセッションにはモデルからは送れません。どちらも「⚙ 設定」で変えられます。
+- リモートのセッションにも、同じ仕組みで ssh 経由で送れます（[server/remote/dispatch.py](server/remote/dispatch.py)）。
+
+### 動作の重さ
+
+Canban は自分自身の処理時間を計測し、予算（[docs/performance.md](docs/performance.md)）を超えるとヘッダに「⚠ 遅い処理」を表示します。クリックすると、処理ごとの p50 / p95 とイベントループ遅延、メモリを確認できます。
+
+- Codex は会話ごとに Canban のサーバーを起動するため、多数のサーバーが同時に動きます。そのため、背景処理（自動移動ルール・本文検索の索引作成・指示のキュー）は、選ばれた 1 つのサーバーだけが実行します。
+- Codex のセッション一覧は差分で読み込みます。変化がなければ、データベースには問い合わせません。
+
 ### リモートのセッション
 
 ヘッダの「マシン」に、Codex アプリに登録済みのリモート接続が並びます（`~/.codex/.codex-global-state.json` から読み取り専用で取得します）。
@@ -185,9 +212,9 @@
 
 | 対象 | 扱い |
 |---|---|
-| `~/.codex/state_*.sqlite`、`~/.codex/sessions/**` | 読み取り専用（SQLite の read-only モード＋`PRAGMA query_only`） |
-| `~/.claude/projects/**`、Claude デスクトップのセッション情報 | 読み取り専用 |
-| `~/.canban/board.json`、`status.json`、`search.sqlite` | Canban が書き込むファイル（Canban 専用のディレクトリ） |
+| `~/.codex/state_*.sqlite`、`~/.codex/sessions/**` | Canban は読み取り専用（SQLite の read-only モード＋`PRAGMA query_only`）。指示を送ったときは、Codex 自身（`codex exec resume`）がセッションに 1 ターン追記します |
+| `~/.claude/projects/**`、Claude デスクトップのセッション情報 | Canban は読み取り専用。指示を送ったときは、Claude Code 自身（`claude -p --resume`）が追記します |
+| `~/.canban/board.json`、`status.json`、`search.sqlite`、`requests.json`、`runs/*.log`、`leader.lock` | Canban が書き込むファイル（Canban 専用のディレクトリ） |
 
 詳しくは [SECURITY.md](SECURITY.md) を参照してください。
 
@@ -201,11 +228,17 @@
 server/
   index.mjs            MCP サーバー（stdio / JSON-RPC）
   board.mjs            セッション一覧とカンバン状態を合成
-  store.mjs            ~/.canban/board.json（唯一の書き込み先）
-  agents.mjs           エージェントごとの再開リンクとコマンド
+  store.mjs            ~/.canban/board.json
+  agents.mjs           エージェントごとの再開リンク・コマンド・ヘッドレス実行の引数
   launcher.mjs         デスクトップリンクとターミナルの起動
+  requests.mjs         指示（依頼）の保存（プロセス間ロック付き）
+  dispatch.mjs         送信前の確認・CLI の起動・結果の確定・キュー
+  permissions.mjs      セッションの権限の読み取り（引き継ぎのみ）
+  leader.mjs           背景処理を担当するサーバーの選出
+  perf.mjs             処理時間の計測と予算
   sources/             Codex / Claude / リモート接続の読み取り専用リーダー
-  remote/collect.py    リモートで動く収集スクリプト（Python 標準ライブラリのみ）
+  remote/collect.py    リモートで動く収集スクリプト（読み取り専用、Python 標準ライブラリのみ）
+  remote/dispatch.py   リモートで指示を送るスクリプト（CLI の起動・確認・停止）
   remote/pool.mjs      SSH の並列実行・キャッシュ・タイムアウト
 ui/board.html          ボード UI
 ```
@@ -214,7 +247,8 @@ ui/board.html          ボード UI
 
 ```bash
 npm test          # フィクスチャを使ったテスト（Node.js のテストランナー）
-npm run dev       # http://localhost:4517/direct で UI を確認（起動処理は dry-run）
+npm run dev       # http://localhost:4517/direct で UI を確認（起動処理と指示の送信は dry-run）
+npm run bench     # 実データ（読み取りのみ）で処理時間を計測。--save / --compare で前回と比較、--procs 10 で多重起動時の CPU を確認
 ```
 
 環境変数:
@@ -224,7 +258,9 @@ npm run dev       # http://localhost:4517/direct で UI を確認（起動処理
 | `CANBAN_DATA_DIR` | データの保存先 |
 | `CANBAN_CODEX_HOME` / `CANBAN_CLAUDE_HOME` / `CANBAN_CLAUDE_DESKTOP_DIR` | 読み取り元の差し替え |
 | `CANBAN_SSH` / `CANBAN_GH` / `CANBAN_GLAB` | ssh・gh・glab コマンドの差し替え |
-| `CANBAN_LAUNCH_DRYRUN=1` | アプリやターミナルを実際には開かず、ログだけ出す |
+| `CANBAN_LAUNCH_DRYRUN=1` | アプリやターミナルを実際には開かず、指示も実際には送らず、ログだけ出す |
+| `CANBAN_CODEX_BIN` / `CANBAN_CLAUDE_BIN` | 指示の送信に使う CLI の差し替え |
+| `CANBAN_BACKGROUND=0/1` | 背景処理を行わない / 必ず行う（既定はサーバー間で 1 つを選出） |
 | `CANBAN_SEARCH_INDEX=0` | 本文検索の索引作成を止める |
 
 Issue や PR を歓迎します。

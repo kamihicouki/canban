@@ -166,7 +166,8 @@ button { cursor: pointer; border: 0; background: none; }
 .text-input:focus { outline: none; border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); }
 .row { display: flex; align-items: center; gap: 8px; }
 .btn-primary { background: var(--accent); color: #fff; padding: 6px 12px; border-radius: 4px; font-weight: 500; }
-.btn-primary:hover { filter: brightness(1.08); }
+.btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn { background: var(--btn-subtle); padding: 6px 12px; border-radius: 4px; }
 .btn:hover { background: var(--btn-subtle-hover); }
 .btn-danger { background: var(--danger); color: #fff; padding: 6px 12px; border-radius: 4px; }
@@ -260,6 +261,28 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .sub-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 6px 8px; border-radius: 6px; background: var(--modal-panel); margin-bottom: 4px; font-size: 13px; }
 .link-btn { color: var(--accent); text-align: left; }
 .link-btn:hover { text-decoration: underline; }
+/* Requests ("send" section) */
+.send-box { background: var(--modal-panel); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+.send-box textarea { width: 100%; min-height: 72px; resize: vertical; box-sizing: border-box; font: inherit; font-size: 13px; padding: 6px 8px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: inherit; }
+.send-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.perm-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 1px 6px; border-radius: 3px; background: var(--btn-subtle); }
+.perm-chip.elevated { background: var(--warn-bg); color: var(--warn-fg); font-weight: 600; }
+.send-note { font-size: 12px; color: var(--warn-fg); background: var(--warn-bg); border-radius: 4px; padding: 4px 8px; margin-top: 6px; }
+.req-row { display: flex; align-items: flex-start; gap: 6px; padding: 6px 8px; border-radius: 6px; background: var(--modal-panel); margin-bottom: 4px; font-size: 13px; }
+.req-row .grow { min-width: 0; }
+.req-row .req-prompt { white-space: pre-wrap; word-break: break-word; max-height: 4.5em; overflow: hidden; }
+.req-row details summary { cursor: pointer; color: var(--list-muted); font-size: 12px; }
+.req-state { flex: none; width: 1.4em; text-align: center; }
+.req-state.failed, .req-state.interrupted { color: var(--danger); }
+.req-state.succeeded { color: #216e4e; }
+.req-btns { display: flex; gap: 2px; flex: none; }
+.req-btns button { padding: 1px 6px; border-radius: 3px; background: var(--btn-subtle); font-size: 12px; }
+.req-btns button:hover { background: var(--btn-subtle-hover); }
+.paused-bar { display: flex; align-items: center; gap: 8px; font-size: 12px; background: var(--warn-bg); color: var(--warn-fg); border-radius: 4px; padding: 4px 8px; margin-bottom: 6px; }
+.perf-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.perf-table th, .perf-table td { text-align: right; padding: 2px 6px; }
+.perf-table th:first-child, .perf-table td:first-child { text-align: left; }
+.perf-table .over { color: var(--danger); font-weight: 600; }
 .danger-text { color: var(--danger); }
 .pr-pill { display: inline-flex; align-items: center; gap: 2px; color: #fff; font-weight: 600; }
 .pr-open { background: #1f883d; }
@@ -405,10 +428,11 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
   <button id="analyticsBtn" class="hbtn" aria-pressed="false" title="ボード / 分析 の切り替え">📊 分析</button>
   <button id="labelsBtn" class="hbtn">ラベル</button>
   <button id="hostsBtn" class="hbtn" aria-haspopup="true">マシン ▾</button>
-  <button id="settingsBtn" class="hbtn" title="再開の設定" aria-label="再開の設定">⚙ 再開</button>
+  <button id="settingsBtn" class="hbtn" title="再開と指示の送信の設定" aria-label="再開と指示の送信の設定">⚙ 設定</button>
   <span class="spacer"></span>
   <span id="statusBar" class="status-bar" role="group" aria-label="実行状態"></span>
   <button id="seenBtn" class="hbtn" title="新着をすべて既読にする" hidden>✓ 既読</button>
+  <button id="perfBtn" class="hbtn" title="Canban 自身の処理が予算を超えました（クリックで詳細）" hidden>⚠ 遅い処理</button>
   <span id="stat" class="stat"></span>
   <button id="refresh" class="hbtn" title="再読み込み" aria-label="再読み込み">⟳</button>
 </header>
@@ -484,7 +508,7 @@ const bridge = (() => {
     else res = await request('tools/call', { name, arguments: args });
     if (res?.isError) {
       const text = (res.content || []).map((c) => c.text).filter(Boolean).join('\n');
-      throw new Error(text || `${name} failed`);
+      throw Object.assign(new Error(text || `${name} failed`), { code: res.structuredContent?.code || null });
     }
     return res?.structuredContent ?? res;
   }
@@ -624,6 +648,7 @@ function render() {
   $('#stat').textContent = `表示 ${b.totals.shown} / Codex ${b.totals.codex}・Claude ${b.totals.claude}`;
   renderStatusBar(b);
   $('#seenBtn').hidden = !b.lists.some((l) => l.cards.some((c) => c.unread));
+  $('#perfBtn').hidden = !b.perf?.slow?.length;
   announceAutoMoves(b);
   const eb = $('#errbar');
   eb.hidden = !b.errors.length;
@@ -754,6 +779,7 @@ function renderCard(card, list) {
   if (card.subagent) meta.append(h('span', { text: 'サブエージェント' }));
   if (card.subagents) meta.append(h('span', { class: 'pill', title: 'このセッションが起動したサブエージェント', text: `🤖 ${card.subagents.total}${card.subagents.running ? `（動作中 ${card.subagents.running}）` : ''}` }));
   if (card.hidden) meta.append(h('span', { text: '非表示' }));
+  if (card.requests) meta.append(requestPill(card.requests));
   el.append(meta);
   if (card.snippet) el.append(renderSnippet(card.snippet));
 
@@ -1296,8 +1322,9 @@ function renderModal(modal, d) {
       h('span', { class: 'ellipsis grow', text: c.title }), h('span', { class: 'muted', text: relTime(c.updatedAt) }))),
     h('div', { class: 'section-title', text: '最初の依頼' }),
     h('div', { class: 'msg user' }, s.preview || '-'),
-    h('div', { class: 'section-title', text: '直近のやりとり（読み取り専用）' }),
+    h('div', { class: 'section-title', text: '直近のやりとり' }),
     ...msgs,
+    renderDispatch(d),
   );
 
   modal.replaceChildren(
@@ -1310,7 +1337,141 @@ function renderModal(modal, d) {
     h('div', { class: 'modal-grid' }, main, side),
   );
   modal.querySelector('.close').focus();
+  watchRequests(modal, d);
 }
+
+// ======================================================================
+// Requests: sending prompts to a session (one headless turn each)
+// ======================================================================
+const REQ_ICONS = { queued: '⏳', starting: '▶', running: '▶', succeeded: '✓', failed: '✗', cancelled: '⊘', interrupted: '⏹' };
+const REQ_LABELS = { queued: '待機中', starting: '開始中', running: '実行中', succeeded: '完了', failed: '失敗', cancelled: '取り消し', interrupted: '停止' };
+
+function requestPill(r) {
+  if (r.running) return h('span', { class: 'pill', title: 'Canban から送った指示を実行中', text: `▶ 実行中${r.queued ? `・待機 ${r.queued}` : ''}` });
+  if (r.paused) return h('span', { class: 'pill due-over', title: 'キューが一時停止しています（詳細で再開）', text: `⏸ 待機 ${r.queued}` });
+  return h('span', { class: 'pill', title: 'セッションが空いたら順に送ります', text: `📨 ${r.queued}` });
+}
+
+function renderDispatch(d) {
+  const s = d.session;
+  const D = d.dispatch;
+  const box = h('div', { class: 'send-section' });
+  const title = h('div', { class: 'section-title', text: '指示を送る' });
+  if (!D.settings.enabled) {
+    box.append(title, h('div', { class: 'muted', text: '指示の送信は設定でオフになっています（⚙ 設定）。' }));
+    return box;
+  }
+  const p = D.permission;
+  const permChip = p
+    ? h('span', { class: `perm-chip${p.elevated ? ' elevated' : ''}`, title: `このセッションの設定を引き継ぎます（${p.source === 'session' ? 'セッションの記録' : p.source === 'database' ? 'Codex の DB' : '読み取れないため最も制限的な設定'}）`,
+      text: `${p.elevated ? '⚠ 制限なし: ' : '🔒 '}${p.label}` })
+    : h('span', { class: 'perm-chip', text: s.host ? '🔒 権限は送信時にリモートで確認します' : '🔒 権限を確認できません' });
+  const ta = h('textarea', { placeholder: 'このセッションに送るプロンプト（⌘/Ctrl + Enter で今すぐ送信）', 'aria-label': '送るプロンプト' });
+  const ack = p?.elevated ? h('input', { type: 'checkbox', 'aria-label': '制限なしで実行されることを確認しました' }) : null;
+  const busy = s.status === 'running' || s.status === 'waiting';
+  const send = async (when) => {
+    const prompt = ta.value.trim();
+    if (!prompt) return ta.focus();
+    try {
+      await bridge.callTool('canban_dispatch', { cardId: s.id, prompt, when, expectedUpdatedAt: s.updatedAt || null, allowElevated: !!ack?.checked });
+      ta.value = '';
+      toast(when === 'now' ? '送信しました' : 'キューに追加しました');
+      openCard(s.id);
+      load();
+    } catch (e) {
+      if (e.code === 'elevated') { toast(e.message, true); ack?.focus(); return; }
+      if (e.code === 'conflict') { toast(e.message, true); openCard(s.id); return; }
+      if (e.code === 'busy' && when === 'now') return toastAction(`${e.message}。`, 'キューに追加', () => send('queue'));
+      toast(e.message, true);
+    }
+  };
+  ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(busy ? 'queue' : 'now'); } });
+  const appNote = s.agent === 'codex' || s.desktopSessionId
+    ? h('div', { class: 'muted', text: `${s.agent === 'codex' ? 'Codex' : 'Claude'} アプリでこのセッションを開いている場合は、閉じてから送ってください（アプリ側の表示と履歴がずれることがあります）。` }) : null;
+  box.append(...[title,
+    D.paused ? h('div', { class: 'paused-bar' }, h('span', { class: 'grow', text: `⏸ キュー一時停止: ${D.paused.reason}` }),
+      h('button', { class: 'link-btn', text: '再開', onclick: () => act('canban_resume_queue', { cardId: s.id }, { okMsg: 'キューを再開しました' }).then(() => openCard(s.id)) })) : null,
+    h('div', { class: 'send-box' },
+      h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap', marginBottom: '6px' } }, permChip),
+      ta,
+      ack ? h('label', { class: 'send-note row', style: { gap: '6px' } }, ack, 'このセッションはサンドボックス／確認なしで動いています。そのまま実行されることを確認しました') : null,
+      busy ? h('div', { class: 'muted', style: { marginTop: '6px' }, text: `セッションが${s.status === 'running' ? '実行中' : '入力待ち'}のため、今すぐは送れません。キューに追加すると空いたときに送ります。` }) : null,
+      h('div', { class: 'send-actions' },
+        h('button', { class: 'btn-primary', disabled: busy, text: '▶ 今すぐ送信', onclick: () => send('now') }),
+        h('button', { class: 'side-btn', style: { width: 'auto', marginBottom: 0 }, text: '＋ キューに追加', onclick: () => send('queue') }),
+        h('span', { class: 'muted', text: '1 ターンずつ公式 CLI で実行します' })),
+      appNote),
+    ...D.active.map((r) => requestRow(s, r)),
+    D.queue.length ? h('div', { class: 'field-label', text: `キュー（${D.queue.length}）` }) : null,
+    ...D.queue.map((r, i) => requestRow(s, r, { index: i, queue: D.queue })),
+    D.history.length ? h('div', { class: 'field-label', text: '履歴' }) : null,
+    ...D.history.map((r) => requestRow(s, r)),
+  ].filter(Boolean));
+  return box;
+}
+
+function requestRow(s, r, { index = -1, queue = [] } = {}) {
+  const who = r.origin === 'model' ? '🤖 ' : '';
+  const when = r.endedAt ? `${relTime(r.endedAt)}${r.startedAt ? `・${Math.max(1, Math.round((r.endedAt - r.startedAt) / 1000))} 秒` : ''}` : r.startedAt ? `${relTime(r.startedAt)}から` : relTime(r.createdAt);
+  const btns = h('div', { class: 'req-btns' });
+  const refresh = () => openCard(s.id);
+  if (r.state === 'queued') {
+    const move = (dir) => {
+      const other = queue[index + dir];
+      if (!other) return;
+      const order = dir < 0 ? (queue[index - 2] ? (queue[index - 2].order + other.order) / 2 : other.order - 1000) : (queue[index + 2] ? (queue[index + 2].order + other.order) / 2 : other.order + 1000);
+      act('canban_update_request', { requestId: r.id, order }, { reload: false }).then(refresh);
+    };
+    btns.append(...[
+      index > 0 ? h('button', { title: '前へ', 'aria-label': '前へ', text: '↑', onclick: () => move(-1) }) : null,
+      index < queue.length - 1 ? h('button', { title: '後ろへ', 'aria-label': '後ろへ', text: '↓', onclick: () => move(1) }) : null,
+      h('button', { text: '編集', onclick: (e) => editRequest(e.currentTarget.closest('.req-row'), r, refresh) }),
+      h('button', { text: '取消', onclick: () => act('canban_cancel_request', { requestId: r.id }, { okMsg: '取り消しました' }).then(refresh) })].filter(Boolean));
+  } else if (r.state === 'running' || r.state === 'starting') {
+    btns.append(h('button', { text: '⏹ 停止', onclick: () => act('canban_stop_request', { requestId: r.id }, { okMsg: '停止を送りました' }).then(refresh) }));
+  }
+  if (r.logPath) btns.append(h('button', { title: '実行ログのパスをコピー', text: '⧉ ログ', onclick: () => copyText(r.logPath, 'ログのパス') }));
+  const result = r.resultText || r.error;
+  return h('div', { class: 'req-row' },
+    h('span', { class: `req-state ${r.state}`, title: REQ_LABELS[r.state], text: REQ_ICONS[r.state] || '•' }),
+    h('div', { class: 'grow' },
+      h('div', { class: 'req-prompt', text: r.prompt }),
+      h('div', { class: 'muted', text: `${who}${REQ_LABELS[r.state]}・${when}${r.state === 'queued' && r.blockedReason ? `・${r.blockedReason}` : ''}` }),
+      result ? h('details', {}, h('summary', { text: r.error ? `エラー: ${r.error.split('\n')[0].slice(0, 80)}` : `結果: ${r.resultText.split('\n')[0].slice(0, 80)}` }), h('div', { class: 'msg', text: result })) : null),
+    btns);
+}
+
+function editRequest(row, r, done) {
+  const ta = h('textarea', { 'aria-label': 'プロンプトを編集' });
+  ta.value = r.prompt;
+  const save = () => act('canban_update_request', { requestId: r.id, prompt: ta.value }, { reload: false, okMsg: '保存しました' }).then(done);
+  row.replaceChildren(h('div', { class: 'send-box grow' }, ta, h('div', { class: 'send-actions' },
+    h('button', { class: 'btn-primary', text: '保存', onclick: save }), h('button', { class: 'link-btn', text: 'キャンセル', onclick: done }))));
+  ta.focus();
+}
+
+// While a request is queued or running, refresh the section every few seconds.
+function watchRequests(modal, d) {
+  clearInterval(state.requestTimer);
+  if (!d.dispatch.active.length && !d.dispatch.queue.length) return;
+  state.requestTimer = setInterval(async () => {
+    if (!document.body.contains(modal) || modal.querySelector('.send-box textarea:focus, .req-row textarea')) {
+      if (!document.body.contains(modal)) clearInterval(state.requestTimer);
+      return;
+    }
+    try {
+      const res = await bridge.callTool('canban_list_requests', { cardId: d.session.id, limit: 30 });
+      const sig = (list) => list.map((r) => `${r.id}:${r.state}`).join(',');
+      const cur = [...d.dispatch.active, ...d.dispatch.queue, ...d.dispatch.history];
+      if (sig(res.requests.slice().sort((a, b) => a.id.localeCompare(b.id))) !== sig(cur.slice().sort((a, b) => a.id.localeCompare(b.id)))) {
+        clearInterval(state.requestTimer);
+        openCard(d.session.id);
+        load();
+      }
+    } catch {}
+  }, 4000);
+}
+
 // ======================================================================
 // Swimlanes, snippets, saved views
 // ======================================================================
@@ -2019,8 +2180,48 @@ function settingsMenu(anchor) {
     h('div', { class: 'muted', style: { whiteSpace: 'pre-line' }, text:
       '再開ボタン: クリック=既定 / ⌥=もう一方の経路 / ⇧=新規ウィンドウ / ⌘=新規タブ / ⌃=既存ウィンドウ\nキーボード操作の一覧は ? キーで表示します。\nリモートのセッションは ssh 経由でターミナルに開きます。\n※ ターミナルの「新規タブ」はアクセシビリティ許可が必要な場合があります。' }),
     h('button', { class: 'menu-item', text: '⌨ キーボードショートカット一覧（?）', onclick: showShortcuts }),
+    h('div', { class: 'sep' }),
+    dispatchSettings(anchor),
   );
-  popover(anchor, '再開の設定', body, { width: 340 });
+  popover(anchor, '設定', body, { width: 360 });
+}
+
+function dispatchSettings(anchor) {
+  const D = state.board.settings.dispatch;
+  const save = (patch) => act('canban_update_dispatch_settings', patch, { okMsg: '指示の送信の設定を変更しました' }).then(() => settingsMenu(anchor));
+  const check = (key, label, disabled = false) => h('label', { class: 'menu-item row' },
+    h('input', { type: 'checkbox', checked: D[key], disabled, onchange: (e) => save({ [key]: e.target.checked }) }), label);
+  const num = (key, label, min, max) => h('label', { class: 'menu-item row' }, label,
+    h('input', { class: 'text-input', type: 'number', min, max, value: D[key], style: { width: '60px', marginLeft: 'auto' }, onchange: (e) => save({ [key]: Number(e.target.value) }) }));
+  return h('div', {},
+    h('div', { class: 'field-label', text: '指示の送信' }),
+    check('enabled', 'セッションへの指示の送信を有効にする'),
+    num('maxLocal', 'このマシンの同時実行数', 1, 8),
+    num('maxPerHost', 'リモート 1 台あたりの同時実行数', 1, 4),
+    check('allowModel', 'エージェント（モデル）からの送信を許可', !D.enabled),
+    num('modelPerHour', 'モデルからの送信（1 セッション・1 時間あたり）', 0, 100),
+    check('allowModelElevated', 'モデルが制限なしのセッションに送ることを許可（非推奨）', !D.enabled || !D.allowModel),
+    h('div', { class: 'muted', style: { whiteSpace: 'pre-line', padding: '4px 8px' }, text:
+      '権限（サンドボックス / permission-mode）は各セッションの設定を引き継ぎ、Canban が引き上げることはありません。\n実行中・入力待ちのセッションには送らず、失敗したらそのセッションのキューを止めます。' }),
+  );
+}
+
+// Canban's own timings (budgets in docs/performance.md).
+async function perfPanel(anchor) {
+  let p;
+  try {
+    p = await bridge.callTool('canban_get_perf', {});
+  } catch (e) {
+    return toast(e.message, true);
+  }
+  const rows = Object.entries(p.ops).sort((a, b) => b[1].p95 - a[1].p95).map(([name, o]) =>
+    h('tr', {}, h('td', { text: name }), h('td', { text: o.count }), h('td', { text: o.p50 }), h('td', { class: o.budget != null && o.p95 > o.budget ? 'over' : '', text: o.p95 }), h('td', { text: o.max }), h('td', { text: o.budget ?? '-' })));
+  popover(anchor, '動作の重さ（ms）', h('div', {},
+    h('div', { class: 'muted', text: `メモリ ${p.rssMB}MB・イベントループ遅延 p99 ${p.loop?.p99 ?? '-'}ms / 最大 ${p.loop?.max ?? '-'}ms・${p.leader ? 'このプロセスが背景処理を担当' : `背景処理は別プロセス（pid ${p.leaderPid ?? '-'}）`}` }),
+    h('table', { class: 'perf-table' }, h('tr', {}, ...['処理', '回数', 'p50', 'p95', '最大', '予算'].map((t) => h('th', { text: t }))), ...rows),
+    p.slow.length ? h('div', { class: 'field-label', text: '直近の予算超過' }) : null,
+    ...p.slow.slice(-8).reverse().map((x) => h('div', { class: 'muted', text: `${relTime(x.at)}  ${x.name} ${x.ms}ms（予算 ${x.budget}ms）` })),
+  ), { width: 420 });
 }
 
 function hostsMenu(anchor) {
@@ -2490,6 +2691,7 @@ document.addEventListener('keydown', (e) => {
 });
 $('#seenBtn').addEventListener('click', () => act('canban_mark_all_seen', {}, { okMsg: 'すべて既読にしました' }));
 $('#settingsBtn').addEventListener('click', (e) => settingsMenu(e.currentTarget));
+$('#perfBtn').addEventListener('click', (e) => perfPanel(e.currentTarget));
 $('#refresh').addEventListener('click', () => load({ refresh: true }).then(() => toast('最新の状態に更新しました')));
 
 // board: wheel over empty space scrolls horizontally like Trello

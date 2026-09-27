@@ -6,6 +6,9 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { Store } from './store.mjs';
+import { Leader } from './leader.mjs';
+import { perf } from './perf.mjs';
+import { dispatcherFor, tickDispatch, setSpawner, dryRunSpawner } from './dispatch.mjs';
 import { buildBoard, sessionDetail, allSessions, findSession, hostsWithState, effectiveOrder, tickRules, tickSearch } from './board.mjs';
 import { RULE_TRIGGERS } from './store.mjs';
 import { computeStats } from './stats.mjs';
@@ -27,7 +30,10 @@ const store = new Store();
 const log = (...a) => process.stderr.write(`[canban] ${a.join(' ')}\n`);
 
 // CANBAN_LAUNCH_DRYRUN=1 logs launches instead of opening apps (development / demos).
-if (process.env.CANBAN_LAUNCH_DRYRUN === '1') setRunner(async (file, args) => log('dry-run:', file, ...args));
+if (process.env.CANBAN_LAUNCH_DRYRUN === '1') {
+  setRunner(async (file, args) => log('dry-run:', file, ...args));
+  setSpawner(dryRunSpawner(log));
+}
 
 // ---- tool definitions ----------------------------------------------------
 const appOnly = { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true, 'openai/visibility': 'private' };
@@ -53,7 +59,7 @@ const TOOLS = [
     name: 'open_canban',
     title: 'Canban',
     description:
-      'Codex / Claude Code のセッション（このマシンと、有効化したリモート接続）を Trello 風カンバン Canban で開く。セッション本体は読み取り専用で、リスト・ラベル・メモなどはカンバン側に別保存される。',
+      'Codex / Claude Code のセッション（このマシンと、有効化したリモート接続）を Trello 風カンバン Canban で開く。セッションのファイルは直接変更せず、リスト・ラベル・メモなどはカンバン側に別保存される。指示はエージェント公式 CLI 経由で 1 ターンずつ送れる。',
     icons: ICONS,
     inputSchema: { type: 'object', properties: { agent: filterProps.agent, project: filterProps.project }, additionalProperties: false },
     annotations: { readOnlyHint: true, title: 'Canban' },
@@ -118,7 +124,7 @@ const TOOLS = [
   {
     name: 'canban_get_session',
     title: 'セッション詳細',
-    description: '1 セッションの詳細（メタ情報・直近のやりとり・カンバン上のメモ等）を読み取り専用で返す。',
+    description: '1 セッションの詳細（メタ情報・直近のやりとり・カンバン上のメモ・送信時の権限・依頼のキュー）を返す。',
     inputSchema: { type: 'object', properties: { cardId: { type: 'string' }, messages: { type: 'number' } }, required: ['cardId'], additionalProperties: false },
     annotations: { readOnlyHint: true },
     _meta: appAndModel,
@@ -131,6 +137,8 @@ const TOOLS = [
         `リスト: ${d.list?.title ?? '-'} / プロジェクト: ${s.project ?? '-'} / ブランチ: ${s.branch ?? '-'}`,
         `更新: ${new Date(s.updatedAt || 0).toISOString()}`,
         d.card.note ? `メモ: ${d.card.note}` : null,
+        d.dispatch.permission ? `送信時の権限: ${d.dispatch.permission.label}${d.dispatch.permission.elevated ? '（制限なし）' : ''}` : null,
+        d.dispatch.queue.length || d.dispatch.active.length ? `依頼: 待機 ${d.dispatch.queue.length} / 実行中 ${d.dispatch.active.length}${d.dispatch.paused ? `（一時停止: ${d.dispatch.paused.reason}）` : ''}` : null,
         ...d.recentMessages.map((m) => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.text.slice(0, 300)}`),
       ]
         .filter(Boolean)
@@ -223,6 +231,102 @@ const TOOLS = [
       const command = resumeCommand(session);
       const res = await runInTerminal({ terminal: term, target: target || prefs.target, command });
       return { text: `${TERMINAL_LABELS[term]} で再開: ${command}`, structured: { route: 'terminal', command, ...res } };
+    },
+  },
+  {
+    name: 'canban_send_prompt',
+    title: 'セッションに指示を送る',
+    description:
+      '既存の Codex / Claude Code セッションにプロンプトを 1 ターン分送る（エージェント公式 CLI のヘッドレス再開。権限はそのセッションの設定を引き継ぎ、昇格しない）。when=now はすぐ送る（セッションが実行中・入力待ち・直前に更新された場合は理由を返して送らない）、queue はセッションが空いたら順に送る。結果は canban_list_requests で確認する。制限なし（danger-full-access / bypassPermissions）のセッションには送れない。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cardId: { type: 'string', description: 'canban_search で調べたセッションの cardId' },
+        prompt: { type: 'string' },
+        when: { type: 'string', enum: ['now', 'queue'], description: '既定 queue' },
+      },
+      required: ['cardId', 'prompt'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    _meta: appAndModel,
+    handler: async ({ cardId, prompt, when = 'queue' }) => {
+      const r = await dispatcherFor(store).submit({ cardId, prompt, when, origin: 'model' });
+      return { text: `${r.state === 'queued' ? 'キューに追加しました' : '送信しました'}（${r.id}）`, structured: requestView(r) };
+    },
+  },
+  {
+    name: 'canban_list_requests',
+    title: '依頼の一覧',
+    description: 'セッションに送った／待機中の依頼と、その状態・結果（エージェントの最終メッセージ先頭）を返す。',
+    inputSchema: {
+      type: 'object',
+      properties: { cardId: { type: 'string' }, state: { type: 'string', enum: ['queued', 'starting', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted'] }, limit: { type: 'number' } },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true },
+    _meta: appAndModel,
+    handler: async ({ cardId, state, limit }) => {
+      const d = dispatcherFor(store);
+      await d.tick().catch(() => {});
+      const rows = d.requests.list({ cardId, state }).sort((a, b) => b.createdAt - a.createdAt).slice(0, Math.min(Number(limit) || 20, 100)).map(requestView);
+      return {
+        text: rows.map((r) => `${r.id} [${r.state}] ${r.cardId}: ${r.prompt.slice(0, 60)}${r.resultText ? ` → ${r.resultText.slice(0, 120)}` : ''}${r.error ? ` ✗ ${r.error}` : ''}`).join('\n') || '依頼はありません',
+        structured: { requests: rows, paused: d.requests.load().paused },
+      };
+    },
+  },
+  {
+    name: 'canban_cancel_request',
+    title: '待機中の依頼を取り消す',
+    description: 'キューで待機中の依頼を取り消す（実行中のものは取り消せない）。',
+    inputSchema: { type: 'object', properties: { requestId: { type: 'string' } }, required: ['requestId'], additionalProperties: false },
+    _meta: appAndModel,
+    handler: async ({ requestId }) => ({ text: '取り消しました', structured: requestView(dispatcherFor(store).requests.cancel(requestId)) }),
+  },
+  {
+    name: 'canban_dispatch',
+    title: '指示を送る（UI）',
+    description: '指示を送る（カンバン UI 用）',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cardId: { type: 'string' },
+        prompt: { type: 'string' },
+        when: { type: 'string', enum: ['now', 'queue'] },
+        expectedUpdatedAt: { type: ['number', 'null'] },
+        allowElevated: { type: 'boolean' },
+      },
+      required: ['cardId', 'prompt', 'when'],
+      additionalProperties: false,
+    },
+    _meta: appOnly,
+    handler: async (a) => {
+      const r = await dispatcherFor(store).submit({ ...a, origin: 'ui' });
+      return { text: r.state === 'queued' ? 'キューに追加しました' : '送信しました', structured: requestView(r) };
+    },
+  },
+  appTool('canban_stop_request', '実行中の依頼を停止', { requestId: { type: 'string' } }, ['requestId'], (a) => dispatcherFor(store).stop(a.requestId)),
+  appTool('canban_update_request', '待機中の依頼を編集', { requestId: { type: 'string' }, prompt: { type: 'string' }, order: { type: 'number' } }, ['requestId'], (a) => dispatcherFor(store).requests.update(a.requestId, a)),
+  appTool('canban_resume_queue', 'キューを再開', { cardId: { type: 'string' } }, ['cardId'], (a) => dispatcherFor(store).resume(a.cardId)),
+  appTool('canban_update_dispatch_settings', '指示の送信の設定を変更', {
+    enabled: { type: 'boolean' },
+    maxLocal: { type: 'number' },
+    maxPerHost: { type: 'number' },
+    allowModel: { type: 'boolean' },
+    allowModelElevated: { type: 'boolean' },
+    modelPerHour: { type: 'number' },
+  }, [], (a) => store.updateDispatchSettings(a)),
+  {
+    name: 'canban_get_perf',
+    title: '動作の重さ',
+    description: 'Canban 自身の処理時間（p50 / p95 / 予算）、イベントループ遅延、メモリ、背景処理のリーダーかどうかを返す（カンバン UI 用）',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true },
+    _meta: appOnly,
+    handler: async () => {
+      const p = perf.summary({ leader: leader.isLeader, leaderPid: leader.owner?.() ?? null });
+      return { text: `rss ${p.rssMB}MB, loop p99 ${p.loop?.p99 ?? '-'}ms, slow ${p.slow.length}`, structured: p };
     },
   },
   {
@@ -367,6 +471,13 @@ const TOOLS = [
   appTool('canban_delete_directory', 'ディレクトリを削除', { directoryId: { type: 'string' } }, ['directoryId'], (a) => store.deleteDirectory(a)),
 ];
 
+// Requests as returned to the UI / model (the prompt is kept; log paths only locally).
+function requestView(r) {
+  if (!r) return null;
+  const { owner, argv, ...rest } = r;
+  return { ...rest, logPath: r.hostId === 'local' ? r.logPath ?? null : null };
+}
+
 function appTool(name, title, properties, required, fn) {
   return {
     name,
@@ -416,7 +527,7 @@ async function handle(method, params = {}) {
         capabilities: { tools: { listChanged: false }, resources: { listChanged: false } },
         serverInfo: { name: 'canban', title: 'Canban', version: PKG.version, icons: ICONS },
         instructions:
-          'Canban: Codex / Claude Code のセッションを Trello 風カンバンで管理する。セッション本体は読み取り専用。カードの移動や再開は canban_search で cardId を調べてから canban_move_card / canban_open_session を使う。',
+          'Canban: Codex / Claude Code のセッションを Trello 風カンバンで管理する。セッションのファイルは直接変更しない。カードの移動や再開は canban_search で cardId を調べてから canban_move_card / canban_open_session を使う。既存セッションへの指示は canban_send_prompt（エージェント公式 CLI で 1 ターンずつ、権限はそのセッションのまま）で送り、結果は canban_list_requests で確認する。',
       };
     }
     case 'ping':
@@ -430,7 +541,7 @@ async function handle(method, params = {}) {
         const { text, structured } = await tool.handler(params.arguments || {});
         return { content: [{ type: 'text', text }], structuredContent: structured, _meta: tool.name === 'open_canban' ? tool._meta : undefined };
       } catch (err) {
-        return { content: [{ type: 'text', text: err.message || String(err) }], isError: true };
+        return { content: [{ type: 'text', text: err.message || String(err) }], isError: true, structuredContent: err.code ? { error: err.message, code: err.code } : undefined };
       }
     }
     case 'resources/list':
@@ -497,14 +608,32 @@ async function onLine(line) {
     send({ jsonrpc: '2.0', id: msg.id, error: { code: err.rpcCode || -32603, message: err.message } });
   }
 }
-// Rules keep working while the board is closed (the server lives as long as Codex does).
+// ---- background work (leader only) ------------------------------------------
+// Codex starts a server per thread; only one of them (the leader) runs the ticks.
+// CANBAN_BACKGROUND=1 forces this process to lead, 0 disables background work.
 const RULE_TICK_MS = Number(process.env.CANBAN_RULE_TICK_MS) || 60000;
-setInterval(() => tickRules(store).catch((e) => log('rules:', e.message)), RULE_TICK_MS).unref();
-// Full-text index: first pass shortly after start, then incremental steps.
-if (process.env.CANBAN_SEARCH_INDEX !== '0') {
-  const indexStep = () => tickSearch(store).catch((e) => log('search:', e.message));
-  setTimeout(indexStep, 15000).unref();
-  setInterval(indexStep, 60000).unref();
-}
+const DISPATCH_TICK_MS = Number(process.env.CANBAN_DISPATCH_TICK_MS) || 10000;
+const bgMode = process.env.CANBAN_BACKGROUND === '1' ? 'always' : process.env.CANBAN_BACKGROUND === '0' ? 'never' : 'auto';
+const background = [];
+const leader = new Leader(store.dir, {
+  mode: bgMode,
+  onChange(isLeader) {
+    for (const t of background.splice(0)) clearTimeout(t); // clears intervals too
+    if (!isLeader) return;
+    log('background leader');
+    // Rules keep working while the board is closed (the server lives as long as Codex does).
+    background.push(setInterval(() => tickRules(store).catch((e) => log('rules:', e.message)), RULE_TICK_MS));
+    // Full-text index: first pass shortly after taking the lead, then incremental steps.
+    if (process.env.CANBAN_SEARCH_INDEX !== '0') {
+      const indexStep = () => tickSearch(store).catch((e) => log('search:', e.message));
+      background.push(setTimeout(indexStep, 15000), setInterval(indexStep, 60000));
+    }
+    // Requests: settle finished runs and start queued prompts (idle ticks only stat a file).
+    background.push(setInterval(() => tickDispatch(store).catch((e) => log('dispatch:', e.message)), DISPATCH_TICK_MS));
+    for (const t of background) t.unref();
+  },
+});
+perf.startLoopMonitor();
+leader.start();
 
 log(`started v${PKG.version}`);
