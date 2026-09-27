@@ -5,3 +5,4 @@ node_modules/
 .canban/
 .claude/
 __pycache__/
+dist/

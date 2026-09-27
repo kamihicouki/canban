@@ -2150,7 +2150,7 @@ function rulesMenu(anchor) {
     trig, h('div', { class: 'row', style: { marginTop: '6px' } }, from, h('span', { text: '→' }), to),
     h('div', { class: 'row', style: { marginTop: '8px' } }, h('button', { class: 'btn-primary', text: '追加',
       onclick: () => act('canban_set_rule', { enabled: true, trigger: trig.value, fromListId: from.value, toListId: to.value }, { okMsg: `${T.automation}を追加しました` }).then(() => rulesMenu(anchor)) })),
-    h('p', { class: 'muted', text: '状態が変わった瞬間にだけ動きます。ボードを閉じていても、Codex が起動していれば 60 秒ごとに評価されます。自動で動いたカードには ⚡ が付き、直後のお知らせから元に戻せます。' }),
+    h('p', { class: 'muted', text: '状態が変わった瞬間にだけ動きます。ボードを閉じていても、Canban を入れた Codex か Claude デスクトップが起動していれば 60 秒ごとに評価されます。自動で動いたカードには ⚡ が付き、直後のお知らせから元に戻せます。' }),
     b.git && b.git.available === false ? h('p', { class: 'muted', text: `PR / CI の${T.automation}は使えません: ${b.git.reason}` }) : null);
   popover(anchor, `${T.automation}（カードの自動移動）`, body, { width: 400 });
 }

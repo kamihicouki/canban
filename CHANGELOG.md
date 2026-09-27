@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.10.0 — 2026-09-27
+- Claude Desktop: Canban can be installed as a Claude Desktop extension. The board opens inside the conversation when you ask for it ("Canban を開いて"); ⤢ switches to fullscreen.
+  - `manifest.json` (MCPB 0.3) starts the same server through `scripts/launch.sh`, so it uses a Node.js ≥ 22.13 from PATH, Homebrew or nvm, or the one set in the extension's "Node.js の場所" setting (`CANBAN_NODE`).
+  - `npm run pack:mcpb` builds `dist/canban.mcpb`. `.mcpbignore` leaves tests and docs out.
+  - A `claude_desktop_config.json` entry works too (README).
+  - Both apps share `~/.canban`, so they show the same board, and background work still runs in only one server.
+- The server no longer needs `.codex-plugin/plugin.json` to start; it falls back to `package.json` for its version.
+- The server records which app started it (`clientInfo`) in its log and in `canban_get_perf`.
+- The server instructions tell the model to call `open_canban` to show the board, since Claude Desktop has no sidebar entry.
+
 ## 0.9.0 — 2026-09-27
 - Terms no longer clash with Codex / Claude Code concepts of the same name (display only; stored data and MCP tool / argument names are unchanged):
   - Directories are now **カテゴリ**. "Directory" means a folder everywhere else, including "作業ディレクトリ" (cwd) in Canban's own detail view.

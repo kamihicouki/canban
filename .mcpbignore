@@ -1,0 +1,9 @@
+# Only what the server needs goes into canban.mcpb (npm run pack:mcpb).
+.github/
+.claude/
+.canban/
+tests/
+docs/
+dist/
+scripts/bench.mjs
+__pycache__/

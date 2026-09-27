@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Canban MCP server (stdio, newline-delimited JSON-RPC 2.0).
 // Exposes an MCP App whose `openai/ui` global entrypoint shows up as a Codex sidebar destination.
+// Other MCP Apps hosts (Claude Desktop) render the same `ui.resourceUri` inline in the conversation.
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
@@ -17,7 +18,8 @@ import { LOCAL_HOST } from './sources/util.mjs';
 import { openUrl, runInTerminal, installedTerminals, setRunner, TERMINAL_LABELS } from './launcher.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const PKG = JSON.parse(fs.readFileSync(path.join(here, '..', '.codex-plugin', 'plugin.json'), 'utf8'));
+// The Codex plugin manifest is absent when installed another way (Claude Desktop extension, a bare copy).
+const PKG = readManifest(['.codex-plugin', 'plugin.json'], ['package.json']);
 const UI_URI = 'ui://canban/board.html';
 const UI_MIME = 'text/html;profile=mcp-app';
 const SUPPORTED_PROTOCOLS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
@@ -26,7 +28,17 @@ const ICON_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#0079BF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 7v7M12 7v4M16 7v9"/></svg>';
 const ICONS = [{ src: `data:image/svg+xml;base64,${Buffer.from(ICON_SVG).toString('base64')}`, mimeType: 'image/svg+xml', sizes: ['any'] }];
 
+function readManifest(...candidates) {
+  for (const parts of candidates) {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(here, '..', ...parts), 'utf8'));
+    } catch {}
+  }
+  return { version: '0.0.0' };
+}
+
 const store = new Store();
+let client = null; // clientInfo from initialize: which host started this server
 const log = (...a) => process.stderr.write(`[canban] ${a.join(' ')}\n`);
 
 // CANBAN_LAUNCH_DRYRUN=1 logs launches instead of opening apps (development / demos).
@@ -328,7 +340,7 @@ const TOOLS = [
     annotations: { readOnlyHint: true },
     _meta: appOnly,
     handler: async () => {
-      const p = perf.summary({ leader: leader.isLeader, leaderPid: leader.owner?.() ?? null });
+      const p = perf.summary({ leader: leader.isLeader, leaderPid: leader.owner?.() ?? null, client });
       return { text: `rss ${p.rssMB}MB, loop p99 ${p.loop?.p99 ?? '-'}ms, slow ${p.slow.length}`, structured: p };
     },
   },
@@ -525,12 +537,16 @@ async function handle(method, params = {}) {
   switch (method) {
     case 'initialize': {
       const requested = params.protocolVersion;
+      if (params.clientInfo?.name) {
+        client = { name: String(params.clientInfo.name), version: String(params.clientInfo.version || '') };
+        log('client', client.name, client.version);
+      }
       return {
         protocolVersion: SUPPORTED_PROTOCOLS.includes(requested) ? requested : SUPPORTED_PROTOCOLS[1],
         capabilities: { tools: { listChanged: false }, resources: { listChanged: false } },
         serverInfo: { name: 'canban', title: 'Canban', version: PKG.version, icons: ICONS },
         instructions:
-          'Canban: Codex / Claude Code のセッションを Trello 風カンバンで管理する。セッションのファイルは直接変更しない。カードの移動や再開は canban_search で cardId を調べてから canban_move_card / canban_open_session を使う。既存セッションへの指示は canban_send_prompt（エージェント公式 CLI で 1 ターンずつ、権限はそのセッションのまま）で送り、結果は canban_list_requests で確認する。',
+          'Canban: Codex / Claude Code のセッションを Trello 風カンバンで管理する。ボードを見せるときは open_canban を呼ぶ（Codex ではサイドバー、Claude デスクトップでは会話内に表示される）。セッションのファイルは直接変更しない。カードの移動や再開は canban_search で cardId を調べてから canban_move_card / canban_open_session を使う。既存セッションへの指示は canban_send_prompt（エージェント公式 CLI で 1 ターンずつ、権限はそのセッションのまま）で送り、結果は canban_list_requests で確認する。',
       };
     }
     case 'ping':
@@ -612,7 +628,7 @@ async function onLine(line) {
   }
 }
 // ---- background work (leader only) ------------------------------------------
-// Codex starts a server per thread; only one of them (the leader) runs the ticks.
+// Codex starts a server per thread and Claude Desktop one more; only one of them (the leader) runs the ticks.
 // CANBAN_BACKGROUND=1 forces this process to lead, 0 disables background work.
 const RULE_TICK_MS = Number(process.env.CANBAN_RULE_TICK_MS) || 60000;
 const DISPATCH_TICK_MS = Number(process.env.CANBAN_DISPATCH_TICK_MS) || 10000;
@@ -624,7 +640,7 @@ const leader = new Leader(store.dir, {
     for (const t of background.splice(0)) clearTimeout(t); // clears intervals too
     if (!isLeader) return;
     log('background leader');
-    // Rules keep working while the board is closed (the server lives as long as Codex does).
+    // Rules keep working while the board is closed (the server lives as long as its host app does).
     background.push(setInterval(() => tickRules(store).catch((e) => log('rules:', e.message)), RULE_TICK_MS));
     // Full-text index: first pass shortly after taking the lead, then incremental steps.
     if (process.env.CANBAN_SEARCH_INDEX !== '0') {

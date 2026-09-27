@@ -1,6 +1,6 @@
 # Canban
 
-**Canban** は、Codex と Claude Code のセッションを Trello 風のカンバンで管理できる **Codex デスクトップアプリのサイドバーアプリ**です。
+**Canban** は、Codex と Claude Code のセッションを Trello 風のカンバンで管理できる **Codex デスクトップアプリのサイドバーアプリ**です。**Claude デスクトップアプリ**にも拡張機能として入れられます（会話の中にボードが開きます）。
 
 ![Canban](docs/screenshot.png)
 
@@ -10,11 +10,11 @@
 - カードから既存のセッションに**指示（プロンプト）を送れます**。今すぐ送るか、キューに積んでセッションが空いたら順に送ります。送信はエージェント公式の CLI で 1 ターンずつ行い、権限はそのセッションの設定をそのまま引き継ぎます。
 - Canban がセッションのファイルを**直接書き換えることはありません**。Canban 側の情報は `~/.canban/` にだけ保存します。
 
-> English summary: Canban is a Codex desktop sidebar app that puts your Codex and Claude Code sessions — local and on SSH hosts registered in Codex — on a Trello-style board. It never writes agent data itself, stores its own state in `~/.canban`, and can resume any session in the agent's desktop app or in your terminal (new window / tab / split / current window). It can also send a prompt (now or queued) to an existing session: one headless turn through the agent's own CLI (`codex exec resume` / `claude -p --resume`), with the session's own sandbox / permission mode. Requires Node.js ≥ 22.13.
+> English summary: Canban is a Codex desktop sidebar app (also installable in Claude Desktop as an extension, where the board opens inside the conversation) that puts your Codex and Claude Code sessions — local and on SSH hosts registered in Codex — on a Trello-style board. It never writes agent data itself, stores its own state in `~/.canban`, and can resume any session in the agent's desktop app or in your terminal (new window / tab / split / current window). It can also send a prompt (now or queued) to an existing session: one headless turn through the agent's own CLI (`codex exec resume` / `claude -p --resume`), with the session's own sandbox / permission mode. Requires Node.js ≥ 22.13.
 
 ## 必要なもの
 
-- Codex デスクトップアプリ（サイドバーアプリ／MCP Apps に対応した版）
+- Codex デスクトップアプリ（サイドバーアプリ／MCP Apps に対応した版）、または Claude デスクトップアプリ（MCP Apps に対応した版）
 - Node.js 22.13 以上（`node:sqlite` を使います。外部依存はありません）
 - 任意: Claude Code（CLI）と Claude デスクトップアプリ
 - 任意（リモート）: SSH の鍵認証で接続できること、リモート側に `python3` があること
@@ -52,6 +52,38 @@
 
 4. Codex アプリを再起動します。Explore に出てくる **Canban** をサイドバーにピン留めします。
    チャットで「Canban を開いて」と頼んでも開けます。
+
+### Claude デスクトップで使う
+
+Claude デスクトップには、拡張機能（`.mcpb`）として入れます。
+
+1. 拡張機能のファイルを作ります（`dist/canban.mcpb` ができます）。
+
+   ```bash
+   cd ~/plugins/canban
+   npm run pack:mcpb
+   ```
+
+2. `dist/canban.mcpb` をダブルクリックするか、Claude デスクトップの「設定」→「拡張機能」にドラッグしてインストールします。
+   - Node.js 22.13 以上は、PATH・Homebrew・nvm の順に探します。見つからないときは、拡張機能の設定の「Node.js の場所」で指定します。
+3. チャットで「Canban を開いて」と頼むと、会話の中にボードが開きます。ヘッダーの ⤢ で全画面にできます。
+   - Claude デスクトップには Codex のようなサイドバーの入口がないため、開くときは毎回チャットから頼みます。
+   - 「レビュー待ちのセッションを一覧にして」のように、ボードを開かずにツールだけ使うこともできます。
+
+拡張機能を使わない場合は、`claude_desktop_config.json`（macOS では `~/Library/Application Support/Claude/claude_desktop_config.json`）に直接登録しても動きます。
+
+```json
+{
+  "mcpServers": {
+    "canban": {
+      "command": "/bin/sh",
+      "args": ["/Users/<あなたのユーザー名>/plugins/canban/scripts/launch.sh"]
+    }
+  }
+}
+```
+
+Codex と Claude デスクトップの両方に入れた場合も、保存先は同じ `~/.canban/` なので、同じボードが見えます。背景処理（自動化・索引作成・指示のキュー）は、どちらのアプリのサーバーかにかかわらず 1 つだけが実行します。
 
 ## 用語（Codex / Claude Code との対応）
 
@@ -241,6 +273,7 @@ Canban は自分自身の処理時間を計測し、予算（[docs/performance.m
 
 - Codex の MCP サーバーとして動く **MCP App** です。`open_canban` ツールの `_meta["openai/ui"]` に `{ "entrypoints": [{ "type": "global" }] }` を宣言すると、Codex の Explore とサイドバーに項目が現れます。
   - **これは Codex アプリの実装を調べて見つけた未公開の仕様**なので、将来の更新で変わる可能性があります。
+- Claude デスクトップなど、ほかの MCP Apps 対応アプリでは、同じ `open_canban` の標準の `_meta.ui.resourceUri` を使って会話の中にボードを表示します。拡張機能の定義は `manifest.json`（MCPB）です。
 - UI は 1 枚の HTML です（`ui://canban/board.html`、`text/html;profile=mcp-app`）。MCP Apps の postMessage ブリッジを通じて、`canban_*` ツールを呼び出します。
 
 ```
@@ -267,6 +300,7 @@ ui/board.html          ボード UI
 ```bash
 npm test          # フィクスチャを使ったテスト（Node.js のテストランナー）
 npm run dev       # http://localhost:4517/direct で UI を確認（起動処理と指示の送信は dry-run）
+npm run pack:mcpb # Claude デスクトップ用の拡張機能 dist/canban.mcpb を作る（@anthropic-ai/mcpb を npx で取得）
 npm run bench     # 実データ（読み取りのみ）で処理時間を計測。--save / --compare で前回と比較、--procs 10 で多重起動時の CPU を確認
 ```
 
@@ -279,6 +313,7 @@ npm run bench     # 実データ（読み取りのみ）で処理時間を計測
 | `CANBAN_SSH` / `CANBAN_GH` / `CANBAN_GLAB` | ssh・gh・glab コマンドの差し替え |
 | `CANBAN_LAUNCH_DRYRUN=1` | アプリやターミナルを実際には開かず、指示も実際には送らず、ログだけ出す |
 | `CANBAN_CODEX_BIN` / `CANBAN_CLAUDE_BIN` | 指示の送信に使う CLI の差し替え |
+| `CANBAN_NODE` | `scripts/launch.sh` が使う Node.js（Claude デスクトップの拡張機能の設定「Node.js の場所」もこれを設定します） |
 | `CANBAN_BACKGROUND=0/1` | 背景処理を行わない / 必ず行う（既定はサーバー間で 1 つを選出） |
 | `CANBAN_SEARCH_INDEX=0` | 本文検索の索引作成を止める |
 

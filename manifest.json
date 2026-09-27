@@ -1,0 +1,48 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/schemas/mcpb-manifest-v0.3.schema.json",
+  "manifest_version": "0.3",
+  "name": "canban",
+  "display_name": "Canban",
+  "version": "0.10.0",
+  "description": "Codex / Claude Code のセッションを Trello 風カンバンで管理します。チャットで「Canban を開いて」と頼むと会話内にボードが開きます。",
+  "long_description": "Codex と Claude Code のセッション（このマシンと、Codex に登録済みの SSH リモート）を一覧化し、Trello のようにリストを自由に追加してドラッグ＆ドロップで整理できます。デスクトップアプリやターミナルからワンクリックで再開でき、既存のセッションに指示を送ったりキューに積んだりもできます（エージェント公式 CLI で 1 ターンずつ、権限はセッションの設定のまま）。リスト・ラベル・メモなどは ~/.canban に別保存され、Canban がセッションのファイルを直接書き換えることはありません。Codex アプリと同じ ~/.canban を使うので、両方に入れると同じボードが見えます。Node.js 22.13 以上が必要です。",
+  "author": {
+    "name": "kamihicouki",
+    "url": "https://github.com/kamihicouki"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kamihicouki/canban.git"
+  },
+  "homepage": "https://github.com/kamihicouki/canban",
+  "documentation": "https://github.com/kamihicouki/canban#readme",
+  "support": "https://github.com/kamihicouki/canban/issues",
+  "icon": "assets/canban.png",
+  "server": {
+    "type": "binary",
+    "entry_point": "scripts/launch.sh",
+    "mcp_config": {
+      "command": "/bin/sh",
+      "args": ["${__dirname}/scripts/launch.sh"],
+      "env": {
+        "CANBAN_NODE": "${user_config.node_path}"
+      }
+    }
+  },
+  "tools_generated": true,
+  "keywords": ["kanban", "codex", "claude-code", "sessions", "mcp-app"],
+  "license": "MIT",
+  "compatibility": {
+    "claude_desktop": ">=1.0.0",
+    "platforms": ["darwin", "linux"]
+  },
+  "user_config": {
+    "node_path": {
+      "type": "file",
+      "title": "Node.js の場所（任意）",
+      "description": "Node.js 22.13 以上の実行ファイル。空なら PATH、Homebrew、nvm の順に探します。",
+      "required": false,
+      "default": ""
+    }
+  }
+}
