@@ -23,7 +23,7 @@ test('task cards: create, link (moving between tasks), unlink, delete', async ()
   assert.deepEqual(s.cards[a.cardId].links, []);
   assert.deepEqual(s.cards[b.cardId].links, ['codex:t1']);
   assert.equal(linkedToTask(s).get('codex:t1'), b.cardId);
-  await assert.rejects(store.linkSession({ taskId: b.cardId, sessionId: a.cardId }), /タスク同士/);
+  await assert.rejects(store.linkSession({ taskId: b.cardId, sessionId: a.cardId }), /タスクカード同士/);
   await store.unlinkSession({ taskId: b.cardId, sessionId: 'codex:t1' });
   await store.deleteTask({ cardId: a.cardId });
   assert.equal(store.load().cards[a.cardId], undefined);

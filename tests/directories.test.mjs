@@ -13,7 +13,7 @@ test('directories: create / rename / paths / delete clears assignments', async (
   const web = await store.createDirectory({ name: 'Web', color: 'blue', paths: ['/r/web/', 'relative', '/r/web'] });
   assert.deepEqual(web.paths, ['/r/web']);
   await assert.rejects(store.createDirectory({ name: 'Web' }), /既にあります/);
-  await assert.rejects(store.createDirectory({ name: '  ' }), /ディレクトリ名/);
+  await assert.rejects(store.createDirectory({ name: '  ' }), /カテゴリ名/);
   await store.updateDirectory({ directoryId: web.id, name: 'Frontend', color: 'nope' });
   let d = store.load().directories[0];
   assert.equal(d.name, 'Frontend');

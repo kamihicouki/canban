@@ -387,7 +387,7 @@ export class Store {
     return this.mutate((s) => {
       const task = s.cards[taskId];
       if (task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
-      if (sessionId.startsWith('task:')) throw new Error('タスク同士は紐付けられません');
+      if (sessionId.startsWith('task:')) throw new Error('タスクカード同士は紐付けられません');
       for (const c of Object.values(s.cards)) if (c.kind === 'task') c.links = (c.links || []).filter((x) => x !== sessionId);
       task.links = [...(task.links || []), sessionId];
       return { taskId, links: task.links };
@@ -472,7 +472,7 @@ export class Store {
   // ---- rules / seen -------------------------------------------------------
   async setRule(rule) {
     const r = normalizeRule({ id: rule.id || newId('rule'), ...rule });
-    if (!r) throw new Error('ルールの内容が正しくありません');
+    if (!r) throw new Error('自動化の内容が正しくありません');
     return this.mutate((s) => {
       if (!s.lists.some((l) => l.id === r.toListId)) throw new Error('移動先のリストが見つかりません');
       if (r.fromListId !== 'any' && !s.lists.some((l) => l.id === r.fromListId)) throw new Error('移動元のリストが見つかりません');
@@ -579,7 +579,7 @@ export class Store {
   // ---- directories -------------------------------------------------------
   async createDirectory({ name, color = null, paths = [] }) {
     name = String(name || '').trim();
-    if (!name) throw new Error('ディレクトリ名を入力してください');
+    if (!name) throw new Error('カテゴリ名を入力してください');
     return this.mutate((s) => {
       if (s.directories.some((d) => d.name === name)) throw new Error(`「${name}」は既にあります`);
       const dir = normalizeDirectory({ id: newId('dir'), name, color, paths });
@@ -591,7 +591,7 @@ export class Store {
   updateDirectory({ directoryId, name, color, paths }) {
     return this.mutate((s) => {
       const dir = s.directories.find((d) => d.id === directoryId);
-      if (!dir) throw new Error('ディレクトリが見つかりません');
+      if (!dir) throw new Error('カテゴリが見つかりません');
       if (name !== undefined && String(name).trim()) dir.name = String(name).trim().slice(0, 80);
       if (color !== undefined) dir.color = LIST_COLORS.includes(color) ? color : null;
       if (paths !== undefined) dir.paths = normalizePaths(paths);

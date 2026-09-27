@@ -40,10 +40,10 @@ const appOnly = { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true, 
 const appAndModel = { ui: { visibility: ['model', 'app'] }, 'openai/widgetAccessible': true };
 
 const filterProps = {
-  agent: { type: 'string', enum: ['all', 'codex', 'claude'], description: 'エージェントで絞り込み' },
+  agent: { type: 'string', enum: ['all', 'codex', 'claude'], description: 'AI App（codex / claude）で絞り込み' },
   host: { type: 'string', description: "マシンで絞り込み（'local' またはリモート接続の hostId）" },
   project: { type: 'string', description: 'プロジェクト名（cwd のディレクトリ名）で絞り込み' },
-  directory: { type: 'string', description: "Canban のディレクトリ（ユーザーが作るまとまり）の ID で絞り込み。'__none' でディレクトリなし" },
+  directory: { type: 'string', description: "Canban のカテゴリ（ユーザーが作る、1 枚に 1 つのまとまり。API 上の名前は directory）の ID で絞り込み。'__none' でカテゴリなし" },
   status: { type: 'string', enum: ['running', 'waiting', 'completed', 'aborted', 'idle'], description: '実行状態で絞り込み' },
   q: { type: 'string', description: 'タイトル・最初の依頼・メモ・ラベルの部分一致検索' },
   includeArchived: { type: 'boolean' },
@@ -177,7 +177,7 @@ const TOOLS = [
   {
     name: 'canban_update_card',
     title: 'カード属性を更新',
-    description: 'カードのラベル（ID 配列）・ディレクトリ（ID、null で自動、__none で所属なし）・メモ・優先度（high/medium/low）・期限（ISO 日付）・非表示を更新する。セッション本体は変更しない。',
+    description: 'カードのラベル（ID 配列）・カテゴリ（引数名 directory。ID、null で自動、__none で所属なし）・メモ・優先度（high/medium/low）・期限（ISO 日付）・非表示を更新する。セッション本体は変更しない。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -199,7 +199,7 @@ const TOOLS = [
     name: 'canban_open_session',
     title: 'セッションを再開',
     description:
-      'セッションを再開する。route=desktop はエージェントのデスクトップアプリ（Codex / Claude）で開き、route=terminal は再開コマンドをターミナルで実行する。省略時はユーザー設定に従う。target は new-window / new-tab / split / current。',
+      'セッションを再開する。route=desktop は AI App のデスクトップアプリ（Codex / Claude）で開き、route=terminal は再開コマンドをターミナルで実行する。省略時はユーザー設定に従う。target は new-window / new-tab / split / current。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -237,7 +237,7 @@ const TOOLS = [
     name: 'canban_send_prompt',
     title: 'セッションに指示を送る',
     description:
-      '既存の Codex / Claude Code セッションにプロンプトを 1 ターン分送る（エージェント公式 CLI のヘッドレス再開。権限はそのセッションの設定を引き継ぎ、昇格しない）。when=now はすぐ送る（セッションが実行中・入力待ち・直前に更新された場合は理由を返して送らない）、queue はセッションが空いたら順に送る。結果は canban_list_requests で確認する。制限なし（danger-full-access / bypassPermissions）のセッションには送れない。',
+      '既存の Codex / Claude Code セッションにプロンプトを 1 ターン分送る（Codex / Claude Code 公式 CLI のヘッドレス再開。権限はそのセッションの設定を引き継ぎ、昇格しない）。when=now はすぐ送る（セッションが実行中・入力待ち・直前に更新された場合は理由を返して送らない）、queue はセッションが空いたら順に送る。結果は canban_list_requests で確認する。制限なし（danger-full-access / bypassPermissions）のセッションには送れない。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -363,12 +363,12 @@ const TOOLS = [
     handler: async ({ title, description, list }) => {
       const l = list ? resolveList(store.load().lists, list) : null;
       const res = await store.createTask({ title, description, listId: l?.id });
-      return { text: `タスク「${res.title}」を作成しました（${res.cardId}）`, structured: res };
+      return { text: `タスクカード「${res.title}」を作成しました（${res.cardId}）`, structured: res };
     },
   },
   {
     name: 'canban_start_session',
-    title: 'タスクからセッションを開始',
+    title: 'タスクカードからセッションを開始',
     description:
       'タスクカードから Codex / Claude Code の新しいセッションを開始し、開始したセッションを自動でカードに紐付ける。route=desktop はデスクトップアプリ、terminal はターミナル。',
     inputSchema: {
@@ -421,7 +421,7 @@ const TOOLS = [
   },
   {
     name: 'canban_link_session',
-    title: 'セッションをタスクに紐付け',
+    title: 'セッションをタスクカードに紐付け',
     description: '既存のセッションをタスクカードに紐付ける（紐付いたセッションはタスクカードの中に表示される）。',
     inputSchema: { type: 'object', properties: { taskId: { type: 'string' }, sessionId: { type: 'string' } }, required: ['taskId', 'sessionId'], additionalProperties: false },
     _meta: appAndModel,
@@ -434,7 +434,7 @@ const TOOLS = [
   {
     name: 'canban_get_stats',
     title: '分析',
-    description: 'セッション数・トークン量の推移、プロジェクト／ディレクトリ／マシン別の内訳、リストの滞留時間、完了までのサイクルタイムを返す。',
+    description: 'セッション数・トークン量の推移、プロジェクト／カテゴリ／マシン別の内訳、リストの滞留時間、完了までのサイクルタイムを返す。',
     inputSchema: { type: 'object', properties: { days: { type: 'number' }, agent: filterProps.agent, host: filterProps.host, project: filterProps.project, directory: filterProps.directory, includeSubagents: { type: 'boolean' } }, additionalProperties: false },
     annotations: { readOnlyHint: true },
     _meta: appAndModel,
@@ -448,14 +448,14 @@ const TOOLS = [
   },
   appTool('canban_save_view', 'ビューを保存', { id: { type: 'string' }, name: { type: 'string' }, filters: { type: 'object' } }, ['name', 'filters'], (a) => store.saveView(a)),
   appTool('canban_delete_view', 'ビューを削除', { viewId: { type: 'string' } }, ['viewId'], (a) => store.deleteView(a)),
-  appTool('canban_set_rule', '自動移動ルールを保存', {
+  appTool('canban_set_rule', '自動化（カードの自動移動）を保存', {
     id: { type: 'string' },
     enabled: { type: 'boolean' },
     trigger: { type: 'string', enum: RULE_TRIGGERS },
     fromListId: { type: 'string' },
     toListId: { type: 'string' },
   }, ['trigger', 'toListId'], (a) => store.setRule(a)),
-  appTool('canban_delete_rule', '自動移動ルールを削除', { ruleId: { type: 'string' } }, ['ruleId'], (a) => store.deleteRule(a)),
+  appTool('canban_delete_rule', '自動化（カードの自動移動）を削除', { ruleId: { type: 'string' } }, ['ruleId'], (a) => store.deleteRule(a)),
   appTool('canban_undo_move', '自動移動を元に戻す', { cardId: { type: 'string' } }, ['cardId'], (a) => store.undoAutoMove(a)),
   appTool('canban_mark_all_seen', 'すべて既読にする', {}, [], () => store.markAllSeen()),
   appTool('canban_create_list', 'リストを追加', { title: { type: 'string' }, color: { type: 'string' }, afterListId: { type: 'string' } }, ['title'], (a) => store.createList(a)),
@@ -466,9 +466,9 @@ const TOOLS = [
   appTool('canban_create_label', 'ラベルを追加', { name: { type: 'string' }, color: { type: 'string' } }, ['name'], (a) => store.createLabel(a)),
   appTool('canban_update_label', 'ラベルを更新', { labelId: { type: 'string' }, name: { type: 'string' }, color: { type: 'string' } }, ['labelId'], (a) => store.updateLabel(a)),
   appTool('canban_delete_label', 'ラベルを削除', { labelId: { type: 'string' } }, ['labelId'], (a) => store.deleteLabel(a)),
-  appTool('canban_create_directory', 'ディレクトリを追加', { name: { type: 'string' }, color: { type: ['string', 'null'] }, paths: { type: 'array', items: { type: 'string' } } }, ['name'], (a) => store.createDirectory(a)),
-  appTool('canban_update_directory', 'ディレクトリを更新', { directoryId: { type: 'string' }, name: { type: 'string' }, color: { type: ['string', 'null'] }, paths: { type: 'array', items: { type: 'string' } } }, ['directoryId'], (a) => store.updateDirectory(a)),
-  appTool('canban_delete_directory', 'ディレクトリを削除', { directoryId: { type: 'string' } }, ['directoryId'], (a) => store.deleteDirectory(a)),
+  appTool('canban_create_directory', 'カテゴリを追加', { name: { type: 'string' }, color: { type: ['string', 'null'] }, paths: { type: 'array', items: { type: 'string' } } }, ['name'], (a) => store.createDirectory(a)),
+  appTool('canban_update_directory', 'カテゴリを更新', { directoryId: { type: 'string' }, name: { type: 'string' }, color: { type: ['string', 'null'] }, paths: { type: 'array', items: { type: 'string' } } }, ['directoryId'], (a) => store.updateDirectory(a)),
+  appTool('canban_delete_directory', 'カテゴリを削除', { directoryId: { type: 'string' } }, ['directoryId'], (a) => store.deleteDirectory(a)),
 ];
 
 // Requests as returned to the UI / model (the prompt is kept; log paths only locally).

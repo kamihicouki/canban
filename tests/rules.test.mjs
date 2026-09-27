@@ -66,7 +66,7 @@ test('auto moves are recorded and can be undone', async () => {
 
 test('invalid rules are rejected; launch settings keep rules', async () => {
   const store = new Store(tmp());
-  await assert.rejects(store.setRule({ trigger: 'status:bogus', toListId: 'doing' }), /ルール/);
+  await assert.rejects(store.setRule({ trigger: 'status:bogus', toListId: 'doing' }), /自動化/);
   await assert.rejects(store.setRule({ trigger: 'activity', toListId: 'nope' }), /移動先/);
   await store.setRule({ id: 'x', enabled: true, trigger: 'activity', fromListId: 'any', toListId: 'doing' });
   await store.updateLaunchSettings({ route: 'terminal' });

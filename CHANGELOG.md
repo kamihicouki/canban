@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0 — 2026-09-27
+- Terms no longer clash with Codex / Claude Code concepts of the same name (display only; stored data and MCP tool / argument names are unchanged):
+  - Directories are now **カテゴリ**. "Directory" means a folder everywhere else, including "作業ディレクトリ" (cwd) in Canban's own detail view.
+  - "⚡ ルール" is now **⚡ 自動化**. Codex `.rules` and Claude permission rules decide which commands may run. Codex automation threads are labelled "⏰ Codex オートメーション".
+  - The agent filter is now **AI Apps**. "Agent" is kept for agents / sub-agents, as in Codex and Claude Code.
+  - Tasks are now **タスクカード**, to keep them apart from Claude Code's Task / TaskCreate and Codex cloud tasks.
+  - The UI takes these words from one table (`T` in `ui/board.html`). The README has a terminology table.
+
 ## 0.8.0 — 2026-09-27
 - Send prompts to existing sessions from the board ("指示を送る" in the session detail) or from the model (`canban_send_prompt`): send now, or queue them to run one at a time when the session is free.
   - Delivered as one headless turn through the agent's own CLI (`codex exec resume` / `claude -p --resume`). The prompt goes on stdin; Canban still never writes agent files itself.

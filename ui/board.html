@@ -410,12 +410,12 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
   <h1>Canban</h1>
   <input id="q" class="hsearch" type="search" placeholder="検索（/）・⌘K でコマンド" aria-label="検索" aria-keyshortcuts="/" />
   <label class="ft-toggle" title="会話の本文も検索する（3 文字以上）"><input id="fulltext" type="checkbox" /> 本文</label>
-  <div class="seg" role="group" aria-label="エージェント">
+  <div class="seg" role="group" aria-label="AI Apps">
     <button data-agent="all" aria-pressed="true">すべて</button>
     <button data-agent="codex" aria-pressed="false">Codex</button>
     <button data-agent="claude" aria-pressed="false">Claude</button>
   </div>
-  <button id="projectBtn" class="hbtn" aria-haspopup="listbox" title="ディレクトリ・プロジェクトで絞り込み（p）">📁 すべて ▾</button>
+  <button id="projectBtn" class="hbtn" aria-haspopup="listbox" title="カテゴリ・プロジェクトで絞り込み（p）">📁 すべて ▾</button>
   <select id="days" class="hselect" aria-label="期間">
     <option value="7">7日以内</option>
     <option value="30" selected>30日以内</option>
@@ -423,7 +423,7 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
     <option value="0">全期間</option>
   </select>
   <button id="optBtn" class="hbtn" aria-haspopup="true">表示 ▾</button>
-  <button id="rulesBtn" class="hbtn" title="自動移動ルール">⚡ ルール</button>
+  <button id="rulesBtn" class="hbtn" title="自動化（カードの自動移動）">⚡ 自動化</button>
   <button id="viewsBtn" class="hbtn" aria-haspopup="true" title="保存したビュー（1〜9 キーで切り替え）">ビュー ▾</button>
   <button id="analyticsBtn" class="hbtn" aria-pressed="false" title="ボード / 分析 の切り替え">📊 分析</button>
   <button id="labelsBtn" class="hbtn">ラベル</button>
@@ -438,11 +438,23 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
 </header>
 <div id="errbar" class="errbar" hidden></div>
 <div class="shell">
-  <aside id="sidebar" class="sidebar" aria-label="レーン・ディレクトリ・プロジェクト" hidden></aside>
+  <aside id="sidebar" class="sidebar" aria-label="レーン・カテゴリ・プロジェクト" hidden></aside>
   <main id="board" class="board" aria-label="カンバンボード"><div class="loading">読み込み中…</div></main>
 </div>
 
 <script>
+// Display names of Canban's own concepts, kept apart from the agents' terms
+// (docs: README「用語」). Change a word here to rename it everywhere in the UI.
+const T = { category: 'カテゴリ', automation: '自動化', taskCard: 'タスクカード', aiApps: 'AI Apps', folder: 'フォルダ' };
+{
+  const set = (sel, attr, v) => { const el = document.querySelector(sel); if (el) (attr === 'text' ? (el.textContent = v) : el.setAttribute(attr, v)); };
+  set('#rulesBtn', 'text', `⚡ ${T.automation}`);
+  set('#rulesBtn', 'title', `${T.automation}（カードの自動移動）`);
+  set('#projectBtn', 'title', `${T.category}・プロジェクトで絞り込み（p）`);
+  set('#sidebar', 'aria-label', `レーン・${T.category}・プロジェクト`);
+  set('.seg[role="group"]', 'aria-label', T.aiApps);
+}
+
 (() => {
 'use strict';
 
@@ -721,7 +733,7 @@ function renderAddCard(list) {
   if (state.addCard?.listId === list.id) return state.addCard.wrap;
   const wrap = h('div', { class: 'add-card' });
   const open = () => {
-    const input = h('textarea', { class: 'text-input', rows: 2, placeholder: 'タスクのタイトルを入力…（Enter で追加）', maxlength: 300 });
+    const input = h('textarea', { class: 'text-input', rows: 2, placeholder: `${T.taskCard}のタイトルを入力…（Enter で追加）`, maxlength: 300 });
     const close = () => { state.addCard = null; render(); };
     const submit = async () => {
       const title = input.value.trim();
@@ -759,7 +771,7 @@ function renderCard(card, list) {
     card.title));
   const meta = h('div', { class: 'meta' },
     card.unread ? h('span', { class: 'pill new-pill', text: '新着' }) : null,
-    card.autoMoved ? h('span', { class: 'pill', title: 'ルールで自動移動', text: '⚡' }) : null,
+    card.autoMoved ? h('span', { class: 'pill', title: `${T.automation}で移動`, text: '⚡' }) : null,
     h('span', { class: `badge ${card.agent}`, text: card.agent === 'codex' ? 'Codex' : 'Claude' }),
     card.host ? h('span', { class: 'host-chip', title: `SSH: ${card.host.alias}`, text: `⌂ ${card.host.label}` }) : null,
     card.directory ? dirPill(card.directory, card.project) : card.project ? h('span', { class: 'ellipsis', title: card.cwd || '', text: `📁 ${card.project}` }) : null,
@@ -813,7 +825,7 @@ function attachCardBehavior(el, card, list, onResume) {
 
 function dirPill(d, project) {
   return h('span', { class: 'dir-pill', style: { background: d.color ? colorVar(d.color) : 'var(--btn-subtle-hover)', color: d.color ? '#172b4d' : 'inherit' },
-    title: `ディレクトリ: ${d.name}${project ? `\nプロジェクト: ${project}` : ''}`, text: `📂 ${d.name}` });
+    title: `${T.category}: ${d.name}${project ? `\nプロジェクト: ${project}` : ''}`, text: `📂 ${d.name}` });
 }
 
 // Attribute keys on a focused card (Trello-like): l = labels, g = directory, m = move, h = hide.
@@ -838,7 +850,7 @@ function directoryItems(withAuto = true) {
   const b = state.board;
   return [
     withAuto ? { value: '', label: '自動（フォルダの設定に従う）', hint: '' } : null,
-    { value: '__none', label: 'ディレクトリなし' },
+    { value: '__none', label: `${T.category}なし` },
     ...b.directories.map((d) => ({ value: d.id, label: d.name, color: d.color, hint: d.count, keywords: (d.paths || []).join(' ') })),
   ].filter(Boolean);
 }
@@ -854,11 +866,11 @@ function directoryPicker(anchor, card, { cwd = card.cwd, explicit, after } = {})
   };
   const set = async (v) => {
     await addPath(v);
-    await act('canban_update_card', { cardId: card.id, directory: v || null }, { okMsg: v === '__none' ? 'ディレクトリから外しました' : v ? `📂 ${state.board.directories.find((d) => d.id === v)?.name ?? ''} に入れました` : '自動に戻しました' }).catch(() => {});
+    await act('canban_update_card', { cardId: card.id, directory: v || null }, { okMsg: v === '__none' ? `${T.category}から外しました` : v ? `📂 ${state.board.directories.find((d) => d.id === v)?.name ?? ''} に入れました` : '自動に戻しました' }).catch(() => {});
     after?.();
   };
   picker(anchor, {
-    title: 'ディレクトリ', selected: [cur], items: directoryItems(), footer: auto, createText: 'を新しいディレクトリとして作成',
+    title: `${T.category}`, selected: [cur], items: directoryItems(), footer: auto, createText: `を新しい${T.category}として作成`,
     onPick: set,
     onCreate: async (name) => {
       const color = COLORS[(state.board.directories.length + 1) % COLORS.length];
@@ -890,7 +902,7 @@ function planMeta(meta, card) {
 function renderTaskCard(card, list) {
   const el = h('article', {
     class: `card task${card.unread ? ' unread' : ''}`, tabindex: 0, 'data-card-id': card.id,
-    'aria-label': `${card.title}（タスク・${STATUS_LABELS[card.status]}）`,
+    'aria-label': `${card.title}（${T.taskCard}・${STATUS_LABELS[card.status]}）`,
   });
   const lbl = cardLabels(card);
   if (lbl) el.append(lbl);
@@ -909,10 +921,10 @@ function renderTaskCard(card, list) {
     el.append(box);
   }
   const meta = h('div', { class: 'meta' },
-    h('span', { class: 'badge task-badge', text: 'タスク' }),
+    h('span', { class: 'badge task-badge', text: `${T.taskCard}` }),
     card.directory ? dirPill(card.directory, card.project) : null,
     card.unread ? h('span', { class: 'pill new-pill', text: '新着' }) : null,
-    card.autoMoved ? h('span', { class: 'pill', title: 'ルールで自動移動', text: '⚡' }) : null,
+    card.autoMoved ? h('span', { class: 'pill', title: `${T.automation}で移動`, text: '⚡' }) : null,
     card.description ? h('span', { title: '説明あり', text: '📝' }) : null);
   planMeta(meta, card);
   if (card.pr) meta.append(prPill(card.pr));
@@ -1213,7 +1225,7 @@ function renderModal(modal, d) {
   const listSel = pickerButton({ title: 'リスト', value: card.listId, stack: false, className: 'btn picker-btn',
     items: () => b.lists.map((l) => ({ value: l.id, label: l.title, color: l.color, hint: l.count })),
     onChange: (v) => act('canban_move_card', { cardId: s.id, toList: v, position: 'top' }, { okMsg: 'カードを移動しました' }) });
-  const dirBtn = h('button', { class: 'side-btn', text: `📂 ディレクトリ: ${card.directory ? card.directory.name : 'なし'}${card.directoryId ? '' : card.directory ? '（自動）' : ''}`,
+  const dirBtn = h('button', { class: 'side-btn', text: `📂 ${T.category}: ${card.directory ? card.directory.name : 'なし'}${card.directoryId ? '' : card.directory ? '（自動）' : ''}`,
     onclick: (e) => directoryPicker(e.currentTarget, { id: s.id, cwd: s.cwd, directory: card.directory }, { explicit: card.directoryId, after: () => openCard(s.id) }) });
 
   const labelWrap = h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '4px' } });
@@ -1256,21 +1268,21 @@ function renderModal(modal, d) {
     h('button', { class: 'side-btn', text: '⧉ 再開コマンドをコピー', title: L.terminal.command, onclick: () => copyText(L.terminal.command, '再開コマンド') }),
   );
 
-  const taskSel = pickerButton({ title: 'タスクに紐付け', value: '', stack: false,
+  const taskSel = pickerButton({ title: `${T.taskCard}に紐付け`, value: '', stack: false,
     items: () => [
-      { value: '', label: d.task ? `紐付け中: ${d.task.title}` : '（タスクに紐付けない）' },
+      { value: '', label: d.task ? `紐付け中: ${d.task.title}` : `（${T.taskCard}に紐付けない）` },
       ...(d.tasks || []).filter((t) => !d.task || t.id !== d.task.id).map((t) => ({ value: t.id, label: t.title })),
       d.task ? { value: '__unlink', label: '紐付けを解除' } : null].filter(Boolean),
     onChange: (v) => onTask(v) });
   const onTask = async (v) => {
     if (!v) return;
     if (v === '__unlink') await act('canban_unlink_session', { taskId: d.task.id, sessionId: s.id }, { okMsg: '紐付けを解除しました' });
-    else await act('canban_link_session', { taskId: v, sessionId: s.id }, { okMsg: 'タスクに紐付けました' });
+    else await act('canban_link_session', { taskId: v, sessionId: s.id }, { okMsg: `${T.taskCard}に紐付けました` });
     closeModal();
   };
   const side = h('div', {},
     h('div', { class: 'field-label', text: '再開' }), resumeBox,
-    h('div', { class: 'field-label', text: 'タスク' }), taskSel,
+    h('div', { class: 'field-label', text: `${T.taskCard}` }), taskSel,
     h('div', { class: 'field-label', text: 'カードに追加' }),
     h('button', { class: 'side-btn', text: '🏷 ラベル', title: 'ボード上では l キー', onclick: (e) => labelPicker(e.currentTarget, s.id, card, paintLabels) }),
     dirBtn,
@@ -1294,18 +1306,18 @@ function renderModal(modal, d) {
     h('div', { class: 'readonly-note', text: '⌘/Ctrl + Enter または フォーカスを外すと保存' }),
     h('div', { class: 'section-title', text: '詳細' }),
     h('dl', { class: 'kv' },
-      ...kv('エージェント', s.agent === 'codex' ? 'Codex' : 'Claude Code'),
+      ...kv('AI App', s.agent === 'codex' ? 'Codex' : 'Claude Code'),
       ...kv('マシン', s.host ? `${s.host.label}（SSH: ${s.host.alias}）` : 'このマシン'),
-      ...kv('ディレクトリ', card.directory ? `${card.directory.name}${card.directoryId ? '' : '（フォルダから自動）'}` : '-'),
+      ...kv(`${T.category}`, card.directory ? `${card.directory.name}${card.directoryId ? '' : '（フォルダから自動）'}` : '-'),
       ...kv('プロジェクト', s.project || '-'),
       ...kv('作業ディレクトリ', s.cwd || '-'),
       ...kv('ブランチ', s.branch || '-'),
       ...kv('モデル', s.model || '-'),
       ...kv('作成', fmtDate(s.createdAt)),
       ...kv('最終更新', fmtDate(s.updatedAt)),
-      ...kv('状態', [s.archived ? 'アーカイブ済' : '進行中/未アーカイブ', s.subagent ? 'サブエージェント' : null, s.automation ? '自動実行' : null].filter(Boolean).join(' · ')),
+      ...kv('状態', [s.archived ? 'アーカイブ済' : '進行中/未アーカイブ', s.subagent ? 'サブエージェント' : null, s.automation ? '⏰ Codex オートメーション' : null].filter(Boolean).join(' · ')),
     ),
-    d.task ? h('div', { class: 'msg' }, 'このセッションはタスク ', h('button', { class: 'link-btn', text: `「${d.task.title}」`, onclick: () => openCard(d.task.id) }), ' に紐付いています。') : null,
+    d.task ? h('div', { class: 'msg' }, `このセッションは${T.taskCard} `, h('button', { class: 'link-btn', text: `「${d.task.title}」`, onclick: () => openCard(d.task.id) }), ' に紐付いています。') : null,
     d.children && d.children.length ? h('div', { class: 'section-title', text: `サブエージェント（${d.children.length}）` }) : null,
     ...(d.children || []).map((c) => h('button', { class: 'sub-row', onclick: () => openCard(c.id) },
       h('span', { class: `sdot s-${c.status}` }), h('span', { class: 'ellipsis grow', text: c.agentName ? `${c.agentName}: ${c.title}` : c.title }),
@@ -1475,17 +1487,17 @@ function watchRequests(modal, d) {
 // ======================================================================
 // Swimlanes, snippets, saved views
 // ======================================================================
-const LANE_MODES = { '': 'なし', directory: 'ディレクトリ', project: 'プロジェクト', host: 'マシン', agent: 'エージェント', label: 'ラベル' };
-const NO_DIR = '（ディレクトリなし）';
+const LANE_MODES = { '': 'なし', directory: `${T.category}`, project: 'プロジェクト', host: 'マシン', agent: 'AI Apps', label: 'ラベル' };
+const NO_DIR = `（${T.category}なし）`;
 function laneKey(card, mode) {
   if (mode === 'directory') return card.directory ? card.directory.name : NO_DIR;
-  if (mode === 'agent') return card.kind === 'task' ? 'タスク' : card.agent === 'codex' ? 'Codex' : 'Claude Code';
+  if (mode === 'agent') return card.kind === 'task' ? `${T.taskCard}` : card.agent === 'codex' ? 'Codex' : 'Claude Code';
   if (mode === 'host') return card.kind === 'task' ? (card.links[0]?.host?.label || 'このマシン') : card.host?.label || 'このマシン';
   if (mode === 'label') {
     const l = state.board.labels.find((x) => card.labels.includes(x.id));
     return l ? l.name : 'ラベルなし';
   }
-  return card.project || (card.kind === 'task' ? 'タスク' : '（プロジェクトなし）');
+  return card.project || (card.kind === 'task' ? `${T.taskCard}` : '（プロジェクトなし）');
 }
 function buildLanes(b, mode) {
   const lanes = new Map();
@@ -1581,7 +1593,7 @@ function setAllLanes(collapse) {
 // ======================================================================
 function scopeLabel(b) {
   const f = state.filters;
-  const dir = f.directory === '__none' ? 'ディレクトリなし' : b?.directories.find((d) => d.id === f.directory)?.name;
+  const dir = f.directory === '__none' ? `${T.category}なし` : b?.directories.find((d) => d.id === f.directory)?.name;
   const parts = [dir && `📂 ${dir}`, f.project && `📁 ${f.project}`].filter(Boolean);
   return parts.length ? parts.join(' · ') : '📁 すべて';
 }
@@ -1596,11 +1608,11 @@ function scopePicker(anchor) {
   const b = state.board;
   const f = state.filters;
   picker(anchor, {
-    title: 'ディレクトリ・プロジェクトで絞り込み', width: 340,
+    title: `${T.category}・プロジェクトで絞り込み`, width: 340,
     selected: [f.directory ? `d:${f.directory}` : null, f.project ? `p:${f.project}` : null, !f.directory && !f.project ? '' : null].filter((x) => x != null),
     items: [
       { value: '', label: 'すべて（絞り込みを解除）' },
-      ...directoryItems(false).map((it) => ({ ...it, value: `d:${it.value}`, group: 'ディレクトリ' })),
+      ...directoryItems(false).map((it) => ({ ...it, value: `d:${it.value}`, group: `${T.category}` })),
       ...b.projects.map((p) => ({ value: `p:${p.name}`, label: p.name, hint: p.count, group: 'プロジェクト' })),
     ],
     onPick: (v) => {
@@ -1659,14 +1671,14 @@ function renderSidebar(b) {
       h('span', { class: 'dot', style: { background: d.color ? colorVar(d.color) : 'rgba(255,255,255,0.35)' } }),
       h('span', { class: 'grow ellipsis', text: d.name }), count(d.count)),
     d.id === '__none' ? null : h('button', { class: 'icon-btn', 'aria-label': `${d.name} の設定`, text: '⋯', onclick: (e) => directoryMenu(e.currentTarget, d.id) }));
-  const dirs = [...b.directories, { id: '__none', name: 'ディレクトリなし', color: null, count: '' }].filter((d) => hit(d.name));
-  const add = h('input', { class: 'side-filter', placeholder: '＋ 新しいディレクトリ（Enter）', 'aria-label': '新しいディレクトリ',
+  const dirs = [...b.directories, { id: '__none', name: `${T.category}なし`, color: null, count: '' }].filter((d) => hit(d.name));
+  const add = h('input', { class: 'side-filter', placeholder: `＋ 新しい${T.category}（Enter）`, 'aria-label': `新しい${T.category}`,
     onkeydown: (e) => {
       if (e.key !== 'Enter' || e.isComposing || !e.target.value.trim()) return;
-      act('canban_create_directory', { name: e.target.value.trim(), color: COLORS[(b.directories.length + 1) % COLORS.length] }, { okMsg: 'ディレクトリを作成しました' }).catch(() => {});
+      act('canban_create_directory', { name: e.target.value.trim(), color: COLORS[(b.directories.length + 1) % COLORS.length] }, { okMsg: `${T.category}を作成しました` }).catch(() => {});
     } });
-  secs.push(h('section', {}, head('ディレクトリ',
-    f.swimlane !== 'directory' ? h('button', { class: 'side-mini', title: 'ディレクトリでスイムレーン表示', text: '≡ レーン', onclick: () => { f.swimlane = 'directory'; saveFilters(); render(); } }) : null),
+  secs.push(h('section', {}, head(`${T.category}`,
+    f.swimlane !== 'directory' ? h('button', { class: 'side-mini', title: `${T.category}でスイムレーン表示`, text: '≡ レーン', onclick: () => { f.swimlane = 'directory'; saveFilters(); render(); } }) : null),
     dirs.map(dirRow), q ? null : add));
 
   const projects = b.projects.filter((p) => hit(p.name));
@@ -1685,7 +1697,7 @@ function directoryMenu(anchor, dirId) {
   const d = state.board.directories.find((x) => x.id === dirId);
   if (!d) return;
   const again = () => directoryMenu(anchor.isConnected ? anchor : $('#projectBtn'), dirId);
-  const name = h('input', { class: 'text-input', value: d.name, 'aria-label': 'ディレクトリ名' });
+  const name = h('input', { class: 'text-input', value: d.name, 'aria-label': `${T.category}名` });
   name.onchange = () => name.value.trim() && act('canban_update_directory', { directoryId: d.id, name: name.value }).then(again);
   const folders = h('datalist', { id: `dirf-${d.id}` }, state.board.folders.filter((x) => x.hostId === 'local').map((x) => h('option', { value: x.cwd, label: x.project || '' })));
   const path = h('input', { class: 'text-input', list: folders.id, placeholder: '/path/to/folder（Enter で追加）', 'aria-label': '自動で含めるフォルダ' });
@@ -1693,9 +1705,9 @@ function directoryMenu(anchor, dirId) {
     if (e.key !== 'Enter' || e.isComposing || !path.value.trim().startsWith('/')) return;
     act('canban_update_directory', { directoryId: d.id, paths: [...d.paths, path.value.trim()] }, { okMsg: 'フォルダを追加しました' }).then(again);
   };
-  const del = h('button', { class: 'menu-item danger', text: 'このディレクトリを削除…',
+  const del = h('button', { class: 'menu-item danger', text: `この${T.category}を削除…`,
     onclick: () => { if (confirmInline(del, `「${d.name}」を削除します（カードやセッションは消えません）。`)) act('canban_delete_directory', { directoryId: d.id }, { okMsg: '削除しました' }).then(() => closePopover()); } });
-  popover(anchor, 'ディレクトリの設定', h('div', {},
+  popover(anchor, `${T.category}の設定`, h('div', {},
     name,
     h('div', { class: 'field-label', text: '色' }),
     h('div', { class: 'swatches' }, [null, ...COLORS].map((c) => h('button', { class: 'swatch', title: c ? COLOR_NAMES[c] : '色なし', 'aria-label': c ? COLOR_NAMES[c] : '色なし', 'aria-pressed': String((d.color || null) === c),
@@ -1705,7 +1717,7 @@ function directoryMenu(anchor, dirId) {
       h('button', { class: 'icon-btn', 'aria-label': `${pth} を外す`, text: '✕', onclick: () => act('canban_update_directory', { directoryId: d.id, paths: d.paths.filter((x) => x !== pth) }).then(again) }))),
     path, folders,
     h('div', { class: 'sep' }),
-    h('button', { class: 'menu-item', text: 'このディレクトリだけを表示', onclick: () => { closePopover(); setScope({ directory: d.id }); } }),
+    h('button', { class: 'menu-item', text: `この${T.category}だけを表示`, onclick: () => { closePopover(); setScope({ directory: d.id }); } }),
     del), { width: 340 });
 }
 
@@ -1875,7 +1887,7 @@ function renderAnalytics(st) {
     h('span', { class: 'hbar-val', text: `${w.count} 件` })))) : h('p', { class: 'muted', text: 'まだ完了したカードの記録がありません（カードを最後のリストへ移すと記録されます）' });
   page.append(
     h('div', { class: 'row analytics-bar' }, h('h2', { text: '分析' }), daysSeg,
-      h('span', { class: 'muted', text: 'エージェント・マシン・ディレクトリ・プロジェクトの絞り込みはヘッダの設定に従います' })),
+      h('span', { class: 'muted', text: `AI Apps・マシン・${T.category}・プロジェクトの絞り込みはヘッダの設定に従います` })),
     h('div', { class: 'tiles' },
       tile('セッション', st.totals.sessions.toLocaleString(), `Codex ${st.totals.codex} / Claude ${st.totals.claude}`),
       tile('トークン', fmtNum(st.totals.tokens), st.totals.tokens.toLocaleString()),
@@ -1885,7 +1897,7 @@ function renderAnalytics(st) {
     h('div', { class: 'panel-grid' },
       h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', { text: 'プロジェクト別' }), legend.cloneNode(true)), breakdownRows(st.projects, tip)),
       h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', { text: 'マシン別' }), legend.cloneNode(true)), breakdownRows(st.hosts, tip)),
-      st.directories?.some((r) => r.name !== '（なし）') ? h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', { text: 'ディレクトリ別' }), legend.cloneNode(true)), breakdownRows(st.directories, tip)) : null),
+      st.directories?.some((r) => r.name !== '（なし）') ? h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', { text: `${T.category}別` }), legend.cloneNode(true)), breakdownRows(st.directories, tip)) : null),
     h('div', { class: 'panel-grid' },
       h('section', { class: 'panel' }, h('h3', { text: 'リストの滞留時間' }), lists),
       h('section', { class: 'panel' }, h('h3', { text: '週ごとの完了数' }), weekly)));
@@ -1924,7 +1936,7 @@ function openTaskModal(cardId) {
 
   // --- start a new session
   const t = card.target || {};
-  const agentSel = h('select', { class: 'text-input', 'aria-label': 'エージェント' }, h('option', { value: 'codex', text: 'Codex' }), h('option', { value: 'claude', text: 'Claude Code' }));
+  const agentSel = h('select', { class: 'text-input', 'aria-label': 'AI App' }, h('option', { value: 'codex', text: 'Codex' }), h('option', { value: 'claude', text: 'Claude Code' }));
   agentSel.value = t.agent || 'codex';
   const hostSel = pickerButton({ title: 'マシン', value: t.hostId || 'local', stack: false,
     items: () => b.hosts.map((x) => ({ value: x.local ? 'local' : x.id, label: x.local ? 'このマシン' : `⌂ ${x.label}${x.enabled ? '' : '（読み取りオフ）'}`, keywords: x.alias || '' })),
@@ -1968,10 +1980,10 @@ function openTaskModal(cardId) {
   due.onchange = () => act('canban_update_card', { cardId, due: due.value || null });
   const labelState = { labels: [...card.labels] };
 
-  const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'タスクの詳細' },
+  const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${T.taskCard}の詳細` },
     h('button', { class: 'icon-btn close', 'aria-label': '閉じる', text: '✕', onclick: closeModal }),
     title,
-    h('div', { class: 'sub row' }, h('span', { class: 'badge task-badge', text: 'タスク' }),
+    h('div', { class: 'sub row' }, h('span', { class: 'badge task-badge', text: `${T.taskCard}` }),
       h('span', { class: 'row', style: { gap: '0' } }, h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]), 'リスト:', listSel),
     h('div', { class: 'modal-grid' },
       h('div', {},
@@ -1986,11 +1998,11 @@ function openTaskModal(cardId) {
           h('button', { class: 'btn-primary', title: shortcutHelp(), text: `▶ 開始（${routeLabel(b.settings.launch.route, { desktop: true })}）`, onclick: (e) => start(optsFromEvent(e)) }),
           h('button', { class: 'btn', text: 'デスクトップアプリで', onclick: () => start({ route: 'desktop' }) }),
           h('button', { class: 'btn', text: 'ターミナルで', onclick: () => start({ route: 'terminal' }) })),
-        h('p', { class: 'muted', text: '開始したセッションは、エージェント・マシン・フォルダ・依頼文の書き出しが一致すると自動でこのカードに紐付きます。' })),
+        h('p', { class: 'muted', text: '開始したセッションは、AI App・マシン・フォルダ・依頼文の書き出しが一致すると自動でこのカードに紐付きます。' })),
       h('div', {},
         h('div', { class: 'field-label', text: 'カードに追加' }),
         h('button', { class: 'side-btn', text: '🏷 ラベル', onclick: (e) => labelPicker(e.currentTarget, cardId, labelState, () => {}) }),
-        h('button', { class: 'side-btn', text: `📂 ディレクトリ: ${card.directory ? card.directory.name : 'なし'}`,
+        h('button', { class: 'side-btn', text: `📂 ${T.category}: ${card.directory ? card.directory.name : 'なし'}`,
           onclick: (e) => directoryPicker(e.currentTarget, card, { cwd: cwd.value.trim() || null, after: () => openTaskModal(cardId) }) }),
         h('div', { class: 'field-label', text: '優先度' }), prio,
         h('div', { class: 'field-label', text: '期限' }), due,
@@ -1998,7 +2010,7 @@ function openTaskModal(cardId) {
         h('button', { class: 'side-btn', text: card.hidden ? '👁 ボードに再表示' : '🙈 ボードから隠す',
           onclick: async () => { await act('canban_update_card', { cardId, hidden: !card.hidden }); closeModal(); } }),
         h('button', { class: 'side-btn danger-text', text: '🗑 カードを削除',
-          onclick: async () => { if (confirmInline(modal, 'このタスクカードを削除します。紐付いたセッション自体は消えません。')) { await act('canban_delete_task', { cardId }, { okMsg: '削除しました' }); closeModal(); } } }))));
+          onclick: async () => { if (confirmInline(modal, `この${T.taskCard}を削除します。紐付いたセッション自体は消えません。`)) { await act('canban_delete_task', { cardId }, { okMsg: '削除しました' }); closeModal(); } } }))));
   overlay.append(modal);
   document.body.append(overlay);
   title.focus();
@@ -2078,24 +2090,24 @@ function rulesMenu(anchor) {
     items: () => [withAny ? { value: 'any', label: 'どのリストでも' } : null, ...b.lists.map((l) => ({ value: l.id, label: l.title, color: l.color }))].filter(Boolean) });
   const rows = b.settings.rules.map((r) => h('div', { class: 'rule-row', 'data-key': `${TRIGGER_LABELS[r.trigger]} ${listName(r.fromListId)} ${listName(r.toListId)}` },
     h('label', { class: 'row' },
-      h('input', { type: 'checkbox', checked: r.enabled, 'aria-label': 'ルールを有効にする',
+      h('input', { type: 'checkbox', checked: r.enabled, 'aria-label': `この${T.automation}を有効にする`,
         onchange: (e) => act('canban_set_rule', { ...r, enabled: e.target.checked }).then(() => rulesMenu(anchor)) }),
       h('span', { text: `${TRIGGER_LABELS[r.trigger]}、${listName(r.fromListId)} → ${listName(r.toListId)}` })),
-    h('button', { class: 'icon-btn', 'aria-label': 'ルールを削除', text: '🗑', onclick: () => act('canban_delete_rule', { ruleId: r.id }).then(() => rulesMenu(anchor)) })));
+    h('button', { class: 'icon-btn', 'aria-label': `この${T.automation}を削除`, text: '🗑', onclick: () => act('canban_delete_rule', { ruleId: r.id }).then(() => rulesMenu(anchor)) })));
   const trig = pickerButton({ title: 'きっかけ', value: 'status:completed', items: () => Object.entries(TRIGGER_LABELS).map(([value, label]) => ({ value, label })) });
   const from = listSelect('any', true);
   const to = listSelect(b.lists[1]?.id ?? b.lists[0].id, false);
   const body = h('div', {},
     rows.length > 5 ? rowFilter(rows) : null,
-    rows.length ? rows : h('p', { class: 'muted', text: 'ルールはまだありません' }),
+    rows.length ? rows : h('p', { class: 'muted', text: `${T.automation}はまだありません` }),
     h('div', { class: 'sep' }),
-    h('div', { class: 'field-label', text: '新しいルール' }),
+    h('div', { class: 'field-label', text: `新しい${T.automation}` }),
     trig, h('div', { class: 'row', style: { marginTop: '6px' } }, from, h('span', { text: '→' }), to),
     h('div', { class: 'row', style: { marginTop: '8px' } }, h('button', { class: 'btn-primary', text: '追加',
-      onclick: () => act('canban_set_rule', { enabled: true, trigger: trig.value, fromListId: from.value, toListId: to.value }, { okMsg: 'ルールを追加しました' }).then(() => rulesMenu(anchor)) })),
+      onclick: () => act('canban_set_rule', { enabled: true, trigger: trig.value, fromListId: from.value, toListId: to.value }, { okMsg: `${T.automation}を追加しました` }).then(() => rulesMenu(anchor)) })),
     h('p', { class: 'muted', text: '状態が変わった瞬間にだけ動きます。ボードを閉じていても、Codex が起動していれば 60 秒ごとに評価されます。自動で動いたカードには ⚡ が付き、直後のお知らせから元に戻せます。' }),
-    b.git && b.git.available === false ? h('p', { class: 'muted', text: `PR / CI のルールは使えません: ${b.git.reason}` }) : null);
-  popover(anchor, '自動移動ルール', body, { width: 400 });
+    b.git && b.git.available === false ? h('p', { class: 'muted', text: `PR / CI の${T.automation}は使えません: ${b.git.reason}` }) : null);
+  popover(anchor, `${T.automation}（カードの自動移動）`, body, { width: 400 });
 }
 
 // ======================================================================
@@ -2348,7 +2360,7 @@ function startCardDrag(e, card, el) {
     if (d.dropDir) {
       const dir = d.dropDir.dataset.dirId;
       d.dropDir.classList.remove('drop-target');
-      act('canban_update_card', { cardId: card.id, directory: dir }, { okMsg: dir === '__none' ? 'ディレクトリから外しました' : `📂 ${state.board.directories.find((x) => x.id === dir)?.name ?? ''} に入れました` }).catch(() => {});
+      act('canban_update_card', { cardId: card.id, directory: dir }, { okMsg: dir === '__none' ? `${T.category}から外しました` : `📂 ${state.board.directories.find((x) => x.id === dir)?.name ?? ''} に入れました` }).catch(() => {});
       return;
     }
     // Directory swimlanes: dropping into another lane also moves the card to that directory.
@@ -2361,7 +2373,7 @@ function startCardDrag(e, card, el) {
     if (d.dropTask) {
       const taskId = d.dropTask.dataset.cardId;
       d.dropTask.classList.remove('drop-target');
-      act('canban_link_session', { taskId, sessionId: card.id }, { okMsg: 'タスクに紐付けました' }).catch(() => {});
+      act('canban_link_session', { taskId, sessionId: card.id }, { okMsg: `${T.taskCard}に紐付けました` }).catch(() => {});
       return;
     }
     const moved = toList && idx >= 0 ? moveCard(card, d.fromList, toList, idx) : (render(), null);
@@ -2603,7 +2615,7 @@ function quickAdd() {
   const btn = !state.filters.swimlane && $(`.list[data-list-id="${CSS.escape(listId)}"] .add-card-btn`);
   if (btn) { btn.scrollIntoView({ block: 'nearest', inline: 'nearest' }); return btn.click(); }
   const list = state.board.lists.find((l) => l.id === listId);
-  const input = h('input', { class: 'text-input', placeholder: 'タスクのタイトル（Enter で追加）', maxlength: 300 });
+  const input = h('input', { class: 'text-input', placeholder: `${T.taskCard}のタイトル（Enter で追加）`, maxlength: 300 });
   const lane = state.filters.swimlane === 'directory' ? document.activeElement?.closest?.('.lane')?.dataset.dirId : null;
   input.onkeydown = async (e) => {
     if (e.key !== 'Enter' || e.isComposing || !input.value.trim()) return;
@@ -2616,12 +2628,12 @@ function quickAdd() {
 }
 const SHORTCUTS = [
   ['全体', [
-    ['/', '検索にフォーカス（Esc でクリア、↓ / Enter で最初のカードへ）'], ['⌘K / Ctrl+K', 'コマンドパレット（カード・ビュー・ディレクトリ・操作を検索して実行）'],
-    ['p', 'ディレクトリ・プロジェクトで絞り込み'], ['b', 'サイドバーの開閉'], ['[ / ]', '前 / 次のスイムレーンへ'],
+    ['/', '検索にフォーカス（Esc でクリア、↓ / Enter で最初のカードへ）'], ['⌘K / Ctrl+K', `コマンドパレット（カード・ビュー・${T.category}・操作を検索して実行）`],
+    ['p', `${T.category}・プロジェクトで絞り込み`], ['b', 'サイドバーの開閉'], ['[ / ]', '前 / 次のスイムレーンへ'],
     ['c', 'カードを追加'], ['1〜9', '保存したビューに切り替え'], ['a', 'ボード / 分析'], ['r', '再読み込み'], ['?', 'この一覧'],
   ]],
   ['カードを選択中', [
-    ['Enter', '詳細を開く'], ['l', 'ラベル'], ['g', 'ディレクトリ'], ['m', 'リストへ移動'], ['h', '隠す / 再表示'],
+    ['Enter', '詳細を開く'], ['l', 'ラベル'], ['g', `${T.category}`], ['m', 'リストへ移動'], ['h', '隠す / 再表示'],
     ['← →', '隣のリストへ移動'], ['↑ ↓ / Home End', 'リスト内で移動'], ['⌥ + 矢印', 'フォーカスだけ移動'],
     ['o', '再開（既定）'], ['d / t', 'デスクトップ / ターミナルで再開'], ['w n s e', 'ターミナル: 新規ウィンドウ / 新規タブ / 分割 / 既存'],
   ]],
@@ -2654,7 +2666,7 @@ function commandPalette() {
   actions.forEach((a) => add('操作', '操作', a.label, a.run, { hint: a.hint }));
   (b.settings.views || []).forEach((v, i) => add('ビュー', 'ビュー', v.name, () => applyView(v), { hint: i < 9 ? i + 1 : '' }));
   state.lanes.forEach((l) => add('レーン', 'レーン', l.name, () => jumpToLane(l.name), { hint: l.count, color: l.color }));
-  b.directories.forEach((d) => add('ディレクトリ', '📂', d.name, () => setScope({ directory: d.id }), { hint: d.count, color: d.color }));
+  b.directories.forEach((d) => add(`${T.category}`, '📂', d.name, () => setScope({ directory: d.id }), { hint: d.count, color: d.color }));
   b.projects.forEach((p) => add('プロジェクト', '📁', p.name, () => setScope({ project: p.name }), { hint: p.count }));
   b.labels.forEach((l) => add('ラベルで検索', '🏷', l.name, () => { $('#q').value = l.name; applySearch(); }, { color: l.color }));
   for (const l of b.lists) for (const c of l.cards) {
@@ -2663,7 +2675,7 @@ function commandPalette() {
     }, { dot: c.status !== 'idle' ? c.status : null, hint: c.directory?.name || c.project || '', keywords: `${c.branch || ''} ${c.agent || ''}` });
   }
   const p = picker($('#q'), {
-    title: 'コマンド', items, width: 560, placeholder: 'カード・ビュー・ディレクトリ・操作を検索…', limit: 200,
+    title: 'コマンド', items, width: 560, placeholder: `カード・ビュー・${T.category}・操作を検索…`, limit: 200,
     onPick: (v) => run.get(v)?.(),
   });
   p.classList.add('palette');
