@@ -1,5 +1,7 @@
 // Board analytics: activity per day, breakdowns with token usage, time spent in
 // lists and cycle time to the last list (read from the cards' move history).
+import { resolveDirectory } from './store.mjs';
+
 const DAY = 86400e3;
 
 function median(xs) {
@@ -27,7 +29,7 @@ function breakdown(sessions, keyOf, limit) {
   return [...m.values()].sort((a, b) => b.sessions - a.sessions).slice(0, limit);
 }
 
-export function computeStats(state, sessions, { days = 30, agent = 'all', host = null, project = null, includeSubagents = false, now = Date.now() } = {}) {
+export function computeStats(state, sessions, { days = 30, agent = 'all', host = null, project = null, directory = null, includeSubagents = false, now = Date.now() } = {}) {
   const since = now - days * DAY;
   const pick = sessions.filter(
     (s) =>
@@ -36,7 +38,9 @@ export function computeStats(state, sessions, { days = 30, agent = 'all', host =
       (!host || (s.host?.local === false ? s.host.id : 'local') === host) &&
       (!project || s.project === project),
   );
-  const inRange = pick.filter((s) => (s.createdAt || s.updatedAt || 0) >= since);
+  const dirOf = (s) => resolveDirectory(state, state.cards[s.id], s.cwd);
+  const dirPick = directory ? pick.filter((s) => (directory === '__none' ? !dirOf(s) : dirOf(s)?.id === directory)) : pick;
+  const inRange = dirPick.filter((s) => (s.createdAt || s.updatedAt || 0) >= since);
 
   // activity per day (created sessions), stacked by agent
   const daily = [];
@@ -82,6 +86,7 @@ export function computeStats(state, sessions, { days = 30, agent = 'all', host =
     },
     daily,
     projects: breakdown(inRange, (s) => s.project, 12),
+    directories: breakdown(inRange, (s) => dirOf(s)?.name, 12),
     hosts: breakdown(inRange, (s) => (s.host?.local === false ? s.host.label : 'このマシン'), 12),
     agents: breakdown(inRange, (s) => (s.agent === 'codex' ? 'Codex' : 'Claude Code'), 5),
     lists: lists.map(({ dwell, ...l }) => ({ ...l, medianDwellMs: median(dwell) })),

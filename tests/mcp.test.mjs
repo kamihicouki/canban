@@ -72,6 +72,25 @@ test('list and card operations persist only to the kanban store', async () => {
   assert.equal(bad.isError, true);
 });
 
+test('directories: create, auto-assign by path, explicit override, filter', async () => {
+  const dir = (await call('canban_create_directory', { name: 'Web', paths: ['/r/web'] })).structuredContent.result;
+  let board = (await call('canban_get_board', { days: 0 })).structuredContent;
+  const all = board.lists.flatMap((l) => l.cards);
+  const inWeb = all.filter((c) => c.cwd === '/r/web');
+  assert.ok(inWeb.length, 'fixtures have sessions under /r/web');
+  assert.ok(inWeb.every((c) => c.directory?.id === dir.id));
+  assert.equal(board.directories.find((d) => d.id === dir.id).count, inWeb.length);
+  const res = await call('canban_update_card', { cardId: inWeb[0].id, directory: '__none' });
+  assert.ok(!res.isError, res.content?.[0]?.text);
+  board = (await call('canban_get_board', { days: 0, directory: dir.id })).structuredContent;
+  const shown = board.lists.flatMap((l) => l.cards).map((c) => c.id);
+  assert.ok(!shown.includes(inWeb[0].id));
+  assert.equal(shown.length, inWeb.length - 1);
+  const found = (await call('canban_search', { directory: '__none' })).structuredContent;
+  assert.ok(JSON.stringify(found).includes(inWeb[0].id));
+  await call('canban_delete_directory', { directoryId: dir.id });
+});
+
 test('open_session: desktop link, terminal route, and unsupported desktop fallback', async () => {
   const c2 = await call('canban_open_session', { cardId: 'claude:c2', route: 'desktop' });
   assert.ok(!c2.isError, c2.content?.[0]?.text);

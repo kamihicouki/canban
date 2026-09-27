@@ -87,7 +87,7 @@ button { cursor: pointer; border: 0; background: none; }
 .hbtn:hover, .hselect:hover { background: rgba(255,255,255,0.3); }
 .hbtn[aria-pressed="true"] { background: #dfe1e6; color: #172b4d; }
 .hselect option { color: #172b4d; }
-#project { max-width: 240px; }
+#projectBtn { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn, .btn-primary, .btn-danger { white-space: nowrap; flex: none; }
 .hsearch { width: 220px; background: rgba(255,255,255,0.2); }
 .hsearch::placeholder { color: rgba(255,255,255,0.8); }
@@ -276,14 +276,68 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .snippet { margin-top: 6px; font-size: 12px; color: var(--card-muted); line-height: 17px; word-break: break-word; }
 .snippet mark { background: #ffe58f; color: #172b4d; border-radius: 2px; padding: 0 1px; }
 .kbd { display: inline-block; min-width: 16px; font-size: 11px; color: var(--list-muted); border: 1px solid var(--btn-subtle-hover); border-radius: 3px; text-align: center; }
-.board.with-lanes { flex-direction: column; align-items: stretch; overflow: auto; }
-.lane { flex: none; }
-.lane-head { display: flex; align-items: center; gap: 8px; color: #fff; font-weight: 700; padding: 4px 6px; border-radius: 6px; }
-.lane-head:hover { background: rgba(255,255,255,0.14); }
+.board.with-lanes { flex-direction: column; align-items: stretch; overflow: auto; gap: 6px; padding-top: 0; }
+.lane { flex: none; width: max-content; min-width: 100%; scroll-margin-top: 0; }
+.lane-head {
+  position: sticky; top: 0; left: 0; z-index: 5; display: flex; align-items: center; gap: 8px; width: max-content; max-width: calc(100vw - 24px);
+  color: #fff; padding: 6px 6px 4px; border-radius: 0 0 8px 8px;
+  background: linear-gradient(var(--header-bg), var(--header-bg)), var(--board-bg);
+}
+.lane-toggle { display: flex; align-items: center; gap: 8px; font-weight: 700; padding: 2px 6px; border-radius: 6px; color: #fff; }
+.lane-toggle:hover { background: rgba(255,255,255,0.14); }
 .lane-head .count { color: rgba(255,255,255,0.85); }
+.lane-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 0 8px; height: 22px; border-radius: 11px; background: rgba(255,255,255,0.16); color: #fff; white-space: nowrap; }
+.lane-chip .stripe { width: 8px; height: 8px; border-radius: 50%; }
+.lane-solo { font-size: 12px; padding: 0 8px; height: 24px; border-radius: 6px; color: rgba(255,255,255,0.9); }
+.lane-solo:hover { background: rgba(255,255,255,0.14); }
 .lane-lists { display: flex; align-items: flex-start; gap: 12px; padding: 4px 0 8px; }
-.lane .list { max-height: none; }
-.lane .cards { overflow: visible; }
+.lane .list { max-height: var(--lane-max-h, 420px); }
+.lane .cards { overflow-y: auto; }
+.lane.drop-lane { outline: 2px dashed rgba(255,255,255,0.6); outline-offset: -2px; border-radius: 8px; }
+.solo-bar { display: flex; align-items: center; gap: 8px; color: #fff; padding: 6px 4px 0; font-size: 13px; }
+/* ---------- sidebar ---------- */
+.shell { flex: 1; display: flex; min-height: 0; }
+.board { min-width: 0; }
+.sidebar {
+  flex: 0 0 232px; width: 232px; overflow-y: auto; padding: 10px 8px 16px; display: flex; flex-direction: column; gap: 12px;
+  background: var(--header-bg); color: #fff; font-size: 13px;
+}
+.sidebar[hidden] { display: none; }
+.side-filter { width: 100%; height: 30px; border-radius: 4px; border: 0; padding: 0 8px; background: rgba(255,255,255,0.2); color: #fff; }
+.side-filter::placeholder { color: rgba(255,255,255,0.75); }
+.side-filter:focus { background: #fff; color: #172b4d; outline: none; }
+.side-head { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; letter-spacing: .04em; color: rgba(255,255,255,0.75); padding: 0 6px 4px; }
+.side-head .grow { flex: 1; }
+.side-mini { font-size: 11px; color: rgba(255,255,255,0.85); padding: 0 6px; height: 20px; border-radius: 4px; }
+.side-mini:hover { background: rgba(255,255,255,0.16); }
+.side-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 4px 6px; border-radius: 6px; color: #fff; min-height: 28px; }
+.side-row:hover, .side-row:focus-visible { background: rgba(255,255,255,0.16); }
+.side-row.active { background: rgba(255,255,255,0.3); font-weight: 600; }
+.side-row .count { color: rgba(255,255,255,0.8); }
+.side-row .dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.side-new { font-size: 11px; font-weight: 700; background: var(--accent); color: #fff; border-radius: 8px; padding: 0 6px; }
+.side-item { display: flex; align-items: center; border-radius: 6px; }
+.side-item .side-row { flex: 1; min-width: 0; }
+.side-item .icon-btn { width: 24px; height: 24px; color: rgba(255,255,255,0.8); visibility: hidden; flex: none; }
+.side-item:hover .icon-btn, .side-item:focus-within .icon-btn { visibility: visible; }
+.side-dir.drop-target { outline: 2px dashed #fff; outline-offset: -2px; }
+.side-close { display: none; align-self: flex-end; color: #fff; padding: 2px 8px; border-radius: 4px; }
+/* ---------- picker / palette ---------- */
+.picker { display: flex; flex-direction: column; gap: 6px; }
+.picker-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; }
+.picker-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 5px 8px; border-radius: 4px; min-height: 30px; }
+.picker-row.active { background: var(--btn-subtle-hover); box-shadow: inset 3px 0 0 var(--accent); }
+.picker-check { width: 14px; flex: none; color: var(--accent); font-weight: 700; }
+.picker-group { font-size: 11px; font-weight: 700; color: var(--list-muted); padding: 6px 8px 2px; }
+.picker-badge { font-size: 10px; font-weight: 700; color: var(--list-muted); border: 1px solid var(--btn-subtle-hover); border-radius: 3px; padding: 0 4px; flex: none; }
+.picker-empty { padding: 6px 8px; }
+.picker-btn { text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popover.palette { left: 50% !important; top: 8% !important; transform: translateX(-50%); width: min(560px, calc(100vw - 32px)) !important; max-height: 84vh; overflow-y: auto; }
+.popover.palette .picker-list { max-height: 55vh; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
+.keys kbd { font: 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--btn-subtle); border: 1px solid var(--btn-subtle-hover); border-radius: 4px; padding: 0 6px; white-space: nowrap; justify-self: start; }
+.keys h4 { grid-column: 1 / -1; margin: 8px 0 0; font-size: 12px; color: var(--list-muted); }
+.dir-pill { display: inline-flex; align-items: center; gap: 3px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 3px; padding: 0 4px; font-weight: 600; }
 .board.analytics-mode { display: block; overflow-y: auto; }
 .analytics { padding: 4px 8px 24px; position: relative; color: var(--list-fg); }
 .analytics h2 { color: #fff; margin: 0; font-size: 18px; }
@@ -321,21 +375,24 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
 .loading { color: #fff; padding: 24px; }
 @media (max-width: 720px) {
   .hsearch { width: 140px; }
+  .sidebar { position: fixed; z-index: 750; left: 0; bottom: 0; top: 0; box-shadow: 4px 0 12px #0006; background: var(--board-bg); }
+  .side-close { display: block; }
   .modal-grid { grid-template-columns: 1fr; }
 }
 </style>
 </head>
 <body>
 <header class="topbar">
+  <button id="sideBtn" class="hbtn" title="サイドバー（b）" aria-label="サイドバー" aria-pressed="true">☰</button>
   <h1>Canban</h1>
-  <input id="q" class="hsearch" type="search" placeholder="検索（タイトル・依頼・メモ）" aria-label="検索" />
+  <input id="q" class="hsearch" type="search" placeholder="検索（/）・⌘K でコマンド" aria-label="検索" aria-keyshortcuts="/" />
   <label class="ft-toggle" title="会話の本文も検索する（3 文字以上）"><input id="fulltext" type="checkbox" /> 本文</label>
   <div class="seg" role="group" aria-label="エージェント">
     <button data-agent="all" aria-pressed="true">すべて</button>
     <button data-agent="codex" aria-pressed="false">Codex</button>
     <button data-agent="claude" aria-pressed="false">Claude</button>
   </div>
-  <select id="project" class="hselect" aria-label="プロジェクト"><option value="">すべてのプロジェクト</option></select>
+  <button id="projectBtn" class="hbtn" aria-haspopup="listbox" title="ディレクトリ・プロジェクトで絞り込み（p）">📁 すべて ▾</button>
   <select id="days" class="hselect" aria-label="期間">
     <option value="7">7日以内</option>
     <option value="30" selected>30日以内</option>
@@ -356,7 +413,10 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
   <button id="refresh" class="hbtn" title="再読み込み" aria-label="再読み込み">⟳</button>
 </header>
 <div id="errbar" class="errbar" hidden></div>
-<main id="board" class="board" aria-label="カンバンボード"><div class="loading">読み込み中…</div></main>
+<div class="shell">
+  <aside id="sidebar" class="sidebar" aria-label="レーン・ディレクトリ・プロジェクト" hidden></aside>
+  <main id="board" class="board" aria-label="カンバンボード"><div class="loading">読み込み中…</div></main>
+</div>
 
 <script>
 (() => {
@@ -453,9 +513,15 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem(`sk:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(`sk:${k}`, JSON.stringify(v)); } catch {} },
 };
+const DEFAULT_FILTERS = { agent: 'all', host: '', status: '', project: '', directory: '', q: '', days: 30, includeArchived: false, includeSubagents: false, includeHidden: false, groupBranch: false, fulltext: false, swimlane: '', laneHeight: 'normal' };
+const LANE_HEIGHTS = { compact: ['コンパクト', '240px'], normal: ['標準', '420px'], full: ['すべて', 'none'] };
 const state = {
   board: null,
-  filters: Object.assign({ agent: 'all', host: '', status: '', project: '', q: '', days: 30, includeArchived: false, includeSubagents: false, includeHidden: false, groupBranch: false, fulltext: false, swimlane: '' }, store.get('filters', {})),
+  filters: { ...DEFAULT_FILTERS, ...store.get('filters', {}) },
+  sideOpen: store.get('sidebar', window.innerWidth > 900),
+  sideQ: '',
+  soloLane: null,
+  lanes: [],
   view: store.get('view', 'board'),
   shown: {},              // listId -> number of cards rendered
   labelsExpanded: store.get('labelsExpanded', false),
@@ -522,6 +588,7 @@ async function load({ refresh = false } = {}) {
   const f = state.filters;
   const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, includeHidden: f.includeHidden, groupBranch: !!f.groupBranch, fulltext: !!f.fulltext, refresh };
   if (f.project) args.project = f.project;
+  if (f.directory) args.directory = f.directory;
   if (f.host) args.host = f.host;
   if (f.status) args.status = f.status;
   try {
@@ -547,12 +614,8 @@ function render() {
 
   // header
   document.querySelectorAll('.seg button').forEach((btn) => btn.setAttribute('aria-pressed', String(btn.dataset.agent === state.filters.agent)));
-  const sel = $('#project');
-  const cur = state.filters.project;
-  sel.replaceChildren(h('option', { value: '', text: 'すべてのプロジェクト' }),
-    ...b.projects.map((p) => h('option', { value: p.name, text: `${p.name} (${p.count})` })));
-  if (cur && !b.projects.some((p) => p.name === cur)) sel.append(h('option', { value: cur, text: cur }));
-  sel.value = cur || '';
+  $('#projectBtn').textContent = `${scopeLabel(b)} ▾`;
+  $('#projectBtn').setAttribute('aria-pressed', String(!!(state.filters.project || state.filters.directory)));
   $('#days').value = String(state.filters.days);
   const activeHost = b.hosts.find((x) => (x.local ? 'local' : x.id) === state.filters.host);
   const remoteOn = b.hosts.filter((x) => !x.local && x.enabled).length;
@@ -573,16 +636,27 @@ function render() {
   boardEl.querySelectorAll('.list').forEach((l) => (listScroll[l.dataset.listId] = $('.cards', l)?.scrollTop || 0));
 
   const focused = document.activeElement;
+  const focusedCard = boardEl.contains(focused) ? focused.closest('.card')?.dataset.cardId : null;
   const frag = document.createDocumentFragment();
   boardEl.classList.remove('analytics-mode');
   boardEl.classList.toggle('with-lanes', !!state.filters.swimlane);
-  if (state.filters.swimlane) for (const lane of buildLanes(b, state.filters.swimlane)) frag.append(renderLane(lane));
-  else {
+  boardEl.style.setProperty('--lane-max-h', (LANE_HEIGHTS[state.filters.laneHeight] || LANE_HEIGHTS.normal)[1]);
+  state.lanes = state.filters.swimlane ? buildLanes(b, state.filters.swimlane) : [];
+  if (state.soloLane && !state.lanes.some((l) => l.name === state.soloLane)) state.soloLane = null;
+  if (state.filters.swimlane) {
+    if (state.soloLane) {
+      frag.append(h('div', { class: 'solo-bar' }, `「${state.soloLane}」だけを表示中`,
+        h('button', { class: 'lane-solo', text: '◀ 全レーンに戻る', onclick: () => setSolo(null) })));
+    }
+    for (const lane of state.lanes) if (!state.soloLane || lane.name === state.soloLane) frag.append(renderLane(lane));
+  } else {
     for (const list of b.lists) frag.append(renderList(list));
     frag.append(renderAddList());
   }
   boardEl.replaceChildren(frag);
+  renderSidebar(b);
   if (focused && focused !== document.body && boardEl.contains(focused)) focused.focus({ preventScroll: true });
+  else if (focusedCard) $(`.card[data-card-id="${CSS.escape(focusedCard)}"]`, boardEl)?.focus({ preventScroll: true });
   boardEl.scrollLeft = scroll;
   boardEl.scrollTop = scrollTop;
   boardEl.querySelectorAll('.list').forEach((l) => { const c = $('.cards', l); if (c) c.scrollTop = listScroll[l.dataset.listId] || 0; });
@@ -663,7 +737,7 @@ function renderCard(card, list) {
     card.autoMoved ? h('span', { class: 'pill', title: 'ルールで自動移動', text: '⚡' }) : null,
     h('span', { class: `badge ${card.agent}`, text: card.agent === 'codex' ? 'Codex' : 'Claude' }),
     card.host ? h('span', { class: 'host-chip', title: `SSH: ${card.host.alias}`, text: `⌂ ${card.host.label}` }) : null,
-    card.project ? h('span', { class: 'ellipsis', title: card.cwd || '', text: `📁 ${card.project}` }) : null,
+    card.directory ? dirPill(card.directory, card.project) : card.project ? h('span', { class: 'ellipsis', title: card.cwd || '', text: `📁 ${card.project}` }) : null,
     card.branch ? h('span', { class: 'ellipsis', title: card.branch, text: `⎇ ${card.branch}` }) : null,
     h('span', { title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }),
   );
@@ -698,6 +772,8 @@ function attachCardBehavior(el, card, list, onResume) {
   el.addEventListener('keydown', (e) => {
     if (e.target !== el) return;
     if (e.key === 'Enter') openCard(card.id);
+    const plain = !e.metaKey && !e.ctrlKey && !e.altKey;
+    if (plain && CARD_ATTR_KEYS[e.key]) { e.preventDefault(); e.stopPropagation(); return CARD_ATTR_KEYS[e.key](el, card, list); }
     const k = onResume && !e.metaKey && !e.ctrlKey && !e.altKey && CARD_KEYS[e.key.toLowerCase()];
     if (k) { e.preventDefault(); onResume(k); }
     if (ARROWS[e.key] && !e.metaKey && !e.ctrlKey) {
@@ -707,6 +783,63 @@ function attachCardBehavior(el, card, list, onResume) {
     }
   });
   return el;
+}
+
+function dirPill(d, project) {
+  return h('span', { class: 'dir-pill', style: { background: d.color ? colorVar(d.color) : 'var(--btn-subtle-hover)', color: d.color ? '#172b4d' : 'inherit' },
+    title: `ディレクトリ: ${d.name}${project ? `\nプロジェクト: ${project}` : ''}`, text: `📂 ${d.name}` });
+}
+
+// Attribute keys on a focused card (Trello-like): l = labels, g = directory, m = move, h = hide.
+const CARD_ATTR_KEYS = {
+  l: (el, card) => labelPicker(el, card.id, card, () => {}),
+  g: (el, card) => directoryPicker(el, card),
+  m: (el, card, list) => listPicker(el, card, list.id),
+  h: (el, card) => {
+    act('canban_update_card', { cardId: card.id, hidden: !card.hidden }).then(() =>
+      toastAction(card.hidden ? '再表示しました' : `「${card.title}」を隠しました`, '元に戻す', () => act('canban_update_card', { cardId: card.id, hidden: !!card.hidden }))).catch(() => {});
+  },
+};
+function listPicker(anchor, card, fromListId) {
+  const lists = state.board.lists;
+  picker(anchor, {
+    title: 'リストへ移動', selected: [fromListId],
+    items: lists.map((l, i) => ({ value: l.id, label: l.title, color: l.color, hint: `${l.count}${i < 9 ? ` · ${i + 1}` : ''}`, keywords: String(i + 1) })),
+    onPick: (to) => { if (to !== fromListId) moveCard(card, fromListId, to, 0, true); },
+  });
+}
+function directoryItems(withAuto = true) {
+  const b = state.board;
+  return [
+    withAuto ? { value: '', label: '自動（フォルダの設定に従う）', hint: '' } : null,
+    { value: '__none', label: 'ディレクトリなし' },
+    ...b.directories.map((d) => ({ value: d.id, label: d.name, color: d.color, hint: d.count, keywords: (d.paths || []).join(' ') })),
+  ].filter(Boolean);
+}
+// Choose / create a card's directory. With a cwd, the footer can also make that folder join automatically.
+function directoryPicker(anchor, card, { cwd = card.cwd, explicit, after } = {}) {
+  const cur = explicit !== undefined ? explicit || '' : card.directory?.id || '';
+  const auto = cwd ? h('label', { class: 'row muted', style: { marginTop: '4px' } },
+    h('input', { type: 'checkbox' }), `このフォルダのセッションも自動で含める（${cwd.split('/').slice(-2).join('/')}）`) : null;
+  const addPath = async (dirId) => {
+    if (!auto?.querySelector('input').checked || !dirId || dirId === '__none') return;
+    const d = state.board.directories.find((x) => x.id === dirId);
+    await act('canban_update_directory', { directoryId: dirId, paths: [...(d?.paths || []), cwd] }, { reload: false });
+  };
+  const set = async (v) => {
+    await addPath(v);
+    await act('canban_update_card', { cardId: card.id, directory: v || null }, { okMsg: v === '__none' ? 'ディレクトリから外しました' : v ? `📂 ${state.board.directories.find((d) => d.id === v)?.name ?? ''} に入れました` : '自動に戻しました' }).catch(() => {});
+    after?.();
+  };
+  picker(anchor, {
+    title: 'ディレクトリ', selected: [cur], items: directoryItems(), footer: auto, createText: 'を新しいディレクトリとして作成',
+    onPick: set,
+    onCreate: async (name) => {
+      const color = COLORS[(state.board.directories.length + 1) % COLORS.length];
+      const r = await act('canban_create_directory', { name, color }, { reload: false }).catch(() => null);
+      if (r?.result) { state.board.directories.push({ ...r.result, count: 0 }); await set(r.result.id); }
+    },
+  });
 }
 
 function cardLabels(card) {
@@ -751,6 +884,7 @@ function renderTaskCard(card, list) {
   }
   const meta = h('div', { class: 'meta' },
     h('span', { class: 'badge task-badge', text: 'タスク' }),
+    card.directory ? dirPill(card.directory, card.project) : null,
     card.unread ? h('span', { class: 'pill new-pill', text: '新着' }) : null,
     card.autoMoved ? h('span', { class: 'pill', title: 'ルールで自動移動', text: '⚡' }) : null,
     card.description ? h('span', { title: '説明あり', text: '📝' }) : null);
@@ -805,25 +939,132 @@ function editListTitle(titleEl, list) {
 // ======================================================================
 // Popovers
 // ======================================================================
-function closePopover() { document.querySelectorAll('.popover').forEach((p) => p.remove()); }
-function popover(anchor, title, body, { width } = {}) {
-  closePopover();
+// Popovers remember what had focus and give it back when they close (keyboard flow).
+// A `stack` popover opens on top of another one (e.g. a picker inside a menu).
+function refocus(el) {
+  if (!el || el === document.body) return;
+  if (el.isConnected) return el.focus({ preventScroll: true });
+  const id = el.dataset?.cardId;
+  if (id) $(`.card[data-card-id="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
+}
+function closePopover(p = null) {
+  const all = [...document.querySelectorAll('.popover')];
+  const gone = p ? all.slice(all.indexOf(p)) : all;
+  if (!gone.length || (p && !p.isConnected)) return;
+  gone.forEach((x) => x.remove());
+  if (!document.activeElement || document.activeElement === document.body) refocus(gone[0].returnFocus);
+}
+function popover(anchor, title, body, { width, stack = false } = {}) {
+  const returnFocus = stack ? document.activeElement : document.querySelector('.popover')?.returnFocus || document.activeElement;
+  if (!stack) closePopover();
   const r = anchor.getBoundingClientRect();
   const p = h('div', { class: 'popover', role: 'dialog', 'aria-label': title, style: width ? { width: `${width}px` } : null },
     h('h3', { text: title }),
-    h('button', { class: 'icon-btn close', 'aria-label': '閉じる', text: '✕', onclick: closePopover }),
+    h('button', { class: 'icon-btn close', 'aria-label': '閉じる', text: '✕', onclick: () => closePopover(p) }),
     body);
+  p.returnFocus = returnFocus;
   document.body.append(p);
   const left = Math.min(r.left, window.innerWidth - p.offsetWidth - 8);
   const top = Math.min(r.bottom + 6, window.innerHeight - p.offsetHeight - 8);
   p.style.left = `${Math.max(8, left)}px`;
   p.style.top = `${Math.max(8, top)}px`;
   setTimeout(() => {
-    const off = (e) => { if (!p.contains(e.target)) { closePopover(); document.removeEventListener('pointerdown', off, true); } };
+    const off = (e) => {
+      if (!p.isConnected) return document.removeEventListener('pointerdown', off, true);
+      const inside = e.target.closest?.('.popover');
+      if (inside === p || (inside && [...document.querySelectorAll('.popover')].indexOf(inside) > [...document.querySelectorAll('.popover')].indexOf(p))) return;
+      closePopover(p);
+      document.removeEventListener('pointerdown', off, true);
+    };
     document.addEventListener('pointerdown', off, true);
   });
-  p.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePopover(); });
+  p.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); closePopover(p); } });
   return p;
+}
+
+// ======================================================================
+// Filterable picker (keyword filter, ↑↓ / Enter / Esc). Used for every
+// attribute choice: lists, labels, directories, projects, machines, views…
+// ======================================================================
+const norm = (s) => String(s ?? '').normalize('NFKC').toLowerCase().replace(/[\u30a1-\u30f6]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
+// Every whitespace-separated word must appear (case / width / kana insensitive).
+const matcher = (q) => { const words = norm(q).split(/\s+/).filter(Boolean); return (text) => { const t = norm(text); return words.every((w) => t.includes(w)); }; };
+function picker(anchor, { title, items, multi = false, selected = [], onPick, onCreate, createText = 'を作成', placeholder = 'キーワードで絞り込み…', width = 300, stack = false, footer = null, limit = 300 }) {
+  const sel = new Set(selected);
+  const input = h('input', { class: 'text-input picker-input', placeholder, 'aria-label': `${title}を絞り込み`, autocomplete: 'off' });
+  const listEl = h('div', { class: 'picker-list', role: 'listbox', 'aria-label': title, 'aria-multiselectable': multi ? 'true' : null });
+  let active = 0, rows = [];
+  const mark = () => {
+    listEl.querySelectorAll('.picker-row').forEach((el) => el.classList.toggle('active', Number(el.dataset.i) === active));
+    listEl.querySelector('.picker-row.active')?.scrollIntoView({ block: 'nearest' });
+  };
+  const paint = () => {
+    const raw = input.value.trim();
+    const hit = matcher(raw);
+    rows = items.filter((it) => hit(`${it.group || ''} ${it.label} ${it.hint ?? ''} ${it.keywords || ''} ${it.badge || ''}`)).slice(0, limit).map((it) => ({ it }));
+    if (onCreate && raw && !items.some((it) => norm(it.label) === norm(raw))) rows.push({ create: raw });
+    active = Math.max(0, Math.min(active, rows.length - 1));
+    let group;
+    const out = [];
+    rows.forEach((r, i) => {
+      if (r.it?.group && r.it.group !== group) { group = r.it.group; out.push(h('div', { class: 'picker-group', text: group })); }
+      const on = r.it && sel.has(r.it.value);
+      out.push(h('button', { class: 'picker-row', role: 'option', 'aria-selected': String(!!on), 'data-i': i, tabindex: -1, type: 'button',
+        onpointerdown: (e) => e.preventDefault(), onclick: () => choose(i), onmousemove: () => { if (active !== i) { active = i; mark(); } } },
+        r.create ? h('span', { class: 'grow', text: `＋「${r.create}」${createText}` }) : [
+          h('span', { class: 'picker-check', text: on ? '✓' : '' }),
+          r.it.badge ? h('span', { class: 'picker-badge', text: r.it.badge }) : null,
+          r.it.color ? h('span', { class: 'sdot', style: { background: colorVar(r.it.color) } }) : null,
+          r.it.dot ? h('span', { class: `sdot s-${r.it.dot}` }) : null,
+          h('span', { class: 'grow ellipsis', text: r.it.label }),
+          r.it.hint != null && r.it.hint !== '' ? h('span', { class: 'muted', text: String(r.it.hint) }) : null]));
+    });
+    if (!rows.length) out.push(h('div', { class: 'muted picker-empty', text: '一致する項目はありません' }));
+    listEl.replaceChildren(...out);
+    mark();
+  };
+  const choose = (i) => {
+    const r = rows[i];
+    if (!r) return;
+    if (r.create) { closePopover(p); return onCreate(r.create); }
+    if (multi) {
+      sel.has(r.it.value) ? sel.delete(r.it.value) : sel.add(r.it.value);
+      onPick(r.it.value, sel.has(r.it.value), [...sel]);
+      paint();
+      input.focus();
+      return;
+    }
+    closePopover(p);
+    onPick(r.it.value, r.it);
+  };
+  input.addEventListener('input', () => { active = 0; paint(); });
+  input.addEventListener('keydown', (e) => {
+    if (e.isComposing) return;
+    if (e.key === 'ArrowDown' || (e.key === 'n' && e.ctrlKey)) { e.preventDefault(); active = Math.min(rows.length - 1, active + 1); mark(); }
+    else if (e.key === 'ArrowUp' || (e.key === 'p' && e.ctrlKey)) { e.preventDefault(); active = Math.max(0, active - 1); mark(); }
+    else if (e.key === 'Enter') { e.preventDefault(); choose(active); }
+    else if (e.key === ' ' && multi && !input.value) { e.preventDefault(); choose(active); }
+  });
+  const p = popover(anchor, title, h('div', { class: 'picker' }, input, listEl, footer), { width, stack });
+  paint();
+  const cur = rows.findIndex((r) => r.it && sel.has(r.it.value));
+  if (cur > 0 && !multi) { active = cur; mark(); }
+  input.focus();
+  return p;
+}
+// A button that behaves like a <select> but opens the picker. `.value` holds the choice.
+function pickerButton({ title, items, value, onChange, stack = true, className = 'text-input picker-btn', label = 'aria-label' }) {
+  const btn = h('button', { class: className, type: 'button', 'aria-haspopup': 'listbox', [label]: title });
+  const paint = () => { const it = items().find((i) => i.value === btn.value); btn.textContent = `${it ? it.label : '—'} ▾`; };
+  btn.value = value;
+  btn.onclick = () => picker(btn, { title, items: items(), selected: [btn.value], stack, onPick: (v) => { btn.value = v; paint(); onChange?.(v); } });
+  paint();
+  return btn;
+}
+// Keyword filter for menus whose rows are richer than picker items (rows carry data-key).
+function rowFilter(rows, placeholder = 'キーワードで絞り込み…') {
+  return h('input', { class: 'text-input picker-input', placeholder, 'aria-label': placeholder, style: { marginBottom: '6px' },
+    oninput: (e) => { const hit = matcher(e.target.value); rows.forEach((r) => (r.hidden = !hit(r.dataset.key))); } });
 }
 
 function listMenu(anchor, list) {
@@ -868,12 +1109,12 @@ function optionsMenu(anchor) {
     opt('includeHidden', 'ボードから隠したカードを表示'),
     opt('groupBranch', '同じリポジトリ＋ブランチのセッションをまとめる'),
     h('div', { class: 'field-label', text: 'スイムレーン（行で分ける）' }),
-    (() => {
-      const sel = h('select', { class: 'text-input' }, Object.entries(LANE_MODES).map(([v, t]) => h('option', { value: v, text: t })));
-      sel.value = f.swimlane || '';
-      sel.onchange = () => { f.swimlane = sel.value; saveFilters(); render(); };
-      return sel;
-    })(),
+    pickerButton({ title: 'スイムレーン', value: f.swimlane || '', items: () => Object.entries(LANE_MODES).map(([value, label]) => ({ value, label })),
+      onChange: (v) => { f.swimlane = v; state.soloLane = null; saveFilters(); render(); } }),
+    h('div', { class: 'field-label', text: 'レーン内のリストの高さ' }),
+    h('div', { class: 'seg-row', style: { gridTemplateColumns: '1fr 1fr 1fr' } }, Object.entries(LANE_HEIGHTS).map(([k, [label]]) =>
+      h('button', { class: 'seg-btn', 'aria-pressed': String((f.laneHeight || 'normal') === k), style: (f.laneHeight || 'normal') === k ? { boxShadow: 'inset 0 0 0 2px var(--accent)' } : null, text: label,
+        onclick: () => { f.laneHeight = k; saveFilters(); render(); optionsMenu(anchor); } }))),
     state.board?.search ? h('p', { class: 'muted', text: `本文検索の索引: ${state.board.search.indexed} / ${state.board.search.total} セッション（直近 90 日、バックグラウンドで更新）` }) : null,
     h('p', { class: 'muted', text: '期間フィルタは「未配置」のセッションにのみ適用されます。リストへ移動したカードは期間に関係なく表示されます。' })));
 }
@@ -882,11 +1123,12 @@ function labelsManager(anchor) {
   const render_ = () => {
     const rows = state.board.labels.map((l) => {
       const name = h('input', { class: 'text-input', value: l.name, 'aria-label': 'ラベル名' });
+      name.dataset.labelName = l.name;
       name.onchange = () => act('canban_update_label', { labelId: l.id, name: name.value }).then(render_);
       const color = h('select', { class: 'text-input', style: { width: '96px' }, 'aria-label': '色' }, COLORS.map((c) => h('option', { value: c, text: COLOR_NAMES[c] })));
       color.value = l.color;
       color.onchange = () => act('canban_update_label', { labelId: l.id, color: color.value }).then(render_);
-      return h('div', { class: 'row', style: { marginBottom: '6px' } },
+      return h('div', { class: 'row', style: { marginBottom: '6px' }, 'data-key': `${l.name} ${COLOR_NAMES[l.color] || ''}` },
         h('span', { class: 'swatch', style: { width: '20px', height: '20px', background: colorVar(l.color), flex: 'none' } }), name, color,
         h('button', { class: 'icon-btn', 'aria-label': `${l.name} を削除`, text: '🗑', onclick: () => act('canban_delete_label', { labelId: l.id }).then(render_) }));
     });
@@ -895,7 +1137,7 @@ function labelsManager(anchor) {
     newColor.value = 'blue';
     const add = () => newName.value.trim() && act('canban_create_label', { name: newName.value, color: newColor.value }).then(render_);
     newName.onkeydown = (e) => { if (e.key === 'Enter') add(); };
-    popover(anchor, 'ラベル', h('div', {}, rows, h('div', { class: 'sep' }), h('div', { class: 'row' }, newName, newColor), h('div', { class: 'row', style: { marginTop: '8px' } }, h('button', { class: 'btn-primary', text: '追加', onclick: add }))), { width: 360 });
+    popover(anchor, 'ラベル', h('div', {}, rows.length > 5 ? rowFilter(rows) : null, rows, h('div', { class: 'sep' }), h('div', { class: 'row' }, newName, newColor), h('div', { class: 'row', style: { marginTop: '8px' } }, h('button', { class: 'btn-primary', text: '追加', onclick: add }))), { width: 360 });
   };
   render_();
 }
@@ -903,19 +1145,29 @@ function labelsManager(anchor) {
 // ======================================================================
 // Card detail modal (Trello "back of card")
 // ======================================================================
-function closeModal() { document.querySelectorAll('.overlay').forEach((o) => o.remove()); state.modalOpen = false; }
+function closeModal() {
+  const had = document.querySelector('.overlay');
+  document.querySelectorAll('.overlay').forEach((o) => o.remove());
+  state.modalOpen = false;
+  if (had) refocus(state.modalReturn);
+}
+function modalOpened() {
+  if (!state.modalOpen) state.modalReturn = document.activeElement?.closest?.('.card') || document.activeElement;
+}
 
 async function openCard(cardId) {
   if (cardId.startsWith('task:')) return openTaskModal(cardId);
+  modalOpened();
   for (const l of state.board?.lists || []) for (const c of l.cards) if (c.id === cardId && c.unread) { c.unread = false; render(); }
   closePopover();
-  closeModal();
+  document.querySelectorAll('.overlay').forEach((o) => o.remove());
   state.modalOpen = true;
   const overlay = h('div', { class: 'overlay', onclick: (e) => { if (e.target === overlay) closeModal(); } });
-  const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'セッション詳細' }, h('div', { class: 'muted', text: '読み込み中…' }));
+  const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'セッション詳細', tabindex: -1 }, h('div', { class: 'muted', text: '読み込み中…' }));
   overlay.append(modal);
   overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
   document.body.append(overlay);
+  modal.focus();
   let d;
   try {
     d = await bridge.callTool('canban_get_session', { cardId, messages: 14 });
@@ -932,11 +1184,11 @@ function renderModal(modal, d) {
   const labelsById = new Map(b.labels.map((l) => [l.id, l]));
   const card = { ...d.card };
 
-  const listSel = h('select', { class: 'text-input', style: { width: 'auto' }, 'aria-label': 'リスト' }, b.lists.map((l) => h('option', { value: l.id, text: l.title })));
-  listSel.value = card.listId;
-  listSel.onchange = async () => {
-    await act('canban_move_card', { cardId: s.id, toList: listSel.value, position: 'top' }, { okMsg: 'カードを移動しました' });
-  };
+  const listSel = pickerButton({ title: 'リスト', value: card.listId, stack: false, className: 'btn picker-btn',
+    items: () => b.lists.map((l) => ({ value: l.id, label: l.title, color: l.color, hint: l.count })),
+    onChange: (v) => act('canban_move_card', { cardId: s.id, toList: v, position: 'top' }, { okMsg: 'カードを移動しました' }) });
+  const dirBtn = h('button', { class: 'side-btn', text: `📂 ディレクトリ: ${card.directory ? card.directory.name : 'なし'}${card.directoryId ? '' : card.directory ? '（自動）' : ''}`,
+    onclick: (e) => directoryPicker(e.currentTarget, { id: s.id, cwd: s.cwd, directory: card.directory }, { explicit: card.directoryId, after: () => openCard(s.id) }) });
 
   const labelWrap = h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '4px' } });
   const paintLabels = () => labelWrap.replaceChildren(...(card.labels.length ? card.labels.map((id) => labelsById.get(id)).filter(Boolean).map((l) =>
@@ -978,12 +1230,13 @@ function renderModal(modal, d) {
     h('button', { class: 'side-btn', text: '⧉ 再開コマンドをコピー', title: L.terminal.command, onclick: () => copyText(L.terminal.command, '再開コマンド') }),
   );
 
-  const taskSel = h('select', { class: 'text-input', 'aria-label': 'タスクに紐付け' },
-    h('option', { value: '', text: d.task ? `紐付け中: ${d.task.title}` : '（タスクに紐付けない）' }),
-    (d.tasks || []).filter((t) => !d.task || t.id !== d.task.id).map((t) => h('option', { value: t.id, text: t.title })),
-    d.task ? h('option', { value: '__unlink', text: '紐付けを解除' }) : null);
-  taskSel.onchange = async () => {
-    const v = taskSel.value;
+  const taskSel = pickerButton({ title: 'タスクに紐付け', value: '', stack: false,
+    items: () => [
+      { value: '', label: d.task ? `紐付け中: ${d.task.title}` : '（タスクに紐付けない）' },
+      ...(d.tasks || []).filter((t) => !d.task || t.id !== d.task.id).map((t) => ({ value: t.id, label: t.title })),
+      d.task ? { value: '__unlink', label: '紐付けを解除' } : null].filter(Boolean),
+    onChange: (v) => onTask(v) });
+  const onTask = async (v) => {
     if (!v) return;
     if (v === '__unlink') await act('canban_unlink_session', { taskId: d.task.id, sessionId: s.id }, { okMsg: '紐付けを解除しました' });
     else await act('canban_link_session', { taskId: v, sessionId: s.id }, { okMsg: 'タスクに紐付けました' });
@@ -993,7 +1246,8 @@ function renderModal(modal, d) {
     h('div', { class: 'field-label', text: '再開' }), resumeBox,
     h('div', { class: 'field-label', text: 'タスク' }), taskSel,
     h('div', { class: 'field-label', text: 'カードに追加' }),
-    h('button', { class: 'side-btn', text: '🏷 ラベル', onclick: (e) => labelPicker(e.currentTarget, s.id, card, paintLabels) }),
+    h('button', { class: 'side-btn', text: '🏷 ラベル', title: 'ボード上では l キー', onclick: (e) => labelPicker(e.currentTarget, s.id, card, paintLabels) }),
+    dirBtn,
     h('div', { class: 'field-label', text: '優先度' }), prio,
     h('div', { class: 'field-label', text: '期限' }), due,
     h('div', { class: 'field-label', text: 'その他' }),
@@ -1016,6 +1270,7 @@ function renderModal(modal, d) {
     h('dl', { class: 'kv' },
       ...kv('エージェント', s.agent === 'codex' ? 'Codex' : 'Claude Code'),
       ...kv('マシン', s.host ? `${s.host.label}（SSH: ${s.host.alias}）` : 'このマシン'),
+      ...kv('ディレクトリ', card.directory ? `${card.directory.name}${card.directoryId ? '' : '（フォルダから自動）'}` : '-'),
       ...kv('プロジェクト', s.project || '-'),
       ...kv('作業ディレクトリ', s.cwd || '-'),
       ...kv('ブランチ', s.branch || '-'),
@@ -1059,8 +1314,10 @@ function renderModal(modal, d) {
 // ======================================================================
 // Swimlanes, snippets, saved views
 // ======================================================================
-const LANE_MODES = { '': 'なし', project: 'プロジェクト', host: 'マシン', agent: 'エージェント', label: 'ラベル' };
+const LANE_MODES = { '': 'なし', directory: 'ディレクトリ', project: 'プロジェクト', host: 'マシン', agent: 'エージェント', label: 'ラベル' };
+const NO_DIR = '（ディレクトリなし）';
 function laneKey(card, mode) {
+  if (mode === 'directory') return card.directory ? card.directory.name : NO_DIR;
   if (mode === 'agent') return card.kind === 'task' ? 'タスク' : card.agent === 'codex' ? 'Codex' : 'Claude Code';
   if (mode === 'host') return card.kind === 'task' ? (card.links[0]?.host?.label || 'このマシン') : card.host?.label || 'このマシン';
   if (mode === 'label') {
@@ -1071,12 +1328,25 @@ function laneKey(card, mode) {
 }
 function buildLanes(b, mode) {
   const lanes = new Map();
+  const lane = (k) => {
+    if (!lanes.has(k)) lanes.set(k, { name: k, count: 0, unread: 0, running: 0, waiting: 0, color: null, dirId: null, empty: false });
+    return lanes.get(k);
+  };
   for (const l of b.lists) for (const c of l.cards) {
-    const k = laneKey(c, mode);
-    if (!lanes.has(k)) lanes.set(k, { name: k, count: 0 });
-    lanes.get(k).count++;
+    const ln = lane(laneKey(c, mode));
+    ln.count++;
+    if (c.unread) ln.unread++;
+    if (c.status === 'running') ln.running++;
+    if (c.status === 'waiting') ln.waiting++;
   }
-  return [...lanes.values()].sort((a, c) => c.count - a.count).map((lane) => ({
+  if (mode === 'directory') {
+    // every directory gets a lane (empty ones are drop targets), plus the "none" lane
+    for (const d of b.directories) Object.assign(lane(d.name), { color: d.color, dirId: d.id });
+    if (lanes.has(NO_DIR)) lanes.get(NO_DIR).dirId = '__none';
+  }
+  if (mode === 'label') for (const l of b.labels) if (lanes.has(l.name)) lanes.get(l.name).color = l.color;
+  const last = (n) => /^（.*なし）$/.test(n);
+  return [...lanes.values()].sort((a, c) => last(a.name) - last(c.name) || c.count - a.count).map((lane) => ({
     ...lane,
     lists: b.lists.map((l) => {
       const cards = l.cards.filter((c) => laneKey(c, mode) === lane.name);
@@ -1092,10 +1362,190 @@ function renderLane(lane) {
     store.set('collapsedLanes', [...collapsedLanes]);
     render();
   };
-  return h('section', { class: `lane${collapsed ? ' collapsed' : ''}`, 'aria-label': lane.name },
-    h('button', { class: 'lane-head', 'aria-expanded': String(!collapsed), onclick: toggle },
-      h('span', { text: collapsed ? '▸' : '▾' }), h('span', { class: 'lane-name', text: lane.name }), h('span', { class: 'count', text: `${lane.count}` })),
+  const live = lane.running ? 'running' : lane.waiting ? 'waiting' : null;
+  // collapsed lanes still show what is inside: cards per list
+  const chips = collapsed ? lane.lists.filter((l) => l.count).map((l) =>
+    h('span', { class: 'lane-chip' }, h('span', { class: 'stripe', style: { background: colorVar(l.color) } }), `${l.title} ${l.count}`)) : [];
+  return h('section', { class: `lane${collapsed ? ' collapsed' : ''}`, 'aria-label': lane.name, 'data-lane': lane.name, 'data-dir-id': lane.dirId || null },
+    h('div', { class: 'lane-head' },
+      h('button', { class: 'lane-toggle', 'aria-expanded': String(!collapsed), title: '開く／たたむ（[ ] で前後のレーンへ）', onclick: toggle },
+        h('span', { text: collapsed ? '▸' : '▾' }),
+        lane.color ? h('span', { class: 'sdot', style: { background: colorVar(lane.color) } }) : null,
+        h('span', { class: 'lane-name', text: lane.name }), h('span', { class: 'count', text: `${lane.count}` }),
+        live ? h('span', { class: `sdot s-${live}`, title: STATUS_LABELS[live] }) : null,
+        lane.unread ? h('span', { class: 'side-new', text: `新着 ${lane.unread}` }) : null),
+      ...chips,
+      h('button', { class: 'lane-solo', title: 'このレーンだけを表示', text: state.soloLane === lane.name ? '◀ 全レーン' : '◎ これだけ', onclick: () => setSolo(state.soloLane === lane.name ? null : lane.name) })),
     collapsed ? null : h('div', { class: 'lane-lists' }, lane.lists.map((l) => renderList(l, { inLane: true }))));
+}
+function setSolo(name) {
+  state.soloLane = name;
+  if (name) collapsedLanes.delete(name);
+  render();
+  $('#board').scrollTop = 0;
+}
+function jumpToLane(name) {
+  if (state.soloLane && state.soloLane !== name) state.soloLane = null;
+  if (collapsedLanes.has(name)) { collapsedLanes.delete(name); store.set('collapsedLanes', [...collapsedLanes]); }
+  render();
+  const el = $(`.lane[data-lane="${CSS.escape(name)}"]`);
+  if (!el) return;
+  el.scrollIntoView({ block: 'start' });
+  (el.querySelector('.card') || el.querySelector('.lane-toggle'))?.focus({ preventScroll: true });
+}
+// The lane at the top of the viewport, then step to the previous / next one.
+function stepLane(dir) {
+  const names = state.lanes.map((l) => l.name);
+  if (!names.length) return toast('スイムレーンが有効ではありません（表示 ▾ から選べます）');
+  const top = $('#board').getBoundingClientRect().top;
+  const els = [...document.querySelectorAll('#board .lane')];
+  let cur = els.findIndex((el) => el.getBoundingClientRect().bottom > top + 48);
+  const focusLane = document.activeElement?.closest?.('.lane');
+  if (focusLane) cur = els.indexOf(focusLane);
+  const curName = els[Math.max(0, cur)]?.dataset.lane;
+  const i = Math.max(0, names.indexOf(curName));
+  const next = names[Math.min(names.length - 1, Math.max(0, i + dir))];
+  if (state.soloLane) setSolo(next);
+  else jumpToLane(next);
+}
+function setAllLanes(collapse) {
+  collapsedLanes.clear();
+  if (collapse) state.lanes.forEach((l) => collapsedLanes.add(l.name));
+  store.set('collapsedLanes', [...collapsedLanes]);
+  render();
+}
+
+// ======================================================================
+// Sidebar: lanes (jump), directories and projects (one-click filters)
+// ======================================================================
+function scopeLabel(b) {
+  const f = state.filters;
+  const dir = f.directory === '__none' ? 'ディレクトリなし' : b?.directories.find((d) => d.id === f.directory)?.name;
+  const parts = [dir && `📂 ${dir}`, f.project && `📁 ${f.project}`].filter(Boolean);
+  return parts.length ? parts.join(' · ') : '📁 すべて';
+}
+function setScope(patch) {
+  Object.assign(state.filters, patch);
+  saveFilters();
+  state.shown = {};
+  state.soloLane = null;
+  load();
+}
+function scopePicker(anchor) {
+  const b = state.board;
+  const f = state.filters;
+  picker(anchor, {
+    title: 'ディレクトリ・プロジェクトで絞り込み', width: 340,
+    selected: [f.directory ? `d:${f.directory}` : null, f.project ? `p:${f.project}` : null, !f.directory && !f.project ? '' : null].filter((x) => x != null),
+    items: [
+      { value: '', label: 'すべて（絞り込みを解除）' },
+      ...directoryItems(false).map((it) => ({ ...it, value: `d:${it.value}`, group: 'ディレクトリ' })),
+      ...b.projects.map((p) => ({ value: `p:${p.name}`, label: p.name, hint: p.count, group: 'プロジェクト' })),
+    ],
+    onPick: (v) => {
+      if (!v) return setScope({ directory: '', project: '' });
+      if (v.startsWith('d:')) setScope({ directory: f.directory === v.slice(2) ? '' : v.slice(2) });
+      else setScope({ project: f.project === v.slice(2) ? '' : v.slice(2) });
+    },
+  });
+}
+function toggleSidebar(open = !state.sideOpen) {
+  state.sideOpen = open;
+  store.set('sidebar', open);
+  if (state.board) renderSidebar(state.board);
+  if (open) state.sideInput?.focus();
+}
+function renderSidebar(b) {
+  const el = $('#sidebar');
+  $('#sideBtn').setAttribute('aria-pressed', String(state.sideOpen));
+  el.hidden = !state.sideOpen || state.view === 'analytics';
+  if (el.hidden) return;
+  const f = state.filters;
+  if (!state.sideInput) {
+    state.sideInput = h('input', { class: 'side-filter', type: 'search', placeholder: '絞り込み…', 'aria-label': 'サイドバーを絞り込み',
+      oninput: (e) => { state.sideQ = e.target.value; renderSidebar(state.board); },
+      onkeydown: (e) => {
+        if (e.key === 'Escape') { e.target.value = ''; state.sideQ = ''; renderSidebar(state.board); $('#board .card')?.focus(); }
+        if (e.key === 'ArrowDown' || e.key === 'Enter') { e.preventDefault(); const r = $('#sidebar .side-row'); e.key === 'Enter' ? r?.click() : r?.focus(); }
+      } });
+  }
+  const q = state.sideQ.trim();
+  const hit = matcher(q);
+  const count = (n) => h('span', { class: 'count', text: String(n) });
+  const head = (title, ...extra) => h('div', { class: 'side-head' }, h('span', { class: 'grow', text: title }), ...extra);
+  const secs = [h('button', { class: 'side-close', text: '✕ 閉じる', onclick: () => toggleSidebar(false) }), state.sideInput];
+
+  if (f.swimlane) {
+    const rows = state.lanes.filter((l) => hit(l.name)).map((lane) => {
+      const live = lane.running ? 'running' : lane.waiting ? 'waiting' : null;
+      return h('button', { class: `side-row${state.soloLane === lane.name ? ' active' : ''}`, 'data-lane': lane.name, title: 'クリック: そこへ移動 / ⌥クリック: このレーンだけ表示',
+        onclick: (e) => (e.altKey ? setSolo(state.soloLane === lane.name ? null : lane.name) : jumpToLane(lane.name)) },
+        h('span', { class: 'dot', style: { background: lane.color ? colorVar(lane.color) : 'rgba(255,255,255,0.35)' } }),
+        h('span', { class: 'grow ellipsis', text: lane.name }),
+        live ? h('span', { class: `sdot s-${live}`, title: STATUS_LABELS[live] }) : null,
+        lane.unread ? h('span', { class: 'side-new', title: '新着', text: lane.unread }) : null,
+        count(lane.count));
+    });
+    secs.push(h('section', {}, head(`レーン（${LANE_MODES[f.swimlane]}）`,
+      h('button', { class: 'side-mini', title: 'すべて展開', text: '⊞', onclick: () => setAllLanes(false) }),
+      h('button', { class: 'side-mini', title: 'すべてたたむ', text: '⊟', onclick: () => setAllLanes(true) })),
+      rows.length ? rows : h('div', { class: 'side-head', text: '該当なし' })));
+  }
+
+  const dirRow = (d) => h('div', { class: 'side-item side-dir', 'data-dir-id': d.id },
+    h('button', { class: `side-row${f.directory === d.id ? ' active' : ''}`, title: 'クリックで絞り込み（もう一度で解除）。カードをここへドラッグすると所属を変えられます',
+      onclick: () => setScope({ directory: f.directory === d.id ? '' : d.id }) },
+      h('span', { class: 'dot', style: { background: d.color ? colorVar(d.color) : 'rgba(255,255,255,0.35)' } }),
+      h('span', { class: 'grow ellipsis', text: d.name }), count(d.count)),
+    d.id === '__none' ? null : h('button', { class: 'icon-btn', 'aria-label': `${d.name} の設定`, text: '⋯', onclick: (e) => directoryMenu(e.currentTarget, d.id) }));
+  const dirs = [...b.directories, { id: '__none', name: 'ディレクトリなし', color: null, count: '' }].filter((d) => hit(d.name));
+  const add = h('input', { class: 'side-filter', placeholder: '＋ 新しいディレクトリ（Enter）', 'aria-label': '新しいディレクトリ',
+    onkeydown: (e) => {
+      if (e.key !== 'Enter' || e.isComposing || !e.target.value.trim()) return;
+      act('canban_create_directory', { name: e.target.value.trim(), color: COLORS[(b.directories.length + 1) % COLORS.length] }, { okMsg: 'ディレクトリを作成しました' }).catch(() => {});
+    } });
+  secs.push(h('section', {}, head('ディレクトリ',
+    f.swimlane !== 'directory' ? h('button', { class: 'side-mini', title: 'ディレクトリでスイムレーン表示', text: '≡ レーン', onclick: () => { f.swimlane = 'directory'; saveFilters(); render(); } }) : null),
+    dirs.map(dirRow), q ? null : add));
+
+  const projects = b.projects.filter((p) => hit(p.name));
+  if (projects.length) {
+    secs.push(h('section', {}, head('プロジェクト'), projects.slice(0, q ? 200 : 30).map((p) =>
+      h('button', { class: `side-row${f.project === p.name ? ' active' : ''}`, title: 'クリックで絞り込み（もう一度で解除）', onclick: () => setScope({ project: f.project === p.name ? '' : p.name }) },
+        h('span', { class: 'grow ellipsis', text: `📁 ${p.name}` }), count(p.count))),
+      !q && projects.length > 30 ? h('div', { class: 'side-head', text: `ほか ${projects.length - 30} 件（上の欄で絞り込み）` }) : null));
+  }
+  const had = document.activeElement === state.sideInput;
+  el.replaceChildren(...secs);
+  if (had) state.sideInput.focus();
+}
+
+function directoryMenu(anchor, dirId) {
+  const d = state.board.directories.find((x) => x.id === dirId);
+  if (!d) return;
+  const again = () => directoryMenu(anchor.isConnected ? anchor : $('#projectBtn'), dirId);
+  const name = h('input', { class: 'text-input', value: d.name, 'aria-label': 'ディレクトリ名' });
+  name.onchange = () => name.value.trim() && act('canban_update_directory', { directoryId: d.id, name: name.value }).then(again);
+  const folders = h('datalist', { id: `dirf-${d.id}` }, state.board.folders.filter((x) => x.hostId === 'local').map((x) => h('option', { value: x.cwd, label: x.project || '' })));
+  const path = h('input', { class: 'text-input', list: folders.id, placeholder: '/path/to/folder（Enter で追加）', 'aria-label': '自動で含めるフォルダ' });
+  path.onkeydown = (e) => {
+    if (e.key !== 'Enter' || e.isComposing || !path.value.trim().startsWith('/')) return;
+    act('canban_update_directory', { directoryId: d.id, paths: [...d.paths, path.value.trim()] }, { okMsg: 'フォルダを追加しました' }).then(again);
+  };
+  const del = h('button', { class: 'menu-item danger', text: 'このディレクトリを削除…',
+    onclick: () => { if (confirmInline(del, `「${d.name}」を削除します（カードやセッションは消えません）。`)) act('canban_delete_directory', { directoryId: d.id }, { okMsg: '削除しました' }).then(() => closePopover()); } });
+  popover(anchor, 'ディレクトリの設定', h('div', {},
+    name,
+    h('div', { class: 'field-label', text: '色' }),
+    h('div', { class: 'swatches' }, [null, ...COLORS].map((c) => h('button', { class: 'swatch', title: c ? COLOR_NAMES[c] : '色なし', 'aria-label': c ? COLOR_NAMES[c] : '色なし', 'aria-pressed': String((d.color || null) === c),
+      style: { background: c ? colorVar(c) : 'var(--btn-subtle-hover)' }, text: c ? '' : '✕', onclick: () => act('canban_update_directory', { directoryId: d.id, color: c }).then(again) }))),
+    h('div', { class: 'field-label', text: '自動で含めるフォルダ（配下の cwd のセッションが入ります）' }),
+    ...d.paths.map((pth) => h('div', { class: 'rule-row' }, h('span', { class: 'ellipsis grow', title: pth, text: pth }),
+      h('button', { class: 'icon-btn', 'aria-label': `${pth} を外す`, text: '✕', onclick: () => act('canban_update_directory', { directoryId: d.id, paths: d.paths.filter((x) => x !== pth) }).then(again) }))),
+    path, folders,
+    h('div', { class: 'sep' }),
+    h('button', { class: 'menu-item', text: 'このディレクトリだけを表示', onclick: () => { closePopover(); setScope({ directory: d.id }); } }),
+    del), { width: 340 });
 }
 
 // "…[match]…" from the index → text with <mark>
@@ -1113,7 +1563,8 @@ function syncHeaderInputs() {
   $('#fulltext').checked = !!state.filters.fulltext;
 }
 function applyView(v) {
-  state.filters = { agent: 'all', host: '', status: '', project: '', q: '', days: 30, includeArchived: false, includeSubagents: false, includeHidden: false, groupBranch: false, fulltext: false, swimlane: '', ...v.filters };
+  state.filters = { ...DEFAULT_FILTERS, ...v.filters };
+  state.soloLane = null;
   saveFilters();
   syncHeaderInputs();
   state.shown = {};
@@ -1125,11 +1576,12 @@ function viewsMenu(anchor) {
   const name = h('input', { class: 'text-input', placeholder: '今の表示に名前を付けて保存', maxlength: 60 });
   const save = () => name.value.trim() && act('canban_save_view', { name: name.value, filters: state.filters }, { okMsg: 'ビューを保存しました' }).then(() => viewsMenu(anchor));
   name.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) save(); };
-  popover(anchor, 'ビュー', h('div', {},
-    views.length ? views.map((v, i) => h('div', { class: 'rule-row' },
+  const rows = views.map((v, i) => h('div', { class: 'rule-row', 'data-key': v.name },
       h('button', { class: 'menu-item', onclick: () => { closePopover(); applyView(v); } }, h('span', { class: 'kbd', text: i < 9 ? String(i + 1) : '' }), ` ${v.name}`),
-      h('button', { class: 'icon-btn', 'aria-label': `${v.name} を削除`, text: '🗑', onclick: () => act('canban_delete_view', { viewId: v.id }).then(() => viewsMenu(anchor)) })))
-      : h('p', { class: 'muted', text: '保存したビューはまだありません' }),
+      h('button', { class: 'icon-btn', 'aria-label': `${v.name} を削除`, text: '🗑', onclick: () => act('canban_delete_view', { viewId: v.id }).then(() => viewsMenu(anchor)) })));
+  popover(anchor, 'ビュー', h('div', {},
+    views.length > 5 ? rowFilter(rows) : null,
+    rows.length ? rows : h('p', { class: 'muted', text: '保存したビューはまだありません' }),
     h('div', { class: 'sep' }), name,
     h('div', { class: 'row', style: { marginTop: '8px' } }, h('button', { class: 'btn-primary', text: '保存', onclick: save })),
     h('p', { class: 'muted', text: '絞り込み・検索・スイムレーン・表示オプションを保存します。数字キー 1〜9 で切り替えられます。' })), { width: 320 });
@@ -1151,6 +1603,7 @@ async function loadAnalytics() {
   const args = { days: state.analyticsDays || 30, agent: f.agent };
   if (f.host) args.host = f.host;
   if (f.project) args.project = f.project;
+  if (f.directory) args.directory = f.directory;
   try {
     if (!state.board) state.board = await bridge.callTool('canban_get_board', { days: 30 }); // header menus need it
     const st = await bridge.callTool('canban_get_stats', args);
@@ -1239,6 +1692,7 @@ function renderAnalytics(st) {
   const boardEl = $('#board');
   boardEl.classList.remove('with-lanes');
   boardEl.classList.add('analytics-mode');
+  $('#sidebar').hidden = true;
   const page = h('div', { class: 'analytics' });
   const tip = makeTip(page);
   const daysSeg = h('div', { class: 'seg', role: 'group', 'aria-label': '期間' }, [7, 30, 90].map((d) =>
@@ -1260,7 +1714,7 @@ function renderAnalytics(st) {
     h('span', { class: 'hbar-val', text: `${w.count} 件` })))) : h('p', { class: 'muted', text: 'まだ完了したカードの記録がありません（カードを最後のリストへ移すと記録されます）' });
   page.append(
     h('div', { class: 'row analytics-bar' }, h('h2', { text: '分析' }), daysSeg,
-      h('span', { class: 'muted', text: 'エージェント・マシン・プロジェクトの絞り込みはヘッダの設定に従います' })),
+      h('span', { class: 'muted', text: 'エージェント・マシン・ディレクトリ・プロジェクトの絞り込みはヘッダの設定に従います' })),
     h('div', { class: 'tiles' },
       tile('セッション', st.totals.sessions.toLocaleString(), `Codex ${st.totals.codex} / Claude ${st.totals.claude}`),
       tile('トークン', fmtNum(st.totals.tokens), st.totals.tokens.toLocaleString()),
@@ -1269,7 +1723,8 @@ function renderAnalytics(st) {
     h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', { text: '日別のセッション数' }), legend), dailyChart(st, tip), table),
     h('div', { class: 'panel-grid' },
       h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', { text: 'プロジェクト別' }), legend.cloneNode(true)), breakdownRows(st.projects, tip)),
-      h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', { text: 'マシン別' }), legend.cloneNode(true)), breakdownRows(st.hosts, tip))),
+      h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', { text: 'マシン別' }), legend.cloneNode(true)), breakdownRows(st.hosts, tip)),
+      st.directories?.some((r) => r.name !== '（なし）') ? h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', { text: 'ディレクトリ別' }), legend.cloneNode(true)), breakdownRows(st.directories, tip)) : null),
     h('div', { class: 'panel-grid' },
       h('section', { class: 'panel' }, h('h3', { text: 'リストの滞留時間' }), lists),
       h('section', { class: 'panel' }, h('h3', { text: '週ごとの完了数' }), weekly)));
@@ -1289,8 +1744,9 @@ function openTaskModal(cardId) {
   if (!found) return toast('カードが見つかりません（絞り込みを確認してください）', true);
   const { card, list } = found;
   const b = state.board;
+  modalOpened();
   closePopover();
-  closeModal();
+  document.querySelectorAll('.overlay').forEach((o) => o.remove());
   state.modalOpen = true;
   const overlay = h('div', { class: 'overlay', onclick: (e) => { if (e.target === overlay) closeModal(); } });
   overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
@@ -1301,20 +1757,20 @@ function openTaskModal(cardId) {
   desc.value = card.description;
   desc.onblur = () => desc.value !== card.description && act('canban_update_task', { cardId, description: desc.value }, { okMsg: '保存しました' });
 
-  const listSel = h('select', { class: 'text-input', style: { width: 'auto' }, 'aria-label': 'リスト' }, b.lists.map((l) => h('option', { value: l.id, text: l.title })));
-  listSel.value = list.id;
-  listSel.onchange = () => act('canban_move_card', { cardId, toList: listSel.value, position: 'top' }, { okMsg: 'カードを移動しました' });
+  const listSel = pickerButton({ title: 'リスト', value: list.id, stack: false, className: 'btn picker-btn',
+    items: () => b.lists.map((l) => ({ value: l.id, label: l.title, color: l.color, hint: l.count })),
+    onChange: (v) => act('canban_move_card', { cardId, toList: v, position: 'top' }, { okMsg: 'カードを移動しました' }) });
 
   // --- start a new session
   const t = card.target || {};
   const agentSel = h('select', { class: 'text-input', 'aria-label': 'エージェント' }, h('option', { value: 'codex', text: 'Codex' }), h('option', { value: 'claude', text: 'Claude Code' }));
   agentSel.value = t.agent || 'codex';
-  const hostSel = h('select', { class: 'text-input', 'aria-label': 'マシン' }, b.hosts.map((x) => h('option', { value: x.local ? 'local' : x.id, text: x.local ? 'このマシン' : `⌂ ${x.label}${x.enabled ? '' : '（読み取りオフ）'}` })));
-  hostSel.value = t.hostId || 'local';
+  const hostSel = pickerButton({ title: 'マシン', value: t.hostId || 'local', stack: false,
+    items: () => b.hosts.map((x) => ({ value: x.local ? 'local' : x.id, label: x.local ? 'このマシン' : `⌂ ${x.label}${x.enabled ? '' : '（読み取りオフ）'}`, keywords: x.alias || '' })),
+    onChange: () => fillFolders() });
   const dl = h('datalist', { id: `folders-${cardId}` });
   const cwd = h('input', { class: 'text-input', list: dl.id, placeholder: '作業フォルダ（絶対パス）', value: t.cwd || '', 'aria-label': '作業フォルダ' });
   const fillFolders = () => dl.replaceChildren(...b.folders.filter((f) => f.hostId === hostSel.value).map((f) => h('option', { value: f.cwd, label: f.project || '' })));
-  hostSel.onchange = fillFolders;
   fillFolders();
   const prompt = h('textarea', { class: 'note', 'aria-label': '依頼文' });
   prompt.value = [card.title, card.description].filter(Boolean).join('\n\n');
@@ -1373,6 +1829,8 @@ function openTaskModal(cardId) {
       h('div', {},
         h('div', { class: 'field-label', text: 'カードに追加' }),
         h('button', { class: 'side-btn', text: '🏷 ラベル', onclick: (e) => labelPicker(e.currentTarget, cardId, labelState, () => {}) }),
+        h('button', { class: 'side-btn', text: `📂 ディレクトリ: ${card.directory ? card.directory.name : 'なし'}`,
+          onclick: (e) => directoryPicker(e.currentTarget, card, { cwd: cwd.value.trim() || null, after: () => openTaskModal(cardId) }) }),
         h('div', { class: 'field-label', text: '優先度' }), prio,
         h('div', { class: 'field-label', text: '期限' }), due,
         h('div', { class: 'field-label', text: 'その他' }),
@@ -1455,22 +1913,19 @@ function toastAction(msg, label, fn) {
 function rulesMenu(anchor) {
   const b = state.board;
   const listName = (id) => (id === 'any' ? 'どのリストでも' : b.lists.find((l) => l.id === id)?.title ?? '（削除済みリスト）');
-  const listSelect = (value, withAny) => {
-    const sel = h('select', { class: 'text-input' }, withAny ? h('option', { value: 'any', text: 'どのリストでも' }) : null,
-      b.lists.map((l) => h('option', { value: l.id, text: l.title })));
-    sel.value = value;
-    return sel;
-  };
-  const rows = b.settings.rules.map((r) => h('div', { class: 'rule-row' },
+  const listSelect = (value, withAny) => pickerButton({ title: withAny ? '移動元のリスト' : '移動先のリスト', value,
+    items: () => [withAny ? { value: 'any', label: 'どのリストでも' } : null, ...b.lists.map((l) => ({ value: l.id, label: l.title, color: l.color }))].filter(Boolean) });
+  const rows = b.settings.rules.map((r) => h('div', { class: 'rule-row', 'data-key': `${TRIGGER_LABELS[r.trigger]} ${listName(r.fromListId)} ${listName(r.toListId)}` },
     h('label', { class: 'row' },
       h('input', { type: 'checkbox', checked: r.enabled, 'aria-label': 'ルールを有効にする',
         onchange: (e) => act('canban_set_rule', { ...r, enabled: e.target.checked }).then(() => rulesMenu(anchor)) }),
       h('span', { text: `${TRIGGER_LABELS[r.trigger]}、${listName(r.fromListId)} → ${listName(r.toListId)}` })),
     h('button', { class: 'icon-btn', 'aria-label': 'ルールを削除', text: '🗑', onclick: () => act('canban_delete_rule', { ruleId: r.id }).then(() => rulesMenu(anchor)) })));
-  const trig = h('select', { class: 'text-input' }, Object.entries(TRIGGER_LABELS).map(([v, t]) => h('option', { value: v, text: t })));
+  const trig = pickerButton({ title: 'きっかけ', value: 'status:completed', items: () => Object.entries(TRIGGER_LABELS).map(([value, label]) => ({ value, label })) });
   const from = listSelect('any', true);
   const to = listSelect(b.lists[1]?.id ?? b.lists[0].id, false);
   const body = h('div', {},
+    rows.length > 5 ? rowFilter(rows) : null,
     rows.length ? rows : h('p', { class: 'muted', text: 'ルールはまだありません' }),
     h('div', { class: 'sep' }),
     h('div', { class: 'field-label', text: '新しいルール' }),
@@ -1562,7 +2017,8 @@ function settingsMenu(anchor) {
     h('div', { class: 'sep' }),
     h('div', { class: 'field-label', text: 'ショートカット' }),
     h('div', { class: 'muted', style: { whiteSpace: 'pre-line' }, text:
-      '再開ボタン: クリック=既定 / ⌥=もう一方の経路 / ⇧=新規ウィンドウ / ⌘=新規タブ / ⌃=既存ウィンドウ\nカード選択中: o=既定 d=デスクトップ t=ターミナル w=新規ウィンドウ n=新規タブ s=分割 e=既存ウィンドウ\n移動: ←→=隣のリストへ ↑↓=リスト内で上下 Home/End=先頭/末尾（⌥+矢印はフォーカスだけ移動）\nリモートのセッションは ssh 経由でターミナルに開きます。\n※ ターミナルの「新規タブ」はアクセシビリティ許可が必要な場合があります。' }),
+      '再開ボタン: クリック=既定 / ⌥=もう一方の経路 / ⇧=新規ウィンドウ / ⌘=新規タブ / ⌃=既存ウィンドウ\nキーボード操作の一覧は ? キーで表示します。\nリモートのセッションは ssh 経由でターミナルに開きます。\n※ ターミナルの「新規タブ」はアクセシビリティ許可が必要な場合があります。' }),
+    h('button', { class: 'menu-item', text: '⌨ キーボードショートカット一覧（?）', onclick: showShortcuts }),
   );
   popover(anchor, '再開の設定', body, { width: 340 });
 }
@@ -1575,7 +2031,7 @@ function hostsMenu(anchor) {
     const toggle = host.local ? h('span', { class: 'muted', text: '常に有効' }) : h('label', { class: 'row' },
       h('input', { type: 'checkbox', checked: host.enabled, 'aria-label': `${host.label} を読む`,
         onchange: (e) => { toast(e.target.checked ? `${host.label} に接続しています…` : `${host.label} を無効にしました`); act('canban_set_remote_host', { hostId: host.id, enabled: e.target.checked }).then(() => hostsMenu(anchor)); } }), '読む');
-    return h('div', { class: 'host-row' },
+    return h('div', { class: 'host-row', 'data-key': `${host.label} ${host.alias || ''}` },
       h('button', { class: `menu-item${sel ? ' active' : ''}`, title: 'このマシンだけを表示', onclick: () => { state.filters.host = sel ? '' : (host.local ? 'local' : host.id); saveFilters(); closePopover(); load(); } },
         h('div', { text: `${host.local ? '💻' : '⌂'} ${host.label}` }),
         h('div', { class: 'muted', text: host.local ? `${host.count} 件` : host.enabled
@@ -1584,6 +2040,7 @@ function hostsMenu(anchor) {
       toggle);
   });
   const body = h('div', {},
+    rows.length > 5 ? rowFilter(rows) : null,
     rows.length > 1 ? rows : [rows, h('p', { class: 'muted', text: 'Codex アプリにリモート接続が登録されていません。' })],
     h('div', { class: 'sep' }),
     h('p', { class: 'muted', text: 'リモート接続は Codex アプリに登録済みのものです。有効にすると ssh（鍵認証）で python3 を使い、セッションを読み取り専用で取得します。名前をクリックするとそのマシンだけを表示します。' }));
@@ -1592,16 +2049,17 @@ function hostsMenu(anchor) {
 
 function labelPicker(anchor, cardId, card, repaint) {
   const labels = state.board.labels;
-  const body = h('div', {}, labels.map((l) => {
-    const cb = h('input', { type: 'checkbox', checked: card.labels.includes(l.id), 'aria-label': l.name });
-    cb.onchange = async () => {
-      card.labels = cb.checked ? [...card.labels, l.id] : card.labels.filter((x) => x !== l.id);
-      repaint();
-      await act('canban_update_card', { cardId, labels: card.labels });
-    };
-    return h('label', { class: 'label-toggle' }, cb, h('span', { class: 'sw', style: { background: colorVar(l.color) }, text: l.name }));
-  }), h('div', { class: 'sep' }), h('button', { class: 'menu-item', text: 'ラベルを管理…', onclick: () => labelsManager(anchor) }));
-  popover(anchor, 'ラベル', body);
+  const save = (ids) => { card.labels = ids; repaint(); return act('canban_update_card', { cardId, labels: ids }, { reload: false }).then(() => load()).catch(() => {}); };
+  picker(anchor, {
+    title: 'ラベル', multi: true, selected: card.labels, createText: 'をラベルとして作成して付ける',
+    items: labels.map((l) => ({ value: l.id, label: l.name, color: l.color, keywords: COLOR_NAMES[l.color] })),
+    onPick: (_id, _on, ids) => save(ids),
+    onCreate: async (name) => {
+      const r = await act('canban_create_label', { name, color: COLORS[(labels.length + 1) % COLORS.length] }, { reload: false }).catch(() => null);
+      if (r?.result) { state.board.labels.push(r.result); await save([...card.labels, r.result.id]); }
+    },
+    footer: h('button', { class: 'menu-item', text: 'ラベルを管理…', onclick: () => labelsManager(anchor) }),
+  });
 }
 
 // ======================================================================
@@ -1633,6 +2091,16 @@ function startCardDrag(e, card, el) {
     d.ghost.style.top = `${ev.clientY - d.dy}px`;
     // Dropping a session card onto the middle of a task card links it to the task;
     // near a card's edges it is a normal move. Decide before moving the placeholder.
+    // Dropping onto a directory in the sidebar changes the card's directory.
+    d.ph.style.display = 'none';
+    const dirEl = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.side-dir');
+    d.ph.style.display = '';
+    if (d.dropDir !== dirEl) {
+      d.dropDir?.classList.remove('drop-target');
+      d.dropDir = dirEl;
+      d.dropDir?.classList.add('drop-target');
+    }
+    if (dirEl) { d.ph.style.display = 'none'; return; }
     let under = null;
     if (card.kind !== 'task') {
       d.ph.style.display = 'none';
@@ -1676,14 +2144,27 @@ function startCardDrag(e, card, el) {
     state.drag = null;
     state.justDragged = true;
     setTimeout(() => (state.justDragged = false), 0);
+    if (d.dropDir) {
+      const dir = d.dropDir.dataset.dirId;
+      d.dropDir.classList.remove('drop-target');
+      act('canban_update_card', { cardId: card.id, directory: dir }, { okMsg: dir === '__none' ? 'ディレクトリから外しました' : `📂 ${state.board.directories.find((x) => x.id === dir)?.name ?? ''} に入れました` }).catch(() => {});
+      return;
+    }
+    // Directory swimlanes: dropping into another lane also moves the card to that directory.
+    const laneDir = state.filters.swimlane === 'directory' ? cardsEl?.closest('.lane')?.dataset.dirId : null;
+    let dirDone = null;
+    if (laneDir && laneDir !== (card.directory?.id || '__none')) {
+      dirDone = bridge.callTool('canban_update_card', { cardId: card.id, directory: laneDir }).catch((e) => toast(e.message, true));
+      card.directory = state.board.directories.find((x) => x.id === laneDir) || null;
+    }
     if (d.dropTask) {
       const taskId = d.dropTask.dataset.cardId;
       d.dropTask.classList.remove('drop-target');
       act('canban_link_session', { taskId, sessionId: card.id }, { okMsg: 'タスクに紐付けました' }).catch(() => {});
       return;
     }
-    if (toList && idx >= 0) moveCard(card, d.fromList, toList, idx);
-    else render();
+    const moved = toList && idx >= 0 ? moveCard(card, d.fromList, toList, idx) : (render(), null);
+    if (dirDone) Promise.all([dirDone, moved]).then(() => load());
   };
   window.addEventListener('pointermove', move, { passive: false });
   window.addEventListener('pointerup', up);
@@ -1783,7 +2264,7 @@ function moveCard(card, fromListId, toListId, index, focusAfter = false) {
   render();
   if (focusAfter) $(`.card[data-card-id="${CSS.escape(card.id)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   if (focusAfter) $(`.card[data-card-id="${CSS.escape(card.id)}"]`)?.focus();
-  bridge.callTool('canban_move_card', { cardId: card.id, toList: toListId, order })
+  return bridge.callTool('canban_move_card', { cardId: card.id, toList: toListId, order })
     .catch((e) => { toast(`移動に失敗しました: ${e.message}`, true); load(); });
 }
 
@@ -1857,14 +2338,33 @@ function stopAutoScroll() { clearInterval(scrollTimer); scrollTimer = null; }
 // ======================================================================
 let qTimer;
 $('#q').value = state.filters.q || '';
-$('#q').addEventListener('input', (e) => {
+const applySearch = () => { clearTimeout(qTimer); state.filters.q = $('#q').value; saveFilters(); state.shown = {}; return load(); };
+$('#q').addEventListener('input', () => {
   clearTimeout(qTimer);
-  qTimer = setTimeout(() => { state.filters.q = e.target.value; saveFilters(); state.shown = {}; load(); }, 250);
+  qTimer = setTimeout(applySearch, 250);
 });
+// In the search box: Esc clears (then leaves), ↓ / Enter jump to the first hit.
+$('#q').addEventListener('keydown', async (e) => {
+  if (e.isComposing) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if ($('#q').value) { $('#q').value = ''; applySearch(); } else { $('#q').blur(); $('#board .card')?.focus(); }
+  } else if (e.key === 'ArrowDown' || e.key === 'Enter') {
+    e.preventDefault();
+    if (state.filters.q !== $('#q').value) await applySearch();
+    $('#board .card')?.focus();
+  }
+});
+function focusSearch() {
+  if (state.view === 'analytics') return;
+  $('#q').focus();
+  $('#q').select();
+}
 document.querySelectorAll('.seg button').forEach((btn) => btn.addEventListener('click', () => {
   state.filters.agent = btn.dataset.agent; saveFilters(); state.shown = {}; load();
 }));
-$('#project').addEventListener('change', (e) => { state.filters.project = e.target.value; saveFilters(); state.shown = {}; load(); });
+$('#projectBtn').addEventListener('click', (e) => scopePicker(e.currentTarget));
+$('#sideBtn').addEventListener('click', () => toggleSidebar());
 $('#days').addEventListener('change', (e) => { state.filters.days = Number(e.target.value); saveFilters(); state.shown = {}; load(); });
 $('#optBtn').addEventListener('click', (e) => optionsMenu(e.currentTarget));
 $('#labelsBtn').addEventListener('click', (e) => labelsManager(e.currentTarget));
@@ -1878,20 +2378,115 @@ function syncViewButton() {
   $('#analyticsBtn').textContent = state.view === 'analytics' ? '▦ ボード' : '📊 分析';
 }
 syncViewButton();
-$('#analyticsBtn').addEventListener('click', () => {
+function toggleAnalytics() {
   state.view = state.view === 'analytics' ? 'board' : 'analytics';
   store.set('view', state.view);
   syncViewButton();
   if (state.view === 'board' && state.board) render();
   load();
-});
+}
+$('#analyticsBtn').addEventListener('click', toggleAnalytics);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.querySelector('.popover')) closePopover(); });
-// 1–9: switch saved views (when not typing)
+
+// ======================================================================
+// Keyboard: global shortcuts, command palette (⌘K) and the ? overlay
+// ======================================================================
+const typingIn = (t) => t?.closest?.('input, textarea, select, [contenteditable]');
+function focusedListId() {
+  const a = document.activeElement;
+  return a?.closest?.('.list')?.dataset.listId || state.board?.defaultListId;
+}
+// c: add a card — in the focused list's composer, or (swimlanes) a quick popover.
+function quickAdd() {
+  const listId = focusedListId();
+  const btn = !state.filters.swimlane && $(`.list[data-list-id="${CSS.escape(listId)}"] .add-card-btn`);
+  if (btn) { btn.scrollIntoView({ block: 'nearest', inline: 'nearest' }); return btn.click(); }
+  const list = state.board.lists.find((l) => l.id === listId);
+  const input = h('input', { class: 'text-input', placeholder: 'タスクのタイトル（Enter で追加）', maxlength: 300 });
+  const lane = state.filters.swimlane === 'directory' ? document.activeElement?.closest?.('.lane')?.dataset.dirId : null;
+  input.onkeydown = async (e) => {
+    if (e.key !== 'Enter' || e.isComposing || !input.value.trim()) return;
+    const r = await act('canban_create_task', { title: input.value.trim(), list: listId }, { reload: !lane || lane === '__none' }).catch(() => null);
+    if (lane && lane !== '__none' && r?.cardId) await act('canban_update_card', { cardId: r.cardId, directory: lane }).catch(() => {});
+    input.value = '';
+  };
+  popover($('#q'), `「${list?.title ?? ''}」にカードを追加`, h('div', {}, input, h('p', { class: 'muted', text: 'Esc で閉じる' })), { width: 360 });
+  input.focus();
+}
+const SHORTCUTS = [
+  ['全体', [
+    ['/', '検索にフォーカス（Esc でクリア、↓ / Enter で最初のカードへ）'], ['⌘K / Ctrl+K', 'コマンドパレット（カード・ビュー・ディレクトリ・操作を検索して実行）'],
+    ['p', 'ディレクトリ・プロジェクトで絞り込み'], ['b', 'サイドバーの開閉'], ['[ / ]', '前 / 次のスイムレーンへ'],
+    ['c', 'カードを追加'], ['1〜9', '保存したビューに切り替え'], ['a', 'ボード / 分析'], ['r', '再読み込み'], ['?', 'この一覧'],
+  ]],
+  ['カードを選択中', [
+    ['Enter', '詳細を開く'], ['l', 'ラベル'], ['g', 'ディレクトリ'], ['m', 'リストへ移動'], ['h', '隠す / 再表示'],
+    ['← →', '隣のリストへ移動'], ['↑ ↓ / Home End', 'リスト内で移動'], ['⌥ + 矢印', 'フォーカスだけ移動'],
+    ['o', '再開（既定）'], ['d / t', 'デスクトップ / ターミナルで再開'], ['w n s e', 'ターミナル: 新規ウィンドウ / 新規タブ / 分割 / 既存'],
+  ]],
+  ['ピッカー', [['文字を入力', '絞り込み'], ['↑ ↓ / Enter', '選ぶ'], ['Space', '複数選択の切り替え（入力が空のとき）'], ['Esc', '閉じる']]],
+];
+function showShortcuts() {
+  const body = h('div', { class: 'keys' }, SHORTCUTS.flatMap(([group, keys]) => [h('h4', { text: group }), ...keys.flatMap(([k, v]) => [h('kbd', { text: k }), h('span', { text: v })])]));
+  const p = popover($('#q'), 'キーボードショートカット', body, { width: 520 });
+  p.classList.add('palette');
+  p.querySelector('.close').focus();
+}
+function commandPalette() {
+  const b = state.board;
+  if (!b) return;
+  const f = state.filters;
+  const actions = [
+    { label: state.view === 'analytics' ? 'ボードに戻る' : '分析を開く', run: toggleAnalytics, hint: 'a' },
+    { label: '再読み込み', run: () => load({ refresh: true }), hint: 'r' },
+    { label: 'すべて既読にする', run: () => act('canban_mark_all_seen', {}, { okMsg: 'すべて既読にしました' }) },
+    { label: state.sideOpen ? 'サイドバーを閉じる' : 'サイドバーを開く', run: () => toggleSidebar(), hint: 'b' },
+    { label: 'カードを追加', run: quickAdd, hint: 'c' },
+    { label: '絞り込みをすべて解除', run: () => { $('#q').value = ''; setScope({ directory: '', project: '', q: '', status: '', host: '' }); } },
+    ...Object.entries(LANE_MODES).map(([v, t]) => ({ label: `スイムレーン: ${t}`, run: () => { f.swimlane = v; state.soloLane = null; saveFilters(); render(); } })),
+    ...Object.entries(LANE_HEIGHTS).map(([v, [t]]) => ({ label: `レーンの高さ: ${t}`, run: () => { f.laneHeight = v; saveFilters(); render(); } })),
+    { label: 'キーボードショートカット', run: showShortcuts, hint: '?' },
+  ];
+  const run = new Map();
+  const items = [];
+  const add = (group, badge, label, fn, extra = {}) => { const value = `${items.length}`; run.set(value, fn); items.push({ value, label, group, badge, ...extra }); };
+  actions.forEach((a) => add('操作', '操作', a.label, a.run, { hint: a.hint }));
+  (b.settings.views || []).forEach((v, i) => add('ビュー', 'ビュー', v.name, () => applyView(v), { hint: i < 9 ? i + 1 : '' }));
+  state.lanes.forEach((l) => add('レーン', 'レーン', l.name, () => jumpToLane(l.name), { hint: l.count, color: l.color }));
+  b.directories.forEach((d) => add('ディレクトリ', '📂', d.name, () => setScope({ directory: d.id }), { hint: d.count, color: d.color }));
+  b.projects.forEach((p) => add('プロジェクト', '📁', p.name, () => setScope({ project: p.name }), { hint: p.count }));
+  b.labels.forEach((l) => add('ラベルで検索', '🏷', l.name, () => { $('#q').value = l.name; applySearch(); }, { color: l.color }));
+  for (const l of b.lists) for (const c of l.cards) {
+    add('カード', l.title, c.title, () => {
+      openCard(c.id);
+    }, { dot: c.status !== 'idle' ? c.status : null, hint: c.directory?.name || c.project || '', keywords: `${c.branch || ''} ${c.agent || ''}` });
+  }
+  const p = picker($('#q'), {
+    title: 'コマンド', items, width: 560, placeholder: 'カード・ビュー・ディレクトリ・操作を検索…', limit: 200,
+    onPick: (v) => run.get(v)?.(),
+  });
+  p.classList.add('palette');
+}
 document.addEventListener('keydown', (e) => {
-  if (e.metaKey || e.ctrlKey || e.altKey || state.modalOpen || e.target.closest?.('input, textarea, select, [contenteditable]')) return;
-  if (!/^[1-9]$/.test(e.key) || e.target.classList?.contains('card')) return;
-  const v = state.board?.settings?.views?.[Number(e.key) - 1];
-  if (v) applyView(v);
+  if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    if (!state.modalOpen) commandPalette();
+    return;
+  }
+  if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing || state.modalOpen || typingIn(e.target) || document.querySelector('.popover')) return;
+  const onCard = e.target.classList?.contains('card');
+  const k = e.key;
+  const run = {
+    '/': focusSearch, '?': showShortcuts, b: () => toggleSidebar(), '[': () => stepLane(-1), ']': () => stepLane(1),
+    r: () => load({ refresh: true }).then(() => toast('最新の状態に更新しました')), a: toggleAnalytics,
+    c: () => state.view === 'board' && quickAdd(), p: () => scopePicker($('#projectBtn')),
+  }[k];
+  if (run) { e.preventDefault(); return run(); }
+  // 1–9: switch saved views
+  if (/^[1-9]$/.test(k) && !onCard) {
+    const v = state.board?.settings?.views?.[Number(k) - 1];
+    if (v) applyView(v);
+  }
 });
 $('#seenBtn').addEventListener('click', () => act('canban_mark_all_seen', {}, { okMsg: 'すべて既読にしました' }));
 $('#settingsBtn').addEventListener('click', (e) => settingsMenu(e.currentTarget));

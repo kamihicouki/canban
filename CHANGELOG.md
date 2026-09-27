@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.7.0 — 2026-09-27
+- Directories: a Canban-only, single-membership grouping for session and task cards, shown on cards in place of the project.
+  - Assign with `g`, from the card detail, by dropping a card on a directory in the sidebar, or by dragging it between directory swimlanes.
+  - Folders registered on a directory pull their sessions in automatically; an explicit choice (including "none") wins.
+  - Also available as a filter, a swimlane mode, an analytics breakdown, a saved-view field and an MCP argument.
+- Sidebar (`b`) listing lanes, directories and projects with counts, live status and new-card badges. Click a lane to jump to it; ⌥-click to show only that lane. Collapse or expand all lanes from here. Works as an overlay on narrow screens.
+- Swimlanes:
+  - Lane headers stay pinned while scrolling.
+  - Lists inside a lane have a height cap (compact / normal / all).
+  - Collapsed lanes show card counts per list.
+  - "Only this lane" focus mode.
+  - `[` / `]` step between lanes.
+- Keyboard:
+  - `/` focuses search (`Esc` clears; `↓` / `Enter` jumps to the first card).
+  - ⌘K / Ctrl+K opens a command palette over cards, views, lanes, directories, projects, labels and actions.
+  - `?` shows the shortcut overlay.
+  - `p` opens the scope filter; `c` adds a card; `a` toggles analytics; `r` reloads.
+  - On a focused card: `l` labels, `g` directory, `m` move to list, `h` hide.
+  - Focus returns to the card after a picker or detail dialog closes.
+- Every attribute choice uses a keyword-filterable picker: lists, labels (create inline), directories (create inline), projects, machines, tasks, swimlane mode and rule lists. Matching is multi-word and ignores case, width and katakana/hiragana. Long menus (views, labels, machines, rules) get a filter box.
+
 ## 0.6.0 — 2026-09-26
 - Analytics view: sessions per day (stacked by agent), token usage, per-project and per-machine breakdowns, time spent in lists, cycle time to the last list and weekly completions. Charts have hover tooltips and a table view; the Codex/Claude colours are validated for colour-vision deficiencies in light and dark mode.
 - Full-text search over conversations (toggle "本文"): a background FTS5 trigram index in `~/.canban/search.sqlite` (last 90 days, incremental) with highlighted snippets on cards; enabled remote hosts are searched on demand.

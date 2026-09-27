@@ -37,6 +37,7 @@ const filterProps = {
   agent: { type: 'string', enum: ['all', 'codex', 'claude'], description: 'エージェントで絞り込み' },
   host: { type: 'string', description: "マシンで絞り込み（'local' またはリモート接続の hostId）" },
   project: { type: 'string', description: 'プロジェクト名（cwd のディレクトリ名）で絞り込み' },
+  directory: { type: 'string', description: "Canban のディレクトリ（ユーザーが作るまとまり）の ID で絞り込み。'__none' でディレクトリなし" },
   status: { type: 'string', enum: ['running', 'waiting', 'completed', 'aborted', 'idle'], description: '実行状態で絞り込み' },
   q: { type: 'string', description: 'タイトル・最初の依頼・メモ・ラベルの部分一致検索' },
   includeArchived: { type: 'boolean' },
@@ -104,12 +105,12 @@ const TOOLS = [
       const rows = [];
       for (const l of board.lists) {
         if (wanted && l.id !== wanted) continue;
-        for (const c of l.cards) rows.push({ cardId: c.id, list: l.title, listId: l.id, agent: c.agent, title: c.title, project: c.project, updatedAt: new Date(c.updatedAt || 0).toISOString() });
+        for (const c of l.cards) rows.push({ cardId: c.id, list: l.title, listId: l.id, agent: c.agent, title: c.title, project: c.project, directory: c.directory?.name || null, updatedAt: new Date(c.updatedAt || 0).toISOString() });
       }
       rows.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
       const limited = rows.slice(0, Math.min(Number(args.limit) || 30, 200));
       return {
-        text: limited.map((r) => `${r.cardId} [${r.list}] (${r.agent}/${r.project ?? '-'}) ${r.title}`).join('\n') || '該当なし',
+        text: limited.map((r) => `${r.cardId} [${r.list}] (${r.agent}/${r.directory ? `📂${r.directory}` : r.project ?? '-'}) ${r.title}`).join('\n') || '該当なし',
         structured: { results: limited, total: rows.length, lists: board.lists.map((l) => ({ id: l.id, title: l.title })) },
       };
     },
@@ -168,12 +169,13 @@ const TOOLS = [
   {
     name: 'canban_update_card',
     title: 'カード属性を更新',
-    description: 'カードのラベル（ID 配列）・メモ・優先度（high/medium/low）・期限（ISO 日付）・非表示を更新する。セッション本体は変更しない。',
+    description: 'カードのラベル（ID 配列）・ディレクトリ（ID、null で自動、__none で所属なし）・メモ・優先度（high/medium/low）・期限（ISO 日付）・非表示を更新する。セッション本体は変更しない。',
     inputSchema: {
       type: 'object',
       properties: {
         cardId: { type: 'string' },
         labels: { type: 'array', items: { type: 'string' } },
+        directory: { type: ['string', 'null'] },
         note: { type: 'string' },
         priority: { type: ['string', 'null'], enum: ['high', 'medium', 'low', null] },
         due: { type: ['string', 'null'] },
@@ -328,8 +330,8 @@ const TOOLS = [
   {
     name: 'canban_get_stats',
     title: '分析',
-    description: 'セッション数・トークン量の推移、プロジェクト／マシン別の内訳、リストの滞留時間、完了までのサイクルタイムを返す。',
-    inputSchema: { type: 'object', properties: { days: { type: 'number' }, agent: filterProps.agent, host: filterProps.host, project: filterProps.project, includeSubagents: { type: 'boolean' } }, additionalProperties: false },
+    description: 'セッション数・トークン量の推移、プロジェクト／ディレクトリ／マシン別の内訳、リストの滞留時間、完了までのサイクルタイムを返す。',
+    inputSchema: { type: 'object', properties: { days: { type: 'number' }, agent: filterProps.agent, host: filterProps.host, project: filterProps.project, directory: filterProps.directory, includeSubagents: { type: 'boolean' } }, additionalProperties: false },
     annotations: { readOnlyHint: true },
     _meta: appAndModel,
     handler: async (args) => {
@@ -360,6 +362,9 @@ const TOOLS = [
   appTool('canban_create_label', 'ラベルを追加', { name: { type: 'string' }, color: { type: 'string' } }, ['name'], (a) => store.createLabel(a)),
   appTool('canban_update_label', 'ラベルを更新', { labelId: { type: 'string' }, name: { type: 'string' }, color: { type: 'string' } }, ['labelId'], (a) => store.updateLabel(a)),
   appTool('canban_delete_label', 'ラベルを削除', { labelId: { type: 'string' } }, ['labelId'], (a) => store.deleteLabel(a)),
+  appTool('canban_create_directory', 'ディレクトリを追加', { name: { type: 'string' }, color: { type: ['string', 'null'] }, paths: { type: 'array', items: { type: 'string' } } }, ['name'], (a) => store.createDirectory(a)),
+  appTool('canban_update_directory', 'ディレクトリを更新', { directoryId: { type: 'string' }, name: { type: 'string' }, color: { type: ['string', 'null'] }, paths: { type: 'array', items: { type: 'string' } } }, ['directoryId'], (a) => store.updateDirectory(a)),
+  appTool('canban_delete_directory', 'ディレクトリを削除', { directoryId: { type: 'string' } }, ['directoryId'], (a) => store.deleteDirectory(a)),
 ];
 
 function appTool(name, title, properties, required, fn) {

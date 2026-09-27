@@ -50,7 +50,7 @@ export function defaultSettings() {
   };
 }
 
-const VIEW_FILTER_KEYS = ['agent', 'host', 'status', 'project', 'q', 'days', 'includeArchived', 'includeSubagents', 'includeHidden', 'groupBranch', 'fulltext', 'swimlane'];
+const VIEW_FILTER_KEYS = ['agent', 'host', 'status', 'project', 'directory', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'includeHidden', 'groupBranch', 'fulltext', 'swimlane'];
 function normalizeView(v) {
   if (!v || typeof v.id !== 'string' || !String(v.name || '').trim()) return null;
   const filters = {};
@@ -84,6 +84,35 @@ function normalizeSettings(s) {
   };
 }
 
+// A directory is a user-made, single-membership grouping of cards. `paths` are cwd
+// prefixes whose sessions belong to it unless a card was assigned explicitly.
+function normalizePaths(paths) {
+  if (!Array.isArray(paths)) return [];
+  return [...new Set(paths.map((p) => String(p || '').trim().replace(/\/+$/, '')).filter((p) => p.startsWith('/')))].slice(0, 20);
+}
+function normalizeDirectory(d) {
+  if (!d || typeof d.id !== 'string' || !String(d.name || '').trim()) return null;
+  return { id: d.id, name: String(d.name).trim().slice(0, 80), color: LIST_COLORS.includes(d.color) ? d.color : null, paths: normalizePaths(d.paths) };
+}
+
+// Explicit assignment wins ('__none' opts out); otherwise the longest matching path prefix.
+export function resolveDirectory(state, card, cwd) {
+  const id = card?.directoryId;
+  if (id === '__none') return null;
+  if (id) {
+    const d = (state.directories || []).find((x) => x.id === id);
+    if (d) return d;
+  }
+  if (!cwd) return null;
+  const clean = String(cwd).replace(/\/+$/, '');
+  let best = null, len = -1;
+  for (const d of state.directories || []) {
+    for (const p of d.paths || []) {
+      if ((clean === p || clean.startsWith(`${p}/`)) && p.length > len) { best = d; len = p.length; }
+    }
+  }
+  return best;
+}
 function placeCard(card, toListId, order, at = new Date().toISOString()) {
   if (card.listId !== toListId) {
     card.history = [...(card.history || []), { listId: toListId, at }].slice(-HISTORY_MAX);
@@ -110,6 +139,7 @@ export function defaultState() {
       { id: 'lbl-research', name: '調査', color: 'purple' },
       { id: 'lbl-blocked', name: 'blocked', color: 'orange' },
     ],
+    directories: [],
     cards: {},
     remoteHosts: {},
     settings: defaultSettings(),
@@ -127,6 +157,7 @@ function normalize(s) {
     lists: Array.isArray(s?.lists) && s.lists.length ? s.lists.filter((l) => l && l.id && typeof l.title === 'string') : d.lists,
     defaultListId: s?.defaultListId,
     labels: Array.isArray(s?.labels) ? s.labels.filter((l) => l && l.id) : d.labels,
+    directories: Array.isArray(s?.directories) ? s.directories.map(normalizeDirectory).filter(Boolean) : [],
     cards: s?.cards && typeof s.cards === 'object' ? s.cards : {},
     remoteHosts: s?.remoteHosts && typeof s.remoteHosts === 'object' ? s.remoteHosts : {},
     settings: normalizeSettings(s?.settings),
@@ -267,12 +298,18 @@ export class Store {
     });
   }
 
-  updateCard({ cardId, labels, note, priority, due, hidden }) {
+  updateCard({ cardId, labels, note, priority, due, hidden, directory }) {
     return this.mutate((s) => {
       const card = (s.cards[cardId] ||= {});
       if (labels !== undefined) {
         const valid = new Set(s.labels.map((l) => l.id));
         card.labels = [...new Set((labels || []).filter((id) => valid.has(id)))];
+      }
+      if (directory !== undefined) {
+        // '' / null: back to automatic (paths); '__none': explicitly outside every directory
+        if (directory === '__none') card.directoryId = '__none';
+        else if (s.directories.some((d) => d.id === directory)) card.directoryId = directory;
+        else delete card.directoryId;
       }
       if (note !== undefined) card.note = String(note ?? '').slice(0, 20000);
       if (priority !== undefined) card.priority = ['high', 'medium', 'low'].includes(priority) ? priority : null;
@@ -508,6 +545,37 @@ export class Store {
       s.labels = s.labels.filter((l) => l.id !== labelId);
       for (const c of Object.values(s.cards)) if (c.labels) c.labels = c.labels.filter((id) => id !== labelId);
       return { deleted: labelId };
+    });
+  }
+
+  // ---- directories -------------------------------------------------------
+  async createDirectory({ name, color = null, paths = [] }) {
+    name = String(name || '').trim();
+    if (!name) throw new Error('ディレクトリ名を入力してください');
+    return this.mutate((s) => {
+      if (s.directories.some((d) => d.name === name)) throw new Error(`「${name}」は既にあります`);
+      const dir = normalizeDirectory({ id: newId('dir'), name, color, paths });
+      s.directories.push(dir);
+      return dir;
+    });
+  }
+
+  updateDirectory({ directoryId, name, color, paths }) {
+    return this.mutate((s) => {
+      const dir = s.directories.find((d) => d.id === directoryId);
+      if (!dir) throw new Error('ディレクトリが見つかりません');
+      if (name !== undefined && String(name).trim()) dir.name = String(name).trim().slice(0, 80);
+      if (color !== undefined) dir.color = LIST_COLORS.includes(color) ? color : null;
+      if (paths !== undefined) dir.paths = normalizePaths(paths);
+      return dir;
+    });
+  }
+
+  deleteDirectory({ directoryId }) {
+    return this.mutate((s) => {
+      s.directories = s.directories.filter((d) => d.id !== directoryId);
+      for (const c of Object.values(s.cards)) if (c.directoryId === directoryId) delete c.directoryId;
+      return { deleted: directoryId };
     });
   }
 }
