@@ -209,6 +209,7 @@ def summarize(path, session_id):
     s = {
         "sessionId": session_id, "cwd": None, "branch": None, "prompts": [], "customTitle": None, "agentName": None,
         "model": None, "createdAt": None, "updatedAt": None, "prUrl": None, "turns": 0, "tokens": 0,
+        "entrypoint": None,
     }
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
         for line in fh:
@@ -231,6 +232,8 @@ def summarize(path, session_id):
                 s["cwd"] = o["cwd"]
             if o.get("gitBranch"):
                 s["branch"] = o["gitBranch"]
+            if not s["entrypoint"] and isinstance(o.get("entrypoint"), str):
+                s["entrypoint"] = o["entrypoint"]
             t = o.get("type")
             if t == "custom-title" and o.get("customTitle"):
                 s["customTitle"] = o["customTitle"]

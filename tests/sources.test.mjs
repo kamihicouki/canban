@@ -93,3 +93,11 @@ test('readers issue no writes against real session data', async () => {
   }
   assert.deepEqual(calls, []);
 });
+
+test('Claude sessions without desktop metadata are not claimed to be unarchived', async () => {
+  const { normalizeClaudeSummary, newSummary } = await import('../server/sources/claude.mjs');
+  const sum = { ...newSummary('x'), prompts: ['hi'], turns: 1, entrypoint: 'cli' };
+  const s = normalizeClaudeSummary(sum, undefined);
+  assert.deepEqual([s.desktopKnown, s.archived, s.entrypoint], [false, false, 'cli']);
+  assert.equal(normalizeClaudeSummary(sum, { isArchived: true }).desktopKnown, true);
+});

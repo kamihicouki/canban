@@ -11,6 +11,10 @@
   - Folder names stay available as **フォルダ**: detail, tooltip and a scope filter.
   - A Codex project can be turned into a カテゴリ with its folders ("⇣ Codex" in the sidebar).
   - The app state file (over 1 MB) is parsed once per change and shared with the remote-host list; it used to be parsed on every board load. Warm `allSessions` went from 281 ms to 10 ms.
+- Agent metadata:
+  - Codex pins come from the Codex app (`pinned-thread-ids`; the DB column is no longer used). Pinned threads show 📌 and can be filtered ("Codex アプリでピン留めしたものだけ").
+  - Claude sessions without desktop metadata on disk (common with recent Claude desktop versions) show their archived state as unknown instead of "not archived". The "close it in the app first" hint relies on the transcript's `entrypoint`.
+  - Folder and pin filters now also apply to task cards.
 - Requests are not sent to a Codex thread that has follow-ups waiting in the Codex app's own queue ("⏭ Codex キュー N" on the card), so the two queues never interleave.
 
 ## 0.8.0 — 2026-09-27

@@ -622,7 +622,7 @@ async function load({ refresh = false } = {}) {
   if (state.view === 'analytics') return loadAnalytics();
   const seq = ++loadSeq;
   const f = state.filters;
-  const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, includeHidden: f.includeHidden, groupBranch: !!f.groupBranch, fulltext: !!f.fulltext, refresh };
+  const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, includeHidden: f.includeHidden, pinnedOnly: !!f.pinnedOnly, groupBranch: !!f.groupBranch, fulltext: !!f.fulltext, refresh };
   if (f.project) args.project = f.project;
   if (f.folder) args.folder = f.folder;
   if (f.directory) args.directory = f.directory;
@@ -773,6 +773,7 @@ function renderCard(card, list) {
   const meta = h('div', { class: 'meta' },
     card.unread ? h('span', { class: 'pill new-pill', text: '新着' }) : null,
     card.autoMoved ? h('span', { class: 'pill', title: `${T.automation}で移動`, text: '⚡' }) : null,
+    card.pinnedInAgent ? h('span', { class: 'pill', title: 'Codex アプリでピン留め', text: '📌' }) : null,
     h('span', { class: `badge ${card.agent}`, text: card.agent === 'codex' ? 'Codex' : 'Claude' }),
     card.host ? h('span', { class: 'host-chip', title: `SSH: ${card.host.alias}`, text: `⌂ ${card.host.label}` }) : null,
     card.directory ? dirPill(card.directory, card.project) : card.project ? h('span', { class: 'ellipsis', title: card.codexProject ? `Codex のプロジェクト（${T.folder}: ${card.folder || '-'}）` : card.cwd || '', text: `📁 ${card.project}` }) : null,
@@ -1146,6 +1147,7 @@ function optionsMenu(anchor) {
   popover(anchor, '表示オプション', h('div', {},
     opt('includeArchived', 'アーカイブ済みセッションを表示'),
     opt('includeSubagents', 'サブエージェント／レビュー用スレッドを表示'),
+    opt('pinnedOnly', 'Codex アプリでピン留めしたものだけ（📌）'),
     opt('includeHidden', 'ボードから隠したカードを表示'),
     opt('groupBranch', '同じリポジトリ＋ブランチのセッションをまとめる'),
     h('div', { class: 'field-label', text: 'スイムレーン（行で分ける）' }),
@@ -1318,7 +1320,7 @@ function renderModal(modal, d) {
       ...kv('モデル', s.model || '-'),
       ...kv('作成', fmtDate(s.createdAt)),
       ...kv('最終更新', fmtDate(s.updatedAt)),
-      ...kv('状態', [s.archived ? 'アーカイブ済' : '進行中/未アーカイブ', s.subagent ? 'サブエージェント' : null, s.automation ? '⏰ Codex オートメーション' : null].filter(Boolean).join(' · ')),
+      ...kv('状態', [s.agent === 'claude' && !s.desktopKnown ? 'アーカイブ状態は不明（Claude デスクトップの情報がディスクにありません）' : s.archived ? 'アーカイブ済' : '進行中/未アーカイブ', s.pinnedInAgent ? '📌 Codex でピン留め' : null, s.subagent ? 'サブエージェント' : null, s.automation ? '⏰ Codex オートメーション' : null].filter(Boolean).join(' · ')),
     ),
     d.task ? h('div', { class: 'msg' }, `このセッションは${T.taskCard} `, h('button', { class: 'link-btn', text: `「${d.task.title}」`, onclick: () => openCard(d.task.id) }), ' に紐付いています。') : null,
     d.children && d.children.length ? h('div', { class: 'section-title', text: `サブエージェント（${d.children.length}）` }) : null,
@@ -1401,7 +1403,7 @@ function renderDispatch(d) {
     }
   };
   ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(busy ? 'queue' : 'now'); } });
-  const appNote = s.agent === 'codex' || s.desktopSessionId
+  const appNote = s.agent === 'codex' || s.desktopSessionId || s.entrypoint === 'claude-desktop'
     ? h('div', { class: 'muted', text: `${s.agent === 'codex' ? 'Codex' : 'Claude'} アプリでこのセッションを開いている場合は、閉じてから送ってください（アプリ側の表示と履歴がずれることがあります）。` }) : null;
   box.append(...[title,
     D.paused ? h('div', { class: 'paused-bar' }, h('span', { class: 'grow', text: `⏸ キュー一時停止: ${D.paused.reason}` }),

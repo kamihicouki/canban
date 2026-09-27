@@ -157,3 +157,13 @@ test('requests: model tools are visible, UI-only ones are not; gates answer with
   assert.equal(perf.leader, true);
   assert.ok(perf.ops.buildBoard.count > 0);
 });
+
+test('Codex pins are shown and filterable; Claude sessions without desktop metadata are marked unknown', async () => {
+  const board = (await call('canban_get_board', { days: 0, includeArchived: true, pinnedOnly: true })).structuredContent;
+  const ids = board.lists.flatMap((l) => l.cards).map((c) => c.id);
+  assert.deepEqual(ids, ['codex:t1']);
+  assert.equal(board.lists.flatMap((l) => l.cards)[0].pinnedInAgent, true);
+  const d = (await call('canban_get_session', { cardId: 'claude:c1' })).structuredContent;
+  assert.equal(d.session.desktopKnown, true);
+  assert.equal(d.session.entrypoint, 'claude-desktop');
+});

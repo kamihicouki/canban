@@ -57,6 +57,7 @@ export function newSummary(sessionId) {
     prUrl: null,
     turns: 0,
     tokens: 0,
+    entrypoint: null, // the app that started the session (claude-desktop / cli / sdk-cli)
   };
 }
 
@@ -69,6 +70,7 @@ export function foldSummary(s, o) {
   }
   if (o.cwd && !s.cwd) s.cwd = o.cwd;
   if (o.gitBranch) s.branch = o.gitBranch;
+  if (!s.entrypoint && typeof o.entrypoint === 'string') s.entrypoint = o.entrypoint;
   switch (o.type) {
     case 'custom-title':
       if (o.customTitle) s.customTitle = o.customTitle;
@@ -141,6 +143,9 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
     agentName: s.agentName || null,
     tokens: s.tokens || 0,
     desktopStatus: dm?.postTurnSummary?.status_category ?? dm?.statusCategory ?? null,
+    // Claude desktop metadata is often not on disk: archived / title / status from it are then unknown.
+    desktopKnown: !!dm,
+    entrypoint: s.entrypoint || null,
     rawStatus: s.rawStatus ?? null,
     statusMtimeMs: s.statusMtimeMs ?? null,
   };

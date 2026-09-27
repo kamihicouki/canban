@@ -50,6 +50,7 @@ const filterProps = {
   includeArchived: { type: 'boolean' },
   includeSubagents: { type: 'boolean' },
   includeHidden: { type: 'boolean' },
+  pinnedOnly: { type: 'boolean', description: 'Codex アプリでピン留めしたスレッドだけ' },
   groupBranch: { type: 'boolean', description: '同じリポジトリ＋ブランチのセッションをまとめる' },
   fulltext: { type: 'boolean', description: 'q を会話の本文でも検索する（3 文字以上）' },
   days: { type: 'number', description: '未配置セッションの表示期間（日）。0 で無制限。既定 30' },

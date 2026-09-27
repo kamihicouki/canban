@@ -93,7 +93,7 @@ AI App（Codex / Claude Code）ごとに、次のリンクやコマンドで再�
 
 - **Codex**: `codex://threads/<id>` で開きます。リモートのセッションは `?hostId=<接続ID>` を付けて、手元の Codex アプリから開きます。ターミナルでは `codex resume <id>` を実行します。
 - **Claude Code**:
-  - Claude デスクトップに記録があるセッションは `claude://code/continue?session=local_…` で開きます。
+  - Claude デスクトップのセッション情報（`~/Library/Application Support/Claude/claude-code-sessions`）がディスクにあるセッションは、`claude://code/continue?session=local_…` で開きます。最近の Claude デスクトップはこの情報をディスクに置かないことが多いので、その場合、Canban はアーカイブ状態を「不明」と表示します。セッションを始めたアプリ（デスクトップか CLI か）は transcript の `entrypoint` から判断します。
   - CLI だけで使ったセッションは `claude://resume?session=<id>` で開きます。Claude デスクトップがそのセッションを取り込んで、続きから表示します（取り込みは Claude アプリ側の処理で、Canban はデータに触れません）。
   - Claude の設定で OS からの起動（エントリポイント）が無効になっていると、リンクは無視されます。
 - **リモート**: ターミナルで `ssh -t <alias> 'cd <cwd>; <再開コマンド>'` を実行します。

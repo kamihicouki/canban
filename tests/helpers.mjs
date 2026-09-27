@@ -34,12 +34,15 @@ export function makeFixtures() {
   ins.run('t3', '', 1790000000, 1790000000, null, 'cli', null, '/r/app', '<system-reminder>x</system-reminder>\n調査', null, 1, null, null, '', '', null, 0);
   db.close();
 
+  // Codex app state: t1 is pinned in the Codex app
+  fs.writeFileSync(path.join(codexHome, '.codex-global-state.json'), JSON.stringify({ 'pinned-thread-ids': ['t1'] }));
+
   // Claude Code: two transcripts
   const proj = path.join(claudeHome, 'projects', '-r-web');
   fs.mkdirSync(proj, { recursive: true });
   fs.writeFileSync(
     path.join(proj, 'c1.jsonl'),
-    line({ type: 'user', cwd: '/r/web', gitBranch: 'main', timestamp: '2026-09-21T00:00:00Z', message: { role: 'user', content: 'トップページを速くして' } }) +
+    line({ type: 'user', cwd: '/r/web', gitBranch: 'main', entrypoint: 'claude-desktop', timestamp: '2026-09-21T00:00:00Z', message: { role: 'user', content: 'トップページを速くして' } }) +
       line({ type: 'assistant', timestamp: '2026-09-21T00:00:05.250Z', message: { model: 'claude-opus-5-5', usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100 }, content: [{ type: 'text', text: '計測します' }] } }) +
       line({ type: 'user', timestamp: '2026-09-21T00:00:06Z', message: { content: [{ type: 'tool_result', content: 'x' }] } }) +
       line({ type: 'custom-title', customTitle: 'トップページ高速化', sessionId: 'c1' }) +

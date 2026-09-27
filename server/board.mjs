@@ -80,6 +80,7 @@ function matches(session, card, f, labelsById, hits, dir) {
   if (!f.includeArchived && session.archived) return false;
   if (!f.includeSubagents && session.subagent) return false;
   if (!f.includeHidden && card?.hidden) return false;
+  if (f.pinnedOnly && !session.pinnedInAgent) return false;
   // Sessions the user placed on the board stay visible regardless of age.
   if (f.days && !card?.listId && (session.updatedAt || 0) < Date.now() - f.days * 86400000) return false;
   if (f.q) {
@@ -99,6 +100,8 @@ function matchesTask(t, links, status, f, labelsById, dir) {
   if (!matchesDirectory(f, dir)) return false;
   if (f.status && status !== f.status) return false;
   const anyLink = (pred) => links.some(pred);
+  if (f.pinnedOnly && !anyLink((s) => s.pinnedInAgent)) return false;
+  if (f.folder && !anyLink((s) => s.folder === f.folder)) return false;
   if (f.agent && f.agent !== 'all' && !(anyLink((s) => s.agent === f.agent) || t.target?.agent === f.agent)) return false;
   if (f.host && !(anyLink((s) => (s.host?.id || 'local') === f.host) || (t.target?.hostId || 'local') === f.host)) return false;
   if (f.project && !anyLink((s) => s.project === f.project)) return false;
@@ -124,6 +127,7 @@ export function normalizeFilters(f = {}) {
     includeArchived: !!f.includeArchived,
     includeSubagents: !!f.includeSubagents,
     includeHidden: !!f.includeHidden,
+    pinnedOnly: !!f.pinnedOnly,
     groupBranch: !!f.groupBranch,
     fulltext: !!f.fulltext,
     days: Number.isFinite(days) && days > 0 ? days : 0,
@@ -343,6 +347,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       unread: (s.updatedAt || 0) > Math.max(seenAll, card?.seenAt || 0),
       requests: reqs.get(s.id) || null,
       codexFollowUps: s.codexFollowUps || 0,
+      pinnedInAgent: !!s.pinnedInAgent,
       autoMoved: card?.movedBy ? { ruleId: card.movedBy.ruleId, at: card.movedBy.at } : null,
       subagents: kids.length ? { total: kids.length, running: kids.filter((k) => k.status === 'running' || k.status === 'waiting').length } : null,
       repo: s.repo || null,
