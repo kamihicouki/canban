@@ -70,7 +70,7 @@ function normalizeDispatch(x) {
   };
 }
 
-const VIEW_FILTER_KEYS = ['agent', 'host', 'status', 'project', 'directory', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'includeHidden', 'groupBranch', 'fulltext', 'swimlane'];
+const VIEW_FILTER_KEYS = ['agent', 'host', 'status', 'project', 'folder', 'directory', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'includeHidden', 'groupBranch', 'fulltext', 'swimlane'];
 function normalizeView(v) {
   if (!v || typeof v.id !== 'string' || !String(v.name || '').trim()) return null;
   const filters = {};

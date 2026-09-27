@@ -21,6 +21,7 @@ import { codexRawStatus, claudeRawStatus, settle } from './status.mjs';
 import { stat, readTailJsonLines } from './sources/readonly.mjs';
 import { findCodexSession } from './sources/codex.mjs';
 import { listClaudeSessions } from './sources/claude.mjs';
+import { codexAppState, annotateCodexApp } from './sources/codex-app.mjs';
 import { pool, hostsWithState } from './board.mjs';
 import { perf } from './perf.mjs';
 
@@ -151,6 +152,7 @@ export async function resolveSession(store, cardId) {
   if (!alias) {
     const s = agent === 'codex' ? await findCodexSession(nativeId) : (await listClaudeSessions()).sessions.find((x) => x.nativeId === nativeId);
     if (!s) throw new Error(`セッションが見つかりません: ${cardId}`);
+    annotateCodexApp([s], await codexAppState());
     return { session: s, host: null };
   }
   const host = (await hostsWithState(store.load())).find((h) => h.alias === alias);
@@ -158,6 +160,7 @@ export async function resolveSession(store, cardId) {
   if (!host.enabled) throw new Error(`${host.label} の読み取りがオフです。「マシン」でオンにしてください`);
   const s = (await pool.sessions([host])).find((x) => x.id === cardId);
   if (!s) throw new Error(`セッションが見つかりません: ${cardId}`);
+  annotateCodexApp([s], await codexAppState());
   return { session: s, host };
 }
 

@@ -15,6 +15,7 @@ Canban reads a lot of data. A real history used while building 0.8.0 had 4,461 C
 | `status` | 100 ms | Log tails cached by mtime and size |
 | `tick.dispatch` | 100 ms | With no requests it only stats `requests.json` and never lists sessions |
 | `dispatch.inspect` | 100 ms | 256 KB log tail of one session |
+| `codexApp.read` | 30 ms | Parse of `~/.codex/.codex-global-state.json`; only when its mtime / size changes, shared by projects, pins, follow-ups and remote hosts |
 | `tick.rules` / `tick.search` | 1 s / 3 s | Leader only |
 | Event-loop delay | p99 < 50 ms | |
 | Non-leader idle CPU | ≈ 0 | No background timers except the 30 s leader heartbeat |

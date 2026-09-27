@@ -624,6 +624,7 @@ async function load({ refresh = false } = {}) {
   const f = state.filters;
   const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, includeHidden: f.includeHidden, groupBranch: !!f.groupBranch, fulltext: !!f.fulltext, refresh };
   if (f.project) args.project = f.project;
+  if (f.folder) args.folder = f.folder;
   if (f.directory) args.directory = f.directory;
   if (f.host) args.host = f.host;
   if (f.status) args.status = f.status;
@@ -774,7 +775,7 @@ function renderCard(card, list) {
     card.autoMoved ? h('span', { class: 'pill', title: `${T.automation}で移動`, text: '⚡' }) : null,
     h('span', { class: `badge ${card.agent}`, text: card.agent === 'codex' ? 'Codex' : 'Claude' }),
     card.host ? h('span', { class: 'host-chip', title: `SSH: ${card.host.alias}`, text: `⌂ ${card.host.label}` }) : null,
-    card.directory ? dirPill(card.directory, card.project) : card.project ? h('span', { class: 'ellipsis', title: card.cwd || '', text: `📁 ${card.project}` }) : null,
+    card.directory ? dirPill(card.directory, card.project) : card.project ? h('span', { class: 'ellipsis', title: card.codexProject ? `Codex のプロジェクト（${T.folder}: ${card.folder || '-'}）` : card.cwd || '', text: `📁 ${card.project}` }) : null,
     card.branch ? h('span', { class: 'ellipsis', title: card.branch, text: `⎇ ${card.branch}` }) : null,
     h('span', { title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }),
   );
@@ -1309,7 +1310,8 @@ function renderModal(modal, d) {
       ...kv('AI App', s.agent === 'codex' ? 'Codex' : 'Claude Code'),
       ...kv('マシン', s.host ? `${s.host.label}（SSH: ${s.host.alias}）` : 'このマシン'),
       ...kv(`${T.category}`, card.directory ? `${card.directory.name}${card.directoryId ? '' : '（フォルダから自動）'}` : '-'),
-      ...kv('プロジェクト', s.project || '-'),
+      ...kv('プロジェクト', s.codexProject ? `${s.codexProject.name}（Codex のプロジェクト）` : s.project || '-'),
+      ...kv(T.folder, s.folder || '-'),
       ...kv('作業ディレクトリ', s.cwd || '-'),
       ...kv('ブランチ', s.branch || '-'),
       ...kv('モデル', s.model || '-'),
@@ -1594,7 +1596,7 @@ function setAllLanes(collapse) {
 function scopeLabel(b) {
   const f = state.filters;
   const dir = f.directory === '__none' ? `${T.category}なし` : b?.directories.find((d) => d.id === f.directory)?.name;
-  const parts = [dir && `📂 ${dir}`, f.project && `📁 ${f.project}`].filter(Boolean);
+  const parts = [dir && `📂 ${dir}`, f.project && `📁 ${f.project}`, f.folder && `🗂 ${f.folder}`].filter(Boolean);
   return parts.length ? parts.join(' · ') : '📁 すべて';
 }
 function setScope(patch) {
@@ -1609,19 +1611,38 @@ function scopePicker(anchor) {
   const f = state.filters;
   picker(anchor, {
     title: `${T.category}・プロジェクトで絞り込み`, width: 340,
-    selected: [f.directory ? `d:${f.directory}` : null, f.project ? `p:${f.project}` : null, !f.directory && !f.project ? '' : null].filter((x) => x != null),
+    selected: [f.directory ? `d:${f.directory}` : null, f.project ? `p:${f.project}` : null, f.folder ? `f:${f.folder}` : null, !f.directory && !f.project && !f.folder ? '' : null].filter((x) => x != null),
     items: [
       { value: '', label: 'すべて（絞り込みを解除）' },
       ...directoryItems(false).map((it) => ({ ...it, value: `d:${it.value}`, group: `${T.category}` })),
-      ...b.projects.map((p) => ({ value: `p:${p.name}`, label: p.name, hint: p.count, group: 'プロジェクト' })),
+      ...b.projects.map((p) => ({ value: `p:${p.name}`, label: p.name, hint: p.count, group: 'プロジェクト（Codex のプロジェクト、なければフォルダ名）' })),
+      ...(b.folders || []).map((x) => ({ value: `f:${x.name}`, label: x.name, hint: x.count, group: `${T.folder}（Codex のプロジェクトに入っているもの）` })),
     ],
     onPick: (v) => {
-      if (!v) return setScope({ directory: '', project: '' });
+      if (!v) return setScope({ directory: '', project: '', folder: '' });
       if (v.startsWith('d:')) setScope({ directory: f.directory === v.slice(2) ? '' : v.slice(2) });
+      else if (v.startsWith('f:')) setScope({ folder: f.folder === v.slice(2) ? '' : v.slice(2) });
       else setScope({ project: f.project === v.slice(2) ? '' : v.slice(2) });
     },
   });
 }
+// Make a category from a Codex project: same name, and its folders so that the
+// project's sessions join automatically.
+function importCodexProject(anchor) {
+  const b = state.board;
+  const taken = new Set(b.directories.map((d) => d.name));
+  picker(anchor, {
+    title: `Codex のプロジェクトから${T.category}を作成`, width: 360,
+    items: b.codexProjects.map((p) => ({ value: p.id, label: p.name, hint: taken.has(p.name) ? '作成済み' : p.count, group: p.hostId ? 'リモート' : 'このマシン' })),
+    onPick: (id) => {
+      const p = b.codexProjects.find((x) => x.id === id);
+      if (!p || taken.has(p.name)) return toast(`「${p?.name}」は既にあります`, true);
+      act('canban_create_directory', { name: p.name, paths: p.roots.filter((r) => r.startsWith('/')), color: COLORS[(b.directories.length + 1) % COLORS.length] },
+        { okMsg: `${T.category}「${p.name}」を作成しました（フォルダ ${p.roots.length} 件）` }).catch(() => {});
+    },
+  });
+}
+
 function toggleSidebar(open = !state.sideOpen) {
   state.sideOpen = open;
   store.set('sidebar', open);
@@ -1678,6 +1699,7 @@ function renderSidebar(b) {
       act('canban_create_directory', { name: e.target.value.trim(), color: COLORS[(b.directories.length + 1) % COLORS.length] }, { okMsg: `${T.category}を作成しました` }).catch(() => {});
     } });
   secs.push(h('section', {}, head(`${T.category}`,
+    (b.codexProjects || []).length ? h('button', { class: 'side-mini', title: `Codex のプロジェクトから${T.category}を作成（フォルダも登録）`, text: '⇣ Codex', onclick: (e) => importCodexProject(e.currentTarget) }) : null,
     f.swimlane !== 'directory' ? h('button', { class: 'side-mini', title: `${T.category}でスイムレーン表示`, text: '≡ レーン', onclick: () => { f.swimlane = 'directory'; saveFilters(); render(); } }) : null),
     dirs.map(dirRow), q ? null : add));
 

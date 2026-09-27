@@ -42,7 +42,8 @@ const appAndModel = { ui: { visibility: ['model', 'app'] }, 'openai/widgetAccess
 const filterProps = {
   agent: { type: 'string', enum: ['all', 'codex', 'claude'], description: 'AI App（codex / claude）で絞り込み' },
   host: { type: 'string', description: "マシンで絞り込み（'local' またはリモート接続の hostId）" },
-  project: { type: 'string', description: 'プロジェクト名（cwd のディレクトリ名）で絞り込み' },
+  project: { type: 'string', description: 'プロジェクトで絞り込み（Codex のプロジェクト名。Codex のプロジェクトに入っていないセッションは作業フォルダ名）' },
+  folder: { type: 'string', description: '作業フォルダ名（cwd の末尾）で絞り込み' },
   directory: { type: 'string', description: "Canban のカテゴリ（ユーザーが作る、1 枚に 1 つのまとまり。API 上の名前は directory）の ID で絞り込み。'__none' でカテゴリなし" },
   status: { type: 'string', enum: ['running', 'waiting', 'completed', 'aborted', 'idle'], description: '実行状態で絞り込み' },
   q: { type: 'string', description: 'タイトル・最初の依頼・メモ・ラベルの部分一致検索' },

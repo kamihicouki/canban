@@ -1,21 +1,13 @@
 // Remote machines registered as connections in the Codex desktop app (read-only).
-// Source: ~/.codex/.codex-global-state.json → "codex-managed-remote-connections".
-import path from 'node:path';
-import { exists, readJson } from './readonly.mjs';
+// Source: ~/.codex/.codex-global-state.json → "codex-managed-remote-connections"
+// (through the shared, mtime-cached reader in codex-app.mjs).
 import { codexHome } from './codex.mjs';
+import { codexAppState } from './codex-app.mjs';
 
 const SAFE_ALIAS = /^[A-Za-z0-9._@][A-Za-z0-9._@-]{0,127}$/; // no leading '-': never an ssh option
 
 export async function listRemoteHosts({ home = codexHome() } = {}) {
-  const file = path.join(home, '.codex-global-state.json');
-  if (!exists(file)) return [];
-  let state;
-  try {
-    state = await readJson(file);
-  } catch {
-    return [];
-  }
-  const conns = Array.isArray(state?.['codex-managed-remote-connections']) ? state['codex-managed-remote-connections'] : [];
+  const conns = (await codexAppState({ home })).remoteConnections;
   const hosts = [];
   for (const c of conns) {
     if (!c || typeof c.hostId !== 'string') continue;
