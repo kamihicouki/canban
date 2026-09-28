@@ -193,10 +193,46 @@ function normalize(s) {
   return out;
 }
 
+const LOCK_STALE_MS = 10000;
+const LOCK_WAIT_MS = 5000;
+const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
+}
+
+// Exclusive lock across processes (held for one synchronous read-modify-write). A lock
+// left by a dead process, or older than LOCK_STALE_MS, is taken over.
+function lockFile(file) {
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      const fd = fs.openSync(file, 'wx');
+      fs.writeSync(fd, String(process.pid));
+      fs.closeSync(fd);
+      return;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+    }
+    try {
+      const st = fs.statSync(file);
+      const owner = Number(fs.readFileSync(file, 'utf8'));
+      if (Date.now() - st.mtimeMs > LOCK_STALE_MS || (owner && owner !== process.pid && !pidAlive(owner))) fs.rmSync(file, { force: true });
+    } catch {}
+    if (Date.now() > deadline) throw new Error('ボードのロックを取得できませんでした');
+    sleep(10);
+  }
+}
+
 export class Store {
   constructor(dir = dataDir()) {
     this.dir = dir;
     this.file = path.join(dir, 'board.json');
+    this.lockFile = path.join(dir, 'board.lock');
   }
 
   load() {
@@ -228,14 +264,23 @@ export class Store {
     await fsp.rename(tmp, this.file);
   }
 
-  // Read-modify-write, serialized within this process so concurrent tool calls
-  // cannot interleave; re-reading from disk keeps several processes consistent.
+  // Read-modify-write. Serialized within this process by a promise chain, and across
+  // processes (Codex and Claude Desktop each run servers on the same board, and the
+  // board updates live in both) by an exclusive lock file, so no edit is lost.
   mutate(fn) {
     const run = async () => {
-      const state = this.load();
-      const result = fn(state);
-      await this.save(state);
-      return result;
+      await fsp.mkdir(this.dir, { recursive: true });
+      lockFile(this.lockFile);
+      try {
+        const state = this.load();
+        const result = fn(state);
+        const tmp = `${this.file}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+        fs.writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+        fs.renameSync(tmp, this.file);
+        return result;
+      } finally {
+        fs.rmSync(this.lockFile, { force: true });
+      }
     };
     const p = (this.queue || Promise.resolve()).then(run, run);
     this.queue = p.catch(() => {});

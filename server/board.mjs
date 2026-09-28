@@ -2,7 +2,8 @@
 // Canban store into a board snapshot.
 import { listCodexSessions, codexMessagesFromRecords } from './sources/codex.mjs';
 import { listClaudeSessions, claudeMessagesFromRecords } from './sources/claude.mjs';
-import { exists, readTailJsonLines } from './sources/readonly.mjs';
+import { exists } from './sources/readonly.mjs';
+import { readLines, itemsFor, foldResults } from './feed.mjs';
 import { permissionFor } from './permissions.mjs';
 import { RequestStore, requestSummary } from './requests.mjs';
 import { listRemoteHosts } from './sources/remotes.mjs';
@@ -37,6 +38,13 @@ export async function hostsWithState(state) {
   return remotes.map((h) => ({ ...h, enabled: !!state.remoteHosts?.[h.id]?.enabled, status: pool.hostStatus(h.id) }));
 }
 
+// Called with the local sessions after every listing (the live watcher indexes them).
+const sessionHooks = new Set();
+export function onSessions(fn) {
+  sessionHooks.add(fn);
+  return () => sessionHooks.delete(fn);
+}
+
 export function allSessions(state, opts) {
   return perf.timed('sessions.all', () => allSessionsImpl(state, opts));
 }
@@ -49,6 +57,7 @@ async function allSessionsImpl(state, { force = false } = {}) {
   const app = await codexAppState();
   annotateCodexApp(all, app); // Codex projects, pins and follow-ups kept by the Codex app
   await perf.timed('status', () => annotateStatus(all));
+  for (const fn of sessionHooks) fn(local.sessions);
   const now = Date.now();
   await prs.annotate(all.filter((s) => (s.updatedAt || 0) >= now - PR_WINDOW_MS || state.cards[s.id]?.listId));
   const errors = [...local.errors];
@@ -349,6 +358,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       hidden: !!card?.hidden,
       placed: !!card?.listId,
       status: s.status || 'idle',
+      activity: s.activity || null,
       unread: (s.updatedAt || 0) > Math.max(seenAll, card?.seenAt || 0),
       requests: reqs.get(s.id) || null,
       codexFollowUps: s.codexFollowUps || 0,
@@ -518,13 +528,16 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   let recent = [];
   let permission = null; // remote: checked when sending (saves an ssh round trip)
   let messagesError = null;
+  let feed = null; // local: the live conversation and where canban_watch continues it
   try {
     if (host) recent = await pool.messages(host, s, messages);
     else if (s.sourcePath && exists(s.sourcePath)) {
-      // One tail read serves both the messages and the permissions shown for sending.
-      const records = await readTailJsonLines(s.sourcePath, 768 * 1024);
+      // One tail read serves the messages, the live feed and the permissions shown for sending.
+      const { records, offset, size } = await readLines(s.sourcePath, { tailBytes: 768 * 1024 });
       recent = s.agent === 'codex' ? codexMessagesFromRecords(records, messages) : claudeMessagesFromRecords(records, messages);
       permission = permissionFor(s, records);
+      const ctx = {};
+      feed = { items: foldResults(itemsFor(s.agent, records, ctx)), offset, size, codexItems: !!ctx.items };
     }
   } catch (e) {
     messagesError = e.message;
@@ -562,6 +575,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     terminals: installedTerminals(),
     recentMessages: recent,
     messagesError,
+    feed,
     dispatch: dispatchView(store.dir, state, cardId, permission),
   };
 }

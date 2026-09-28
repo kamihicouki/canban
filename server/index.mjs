@@ -16,6 +16,10 @@ import { computeStats } from './stats.mjs';
 import { desktopLink, resumeCommand, newSessionLink, newSessionCommand } from './agents.mjs';
 import { LOCAL_HOST } from './sources/util.mjs';
 import { openUrl, runInTerminal, installedTerminals, setRunner, TERMINAL_LABELS } from './launcher.mjs';
+import { LiveHub } from './live.mjs';
+import { createWatch } from './watch.mjs';
+import { codexHome } from './sources/codex.mjs';
+import { claudeHome } from './sources/claude.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // The Codex plugin manifest is absent when installed another way (Claude Desktop extension, a bare copy).
@@ -38,6 +42,9 @@ function readManifest(...candidates) {
 }
 
 const store = new Store();
+// Realtime: watches nothing until a board calls canban_watch (see server/live.mjs).
+const live = process.env.CANBAN_LIVE === '0' ? null : new LiveHub({ dataDir: store.dir, codexHome: codexHome(), claudeProjects: path.join(claudeHome(), 'projects') });
+const watch = live ? createWatch(live) : null;
 let client = null; // clientInfo from initialize: which host started this server
 const log = (...a) => process.stderr.write(`[canban] ${a.join(' ')}\n`);
 
@@ -333,6 +340,30 @@ const TOOLS = [
     modelPerHour: { type: 'number' },
   }, [], (a) => store.updateDispatchSettings(a)),
   {
+    name: 'canban_watch',
+    title: '変更を待つ',
+    description: 'ボードや開いているセッションに変化があるまで待ち、差分を返す（カンバン UI 用のロングポーリング）。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        since: { type: ['number', 'null'], description: '前回の seq。null で現在の seq だけ返す' },
+        cardId: { type: ['string', 'null'], description: '詳細を開いているセッション' },
+        offset: { type: ['number', 'null'], description: 'そのセッションのログの読み取り位置' },
+        size: { type: ['number', 'null'], description: '前回見たログのサイズ' },
+        codexItems: { type: 'boolean' },
+        timeoutMs: { type: 'number' },
+      },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true },
+    _meta: appOnly,
+    handler: async (args) => {
+      if (!watch) return { text: 'live off', structured: { off: true } };
+      const r = await watch(args);
+      return { text: `seq ${r.seq}${r.reload ? ' reload' : ''} ${r.patches.length} patches${r.feed ? ` ${r.feed.items.length} items` : ''}`, structured: r };
+    },
+  },
+  {
     name: 'canban_get_perf',
     title: '動作の重さ',
     description: 'Canban 自身の処理時間（p50 / p95 / 予算）、イベントループ遅延、メモリ、背景処理のリーダーかどうかを返す（カンバン UI 用）',
@@ -340,7 +371,7 @@ const TOOLS = [
     annotations: { readOnlyHint: true },
     _meta: appOnly,
     handler: async () => {
-      const p = perf.summary({ leader: leader.isLeader, leaderPid: leader.owner?.() ?? null, client });
+      const p = perf.summary({ leader: leader.isLeader, leaderPid: leader.owner?.() ?? null, client, live: live ? { active: live.active, seq: live.seq, ...live.counters } : null });
       return { text: `rss ${p.rssMB}MB, loop p99 ${p.loop?.p99 ?? '-'}ms, slow ${p.slow.length}`, structured: p };
     },
   },

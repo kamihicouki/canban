@@ -6,6 +6,7 @@ import { monitorEventLoopDelay } from 'node:perf_hooks';
 export const BUDGETS = {
   buildBoard: 300,
   sessionDetail: 300,
+  'live.watch': 50, // turning file events into patches + the open session's appended lines (not the wait)
   'sessions.all': 300,
   'codex.list': 50, // includes delta reads while Codex is writing
   'claude.list': 100,

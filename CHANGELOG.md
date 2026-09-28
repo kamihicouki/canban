@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0 — 2026-09-28
+- Realtime board. While a board is open it updates as soon as something changes, instead of re-reading every 15–60 s.
+  - The UI keeps one `canban_watch` call open (long poll, up to 20 s). The server watches the session logs (`fs.watch`) and Canban's own files, and answers with only what changed.
+  - Cards of sessions whose log grew are patched in place, with no session listing. Running / waiting cards show what the session is doing now (`Bash: npm test`, the first line of the latest message). A status change still rebuilds the board so automations run.
+  - The card detail shows the conversation like the agents' own apps: prompts, replies, reasoning (folded), tool calls (spinner, then ✓ / ✗ with the start of the output) and turn ends, streamed line by line from the log. It follows new lines when scrolled to the bottom and shows "↓ 新着" otherwise. The send box sits right under it.
+  - Edits made in another app (Codex and Claude Desktop on the same board) show up at once.
+- Load: watching starts when a board opens and stops 60 s after it closes; servers without an open board watch nothing. Logs are read from the last offset. Without `fs.watch`, only the watched files are stat-polled (2 s). If a host runs an app's tool calls one at a time, the UI switches to short polling (2.5 s) so clicks are not delayed. `live.watch` has a 50 ms budget. `CANBAN_LIVE=0` turns it off.
+- `board.json` edits hold a lock across processes (`~/.canban/board.lock`), so two apps editing the board at once no longer lose an update.
+
 ## 0.10.0 — 2026-09-27
 - Claude Desktop: Canban can be installed as a Claude Desktop extension. The board opens inside the conversation when you ask for it ("Canban を開いて"); ⤢ switches to fullscreen.
   - `manifest.json` (MCPB 0.3) starts the same server through `scripts/launch.sh`, so it uses a Node.js ≥ 22.13 from PATH, Homebrew or nvm, or the one set in the extension's "Node.js の場所" setting (`CANBAN_NODE`).

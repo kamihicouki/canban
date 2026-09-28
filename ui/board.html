@@ -209,6 +209,34 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .msg .who { font-size: 11px; font-weight: 700; color: var(--list-muted); margin-bottom: 2px; }
 .msg.user { border-left: 3px solid var(--accent); }
 .muted { color: var(--list-muted); font-size: 12px; }
+/* ---------- live session feed (like the agent apps' own conversation view) ---------- */
+.card .activity { margin-top: 4px; font-size: 12px; line-height: 16px; color: var(--card-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.live-badge { font-size: 11px; font-weight: 600; color: var(--list-muted); display: inline-flex; align-items: center; gap: 4px; }
+.live-badge.on::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--c-green); }
+.feed-wrap { position: relative; margin-bottom: 8px; }
+.feed { max-height: min(460px, 55vh); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 8px; background: var(--modal-panel); font-size: 13px; }
+.fi { white-space: pre-wrap; word-break: break-word; line-height: 19px; }
+.fi-user { align-self: flex-end; max-width: 85%; background: var(--accent); color: #fff; border-radius: 12px 12px 4px 12px; padding: 6px 10px; }
+.fi-asst { padding: 2px 4px; }
+.fi-note { padding: 0 4px; color: var(--list-muted); font-size: 12px; }
+.fi-think, .fi-tool { font-size: 12px; color: var(--list-muted); padding: 0 4px; }
+.fi-think summary, .fi-tool summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.fi-think summary::-webkit-details-marker, .fi-tool summary::-webkit-details-marker { display: none; }
+.fi-tool .tn { font-weight: 600; color: var(--list-fg); flex: none; }
+.fi-tool .ts { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.fi-tool pre, .fi-think .tt { margin: 4px 0 2px 20px; padding: 6px 8px; border-radius: 6px; background: var(--btn-subtle); font-size: 11px; line-height: 15px; white-space: pre-wrap; max-height: 200px; overflow: auto; }
+.ti { width: 14px; flex: none; text-align: center; }
+.ti.ok { color: var(--c-green); }
+.ti.error { color: var(--c-red); }
+.ti.running { display: inline-block; width: 10px; height: 10px; margin: 0 2px; border: 2px solid var(--list-muted); border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.fi-turn { align-self: center; font-size: 11px; color: var(--list-muted); padding: 2px 0; }
+.feed-foot { display: flex; align-items: center; gap: 6px; min-height: 22px; font-size: 12px; color: var(--list-muted); padding: 4px 4px 0; }
+.feed-foot .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dots::after { content: '…'; display: inline-block; width: 1.2em; overflow: hidden; vertical-align: bottom; animation: dots 1.2s steps(4) infinite; }
+@keyframes dots { from { width: 0; } to { width: 1.2em; } }
+.feed-new { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); background: var(--accent); color: #fff; border-radius: 12px; padding: 2px 10px; font-size: 12px; box-shadow: var(--card-shadow); }
+@media (prefers-reduced-motion: reduce) { .ti.running, .dots::after { animation: none; } }
 .readonly-note { font-size: 12px; color: var(--list-muted); margin-top: 4px; }
 
 .card-resume {
@@ -516,8 +544,11 @@ const bridge = (() => {
 
   async function callTool(name, args = {}) {
     let res;
+    const t0 = performance.now();
+    const pending = !!hooks.pending?.();
     if (openai()) res = await window.openai.callTool(name, args);
     else res = await request('tools/call', { name, arguments: args });
+    hooks.after?.(name, t0, pending);
     if (res?.isError) {
       const text = (res.content || []).map((c) => c.text).filter(Boolean).join('\n');
       throw Object.assign(new Error(text || `${name} failed`), { code: res.structuredContent?.code || null });
@@ -536,7 +567,8 @@ const bridge = (() => {
   function reportSize() {
     notify('ui/notifications/size-changed', { width: document.documentElement.scrollWidth, height: Math.max(560, window.innerHeight) });
   }
-  return { init, callTool, on, openLink, requestFullscreen, reportSize };
+  const hooks = {}; // pending(): a long poll is open; after(name, startedAt, pending)
+  return { init, callTool, on, openLink, requestFullscreen, reportSize, hooks };
 })();
 
 // ======================================================================
@@ -602,6 +634,7 @@ function toast(msg, isError = false) {
 }
 
 async function act(name, args, { reload = true, okMsg } = {}) {
+  live.ownActAt = Date.now();
   try {
     const res = await bridge.callTool(name, args);
     if (okMsg) toast(okMsg);
@@ -771,6 +804,7 @@ function renderCard(card, list) {
   el.append(h('div', { class: 'title' },
     card.status !== 'idle' ? h('span', { class: `sdot s-${card.status}`, title: STATUS_LABELS[card.status] }) : null,
     card.title));
+  if (card.activity && (card.status === 'running' || card.status === 'waiting')) el.append(h('div', { class: 'activity', title: card.activity, text: card.activity }));
   const meta = h('div', { class: 'meta' },
     card.unread ? h('span', { class: 'pill new-pill', text: '新着' }) : null,
     card.autoMoved ? h('span', { class: 'pill', title: `${T.automation}で移動`, text: '⚡' }) : null,
@@ -1190,6 +1224,7 @@ function labelsManager(anchor) {
 // Card detail modal (Trello "back of card")
 // ======================================================================
 function closeModal() {
+  live.feed = null;
   const had = document.querySelector('.overlay');
   document.querySelectorAll('.overlay').forEach((o) => o.remove());
   state.modalOpen = false;
@@ -1223,6 +1258,7 @@ async function openCard(cardId) {
 }
 
 function renderModal(modal, d) {
+  live.feed = null;
   const s = d.session;
   const b = state.board;
   const labelsById = new Map(b.labels.map((l) => [l.id, l]));
@@ -1307,6 +1343,10 @@ function renderModal(modal, d) {
     : [h('p', { class: 'muted', text: d.messagesError ? `メッセージを取得できませんでした: ${d.messagesError}` : 'メッセージはありません' })];
 
   const main = h('div', {},
+    h('div', { class: 'section-title' }, d.feed ? '会話' : '直近のやりとり',
+      d.feed ? h('span', { class: `live-badge${live.on ? ' on' : ''}`, title: live.on ? 'セッションの変化をそのまま表示します' : '', text: live.on ? 'ライブ' : '' }) : null),
+    ...(d.feed ? [renderFeed(d)] : msgs),
+    renderDispatch(d),
     h('div', { class: 'section-title', text: 'ラベル' }), labelWrap,
     h('div', { class: 'section-title', text: 'メモ' }), note,
     h('div', { class: 'readonly-note', text: '⌘/Ctrl + Enter または フォーカスを外すと保存' }),
@@ -1341,9 +1381,6 @@ function renderModal(modal, d) {
       h('span', { class: 'ellipsis grow', text: c.title }), h('span', { class: 'muted', text: relTime(c.updatedAt) }))),
     h('div', { class: 'section-title', text: '最初の依頼' }),
     h('div', { class: 'msg user' }, s.preview || '-'),
-    h('div', { class: 'section-title', text: '直近のやりとり' }),
-    ...msgs,
-    renderDispatch(d),
   );
 
   modal.replaceChildren(
@@ -1351,12 +1388,13 @@ function renderModal(modal, d) {
     h('h2', { text: s.title }),
     h('div', { class: 'sub row' }, h('span', { class: `badge ${s.agent}`, text: s.agent === 'codex' ? 'Codex' : 'Claude' }),
       s.host ? h('span', { class: 'host-chip', text: `⌂ ${s.host.label}` }) : null,
-      h('span', { class: 'row', style: { gap: '0' } }, h('span', { class: `sdot s-${s.status || 'idle'}` }), STATUS_LABELS[s.status || 'idle']),
+      h('span', { class: 'row modal-status', style: { gap: '0' } }, h('span', { class: `sdot s-${s.status || 'idle'}` }), STATUS_LABELS[s.status || 'idle']),
       'リスト:', listSel),
     h('div', { class: 'modal-grid' }, main, side),
   );
   modal.querySelector('.close').focus();
-  watchRequests(modal, d);
+  if (d.feed) scrollFeedToEnd();
+  if (!live.on) watchRequests(modal, d);
 }
 
 // ======================================================================
@@ -1491,6 +1529,226 @@ function watchRequests(modal, d) {
       }
     } catch {}
   }, 4000);
+}
+
+// ======================================================================
+// Realtime: the live session feed and the board's long poll (canban_watch)
+// ======================================================================
+const TOOL_ICONS = { ok: '✓', error: '✗' };
+const fmtClock = (at) => (at ? new Date(at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '');
+
+function feedItem(it, f) {
+  if (it.k === 'user') return h('div', { class: 'fi fi-user', title: fmtDate(Date.parse(it.at)), text: it.text });
+  if (it.k === 'assistant') return h('div', { class: 'fi fi-asst', text: it.text });
+  if (it.k === 'commentary') return h('div', { class: 'fi fi-note', text: it.text });
+  if (it.k === 'thinking') {
+    if (!it.text) return null;
+    return h('details', { class: 'fi fi-think' }, h('summary', {}, h('span', { class: 'ti', text: '💭' }), h('span', { text: '考えた内容' })), h('div', { class: 'tt', text: it.text }));
+  }
+  if (it.k === 'tool') {
+    const icon = h('span', { class: `ti ${it.state}`, text: TOOL_ICONS[it.state] || '' });
+    const out = h('pre', { text: it.out || '' });
+    if (!it.out) out.hidden = true;
+    const el = h('details', { class: 'fi fi-tool' }, h('summary', { title: it.summary }, icon, h('span', { class: 'tn', text: it.name }), h('span', { class: 'ts', text: it.summary })), out);
+    if (it.id) f.tools.set(it.id, { el, icon, out });
+    return el;
+  }
+  if (it.k === 'turn') return h('div', { class: 'fi-turn', text: `${it.state === 'aborted' ? '⏹ 中断しました' : '— ターン完了'}${it.at ? ` · ${fmtClock(it.at)}` : ''}` });
+  return null;
+}
+
+function renderFeed(d) {
+  const list = h('div', { class: 'feed', role: 'log', 'aria-live': 'polite', 'aria-label': 'セッションの会話' });
+  const foot = h('div', { class: 'feed-foot' });
+  const newBtn = h('button', { class: 'feed-new', text: '↓ 新着', hidden: true, onclick: () => scrollFeedToEnd() });
+  const f = { cardId: d.session.id, offset: d.feed.offset, size: d.feed.size, codexItems: d.feed.codexItems, list, foot, newBtn, tools: new Map(), status: d.session.status || 'idle', activity: d.session.activity || null };
+  list.addEventListener('scroll', () => { if (atFeedEnd(list)) newBtn.hidden = true; });
+  for (const it of d.feed.items) { const el = feedItem(it, f); if (el) list.append(el); }
+  if (!d.feed.items.length) list.append(h('div', { class: 'muted', text: 'まだやりとりはありません' }));
+  live.feed = f;
+  paintFeedFoot(f);
+  kickLive();
+  return h('div', { class: 'feed-wrap' }, list, newBtn, foot);
+}
+
+const atFeedEnd = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+function scrollFeedToEnd() {
+  const f = live.feed;
+  if (!f) return;
+  f.list.scrollTop = f.list.scrollHeight;
+  f.newBtn.hidden = true;
+}
+
+function paintFeedFoot(f) {
+  const st = f.status;
+  if (st === 'running') f.foot.replaceChildren(h('span', { class: 'sdot s-running' }), h('span', { class: 'grow', title: f.activity || '' }, h('span', { class: 'dots', text: '作業中' }), f.activity ? `  ${f.activity}` : ''));
+  else if (st === 'waiting') f.foot.replaceChildren(h('span', { class: 'sdot s-waiting' }), h('span', { class: 'grow', text: `入力待ち${f.activity ? `  ${f.activity}` : ''}（アプリで答えてください）` }));
+  else f.foot.replaceChildren(h('span', { class: `sdot s-${st}` }), h('span', { class: 'grow', text: STATUS_LABELS[st] || '' }));
+  const hdr = document.querySelector('.modal .modal-status');
+  if (hdr) hdr.replaceChildren(h('span', { class: `sdot s-${st}` }), STATUS_LABELS[st] || '');
+}
+
+function applyFeed(f, feed) {
+  if (feed.reset) { openCard(f.cardId); return; }
+  const stick = atFeedEnd(f.list);
+  let added = 0;
+  if (feed.items.length) f.list.querySelector(':scope > .muted')?.remove();
+  for (const it of feed.items) {
+    if (it.k === 'result') {
+      const t = f.tools.get(it.ref);
+      if (!t) continue;
+      t.icon.className = `ti ${it.ok ? 'ok' : 'error'}`;
+      t.icon.textContent = TOOL_ICONS[it.ok ? 'ok' : 'error'];
+      if (it.out) { t.out.textContent = it.out; t.out.hidden = false; }
+      continue;
+    }
+    const el = feedItem(it, f);
+    if (el) { f.list.append(el); added++; }
+  }
+  // Keep the DOM bounded on long runs.
+  while (f.list.childElementCount > 400) f.list.firstElementChild.remove();
+  f.offset = feed.offset;
+  f.size = feed.size;
+  f.codexItems = feed.codexItems;
+  if (feed.status) {
+    if (feed.status !== f.status) refreshDispatch(); // "busy" rules for sending follow the status
+    f.status = feed.status;
+    f.activity = feed.activity || null;
+    paintFeedFoot(f);
+  }
+  if (added) { if (stick) scrollFeedToEnd(); else f.newBtn.hidden = false; }
+}
+
+// ---- the long poll ----
+const live = { on: false, seq: null, feed: null, mode: 'long', inflight: 0, lastLoad: 0, loadTimer: null, dirty: false, ownActAt: 0, lastWatchEnd: 0 };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const liveIdle = () => !state.drag && !document.querySelector('.popover, .list-title-input, .composer');
+
+// Rebuild the board soon (coalesced, at most once every 1.5 s), when nothing is being edited.
+function scheduleLoad(delay = 0) {
+  if (state.view === 'analytics') return;
+  // Our own change reloads in act(); the echo of it is picked up after that, not twice at once.
+  const wait = Math.max(delay, 1500 - (Date.now() - live.lastLoad), 1500 - (Date.now() - live.ownActAt));
+  clearTimeout(live.loadTimer);
+  live.loadTimer = setTimeout(() => {
+    if (!liveIdle() || document.visibilityState !== 'visible') { live.dirty = true; return; }
+    live.dirty = false;
+    live.lastLoad = Date.now();
+    load();
+  }, Math.max(0, wait));
+}
+
+function findCard(id) {
+  for (const l of state.board?.lists || []) for (const c of l.cards) {
+    if (c.id === id) return { card: c, list: l };
+    if (c.kind === 'task' && c.links?.some((x) => x.id === id)) return { card: c, list: l, link: c.links.find((x) => x.id === id) };
+  }
+  return null;
+}
+
+// Patch cards in place: a status change rebuilds the board (rules and counts follow it).
+function applyPatches(patches) {
+  let rebuild = false;
+  for (const p of patches) {
+    const hit = findCard(p.id);
+    if (!hit) continue;
+    const { card, list, link } = hit;
+    if (link) { if (link.status !== p.status) rebuild = true; continue; }
+    if (card.status !== p.status) { rebuild = true; continue; }
+    const openHere = live.feed?.cardId === p.id;
+    if ((p.updatedAt || 0) > (card.updatedAt || 0) && !openHere) card.unread = true;
+    card.updatedAt = Math.max(card.updatedAt || 0, p.updatedAt || 0);
+    card.activity = p.activity;
+    const el = document.querySelector(`.card[data-card-id="${CSS.escape(p.id)}"]`);
+    if (el && !state.drag) {
+      const focused = el.contains(document.activeElement);
+      const next = renderCard(card, list);
+      el.replaceWith(next);
+      if (focused) next.focus();
+    }
+  }
+  if (rebuild) scheduleLoad();
+}
+
+async function refreshDispatch() {
+  const f = live.feed;
+  const modal = document.querySelector('.modal');
+  if (!f || !modal || modal.querySelector('.send-box textarea:focus, .req-row textarea')) return;
+  try {
+    const d = await bridge.callTool('canban_get_session', { cardId: f.cardId, messages: 1 });
+    const old = modal.querySelector('.send-section');
+    if (old && live.feed === f) old.replaceWith(renderDispatch(d));
+  } catch {}
+}
+
+function applyLive(r, args) {
+  if (r.seq != null) live.seq = live.seq == null ? r.seq : Math.max(live.seq, r.seq);
+  if (r.patches?.length) applyPatches(r.patches);
+  if (r.reload) scheduleLoad();
+  if (r.requests) { refreshDispatch(); scheduleLoad(); }
+  const f = live.feed;
+  if (r.feed && f && f.cardId === args.cardId && f.offset === args.offset) applyFeed(f, r.feed);
+}
+
+function watchArgs(timeoutMs) {
+  const args = { since: live.seq, timeoutMs };
+  const f = live.feed;
+  if (f) Object.assign(args, { cardId: f.cardId, offset: f.offset, size: f.size ?? null, codexItems: !!f.codexItems });
+  return args;
+}
+
+async function watchOnce(timeoutMs) {
+  const args = watchArgs(timeoutMs);
+  live.inflight++;
+  try {
+    const r = await bridge.callTool('canban_watch', args);
+    if (r?.off) { live.on = false; return false; }
+    applyLive(r, args);
+    return true;
+  } finally {
+    live.inflight--;
+    live.lastWatchEnd = performance.now();
+  }
+}
+
+// The detail view opened or changed: tell the server now instead of after the pending wait.
+function kickLive() {
+  if (live.on && live.seq != null) watchOnce(0).catch(() => {});
+}
+
+// Some hosts may run an app's tool calls one at a time; then a held call would delay
+// every click. If a click's call finishes right after a long wait did, poll instead.
+function noteCall(name, startedAt, pendingAtStart) {
+  if (name === 'canban_watch' || !pendingAtStart || live.mode !== 'long') return;
+  const now = performance.now();
+  if (now - startedAt > 1500 && now - live.lastWatchEnd < 80) {
+    live.mode = 'short';
+    console.warn('canban: host serializes tool calls; switching to short polling');
+  }
+}
+
+bridge.hooks.pending = () => live.inflight > 0;
+bridge.hooks.after = noteCall;
+
+async function liveLoop() {
+  let failures = 0;
+  for (;;) {
+    if (document.visibilityState !== 'visible') {
+      await new Promise((r) => document.addEventListener('visibilitychange', r, { once: true }));
+      continue;
+    }
+    if (live.dirty && liveIdle()) scheduleLoad();
+    try {
+      const first = live.seq == null;
+      if (!(await watchOnce(first ? 0 : live.mode === 'long' ? 20000 : 0))) return;
+      failures = 0;
+      if (live.mode === 'short') await sleep(2500);
+    } catch (e) {
+      failures++;
+      if (failures >= 3 && live.mode === 'long') live.mode = 'short'; // e.g. a host timeout shorter than the wait
+      await sleep(Math.min(30000, 1000 * 2 ** failures));
+    }
+  }
 }
 
 // ======================================================================
@@ -2771,7 +3029,8 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { 
 function idle() { return !state.drag && !state.modalOpen && !document.querySelector('.popover, .list-title-input, .composer'); }
 let lastPoll = 0;
 setInterval(() => {
-  const every = state.board && hasLive(state.board) ? 15000 : 60000;
+  // With the live watch on, this is only a safety net (remote hosts, missed events).
+  const every = live.on ? (state.board && hasLive(state.board) ? 30000 : 120000) : state.board && hasLive(state.board) ? 15000 : 60000;
   if (Date.now() - lastPoll < every || document.visibilityState !== 'visible' || !idle()) return;
   lastPoll = Date.now();
   load();
@@ -2787,6 +3046,8 @@ window.addEventListener('resize', () => bridge.reportSize());
     $('#refresh').after(h('button', { class: 'hbtn', title: '全画面で開く', 'aria-label': '全画面で開く', text: '⤢', onclick: () => bridge.requestFullscreen() }));
   }
   await load();
+  live.on = true;
+  liveLoop();
 })();
 })();
 </script>
