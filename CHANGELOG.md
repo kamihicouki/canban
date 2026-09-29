@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.12.0 — unreleased
+## 0.12.0 — 2026-09-29
 - Live signals from the session logs, updated with the realtime board:
   - Context in use after the last reply (Codex: share of `model_context_window`; Claude: tokens, share when the window is known). Cards show `◔ 62%`; any card over 75% / 90% turns orange / red.
   - Plan progress from Claude TodoWrite / Codex update_plan (`☑ 3/7`, steps and the current one in the detail).
