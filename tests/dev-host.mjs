@@ -25,7 +25,7 @@ function rpc(method, params) {
   child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
   return new Promise((resolve) => waiting.set(id, resolve));
 }
-await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'dev-host', version: '0' } });
+await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: process.env.CANBAN_DEV_CLIENT || 'dev-host', version: '0' } });
 
 const HOST_PAGE = (theme) => `<!doctype html><meta charset="utf-8"><title>Canban dev host</title>
 <style>html,body{margin:0;height:100%;background:${theme === 'dark' ? '#111' : '#eee'}}iframe{border:0;width:100%;height:100%}</style>

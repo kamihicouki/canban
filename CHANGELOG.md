@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.12.0 — 2026-09-29
+- Live signals from the session logs, updated with the realtime board:
+  - Context in use after the last reply (Codex: share of `model_context_window`; Claude: tokens, share when the window is known). Cards show `◔ 62%`; any card over 75% / 90% turns orange / red.
+  - Plan progress from Claude TodoWrite / Codex update_plan (`☑ 3/7`, steps and the current one in the detail).
+  - Files the current turn edited (Edit / Write / apply_patch / FileChange, `✎ 4`), running Claude sub-agents (`🤖 2`).
+  - What a waiting session waits for: a question (❓) or plan approval (📋).
+  - Model, effort and mode (Claude permission mode / Codex sandbox) in the detail.
+  - Codex rate limits (5 h and weekly windows, from `token_count` events) in the header, with the time to reset.
+  - Signals are folded per log from its first read and then only from appended lines, so a long turn keeps its edited files after they leave the tail.
+- Live git state of running sessions' folders on their cards (`⎇ main ±3 ↑1`: branch, uncommitted + untracked files, ahead / behind) and of any local session in its detail.
+  - Read with `git --no-optional-locks status --porcelain=v2` (never takes the index lock); at most 4 git processes, 3 s timeout.
+  - The live hub watches the git dirs (HEAD, index) of running sessions, so commits and checkouts show at once; unstaged edits are recounted at most every 10 s while the log grows. Nothing runs until a board is open.
+- Presence: a live board leaves a heartbeat in `~/.canban/presence.json` (app from `clientInfo`, the open card; every 30 s or when the open card changes, expiring after 90 s). Other boards show "👁 Codex" / "👁 Claude デスクトップ" in the header and 👁 on the card that board has open. Heartbeats that change nothing a board shows do not end its long poll.
+- The dev host takes `CANBAN_DEV_CLIENT` to pose as another app.
+- Claude desktop metadata (`claude-code-sessions/**/local_*.json`, `archived-sessions.idx`) is watched too: a rename, archive or status change rebuilds the board at once; rewrites that only touch activity times are ignored. Reloads caused by new sessions or metadata skip the 4 s listing cache.
+
 ## 0.11.0 — 2026-09-28
 - Realtime board. While a board is open it updates as soon as something changes, instead of re-reading every 15–60 s.
   - The UI keeps one `canban_watch` call open (long poll, up to 20 s). The server watches the session logs (`fs.watch`) and Canban's own files, and answers with only what changed.

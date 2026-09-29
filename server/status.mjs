@@ -5,8 +5,9 @@
 //   aborted   — the last turn was interrupted
 //   idle      — no recent activity (or nothing to go on)
 // Keep the rules in sync with codex_status / claude_status in server/remote/collect.py.
-import { stat, readTailJsonLines } from './sources/readonly.mjs';
-import { itemsFor, activityOf } from './feed.mjs';
+import { stat } from './sources/readonly.mjs';
+import { itemsFor, activityOf, readLines, FEED_MAX_DELTA } from './feed.mjs';
+import { newAcc, foldSignals, signalsView, limitsFrom, noteLimits } from './signals.mjs';
 
 export const STATUSES = ['running', 'waiting', 'completed', 'aborted', 'idle'];
 export const RECENT_MS = 24 * 3600e3; // older sessions are always idle
@@ -82,24 +83,49 @@ export function refineClaude(state, desktopStatus) {
 }
 
 // ---- local sessions -------------------------------------------------------
-const cache = new Map(); // path -> { mtimeMs, size, desktopStatus, raw, activity }
+const cache = new Map(); // path -> { mtimeMs, size, desktopStatus, raw, activity, signals }
+const sigAcc = new Map(); // path -> { offset, acc }: signals folded up to `offset`
+
+// Signals follow the whole log since it was first read (a turn's edited files can lie
+// before the tail): later changes fold only the appended lines into the accumulator.
+async function signalsOf(session, tail) {
+  const file = session.sourcePath;
+  let e = sigAcc.get(file);
+  if (e && e.agent === session.agent && tail.size >= e.offset && tail.size - e.offset <= FEED_MAX_DELTA) {
+    const d = await readLines(file, { start: e.offset });
+    if (!d.reset) {
+      foldSignals(e.acc, d.records);
+      e.offset = d.offset;
+      if (session.agent === 'codex') noteLimits(limitsFrom(d.records));
+      return signalsView(e.acc);
+    }
+  }
+  e = { agent: session.agent, offset: tail.offset, acc: foldSignals(newAcc(session.agent), tail.records) };
+  sigAcc.set(file, e);
+  if (session.agent === 'codex') noteLimits(limitsFrom(tail.records));
+  return signalsView(e.acc);
+}
 
 // Status (and, while it runs, what the session is doing) from the log tail.
-// Sets `session.activity`; the tail is only re-read when the log changed.
+// Sets `session.activity` and `session.signals`; the tail is only re-read when the log changed.
 export async function localStatus(session, now = Date.now()) {
   session.activity = null;
+  session.signals = null;
   if (!session.sourcePath || (session.updatedAt || 0) < now - RECENT_MS) return 'idle';
   const st = await stat(session.sourcePath);
   if (!st) return 'idle';
   let hit = cache.get(session.sourcePath);
   if (!hit || hit.mtimeMs !== st.mtimeMs || hit.size !== st.size || hit.desktopStatus !== session.desktopStatus) {
-    const records = await readTailJsonLines(session.sourcePath, TAIL_BYTES);
+    const tail = await readLines(session.sourcePath, { tailBytes: TAIL_BYTES });
+    const { records } = tail;
     const raw = session.agent === 'codex' ? codexRawStatus(records) : claudeRawStatus(records, session.desktopStatus);
     const activity = raw === 'running' || raw === 'waiting' ? activityOf(itemsFor(session.agent, records.slice(-200), {})) : null;
-    hit = { mtimeMs: st.mtimeMs, size: st.size, desktopStatus: session.desktopStatus, raw, activity };
+    const signals = await signalsOf(session, tail);
+    hit = { mtimeMs: st.mtimeMs, size: st.size, desktopStatus: session.desktopStatus, raw, activity, signals };
     cache.set(session.sourcePath, hit);
   }
   const status = settle(hit.raw, st.mtimeMs, now);
+  session.signals = hit.signals;
   if (status === 'running' || status === 'waiting') session.activity = hit.activity;
   return status;
 }

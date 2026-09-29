@@ -13,6 +13,8 @@ import { RemotePool } from './remote/pool.mjs';
 import { launchInfo } from './agents.mjs';
 import { installedTerminals } from './launcher.mjs';
 import { annotateStatus, STATUSES } from './status.mjs';
+import { currentLimits, cardSignals } from './signals.mjs';
+import { peekGit, refreshGit } from './gitlive.mjs';
 import { RuleEngine } from './rules.mjs';
 import { PrService } from './git.mjs';
 import { SearchIndex } from './search.mjs';
@@ -24,6 +26,11 @@ let localCache = null;
 export const pool = new RemotePool();
 export const prs = new PrService();
 const PR_WINDOW_MS = 30 * 86400e3; // look up PRs for sessions active in the last 30 days
+
+// The live watcher saw a change the listing must pick up (a new session, a desktop rename).
+export function dropLocalCache() {
+  localCache = null;
+}
 
 async function localSessions({ force = false } = {}) {
   if (!force && localCache && Date.now() - localCache.at < LOCAL_TTL_MS) return localCache.value;
@@ -359,6 +366,8 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       placed: !!card?.listId,
       status: s.status || 'idle',
       activity: s.activity || null,
+      signals: cardSignals(s.signals),
+      git: s.status === 'running' || s.status === 'waiting' ? peekGit(s.cwd) : null,
       unread: (s.updatedAt || 0) > Math.max(seenAll, card?.seenAt || 0),
       requests: reqs.get(s.id) || null,
       codexFollowUps: s.codexFollowUps || 0,
@@ -430,6 +439,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
     settings: state.settings,
     terminals: installedTerminals(),
     statusCounts,
+    limits: currentLimits(),
     search: searchFor(store).progress,
     git: { available: prs.status.available, reason: prs.status.reason, github: prs.status.github, gitlab: prs.status.gitlab },
     folders: recentFolders(sessions),
@@ -542,6 +552,9 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   } catch (e) {
     messagesError = e.message;
   }
+  // Local sessions: the folder's git state (one `git status`, cached by HEAD / index). A slow
+  // repo does not hold the detail up; the live watch brings the state when it is ready.
+  const git = !host && s.cwd ? await Promise.race([refreshGit(s.cwd).then((r) => r.value, () => null), new Promise((r) => setTimeout(() => r(peekGit(s.cwd)), 150))]) : null;
   const toTask = linkedToTask(state);
   const taskId = toTask.get(cardId) || null;
   const listCard = taskId ? state.cards[taskId] : card;
@@ -576,6 +589,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     recentMessages: recent,
     messagesError,
     feed,
+    git,
     dispatch: dispatchView(store.dir, state, cardId, permission),
   };
 }

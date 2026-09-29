@@ -16,6 +16,7 @@ export const BUDGETS = {
   'tick.search': 3000,
   'tick.dispatch': 100,
   'dispatch.inspect': 100,
+  'git.status': 1000, // one `git status` for a running session's folder, off the watch path
   'codexApp.read': 30, // parse of ~/.codex/.codex-global-state.json, only when it changed
 };
 const RING = 200;

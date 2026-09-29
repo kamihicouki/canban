@@ -162,7 +162,10 @@ test('canban_watch over stdio: patches the card and streams the open session', a
     const d = await call('canban_get_session', { cardId: 'claude:c2' });
     assert.ok(d.feed);
     assert.deepEqual(d.feed.items.map((i) => i.k), ['user']);
-    const { seq } = await call('canban_watch', { since: null });
+    const first = await call('canban_watch', { since: null });
+    // macOS FSEvents may replay the fixture writes from just before the watch started: drain them.
+    await new Promise((r) => setTimeout(r, 300));
+    const { seq } = await call('canban_watch', { since: first.seq, timeoutMs: 0 });
     const file = path.join(fx.claudeHome, 'projects', '-r-web', 'c2.jsonl');
     const pending = call('canban_watch', { since: seq, cardId: 'claude:c2', offset: d.feed.offset, size: d.feed.size, timeoutMs: 10000 });
     await new Promise((r) => setTimeout(r, 200));
@@ -173,6 +176,8 @@ test('canban_watch over stdio: patches the card and streams the open session', a
     const p = r.patches.find((x) => x.id === 'claude:c2');
     assert.equal(p.status, 'running');
     assert.equal(p.activity, 'Read: README.md');
+    assert.ok(p.signals && !('full' in p), 'cards get the compact signals');
+    assert.ok(r.feed.signals, 'the open card gets the full signals');
     assert.deepEqual(r.feed.items.map((i) => [i.k, i.summary]), [['tool', 'README.md']]);
     assert.equal(r.feed.offset, fs.statSync(file).size);
     // Nothing new: the call waits for its timeout and returns no changes.
@@ -183,7 +188,23 @@ test('canban_watch over stdio: patches the card and streams the open session', a
     await new Promise((r2) => setTimeout(r2, 100));
     const board = JSON.parse(fs.readFileSync(path.join(dataDir, 'board.json'), 'utf8'));
     fs.writeFileSync(path.join(dataDir, 'board.json'), JSON.stringify(board));
-    assert.equal((await w).reload, true);
+    const afterBoard = await w;
+    assert.equal(afterBoard.reload, true);
+    // Claude desktop metadata: activity-only rewrites are ignored, a rename rebuilds the board.
+    const meta = path.join(fx.desktopDir, 'a', 'b', 'local_2.json');
+    const m = JSON.parse(fs.readFileSync(meta, 'utf8'));
+    await call('canban_get_board'); // index the sessions (desktop titles) for the watcher
+    await new Promise((r2) => setTimeout(r2, 300)); // let the board load's own writes arrive
+    const since = (await call('canban_watch', { since: afterBoard.seq, timeoutMs: 0 })).seq;
+    const w2 = call('canban_watch', { since, timeoutMs: 1500 });
+    await new Promise((r2) => setTimeout(r2, 100));
+    fs.writeFileSync(meta, JSON.stringify({ ...m, lastActivityAt: String(Date.now()) }));
+    const quiet2 = await w2;
+    assert.equal(quiet2.reload, false);
+    const w3 = call('canban_watch', { since: quiet2.seq, timeoutMs: 10000 });
+    await new Promise((r2) => setTimeout(r2, 100));
+    fs.writeFileSync(meta, JSON.stringify({ ...m, title: 'README 修正（改名）' }));
+    assert.equal((await w3).reload, true);
     const perfInfo = await call('canban_get_perf');
     assert.equal(perfInfo.live.active, true);
   } finally {

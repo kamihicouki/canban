@@ -5,9 +5,11 @@
 // again LIVE_IDLE_MS after the last watch call (a server whose board is closed does
 // nothing). Where fs.watch is unavailable, the same paths are stat-polled instead.
 //
-//   data dir (non-recursive)        board.json → store, requests.json → requests
+//   data dir (non-recursive)        board.json → store, requests.json → requests, presence.json → presence
 //   Codex home (non-recursive)      state_<n>.sqlite(-wal) → codex, .codex-global-state.json → app
 //   ~/.claude/projects (recursive)  <project>/<session>.jsonl → file
+//   Claude desktop sessions (rec.)  local_<id>.json, archived-sessions.idx → desktop (title / archive / status)
+//   git dirs of running sessions    HEAD, index → git (branch, commits, staged changes; see gitlive.mjs)
 //   hot files                        logs of running / waiting sessions outside the above (Codex rollouts)
 //   focus file                       the log of the session open in the detail view
 import fs from 'node:fs';
@@ -21,8 +23,8 @@ const RING = 500;
 const MAX_HOT = 24;
 
 export class LiveHub {
-  constructor({ dataDir, codexHome, claudeProjects, idleMs = LIVE_IDLE_MS, watch = fs.watch } = {}) {
-    this.roots = { dataDir, codexHome, claudeProjects };
+  constructor({ dataDir, codexHome, claudeProjects, claudeDesktop, idleMs = LIVE_IDLE_MS, watch = fs.watch } = {}) {
+    this.roots = { dataDir, codexHome, claudeProjects, claudeDesktop };
     this.idleMs = idleMs;
     this.watchFn = watch;
     this.seq = 0;
@@ -31,7 +33,9 @@ export class LiveHub {
     this.watchers = new Map(); // key -> FSWatcher
     this.polled = new Map(); // path -> { kind, sig }
     this.hot = new Set();
+    this.gitDirs = new Set();
     this.focusPath = null;
+    this.onStop = null; // called when watching stops (the board closed)
     this.active = false;
     this.idleTimer = null;
     this.pollTimer = null;
@@ -53,19 +57,22 @@ export class LiveHub {
   start() {
     this.active = true;
     this.counters.starts++;
-    const { dataDir, codexHome, claudeProjects } = this.roots;
+    const { dataDir, codexHome, claudeProjects, claudeDesktop } = this.roots;
     if (dataDir) {
       fs.mkdirSync(dataDir, { recursive: true });
-      this.watchPath('data', dataDir, {}, (f) => (f === 'board.json' ? 'store' : f === 'requests.json' ? 'requests' : null));
+      this.watchPath('data', dataDir, {}, (f) => (f === 'board.json' ? 'store' : f === 'requests.json' ? 'requests' : f === 'presence.json' ? 'presence' : null));
     }
     if (codexHome) this.watchPath('codex', codexHome, {}, (f) => (/^state_\d+\.sqlite(-wal)?$/.test(f) ? 'codex' : f === '.codex-global-state.json' ? 'app' : null));
     if (claudeProjects) this.watchPath('claude', claudeProjects, { recursive: true }, (f) => (f.endsWith('.jsonl') ? 'file' : null));
+    if (claudeDesktop) this.watchPath('desktop', claudeDesktop, { recursive: true }, (f) => (/^local_.*\.json$/.test(f) || f === 'archived-sessions.idx' ? 'desktop' : null));
     for (const p of this.hot) this.watchFile(p, 'file');
     if (this.focusPath) this.watchFile(this.focusPath, 'file');
+    for (const d of this.gitDirs) this.watchGit(d);
   }
 
   stop() {
     this.active = false;
+    this.onStop?.();
     for (const w of this.watchers.values()) w.close();
     this.watchers.clear();
     this.polled.clear();
@@ -78,7 +85,7 @@ export class LiveHub {
     if (this.watchers.has(key) || !fs.existsSync(dir)) return;
     try {
       const w = this.watchFn(dir, { persistent: false, ...opts }, (_type, name) => {
-        if (!name) return this.emit(opts.recursive ? 'rescan' : 'store', dir);
+        if (!name) return this.emit(key === 'desktop' ? 'desktop' : key.startsWith('git:') ? 'git' : opts.recursive ? 'rescan' : 'store', dir);
         const f = String(name);
         const kind = classify(path.basename(f));
         if (kind) this.emit(kind, path.join(dir, f));
@@ -126,7 +133,8 @@ export class LiveHub {
       const kind = classify(n);
       if (kind && kind !== 'file') this.poll(path.join(dir, n), kind);
     }
-    this.poll(dir, key === 'claude' ? 'rescan' : 'store'); // new files show up as a directory change
+    if (key.startsWith('git:')) return; // HEAD and index are polled above
+    this.poll(dir, key === 'claude' ? 'rescan' : key === 'desktop' ? 'desktop' : 'store'); // new files show up as a directory change
   }
 
   poll(file, kind) {
@@ -152,6 +160,25 @@ export class LiveHub {
     for (const p of this.hot) if (!next.has(p) && p !== this.focusPath) this.unwatchFile(p);
     this.hot = next;
     if (this.active) for (const p of next) this.watchFile(p, 'file');
+  }
+
+  // Git directories of running sessions: HEAD / index are replaced by rename, so the
+  // directory is watched rather than the files.
+  watchGit(dir) {
+    this.watchPath(`git:${dir}`, dir, {}, (f) => (f === 'HEAD' || f === 'index' ? 'git' : null));
+  }
+
+  setGitDirs(dirs) {
+    const next = new Set([...dirs].filter(Boolean).slice(0, MAX_HOT));
+    for (const d of this.gitDirs) {
+      if (next.has(d)) continue;
+      const key = `git:${d}`;
+      this.watchers.get(key)?.close();
+      this.watchers.delete(key);
+      for (const f of ['HEAD', 'index']) this.polled.delete(path.join(d, f));
+    }
+    this.gitDirs = next;
+    if (this.active) for (const d of next) this.watchGit(d);
   }
 
   focus(file) {
