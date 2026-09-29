@@ -552,8 +552,9 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   } catch (e) {
     messagesError = e.message;
   }
-  // Local sessions: the folder's git state now (one `git status`, cached by HEAD / index).
-  const git = !host && s.cwd ? (await refreshGit(s.cwd).catch(() => null))?.value ?? null : null;
+  // Local sessions: the folder's git state (one `git status`, cached by HEAD / index). A slow
+  // repo does not hold the detail up; the live watch brings the state when it is ready.
+  const git = !host && s.cwd ? await Promise.race([refreshGit(s.cwd).then((r) => r.value, () => null), new Promise((r) => setTimeout(() => r(peekGit(s.cwd)), 150))]) : null;
   const toTask = linkedToTask(state);
   const taskId = toTask.get(cardId) || null;
   const listCard = taskId ? state.cards[taskId] : card;
