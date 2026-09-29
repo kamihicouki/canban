@@ -26,6 +26,11 @@ export const pool = new RemotePool();
 export const prs = new PrService();
 const PR_WINDOW_MS = 30 * 86400e3; // look up PRs for sessions active in the last 30 days
 
+// The live watcher saw a change the listing must pick up (a new session, a desktop rename).
+export function dropLocalCache() {
+  localCache = null;
+}
+
 async function localSessions({ force = false } = {}) {
   if (!force && localCache && Date.now() - localCache.at < LOCAL_TTL_MS) return localCache.value;
   const [codex, claude] = await Promise.all([perf.timed('codex.list', () => listCodexSessions()), perf.timed('claude.list', () => listClaudeSessions())]);

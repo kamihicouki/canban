@@ -145,6 +145,7 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
     desktopStatus: dm?.postTurnSummary?.status_category ?? dm?.statusCategory ?? null,
     // Claude desktop metadata is often not on disk: archived / title / status from it are then unknown.
     desktopKnown: !!dm,
+    desktopTitle: dm?.title ?? null,
     entrypoint: s.entrypoint || null,
     rawStatus: s.rawStatus ?? null,
     statusMtimeMs: s.statusMtimeMs ?? null,

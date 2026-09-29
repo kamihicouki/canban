@@ -188,7 +188,23 @@ test('canban_watch over stdio: patches the card and streams the open session', a
     await new Promise((r2) => setTimeout(r2, 100));
     const board = JSON.parse(fs.readFileSync(path.join(dataDir, 'board.json'), 'utf8'));
     fs.writeFileSync(path.join(dataDir, 'board.json'), JSON.stringify(board));
-    assert.equal((await w).reload, true);
+    const afterBoard = await w;
+    assert.equal(afterBoard.reload, true);
+    // Claude desktop metadata: activity-only rewrites are ignored, a rename rebuilds the board.
+    const meta = path.join(fx.desktopDir, 'a', 'b', 'local_2.json');
+    const m = JSON.parse(fs.readFileSync(meta, 'utf8'));
+    await call('canban_get_board'); // index the sessions (desktop titles) for the watcher
+    await new Promise((r2) => setTimeout(r2, 300)); // let the board load's own writes arrive
+    const since = (await call('canban_watch', { since: afterBoard.seq, timeoutMs: 0 })).seq;
+    const w2 = call('canban_watch', { since, timeoutMs: 1500 });
+    await new Promise((r2) => setTimeout(r2, 100));
+    fs.writeFileSync(meta, JSON.stringify({ ...m, lastActivityAt: String(Date.now()) }));
+    const quiet2 = await w2;
+    assert.equal(quiet2.reload, false);
+    const w3 = call('canban_watch', { since: quiet2.seq, timeoutMs: 10000 });
+    await new Promise((r2) => setTimeout(r2, 100));
+    fs.writeFileSync(meta, JSON.stringify({ ...m, title: 'README 修正（改名）' }));
+    assert.equal((await w3).reload, true);
     const perfInfo = await call('canban_get_perf');
     assert.equal(perfInfo.live.active, true);
   } finally {

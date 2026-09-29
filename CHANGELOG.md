@@ -9,6 +9,7 @@
   - Model, effort and mode (Claude permission mode / Codex sandbox) in the detail.
   - Codex rate limits (5 h and weekly windows, from `token_count` events) in the header, with the time to reset.
   - Signals are folded per log from its first read and then only from appended lines, so a long turn keeps its edited files after they leave the tail.
+- Claude desktop metadata (`claude-code-sessions/**/local_*.json`, `archived-sessions.idx`) is watched too: a rename, archive or status change rebuilds the board at once; rewrites that only touch activity times are ignored. Reloads caused by new sessions or metadata skip the 4 s listing cache.
 
 ## 0.11.0 — 2026-09-28
 - Realtime board. While a board is open it updates as soon as something changes, instead of re-reading every 15–60 s.
