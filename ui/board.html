@@ -229,6 +229,7 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .file-list { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--list-muted); word-break: break-all; }
 .limits { display: inline-flex; gap: 8px; align-items: center; height: 28px; padding: 0 10px; border-radius: 14px; background: rgba(255,255,255,0.2); color: #fff; font-size: 12px; white-space: nowrap; }
 .limits[hidden] { display: none; }
+.viewer-pill { background: var(--c-purple); color: #fff; }
 .limits .lm { display: inline-flex; align-items: center; gap: 4px; }
 .limits .lm .bar { width: 36px; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.3); overflow: hidden; }
 .limits .lm .bar > i { display: block; height: 100%; background: var(--c-green); }
@@ -481,6 +482,7 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
   <button id="hostsBtn" class="hbtn" aria-haspopup="true">マシン ▾</button>
   <button id="settingsBtn" class="hbtn" title="再開と指示の送信の設定" aria-label="再開と指示の送信の設定">⚙ 設定</button>
   <span class="spacer"></span>
+  <span id="presenceBar" class="limits presence" hidden></span>
   <span id="limitsBar" class="limits" hidden></span>
   <span id="statusBar" class="status-bar" role="group" aria-label="実行状態"></span>
   <button id="seenBtn" class="hbtn" title="新着をすべて既読にする" hidden>✓ 既読</button>
@@ -837,6 +839,7 @@ function renderCard(card, list) {
   const meta = h('div', { class: 'meta' },
     card.unread ? h('span', { class: 'pill new-pill', text: '新着' }) : null,
     card.autoMoved ? h('span', { class: 'pill', title: `${T.automation}で移動`, text: '⚡' }) : null,
+    live.viewers.get(card.id) ? h('span', { class: 'pill viewer-pill', title: `${live.viewers.get(card.id).join('・')}で開いています`, text: '👁' }) : null,
     card.pinnedInAgent ? h('span', { class: 'pill', title: 'Codex アプリでピン留め', text: '📌' }) : null,
     card.codexSection ? h('span', { class: 'pill', title: 'Codex のセクション（サイドバーの見出し）', text: `§ ${card.codexSection.name}` }) : null,
     h('span', { class: `badge ${card.agent}`, text: card.agent === 'codex' ? 'Codex' : 'Claude' }),
@@ -1418,10 +1421,11 @@ function renderModal(modal, d) {
     h('div', { class: 'sub row' }, h('span', { class: `badge ${s.agent}`, text: s.agent === 'codex' ? 'Codex' : 'Claude' }),
       s.host ? h('span', { class: 'host-chip', text: `⌂ ${s.host.label}` }) : null,
       h('span', { class: 'row modal-status', style: { gap: '0' } }, h('span', { class: `sdot s-${s.status || 'idle'}` }), STATUS_LABELS[s.status || 'idle']),
-      'リスト:', listSel),
+      'リスト:', listSel, h('span', { class: 'pill viewer-pill viewers', hidden: true })),
     h('div', { class: 'modal-grid' }, main, side),
   );
   modal.querySelector('.close').focus();
+  paintModalViewers();
   if (d.feed) scrollFeedToEnd();
   if (!live.on) watchRequests(modal, d);
 }
@@ -1653,7 +1657,7 @@ function applyFeed(f, feed) {
 }
 
 // ---- the long poll ----
-const live = { on: false, seq: null, feed: null, mode: 'long', inflight: 0, lastLoad: 0, loadTimer: null, dirty: false, ownActAt: 0, lastWatchEnd: 0 };
+const live = { on: false, seq: null, feed: null, mode: 'long', inflight: 0, lastLoad: 0, loadTimer: null, dirty: false, ownActAt: 0, lastWatchEnd: 0, presence: [], viewers: new Map() };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const liveIdle = () => !state.drag && !document.querySelector('.popover, .list-title-input, .composer');
 
@@ -1716,7 +1720,42 @@ async function refreshDispatch() {
   } catch {}
 }
 
+// Other live boards (Codex / Claude Desktop) and the cards they have open.
+function applyPresence(list) {
+  const key = JSON.stringify(list || []);
+  if (key === JSON.stringify(live.presence)) return;
+  const before = live.viewers;
+  live.presence = list || [];
+  live.viewers = new Map();
+  for (const p of live.presence) if (p.cardId) live.viewers.set(p.cardId, [...new Set([...(live.viewers.get(p.cardId) || []), p.app])]);
+  const bar = $('#presenceBar');
+  const apps = [...new Set(live.presence.map((p) => p.app))];
+  bar.hidden = !apps.length;
+  bar.title = live.presence.map((p) => `${p.app}: ${p.cardId ? `「${findCard(p.cardId)?.card.title ?? p.cardId}」を表示中` : 'ボードを表示中'}`).join('\n');
+  bar.replaceChildren(h('span', { text: `👁 ${apps.join('・')}` }));
+  for (const id of new Set([...before.keys(), ...live.viewers.keys()])) {
+    if (JSON.stringify(before.get(id)) === JSON.stringify(live.viewers.get(id))) continue;
+    const hit = findCard(id);
+    const el = document.querySelector(`.card[data-card-id="${CSS.escape(id)}"]`);
+    if (hit && !hit.link && el && !state.drag) {
+      const focused = el.contains(document.activeElement);
+      const next = renderCard(hit.card, hit.list);
+      el.replaceWith(next);
+      if (focused) next.focus();
+    }
+  }
+  paintModalViewers();
+}
+function paintModalViewers() {
+  const slot = document.querySelector('.modal .viewers');
+  if (!slot) return;
+  const v = live.feed && live.viewers.get(live.feed.cardId);
+  slot.hidden = !v;
+  slot.textContent = v ? `👁 ${v.join('・')}でも開いています` : '';
+}
+
 function applyLive(r, args) {
+  if (r.presence) applyPresence(r.presence);
   if (r.seq != null) live.seq = live.seq == null ? r.seq : Math.max(live.seq, r.seq);
   if (r.patches?.length) applyPatches(r.patches);
   if (r.limits) renderLimits(r.limits);

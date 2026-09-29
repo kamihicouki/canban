@@ -18,6 +18,7 @@ import { LOCAL_HOST } from './sources/util.mjs';
 import { openUrl, runInTerminal, installedTerminals, setRunner, TERMINAL_LABELS } from './launcher.mjs';
 import { LiveHub } from './live.mjs';
 import { createWatch } from './watch.mjs';
+import { Presence, appLabel } from './presence.mjs';
 import { codexHome } from './sources/codex.mjs';
 import { claudeHome, claudeDesktopSessionsDir } from './sources/claude.mjs';
 
@@ -44,7 +45,7 @@ function readManifest(...candidates) {
 const store = new Store();
 // Realtime: watches nothing until a board calls canban_watch (see server/live.mjs).
 const live = process.env.CANBAN_LIVE === '0' ? null : new LiveHub({ dataDir: store.dir, codexHome: codexHome(), claudeProjects: path.join(claudeHome(), 'projects'), claudeDesktop: claudeDesktopSessionsDir() });
-const watch = live ? createWatch(live) : null;
+const watch = live ? createWatch(live, { presence: new Presence(store.dir, { app: () => appLabel(client) }) }) : null;
 let client = null; // clientInfo from initialize: which host started this server
 const log = (...a) => process.stderr.write(`[canban] ${a.join(' ')}\n`);
 

@@ -7,6 +7,7 @@
 //             no listing, just one cached tail read per changed log
 //   feed      items appended to the open session's log since `offset`
 //   limits    Codex rate limits, when a Codex log changed (see signals.mjs)
+//   presence  the other live boards and the card each has open (presence.mjs)
 // Patches of running sessions (and the open one) also carry `git` (gitlive.mjs).
 import path from 'node:path';
 import { stat, readJson } from './sources/readonly.mjs';
@@ -21,7 +22,10 @@ import { gitDirOf, refreshGit } from './gitlive.mjs';
 
 export const WATCH_MAX_MS = 45000;
 
-export function createWatch(hub) {
+export function createWatch(hub, { presence = null } = {}) {
+  let sentPresence = null; // what this board was last told about the others
+  const others = () => presence?.others() ?? [];
+  if (presence) hub.onStop = () => presence.leave();
   // Local sessions from the latest listing: id -> session, log path -> id.
   const byId = new Map();
   const byPath = new Map();
@@ -108,11 +112,14 @@ export function createWatch(hub) {
   return async function watch({ since = null, cardId = null, offset = null, size = null, codexItems = false, timeoutMs = 20000 } = {}) {
     const focus = cardId ? byId.get(cardId) : null;
     hub.focus(focus?.sourcePath || null);
+    presence?.beat(cardId || null);
     if (since == null) {
       const starting = !hub.active;
       hub.touch();
       if (starting) trackGit(lastBusy, ++gitGen);
-      return { seq: hub.seq, reload: false, requests: false, patches: [], feed: null };
+      const p = others();
+      sentPresence = JSON.stringify(p);
+      return { seq: hub.seq, reload: false, requests: false, patches: [], feed: null, presence: p };
     }
     // The open session's log grew since the client's offset (e.g. while it was opening): answer now.
     const behind = async () => {
@@ -121,9 +128,20 @@ export function createWatch(hub) {
       return !!st && st.size !== Number(size ?? offset);
     };
     const wait = (await behind()) ? 0 : Math.min(Math.max(Number(timeoutMs) || 0, 0), WATCH_MAX_MS);
-    const { seq, events } = await hub.wait(Number(since), { timeoutMs: wait });
+    // Heartbeats that change nothing this board shows (including its own) keep it waiting.
+    const deadline = Date.now() + wait;
+    let from = Number(since);
+    let got;
+    for (;;) {
+      got = await hub.wait(from, { timeoutMs: Math.max(0, deadline - Date.now()) });
+      const quiet = got.events?.length && got.events.every((e) => e.kind === 'presence') && JSON.stringify(others()) === sentPresence;
+      if (!quiet || Date.now() >= deadline) break;
+      from = got.seq;
+    }
+    const { seq, events } = got;
     return perf.timed('live.watch', async () => {
-      const res = { seq, reload: events === null, requests: events === null, patches: [], feed: null, limits: null };
+      const res = { seq, reload: events === null, requests: events === null, patches: [], feed: null, limits: null, presence: others() };
+      sentPresence = JSON.stringify(res.presence);
       const changed = new Set();
       const seenDesktop = new Set();
       let relist = false; // the next board load must list sessions again

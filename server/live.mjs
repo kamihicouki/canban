@@ -5,7 +5,7 @@
 // again LIVE_IDLE_MS after the last watch call (a server whose board is closed does
 // nothing). Where fs.watch is unavailable, the same paths are stat-polled instead.
 //
-//   data dir (non-recursive)        board.json → store, requests.json → requests
+//   data dir (non-recursive)        board.json → store, requests.json → requests, presence.json → presence
 //   Codex home (non-recursive)      state_<n>.sqlite(-wal) → codex, .codex-global-state.json → app
 //   ~/.claude/projects (recursive)  <project>/<session>.jsonl → file
 //   Claude desktop sessions (rec.)  local_<id>.json, archived-sessions.idx → desktop (title / archive / status)
@@ -35,6 +35,7 @@ export class LiveHub {
     this.hot = new Set();
     this.gitDirs = new Set();
     this.focusPath = null;
+    this.onStop = null; // called when watching stops (the board closed)
     this.active = false;
     this.idleTimer = null;
     this.pollTimer = null;
@@ -59,7 +60,7 @@ export class LiveHub {
     const { dataDir, codexHome, claudeProjects, claudeDesktop } = this.roots;
     if (dataDir) {
       fs.mkdirSync(dataDir, { recursive: true });
-      this.watchPath('data', dataDir, {}, (f) => (f === 'board.json' ? 'store' : f === 'requests.json' ? 'requests' : null));
+      this.watchPath('data', dataDir, {}, (f) => (f === 'board.json' ? 'store' : f === 'requests.json' ? 'requests' : f === 'presence.json' ? 'presence' : null));
     }
     if (codexHome) this.watchPath('codex', codexHome, {}, (f) => (/^state_\d+\.sqlite(-wal)?$/.test(f) ? 'codex' : f === '.codex-global-state.json' ? 'app' : null));
     if (claudeProjects) this.watchPath('claude', claudeProjects, { recursive: true }, (f) => (f.endsWith('.jsonl') ? 'file' : null));
@@ -71,6 +72,7 @@ export class LiveHub {
 
   stop() {
     this.active = false;
+    this.onStop?.();
     for (const w of this.watchers.values()) w.close();
     this.watchers.clear();
     this.polled.clear();

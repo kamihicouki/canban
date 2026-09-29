@@ -12,6 +12,8 @@
 - Live git state of running sessions' folders on their cards (`⎇ main ±3 ↑1`: branch, uncommitted + untracked files, ahead / behind) and of any local session in its detail.
   - Read with `git --no-optional-locks status --porcelain=v2` (never takes the index lock); at most 4 git processes, 3 s timeout.
   - The live hub watches the git dirs (HEAD, index) of running sessions, so commits and checkouts show at once; unstaged edits are recounted at most every 10 s while the log grows. Nothing runs until a board is open.
+- Presence: a live board leaves a heartbeat in `~/.canban/presence.json` (app from `clientInfo`, the open card; every 30 s or when the open card changes, expiring after 90 s). Other boards show "👁 Codex" / "👁 Claude デスクトップ" in the header and 👁 on the card that board has open. Heartbeats that change nothing a board shows do not end its long poll.
+- The dev host takes `CANBAN_DEV_CLIENT` to pose as another app.
 - Claude desktop metadata (`claude-code-sessions/**/local_*.json`, `archived-sessions.idx`) is watched too: a rename, archive or status change rebuilds the board at once; rewrites that only touch activity times are ignored. Reloads caused by new sessions or metadata skip the 4 s listing cache.
 
 ## 0.11.0 — 2026-09-28
