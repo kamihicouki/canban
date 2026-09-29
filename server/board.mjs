@@ -13,6 +13,7 @@ import { RemotePool } from './remote/pool.mjs';
 import { launchInfo } from './agents.mjs';
 import { installedTerminals } from './launcher.mjs';
 import { annotateStatus, STATUSES } from './status.mjs';
+import { currentLimits, cardSignals } from './signals.mjs';
 import { RuleEngine } from './rules.mjs';
 import { PrService } from './git.mjs';
 import { SearchIndex } from './search.mjs';
@@ -359,6 +360,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       placed: !!card?.listId,
       status: s.status || 'idle',
       activity: s.activity || null,
+      signals: cardSignals(s.signals),
       unread: (s.updatedAt || 0) > Math.max(seenAll, card?.seenAt || 0),
       requests: reqs.get(s.id) || null,
       codexFollowUps: s.codexFollowUps || 0,
@@ -430,6 +432,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
     settings: state.settings,
     terminals: installedTerminals(),
     statusCounts,
+    limits: currentLimits(),
     search: searchFor(store).progress,
     git: { available: prs.status.available, reason: prs.status.reason, github: prs.status.github, gitlab: prs.status.gitlab },
     folders: recentFolders(sessions),

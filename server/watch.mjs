@@ -3,9 +3,10 @@
 //   reload    the board changed in a way only a rebuild shows (store edits from another
 //             app, a new session, Codex app state)
 //   requests  requests.json changed (queue / run state of sent prompts)
-//   patches   [{ id, status, updatedAt, activity }] for sessions whose log grew;
+//   patches   [{ id, status, updatedAt, activity, signals }] for sessions whose log grew;
 //             no listing, just one cached tail read per changed log
 //   feed      items appended to the open session's log since `offset`
+//   limits    Codex rate limits, when a Codex log changed (see signals.mjs)
 import path from 'node:path';
 import { stat } from './sources/readonly.mjs';
 import { listCodexSessions } from './sources/codex.mjs';
@@ -13,6 +14,7 @@ import { localStatus } from './status.mjs';
 import { readFeedDelta } from './feed.mjs';
 import { onSessions } from './board.mjs';
 import { perf } from './perf.mjs';
+import { currentLimits, cardSignals } from './signals.mjs';
 
 export const WATCH_MAX_MS = 45000;
 
@@ -37,7 +39,7 @@ export function createWatch(hub) {
     if (!st) return null;
     const probe = { ...s, updatedAt: Math.max(s.updatedAt || 0, st.mtimeMs) };
     const status = await localStatus(probe);
-    return { id: s.id, status, updatedAt: probe.updatedAt, activity: probe.activity || null };
+    return { id: s.id, status, updatedAt: probe.updatedAt, activity: probe.activity || null, signals: cardSignals(probe.signals), full: probe.signals || null };
   }
 
   async function codexChanges() {
@@ -75,7 +77,7 @@ export function createWatch(hub) {
     const wait = (await behind()) ? 0 : Math.min(Math.max(Number(timeoutMs) || 0, 0), WATCH_MAX_MS);
     const { seq, events } = await hub.wait(Number(since), { timeoutMs: wait });
     return perf.timed('live.watch', async () => {
-      const res = { seq, reload: events === null, requests: events === null, patches: [], feed: null };
+      const res = { seq, reload: events === null, requests: events === null, patches: [], feed: null, limits: null };
       const changed = new Set();
       for (const e of events || []) {
         if (e.kind === 'store' || e.kind === 'app' || e.kind === 'rescan') res.reload = true;
@@ -99,9 +101,11 @@ export function createWatch(hub) {
         try {
           res.feed = await readFeedDelta(focus, Number(offset), { codexItems });
           const p = res.patches.find((x) => x.id === focus.id) || (await patchFor(focus));
-          if (p) Object.assign(res.feed, { status: p.status, activity: p.activity });
+          if (p) Object.assign(res.feed, { status: p.status, activity: p.activity, signals: p.full });
         } catch {}
       }
+      for (const p of res.patches) delete p.full; // the detail's copy rides on the feed
+      if (res.patches.some((p) => p.id.startsWith('codex'))) res.limits = currentLimits();
       return res;
     });
   };

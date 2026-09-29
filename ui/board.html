@@ -211,6 +211,29 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .muted { color: var(--list-muted); font-size: 12px; }
 /* ---------- live session feed (like the agent apps' own conversation view) ---------- */
 .card .activity { margin-top: 4px; font-size: 12px; line-height: 16px; color: var(--card-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.sig-row { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 4px; font-size: 11px; line-height: 15px; color: var(--card-muted); }
+.sig-row span { white-space: nowrap; }
+.sig-warn { color: var(--c-orange); font-weight: 600; }
+.sig-hot { color: var(--c-red); font-weight: 600; }
+.sig-box { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: var(--modal-panel); font-size: 12px; display: grid; gap: 6px; }
+.sig-box .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.sig-box .chip { padding: 1px 6px; border-radius: 4px; background: var(--btn-subtle); }
+.meter { display: flex; align-items: center; gap: 8px; }
+.meter .bar { flex: 1; height: 6px; border-radius: 3px; background: var(--btn-subtle); overflow: hidden; }
+.meter .bar > i { display: block; height: 100%; background: var(--c-blue); }
+.meter .bar > i.warn { background: var(--c-orange); }
+.meter .bar > i.hot { background: var(--c-red); }
+.plan-step { display: flex; gap: 6px; }
+.plan-step.done { color: var(--list-muted); text-decoration: line-through; }
+.plan-step.doing { font-weight: 600; }
+.file-list { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--list-muted); word-break: break-all; }
+.limits { display: inline-flex; gap: 8px; align-items: center; height: 28px; padding: 0 10px; border-radius: 14px; background: rgba(255,255,255,0.2); color: #fff; font-size: 12px; white-space: nowrap; }
+.limits[hidden] { display: none; }
+.limits .lm { display: inline-flex; align-items: center; gap: 4px; }
+.limits .lm .bar { width: 36px; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.3); overflow: hidden; }
+.limits .lm .bar > i { display: block; height: 100%; background: var(--c-green); }
+.limits .lm .bar > i.warn { background: var(--c-orange); }
+.limits .lm .bar > i.hot { background: var(--c-red); }
 .live-badge { font-size: 11px; font-weight: 600; color: var(--list-muted); display: inline-flex; align-items: center; gap: 4px; }
 .live-badge.on::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--c-green); }
 .feed-wrap { position: relative; margin-bottom: 8px; }
@@ -458,6 +481,7 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
   <button id="hostsBtn" class="hbtn" aria-haspopup="true">マシン ▾</button>
   <button id="settingsBtn" class="hbtn" title="再開と指示の送信の設定" aria-label="再開と指示の送信の設定">⚙ 設定</button>
   <span class="spacer"></span>
+  <span id="limitsBar" class="limits" hidden></span>
   <span id="statusBar" class="status-bar" role="group" aria-label="実行状態"></span>
   <button id="seenBtn" class="hbtn" title="新着をすべて既読にする" hidden>✓ 既読</button>
   <button id="perfBtn" class="hbtn" title="Canban 自身の処理が予算を超えました（クリックで詳細）" hidden>⚠ 遅い処理</button>
@@ -694,6 +718,7 @@ function render() {
   $('#hostsBtn').setAttribute('aria-pressed', String(!!activeHost));
   $('#stat').textContent = `表示 ${b.totals.shown} / Codex ${b.totals.codex}・Claude ${b.totals.claude}`;
   renderStatusBar(b);
+  renderLimits(b.limits);
   $('#seenBtn').hidden = !b.lists.some((l) => l.cards.some((c) => c.unread));
   $('#perfBtn').hidden = !b.perf?.slow?.length;
   announceAutoMoves(b);
@@ -804,7 +829,11 @@ function renderCard(card, list) {
   el.append(h('div', { class: 'title' },
     card.status !== 'idle' ? h('span', { class: `sdot s-${card.status}`, title: STATUS_LABELS[card.status] }) : null,
     card.title));
-  if (card.activity && (card.status === 'running' || card.status === 'waiting')) el.append(h('div', { class: 'activity', title: card.activity, text: card.activity }));
+  const busy = card.status === 'running' || card.status === 'waiting';
+  const doing = busy ? activityText(card.activity, card.status, card.signals) : null;
+  if (doing) el.append(h('div', { class: 'activity', title: doing, text: doing }));
+  const sig = signalRow(card.signals, busy);
+  if (sig) el.append(sig);
   const meta = h('div', { class: 'meta' },
     card.unread ? h('span', { class: 'pill new-pill', text: '新着' }) : null,
     card.autoMoved ? h('span', { class: 'pill', title: `${T.automation}で移動`, text: '⚡' }) : null,
@@ -1345,7 +1374,7 @@ function renderModal(modal, d) {
   const main = h('div', {},
     h('div', { class: 'section-title' }, d.feed ? '会話' : '直近のやりとり',
       d.feed ? h('span', { class: `live-badge${live.on ? ' on' : ''}`, title: live.on ? 'セッションの変化をそのまま表示します' : '', text: live.on ? 'ライブ' : '' }) : null),
-    ...(d.feed ? [renderFeed(d)] : msgs),
+    ...(d.feed ? [renderFeed(d), renderSignals(s.signals)] : msgs),
     renderDispatch(d),
     h('div', { class: 'section-title', text: 'ラベル' }), labelWrap,
     h('div', { class: 'section-title', text: 'メモ' }), note,
@@ -1561,7 +1590,7 @@ function renderFeed(d) {
   const list = h('div', { class: 'feed', role: 'log', 'aria-live': 'polite', 'aria-label': 'セッションの会話' });
   const foot = h('div', { class: 'feed-foot' });
   const newBtn = h('button', { class: 'feed-new', text: '↓ 新着', hidden: true, onclick: () => scrollFeedToEnd() });
-  const f = { cardId: d.session.id, offset: d.feed.offset, size: d.feed.size, codexItems: d.feed.codexItems, list, foot, newBtn, tools: new Map(), status: d.session.status || 'idle', activity: d.session.activity || null };
+  const f = { cardId: d.session.id, offset: d.feed.offset, size: d.feed.size, codexItems: d.feed.codexItems, list, foot, newBtn, tools: new Map(), status: d.session.status || 'idle', activity: d.session.activity || null, signals: d.session.signals || null };
   list.addEventListener('scroll', () => { if (atFeedEnd(list)) newBtn.hidden = true; });
   for (const it of d.feed.items) { const el = feedItem(it, f); if (el) list.append(el); }
   if (!d.feed.items.length) list.append(h('div', { class: 'muted', text: 'まだやりとりはありません' }));
@@ -1582,7 +1611,7 @@ function scrollFeedToEnd() {
 function paintFeedFoot(f) {
   const st = f.status;
   if (st === 'running') f.foot.replaceChildren(h('span', { class: 'sdot s-running' }), h('span', { class: 'grow', title: f.activity || '' }, h('span', { class: 'dots', text: '作業中' }), f.activity ? `  ${f.activity}` : ''));
-  else if (st === 'waiting') f.foot.replaceChildren(h('span', { class: 'sdot s-waiting' }), h('span', { class: 'grow', text: `入力待ち${f.activity ? `  ${f.activity}` : ''}（アプリで答えてください）` }));
+  else if (st === 'waiting') f.foot.replaceChildren(h('span', { class: 'sdot s-waiting' }), h('span', { class: 'grow', text: `${WAIT_TEXT[f.signals?.wait] || '入力待ち'}${f.activity ? `  ${f.activity}` : ''}（アプリで答えてください）` }));
   else f.foot.replaceChildren(h('span', { class: `sdot s-${st}` }), h('span', { class: 'grow', text: STATUS_LABELS[st] || '' }));
   const hdr = document.querySelector('.modal .modal-status');
   if (hdr) hdr.replaceChildren(h('span', { class: `sdot s-${st}` }), STATUS_LABELS[st] || '');
@@ -1614,7 +1643,10 @@ function applyFeed(f, feed) {
     if (feed.status !== f.status) refreshDispatch(); // "busy" rules for sending follow the status
     f.status = feed.status;
     f.activity = feed.activity || null;
+    f.signals = feed.signals || null;
     paintFeedFoot(f);
+    const box = document.querySelector('.modal .sig-box');
+    if (box) box.replaceWith(renderSignals(f.signals));
   }
   if (added) { if (stick) scrollFeedToEnd(); else f.newBtn.hidden = false; }
 }
@@ -1659,6 +1691,7 @@ function applyPatches(patches) {
     if ((p.updatedAt || 0) > (card.updatedAt || 0) && !openHere) card.unread = true;
     card.updatedAt = Math.max(card.updatedAt || 0, p.updatedAt || 0);
     card.activity = p.activity;
+    card.signals = p.signals || null;
     const el = document.querySelector(`.card[data-card-id="${CSS.escape(p.id)}"]`);
     if (el && !state.drag) {
       const focused = el.contains(document.activeElement);
@@ -1684,6 +1717,7 @@ async function refreshDispatch() {
 function applyLive(r, args) {
   if (r.seq != null) live.seq = live.seq == null ? r.seq : Math.max(live.seq, r.seq);
   if (r.patches?.length) applyPatches(r.patches);
+  if (r.limits) renderLimits(r.limits);
   if (r.reload) scheduleLoad();
   if (r.requests) { refreshDispatch(); scheduleLoad(); }
   const f = live.feed;
@@ -2361,6 +2395,84 @@ function renderStatusBar(b) {
     h('button', { class: 'status-chip', 'aria-pressed': String(state.filters.status === k), title: `${STATUS_LABELS[k]}だけを表示`,
       onclick: () => { state.filters.status = state.filters.status === k ? '' : k; saveFilters(); state.shown = {}; load(); } },
       h('span', { class: `sdot s-${k}` }), `${STATUS_LABELS[k]} ${b.statusCounts[k]}`)));
+}
+// ---- live signals (context, plan, edited files, rate limits) ----
+const WAIT_TEXT = { question: '❓ 質問への回答待ち', plan: '📋 計画の承認待ち' };
+function fmtTok(n) {
+  if (!n) return '0';
+  if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M`;
+  return n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
+}
+function ctxPct(ctx) { return ctx?.window ? Math.min(100, Math.round((ctx.used / ctx.window) * 100)) : null; }
+const heat = (pct) => (pct >= 90 ? 'hot' : pct >= 75 ? 'warn' : '');
+function ctxLabel(ctx) {
+  const pct = ctxPct(ctx);
+  return pct != null ? `${pct}%` : fmtTok(ctx.used);
+}
+function ctxTitle(ctx) {
+  const pct = ctxPct(ctx);
+  return `コンテキスト: ${ctx.used.toLocaleString()} トークン${ctx.window ? ` / ${ctx.window.toLocaleString()}（${pct}%）` : '（上限は不明）'}`;
+}
+function activityText(activity, status, sig) {
+  const w = status === 'waiting' && sig?.wait ? WAIT_TEXT[sig.wait] : null;
+  return w ? (activity ? `${w} · ${activity}` : w) : activity || null;
+}
+// One line under a card. Running / waiting cards show everything; others only a nearly full context.
+function signalRow(sig, live) {
+  if (!sig) return null;
+  const parts = [];
+  if (live && sig.plan) parts.push(h('span', { title: `計画 ${sig.plan.done}/${sig.plan.total}${sig.plan.current ? `\nいま: ${sig.plan.current}` : ''}`, text: `☑ ${sig.plan.done}/${sig.plan.total}` }));
+  if (live && sig.files) parts.push(h('span', { title: `このターンで編集したファイル\n${sig.files.names.join('\n')}`, text: `✎ ${sig.files.count}` }));
+  if (live && sig.subRunning) parts.push(h('span', { title: '動作中のサブエージェント', text: `🤖 ${sig.subRunning}` }));
+  if (sig.ctx) {
+    const pct = ctxPct(sig.ctx);
+    if (live || pct >= 75) parts.push(h('span', { class: pct >= 90 ? 'sig-hot' : pct >= 75 ? 'sig-warn' : '', title: ctxTitle(sig.ctx), text: `◔ ${ctxLabel(sig.ctx)}` }));
+  }
+  return parts.length ? h('div', { class: 'sig-row' }, ...parts) : null;
+}
+const MODE_TEXT = { 'danger-full-access': 'フルアクセス', 'workspace-write': 'ワークスペース書き込み', 'read-only': '読み取り専用', bypassPermissions: '権限確認なし', acceptEdits: '編集は自動承認', plan: 'プランモード', default: '毎回確認', auto: 'auto', dontAsk: '確認しない' };
+// The detail's "now" box: model / effort / mode, context meter, plan and edited files.
+function renderSignals(sig) {
+  const box = h('div', { class: 'sig-box', 'aria-live': 'polite' });
+  if (!sig) { box.hidden = true; return box; }
+  const chips = [sig.model, sig.effort ? `effort ${sig.effort}` : null, sig.mode ? (MODE_TEXT[sig.mode] || sig.mode) : null, sig.subRunning ? `🤖 サブエージェント ${sig.subRunning} 動作中` : null].filter(Boolean);
+  if (chips.length) box.append(h('div', { class: 'chips' }, ...chips.map((c) => h('span', { class: 'chip', text: c }))));
+  if (sig.ctx) {
+    const pct = ctxPct(sig.ctx);
+    box.append(h('div', { class: 'meter', title: ctxTitle(sig.ctx) }, h('span', { text: 'コンテキスト' }),
+      pct != null ? h('span', { class: 'bar' }, h('i', { class: heat(pct), style: { width: `${pct}%` } })) : h('span', { class: 'grow' }),
+      h('span', { text: pct != null ? `${pct}%（${fmtTok(sig.ctx.used)} / ${fmtTok(sig.ctx.window)}）` : `${fmtTok(sig.ctx.used)} トークン` })));
+  }
+  if (sig.plan) {
+    box.append(h('div', { text: `計画 ${sig.plan.done}/${sig.plan.total}` }),
+      ...(sig.plan.steps || []).map((x) => h('div', { class: `plan-step ${x.s}` }, h('span', { text: x.s === 'done' ? '☑' : x.s === 'doing' ? '▶' : '☐' }), h('span', { text: x.t }))));
+  }
+  if (sig.files) {
+    box.append(h('div', { text: `このターンで編集したファイル（${sig.files.count}）` }),
+      h('div', { class: 'file-list' }, ...(sig.files.paths || sig.files.names).map((p, i) => h('div', { title: p, text: sig.files.names[i] || p }))));
+  }
+  if (!box.childElementCount) box.hidden = true;
+  return box;
+}
+function fmtReset(ms) {
+  if (!ms) return '';
+  const d = ms - Date.now();
+  if (d <= 0) return 'リセット済み';
+  const hrs = Math.floor(d / 3600e3), min = Math.round((d % 3600e3) / 60e3);
+  return hrs >= 24 ? `${new Date(ms).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} にリセット` : `あと ${hrs ? `${hrs} 時間 ` : ''}${min} 分でリセット`;
+}
+function windowName(w) { return !w.windowMinutes ? '' : w.windowMinutes >= 1440 ? (w.windowMinutes === 10080 ? '週' : `${Math.round(w.windowMinutes / 1440)}日`) : `${Math.round(w.windowMinutes / 60)}h`; }
+// Codex rate limits in the header (the latest snapshot any Codex log wrote).
+function renderLimits(l) {
+  const bar = $('#limitsBar');
+  if (!bar) return;
+  const ws = l ? [l.primary, l.secondary].filter(Boolean) : [];
+  bar.hidden = !ws.length;
+  if (!ws.length) return bar.replaceChildren();
+  bar.title = `Codex の利用上限${l.plan ? `（${l.plan}）` : ''}\n${ws.map((w) => `${windowName(w)}: ${Math.round(w.usedPercent)}% 使用 · ${fmtReset(w.resetsAt)}`).join('\n')}\n${fmtDate(l.at)} 時点`;
+  bar.replaceChildren(h('span', { text: 'Codex' }), ...ws.map((w) => h('span', { class: 'lm' }, h('span', { text: windowName(w) }),
+    h('span', { class: 'bar' }, h('i', { class: heat(w.usedPercent), style: { width: `${Math.min(100, w.usedPercent)}%` } })),
+    h('span', { text: `${Math.round(w.usedPercent)}%` }))));
 }
 function hasLive(b) { return (b.statusCounts?.running || 0) + (b.statusCounts?.waiting || 0) > 0; }
 
