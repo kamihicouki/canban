@@ -7,6 +7,7 @@
 //             no listing, just one cached tail read per changed log
 //   feed      items appended to the open session's log since `offset`
 //   limits    Codex rate limits, when a Codex log changed (see signals.mjs)
+// Patches of running sessions (and the open one) also carry `git` (gitlive.mjs).
 import path from 'node:path';
 import { stat, readJson } from './sources/readonly.mjs';
 import { LOCAL_HOST, sessionKey } from './sources/util.mjs';
@@ -16,6 +17,7 @@ import { readFeedDelta } from './feed.mjs';
 import { onSessions, dropLocalCache } from './board.mjs';
 import { perf } from './perf.mjs';
 import { currentLimits, cardSignals } from './signals.mjs';
+import { gitDirOf, refreshGit } from './gitlive.mjs';
 
 export const WATCH_MAX_MS = 45000;
 
@@ -23,24 +25,49 @@ export function createWatch(hub) {
   // Local sessions from the latest listing: id -> session, log path -> id.
   const byId = new Map();
   const byPath = new Map();
+  const byGitDir = new Map(); // git dir -> ids of running sessions in that repo
+  let gitGen = 0;
+  let lastBusy = [];
   onSessions((sessions) => {
     byId.clear();
     byPath.clear();
     const hot = [];
+    const busy = [];
     for (const s of sessions) {
       byId.set(s.id, s);
       if (s.sourcePath) byPath.set(s.sourcePath, s.id);
-      if (s.sourcePath && (s.status === 'running' || s.status === 'waiting')) hot.push(s.sourcePath);
+      if (s.sourcePath && (s.status === 'running' || s.status === 'waiting')) {
+        hot.push(s.sourcePath);
+        if (s.cwd) busy.push(s);
+      }
     }
     hub.setHot(hot);
+    lastBusy = busy;
+    if (hub.active) trackGit(busy, ++gitGen); // servers without an open board run nothing
   });
 
-  async function patchFor(s) {
+  // Watch the repos of running sessions and push their git state once it is known.
+  async function trackGit(busy, gen) {
+    const found = await Promise.all(busy.map(async (s) => [s, await gitDirOf(s.cwd)]));
+    if (gen !== gitGen) return;
+    byGitDir.clear();
+    for (const [s, d] of found) if (d) byGitDir.set(d.gitDir, [...(byGitDir.get(d.gitDir) || []), s.id]);
+    hub.setGitDirs(byGitDir.keys());
+    for (const [s, d] of found) {
+      if (!d) continue;
+      const { changed } = await refreshGit(s.cwd);
+      if (changed && gen === gitGen) hub.emit('git', d.gitDir);
+    }
+  }
+
+  async function patchFor(s, { focused = false, grew = true } = {}) {
     const st = await stat(s.sourcePath);
     if (!st) return null;
     const probe = { ...s, updatedAt: Math.max(s.updatedAt || 0, st.mtimeMs) };
     const status = await localStatus(probe);
-    return { id: s.id, status, updatedAt: probe.updatedAt, activity: probe.activity || null, signals: cardSignals(probe.signals), full: probe.signals || null };
+    const busy = status === 'running' || status === 'waiting';
+    const git = (busy || focused) && s.cwd ? (await refreshGit(s.cwd, { grew })).value : null;
+    return { id: s.id, status, updatedAt: probe.updatedAt, activity: probe.activity || null, signals: cardSignals(probe.signals), git, full: probe.signals || null };
   }
 
   async function codexChanges() {
@@ -82,7 +109,9 @@ export function createWatch(hub) {
     const focus = cardId ? byId.get(cardId) : null;
     hub.focus(focus?.sourcePath || null);
     if (since == null) {
+      const starting = !hub.active;
       hub.touch();
+      if (starting) trackGit(lastBusy, ++gitGen);
       return { seq: hub.seq, reload: false, requests: false, patches: [], feed: null };
     }
     // The open session's log grew since the client's offset (e.g. while it was opening): answer now.
@@ -112,6 +141,10 @@ export function createWatch(hub) {
           const c = await codexChanges();
           if (c.reload) res.reload = relist = true;
           for (const id of c.ids) changed.add(id);
+        } else if (e.kind === 'git') {
+          const dir = byGitDir.has(e.path) ? e.path : path.dirname(e.path);
+          for (const id of byGitDir.get(dir) || []) changed.add(id);
+          if (focus?.cwd && byGitDir.get(dir)?.includes(focus.id)) changed.add(focus.id);
         } else if (e.kind === 'file') {
           const id = byPath.get(e.path);
           if (id) changed.add(id);
@@ -120,14 +153,14 @@ export function createWatch(hub) {
       }
       for (const id of changed) {
         const s = byId.get(id);
-        const p = s && (await patchFor(s));
+        const p = s && (await patchFor(s, { focused: s.id === focus?.id }));
         if (p) res.patches.push(p);
       }
       if (focus && offset != null && (events === null || changed.has(focus.id) || (await behind()))) {
         try {
           res.feed = await readFeedDelta(focus, Number(offset), { codexItems });
-          const p = res.patches.find((x) => x.id === focus.id) || (await patchFor(focus));
-          if (p) Object.assign(res.feed, { status: p.status, activity: p.activity, signals: p.full });
+          const p = res.patches.find((x) => x.id === focus.id) || (await patchFor(focus, { focused: true }));
+          if (p) Object.assign(res.feed, { status: p.status, activity: p.activity, signals: p.full, git: p.git });
         } catch {}
       }
       if (relist) dropLocalCache();

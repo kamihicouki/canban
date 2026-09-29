@@ -842,7 +842,7 @@ function renderCard(card, list) {
     h('span', { class: `badge ${card.agent}`, text: card.agent === 'codex' ? 'Codex' : 'Claude' }),
     card.host ? h('span', { class: 'host-chip', title: `SSH: ${card.host.alias}`, text: `⌂ ${card.host.label}` }) : null,
     card.directory ? dirPill(card.directory, card.project) : card.project ? h('span', { class: 'ellipsis', title: card.codexProject ? `Codex のプロジェクト（${T.folder}: ${card.folder || '-'}）` : card.cwd || '', text: `📁 ${card.project}` }) : null,
-    card.branch ? h('span', { class: 'ellipsis', title: card.branch, text: `⎇ ${card.branch}` }) : null,
+    card.git ? gitPill(card.git, card.branch) : card.branch ? h('span', { class: 'ellipsis', title: card.branch, text: `⎇ ${card.branch}` }) : null,
     h('span', { title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }),
   );
   if (card.priority) meta.append(h('span', { class: `pill prio-${card.priority}`, text: { high: '優先度 高', medium: '優先度 中', low: '優先度 低' }[card.priority] }));
@@ -1374,7 +1374,7 @@ function renderModal(modal, d) {
   const main = h('div', {},
     h('div', { class: 'section-title' }, d.feed ? '会話' : '直近のやりとり',
       d.feed ? h('span', { class: `live-badge${live.on ? ' on' : ''}`, title: live.on ? 'セッションの変化をそのまま表示します' : '', text: live.on ? 'ライブ' : '' }) : null),
-    ...(d.feed ? [renderFeed(d), renderSignals(s.signals)] : msgs),
+    ...(d.feed ? [renderFeed(d), renderSignals(s.signals, d.git)] : msgs),
     renderDispatch(d),
     h('div', { class: 'section-title', text: 'ラベル' }), labelWrap,
     h('div', { class: 'section-title', text: 'メモ' }), note,
@@ -1590,7 +1590,7 @@ function renderFeed(d) {
   const list = h('div', { class: 'feed', role: 'log', 'aria-live': 'polite', 'aria-label': 'セッションの会話' });
   const foot = h('div', { class: 'feed-foot' });
   const newBtn = h('button', { class: 'feed-new', text: '↓ 新着', hidden: true, onclick: () => scrollFeedToEnd() });
-  const f = { cardId: d.session.id, offset: d.feed.offset, size: d.feed.size, codexItems: d.feed.codexItems, list, foot, newBtn, tools: new Map(), status: d.session.status || 'idle', activity: d.session.activity || null, signals: d.session.signals || null };
+  const f = { cardId: d.session.id, offset: d.feed.offset, size: d.feed.size, codexItems: d.feed.codexItems, list, foot, newBtn, tools: new Map(), status: d.session.status || 'idle', activity: d.session.activity || null, signals: d.session.signals || null, git: d.git || null };
   list.addEventListener('scroll', () => { if (atFeedEnd(list)) newBtn.hidden = true; });
   for (const it of d.feed.items) { const el = feedItem(it, f); if (el) list.append(el); }
   if (!d.feed.items.length) list.append(h('div', { class: 'muted', text: 'まだやりとりはありません' }));
@@ -1644,9 +1644,10 @@ function applyFeed(f, feed) {
     f.status = feed.status;
     f.activity = feed.activity || null;
     f.signals = feed.signals || null;
+    if (feed.git) f.git = feed.git;
     paintFeedFoot(f);
     const box = document.querySelector('.modal .sig-box');
-    if (box) box.replaceWith(renderSignals(f.signals));
+    if (box) box.replaceWith(renderSignals(f.signals, f.git));
   }
   if (added) { if (stick) scrollFeedToEnd(); else f.newBtn.hidden = false; }
 }
@@ -1692,6 +1693,7 @@ function applyPatches(patches) {
     card.updatedAt = Math.max(card.updatedAt || 0, p.updatedAt || 0);
     card.activity = p.activity;
     card.signals = p.signals || null;
+    card.git = p.git || null;
     const el = document.querySelector(`.card[data-card-id="${CSS.escape(p.id)}"]`);
     if (el && !state.drag) {
       const focused = el.contains(document.activeElement);
@@ -2432,9 +2434,10 @@ function signalRow(sig, live) {
 }
 const MODE_TEXT = { 'danger-full-access': 'フルアクセス', 'workspace-write': 'ワークスペース書き込み', 'read-only': '読み取り専用', bypassPermissions: '権限確認なし', acceptEdits: '編集は自動承認', plan: 'プランモード', default: '毎回確認', auto: 'auto', dontAsk: '確認しない' };
 // The detail's "now" box: model / effort / mode, context meter, plan and edited files.
-function renderSignals(sig) {
+function renderSignals(sig, git) {
   const box = h('div', { class: 'sig-box', 'aria-live': 'polite' });
-  if (!sig) { box.hidden = true; return box; }
+  if (git) box.append(h('div', { title: gitTitle(git), text: [`⎇ ${git.branch || '（detached HEAD）'}`, ...gitSummary(git)].join(' · ') + (gitSummary(git).length ? '' : ' · 変更なし') }));
+  if (!sig) { box.hidden = !git; return box; }
   const chips = [sig.model, sig.effort ? `effort ${sig.effort}` : null, sig.mode ? (MODE_TEXT[sig.mode] || sig.mode) : null, sig.subRunning ? `🤖 サブエージェント ${sig.subRunning} 動作中` : null].filter(Boolean);
   if (chips.length) box.append(h('div', { class: 'chips' }, ...chips.map((c) => h('span', { class: 'chip', text: c }))));
   if (sig.ctx) {
@@ -2453,6 +2456,17 @@ function renderSignals(sig) {
   }
   if (!box.childElementCount) box.hidden = true;
   return box;
+}
+// Live git state of the session's folder (running sessions and the open card).
+function gitSummary(g) {
+  return [g.changed ? `変更 ${g.changed}` : null, g.untracked ? `未追跡 ${g.untracked}` : null, g.ahead ? `↑${g.ahead}` : null, g.behind ? `↓${g.behind}` : null].filter(Boolean);
+}
+function gitTitle(g) {
+  return `ブランチ: ${g.branch || '（detached HEAD）'}\nコミットしていない変更: ${g.changed} ファイル\n追跡していないファイル: ${g.untracked}\nリモートより ${g.ahead} 進み / ${g.behind} 遅れ`;
+}
+function gitPill(g, fallback) {
+  const extra = [g.changed + g.untracked ? `±${g.changed + g.untracked}` : null, g.ahead ? `↑${g.ahead}` : null, g.behind ? `↓${g.behind}` : null].filter(Boolean).join(' ');
+  return h('span', { class: 'ellipsis', title: gitTitle(g), text: `⎇ ${g.branch || fallback || 'detached'}${extra ? ` ${extra}` : ''}` });
 }
 function fmtReset(ms) {
   if (!ms) return '';

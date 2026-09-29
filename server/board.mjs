@@ -14,6 +14,7 @@ import { launchInfo } from './agents.mjs';
 import { installedTerminals } from './launcher.mjs';
 import { annotateStatus, STATUSES } from './status.mjs';
 import { currentLimits, cardSignals } from './signals.mjs';
+import { peekGit, refreshGit } from './gitlive.mjs';
 import { RuleEngine } from './rules.mjs';
 import { PrService } from './git.mjs';
 import { SearchIndex } from './search.mjs';
@@ -366,6 +367,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       status: s.status || 'idle',
       activity: s.activity || null,
       signals: cardSignals(s.signals),
+      git: s.status === 'running' || s.status === 'waiting' ? peekGit(s.cwd) : null,
       unread: (s.updatedAt || 0) > Math.max(seenAll, card?.seenAt || 0),
       requests: reqs.get(s.id) || null,
       codexFollowUps: s.codexFollowUps || 0,
@@ -550,6 +552,8 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   } catch (e) {
     messagesError = e.message;
   }
+  // Local sessions: the folder's git state now (one `git status`, cached by HEAD / index).
+  const git = !host && s.cwd ? (await refreshGit(s.cwd).catch(() => null))?.value ?? null : null;
   const toTask = linkedToTask(state);
   const taskId = toTask.get(cardId) || null;
   const listCard = taskId ? state.cards[taskId] : card;
@@ -584,6 +588,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     recentMessages: recent,
     messagesError,
     feed,
+    git,
     dispatch: dispatchView(store.dir, state, cardId, permission),
   };
 }
