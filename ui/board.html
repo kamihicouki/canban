@@ -578,6 +578,60 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
 .pane-layer.stack .pcol { overflow: visible; }
 .pane-layer.stack .pane.movable .ph-top { cursor: default; }
 .pane-layer.stack .pb-desk { display: none; }
+
+/* ---------- the dashboard (all panes) folds into one round button that can sit on any edge ---------- */
+.pane-layer { transform-origin: var(--ox, 90%) var(--oy, 90%); transition: transform .36s cubic-bezier(.3, .7, .2, 1), opacity .26s; }
+.pane-layer.closed, .pane-layer.stack.closed { transform: scale(.05); opacity: 0; visibility: hidden; pointer-events: none;
+  transition: transform .36s cubic-bezier(.3, .7, .2, 1), opacity .26s, visibility 0s .36s; }
+.pane-layer.lite .pane-dim { opacity: .18; }
+.pane-layer.closed .pane-dim { opacity: 0; }
+.pop-veil { position: fixed; inset: 0; z-index: 850; background: var(--overlay); opacity: 0; pointer-events: none; transition: opacity .25s; }
+.pop-veil.on { opacity: .32; }
+.orb { position: fixed; z-index: 810; width: 60px; height: 60px; touch-action: none; --orb-ring: rgba(133, 144, 162, .55); --orb-disc: color-mix(in srgb, var(--modal-bg) 86%, transparent); }
+.orb[hidden] { display: none; }
+.orb.snap { transition: left .28s cubic-bezier(.3, .8, .3, 1.1), top .28s cubic-bezier(.3, .8, .3, 1.1); }
+.orb-main { position: relative; width: 60px; height: 60px; padding: 0; border: 0; border-radius: 50%; cursor: grab; display: grid; place-items: center; color: var(--list-fg);
+  background: var(--ring, var(--orb-ring)); box-shadow: 0 6px 18px #04102055, 0 0 0 1px #ffffff40; transition: transform .2s, box-shadow .2s; touch-action: none; }
+.orb-main::before { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--orb-disc); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: inset 0 1px 0 #ffffff70; }
+.orb-main:hover { transform: scale(1.06); box-shadow: 0 8px 22px #04102066, 0 0 0 1px #ffffff59; }
+.orb-main:active { cursor: grabbing; }
+.orb-main:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.orb-main svg { position: relative; width: 24px; height: 24px; }
+.orb.open .orb-main { transform: scale(.82); }
+.orb.open .orb-main:hover { transform: scale(.88); }
+.orb.bump .orb-main { animation: orbBump .45s ease-out; }
+@keyframes orbBump { 35% { transform: scale(1.14); box-shadow: 0 0 0 5px var(--focus), 0 6px 18px #04102055; } }
+.orb-count { position: absolute; z-index: 1; right: -3px; top: -3px; min-width: 21px; height: 21px; border-radius: 11px; padding: 0 5px; display: grid; place-items: center;
+  background: var(--accent); color: var(--accent-fg); font-size: 11.5px; font-weight: 700; box-shadow: 0 0 0 2px var(--modal-bg); }
+.orb-sat { position: absolute; left: 13px; top: 13px; width: 34px; height: 34px; padding: 0; display: grid; place-items: center; border-radius: 50%; cursor: pointer;
+  border: 2px solid var(--agent, var(--c-gray)); background: var(--modal-panel); color: var(--list-fg); font-size: 13px; font-weight: 700; box-shadow: 0 4px 12px #04102059;
+  opacity: 0; pointer-events: none; transform: scale(.4); transition: transform .3s cubic-bezier(.3, .8, .3, 1.2), opacity .18s; transition-delay: calc(var(--i) * 20ms); }
+.orb-sat .sdot { position: absolute; right: -3px; top: -3px; width: 12px; height: 12px; margin: 0; border: 2px solid var(--modal-panel); box-sizing: border-box; }
+.orb.fan .orb-sat { opacity: 1; pointer-events: auto; transform: translate(calc(var(--dx) * 1px), calc(var(--dy) * 1px)); }
+.orb.open .orb-sat, .orb.dragging .orb-sat { display: none; }
+.orb::before { content: ""; position: absolute; left: 50%; top: 50%; width: 400px; height: 400px; transform: translate(-50%, -50%); border-radius: 50%; display: none; z-index: -1; }
+.orb.fan::before { display: block; }
+.orb-sat::after { content: attr(data-tip); position: absolute; left: 50%; transform: translateX(-50%); bottom: 40px; white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis;
+  padding: 3px 8px; border-radius: 6px; background: #091e42e6; color: #fff; font-size: 11px; font-weight: 400; opacity: 0; pointer-events: none; transition: opacity .15s; }
+.orb[data-tip="below"] .orb-sat::after { bottom: auto; top: 40px; }
+.orb-sat:hover::after, .orb-sat:focus-visible::after { opacity: 1; }
+.orb-sat:hover { z-index: 2; }
+.orb-zone { position: fixed; z-index: 805; pointer-events: none; opacity: 0; transition: opacity .2s; background: #ffffff38; box-shadow: inset 0 0 0 2px #ffffff8c; border-radius: 12px; }
+.orb-zone.on { background: #ffffff66; }
+body.orb-dragging .orb-zone { opacity: 1; }
+.orb-zone.l { left: 4px; top: var(--zt, 60px); bottom: 4px; width: 84px; } .orb-zone.r { right: 4px; top: var(--zt, 60px); bottom: 4px; width: 84px; }
+.orb-zone.t { left: 4px; right: 4px; top: var(--zt, 60px); height: 78px; } .orb-zone.b { left: 4px; right: 4px; bottom: 4px; height: 78px; }
+.depth-meter { position: fixed; z-index: 1050; bottom: 12px; left: 12px; display: flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 999px; font-size: 11.5px;
+  background: color-mix(in srgb, var(--modal-bg) 78%, transparent); color: var(--list-fg); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: 0 4px 14px #04102040; pointer-events: none; }
+.depth-meter[hidden] { display: none; }
+.depth-meter.right { left: auto; right: 12px; }
+.depth-meter .gi { display: flex; align-items: center; gap: 4px; opacity: .45; }
+.depth-meter .gi i { width: 10px; height: 10px; border-radius: 50%; border: 2px solid currentColor; box-sizing: border-box; }
+.depth-meter .gi.on { opacity: 1; } .depth-meter .gi.on i { background: currentColor; }
+.depth-meter .gi.cur { font-weight: 700; }
+.depth-meter .gi + .gi::before { content: ""; width: 12px; height: 2px; background: currentColor; opacity: .4; margin-right: 4px; }
+@media (max-width: 720px) { .depth-meter .gi:not(.cur) span { display: none; } }
+@media (prefers-reduced-motion: reduce) { .pane-layer, .orb, .orb-sat { transition: none !important; } .orb.bump .orb-main { animation: none; } }
 @media (prefers-reduced-motion: reduce) { .pane, .pane-dim, .pchev svg { transition: none; } }
 @media (max-width: 720px) {
   .hsearch { width: 140px; }
@@ -1471,9 +1525,9 @@ function paneMetrics() {
   paneLayer.style.top = `${Math.max(0, $('.shell')?.getBoundingClientRect().top ?? 0)}px`;
   const stack = window.innerWidth < 720;
   paneLayer.classList.toggle('stack', stack);
-  const r = paneStage.getBoundingClientRect();
-  paneLayer.style.setProperty('--area-w', `${Math.round(r.width)}px`);
-  paneLayer.style.setProperty('--area-h', `${Math.round(stack ? window.innerHeight * 0.9 : r.height)}px`);
+  // clientWidth / clientHeight ignore the scale transform that folds the layer into the round button
+  paneLayer.style.setProperty('--area-w', `${paneStage.clientWidth}px`);
+  paneLayer.style.setProperty('--area-h', `${Math.round(stack ? window.innerHeight * 0.9 : paneStage.clientHeight)}px`);
   return stack;
 }
 
@@ -1532,6 +1586,7 @@ function layoutPanes() {
 }
 function doPaneLayout() {
   paneLayer.hidden = !panes.length;
+  paintDash();
   if (!panes.length) return;
   panes.forEach(applyPaneAttrs);
   const stack = paneMetrics();
@@ -1555,7 +1610,7 @@ function doPaneLayout() {
   paneCanvas.style.width = `${Math.max(W, res.width)}px`;
   paneCanvas.style.height = `${Math.max(H, res.height)}px`;
   paneStage.classList.toggle('scrolls', res.width > W || res.height > H);
-  paneLayer.classList.toggle('dim', fixed.some((p) => !p.note));
+
 }
 function applyPaneAttrs(p) {
   const el = p.el, space = eff(p, 'space');
@@ -1670,6 +1725,9 @@ function paneButtons(p) {
 }
 function paintPaneButtons(p) { const slot = $('.ph-btns', p.el); if (slot) slot.replaceChildren(...paneButtons(p)); }
 
+let dashOpen = store.get('dashOpen', true) !== false;
+let paneCollect = store.get('paneCollect', true) !== false;
+let orbPos = (() => { const v = store.get('orbPos', null); return v && ['left', 'right', 'top', 'bottom'].includes(v.edge) && Number.isFinite(v.t) ? { edge: v.edge, t: v.t } : { edge: 'right', t: 1 }; })();
 // ---- the global bar ----
 const barOpen = store.get('paneBarOpen', true);
 function buildPaneBar() {
@@ -1686,9 +1744,11 @@ function buildPaneBar() {
     btn('すべて付箋に', () => bulk((p) => { p.note = true; }), 'すべてのカードを付箋にたたむ'),
     btn('すべて広げる', () => bulk((p) => { p.note = false; }), 'すべてのカードを広げる'));
   const toggle = h('button', { class: 'hbtn', type: 'button', 'aria-expanded': String(paneBarOpen), onclick: () => { paneBarOpen = !paneBarOpen; store.set('paneBarOpen', paneBarOpen); paintPaneBar(); layoutPanes(); } }, '表示設定');
-  const extra = [...groups, bulkG, noteG, btn('部品の並びを初期化', resetPaneLayout, 'すべてのカードで部品の並びを初期状態に戻す')];
+  const collectBtn = h('button', { class: 'hbtn', type: 'button', 'aria-pressed': String(paneCollect), title: '畳んでいるとき、カードを選んでも開かずにダッシュボードへ足すだけにします',
+    onclick: (e) => { paneCollect = !paneCollect; store.set('paneCollect', paneCollect); e.currentTarget.setAttribute('aria-pressed', String(paneCollect)); } }, '畳んだまま足す');
+  const extra = [...groups, bulkG, noteG, h('div', { class: 'pb-group' }, collectBtn), btn('部品の並びを初期化', resetPaneLayout, 'すべてのカードで部品の並びを初期状態に戻す')];
   paneBar.append(h('span', { class: 'pb-count' }), toggle, ...extra.map((g) => (g.classList.add('pb-extra'), g)), h('span', { class: 'pb-sp' }),
-    btn('すべて閉じる', () => [...panes].forEach((p) => closePane(p.id)), '開いているカードをすべて閉じる'));
+    btn('畳む', () => setDash(false), 'ダッシュボードを畳む（D）'), btn('すべて閉じる', () => [...panes].forEach((p) => closePane(p.id)), '開いているカードをすべて閉じる'));
 }
 let paneBarOpen = barOpen;
 function paintPaneBar() {
@@ -1699,6 +1759,152 @@ function paintPaneBar() {
 }
 buildPaneBar();
 new ResizeObserver(() => layoutPanes()).observe(document.body);
+
+// ---- the dashboard button: every pane folds into one round button that can sit on any edge ----
+const ORB = 60, ORB_M = 14;
+const orb = h('div', { id: 'paneOrb', class: 'orb', hidden: true });
+const depthMeter = h('div', { class: 'depth-meter', role: 'status', 'aria-label': '階層メーター', hidden: true });
+const popVeil = h('div', { class: 'pop-veil' });
+const orbZones = ['l', 'r', 't', 'b'].map((k) => h('div', { class: `orb-zone ${k}`, 'data-z': { l: 'left', r: 'right', t: 'top', b: 'bottom' }[k] }));
+document.body.append(popVeil, orb, depthMeter, ...orbZones);
+const ORB_GLYPH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="12.5" height="10" rx="2.2"/><rect x="8.5" y="9.5" width="12.5" height="10" rx="2.2" fill="var(--modal-bg)"/></svg>';
+const ORB_CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+const ST_COLOR = { running: 'var(--c-blue)', waiting: 'var(--c-orange)', completed: 'var(--c-green)', aborted: 'var(--c-red)' };
+const stColor = (st) => ST_COLOR[st] || 'var(--c-gray)';
+function paneInfo(p) {
+  let c = null;
+  for (const l of state.board?.lists || []) { c = l.cards.find((x) => x.id === p.id); if (c) break; }
+  const s = p.d?.session;
+  return { title: s?.title || c?.title || p.id, agent: s?.agent || c?.agent || 'claude', status: p.status || c?.status || 'idle', act: String(p.activity || p.lastText || '').split('\n').find((x) => x.trim()) || '' };
+}
+function orbTop() { return Math.max(0, $('.shell')?.getBoundingClientRect().top ?? 0) + 8; }
+function orbXY(pos = orbPos) {
+  const W = window.innerWidth, H = window.innerHeight, x0 = ORB_M, x1 = W - ORB_M - ORB, y0 = orbTop(), y1 = H - ORB_M - ORB, t = Math.min(1, Math.max(0, pos.t));
+  if (pos.edge === 'right') return [x1, y0 + (y1 - y0) * t];
+  if (pos.edge === 'left') return [x0, y0 + (y1 - y0) * t];
+  if (pos.edge === 'top') return [x0 + (x1 - x0) * t, y0];
+  return [x0 + (x1 - x0) * t, y1];
+}
+function orbFan(cx, cy, n) {
+  const W = window.innerWidth, H = window.innerHeight, top = orbTop();
+  const a0 = Math.atan2((top + H) / 2 - cy, W / 2 - cx);
+  const corner = Math.min(cx, W - cx) < 90 && Math.min(cy - top, H - cy) < 90;
+  const spread = (corner ? 92 : 150) * Math.PI / 180, inner = Math.min(n, 5), outer = n - inner;
+  const at = (k, m, R) => { const a = a0 + (m > 1 ? k / (m - 1) - 0.5 : 0) * spread; return [Math.round(Math.cos(a) * R), Math.round(Math.sin(a) * R)]; };
+  return Array.from({ length: n }, (_, i) => (i < inner ? at(i, inner, 90) : at(i - inner, outer, 148)));
+}
+let orbSig = '';
+function paintOrb() {
+  orb.hidden = !panes.length;
+  if (!panes.length) { orbSig = ''; return; }
+  const [x, y] = orbXY(), infos = panes.map(paneInfo), n = panes.length;
+  orb.style.left = `${x}px`; orb.style.top = `${y}px`;
+  orb.dataset.tip = y + ORB / 2 < window.innerHeight / 2 ? 'below' : 'above';
+  orb.classList.toggle('open', dashOpen);
+  paneLayer.style.setProperty('--ox', `${x + ORB / 2}px`);
+  paneLayer.style.setProperty('--oy', `${y + ORB / 2 - (parseFloat(paneLayer.style.top) || 0)}px`);
+  const sig = JSON.stringify([panes.map((p) => p.id), infos.map((i) => [i.title, i.agent, i.status, i.act]), orbPos, dashOpen, ORB_M, window.innerWidth, window.innerHeight]);
+  if (sig === orbSig) return;
+  orbSig = sig;
+  const order = ['running', 'waiting', 'completed', 'aborted'], cnt = {};
+  infos.forEach((i) => { const k = order.includes(i.status) ? i.status : 'idle'; cnt[k] = (cnt[k] || 0) + 1; });
+  let acc = 0;
+  const seg = [...order, 'idle'].filter((k) => cnt[k]).map((k) => { const from = acc / n * 100; acc += cnt[k]; return `${stColor(k)} ${from}% ${acc / n * 100}%`; }).join(', ');
+  orb.style.setProperty('--ring', `conic-gradient(${seg})`);
+  const offs = orbFan(x + ORB / 2, y + ORB / 2, n);
+  const sats = panes.map((p, i) => h('button', { type: 'button', class: 'orb-sat', 'data-id': p.id, style: `--i:${i}; --dx:${offs[i][0]}; --dy:${offs[i][1]}; --agent: var(--${infos[i].agent})`,
+    'data-tip': `${infos[i].title}${infos[i].act ? `：${infos[i].act}` : ''}`, 'aria-label': `${infos[i].title} を開く` },
+    [...infos[i].title.trim()][0] || '?', h('span', { class: `sdot s-${infos[i].status}` })));
+  const main = h('button', { type: 'button', class: 'orb-main', 'aria-label': `カードのダッシュボード（${n} 枚）を${dashOpen ? '畳む' : '開く'}。ドラッグで動かせます`, title: `ダッシュボードを${dashOpen ? '畳む' : '開く'}（D）` },
+    h('span', { class: 'orb-count', text: String(n) }), h('span', { class: 'orb-ic', html: dashOpen ? ORB_CHEV : ORB_GLYPH }));
+  orb.replaceChildren(...sats, main);
+}
+function paintDepth() {
+  const has = panes.length > 0, pop = !!document.querySelector('.popover');
+  const lv = [true, has && dashOpen, has && dashOpen && pop], cur = lv.lastIndexOf(true);
+  depthMeter.hidden = !has;
+  depthMeter.replaceChildren(...['ホーム', 'ダッシュボード', 'メニュー'].map((t, i) => h('span', { class: `gi${lv[i] ? ' on' : ''}${i === cur ? ' cur' : ''}` }, h('i'), h('span', { text: t }))));
+  popVeil.classList.toggle('on', has && dashOpen && pop);
+  const [ox, oy] = orbXY(), right = ox < 240 && oy > window.innerHeight - 140;
+  depthMeter.classList.toggle('right', right);
+}
+function paintDash() {
+  paneLayer.classList.toggle('closed', !dashOpen);
+  paneLayer.classList.toggle('dim', panes.some((p) => !p.note));
+  paneLayer.classList.toggle('lite', panes.length > 0 && !panes.some((p) => !p.note));
+  paintOrb(); paintDepth();
+}
+function setDash(v, { quiet = false } = {}) {
+  dashOpen = v; store.set('dashOpen', v);
+  if (!v) closePopover();
+  paintDash();
+  if (v) layoutPanes();
+  if (!quiet) kickLive();
+}
+const orbBump = () => { orb.classList.remove('bump'); void orb.offsetWidth; orb.classList.add('bump'); };
+function saveOrb() { store.set('orbPos', orbPos); }
+function snapOrb(cx, cy) {
+  const W = window.innerWidth, H = window.innerHeight, top = orbTop(), d = { left: cx, right: W - cx, top: cy - top, bottom: H - cy };
+  const edge = Object.keys(d).sort((a, b) => d[a] - d[b])[0];
+  const x0 = ORB_M, x1 = W - ORB_M - ORB, y0 = top, y1 = H - ORB_M - ORB;
+  const t = edge === 'left' || edge === 'right' ? (cy - ORB / 2 - y0) / (y1 - y0) : (cx - ORB / 2 - x0) / (x1 - x0);
+  orbPos = { edge, t: Math.min(1, Math.max(0, t)) }; saveOrb();
+}
+let orbDrag = null;
+orb.addEventListener('pointerenter', () => { if (!orbDrag && !dashOpen) orb.classList.add('fan'); });
+orb.addEventListener('pointerleave', () => { if (!orbDrag) orb.classList.remove('fan'); });
+orb.addEventListener('focusin', () => { if (!dashOpen) orb.classList.add('fan'); });
+orb.addEventListener('focusout', (e) => { if (!orb.contains(e.relatedTarget)) orb.classList.remove('fan'); });
+orb.addEventListener('pointerdown', (e) => {
+  const m = e.target.closest('.orb-main'); if (!m || e.button !== 0) return;
+  const r = orb.getBoundingClientRect();
+  orbDrag = { sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, moved: false };
+  m.setPointerCapture(e.pointerId);
+});
+orb.addEventListener('pointermove', (e) => {
+  if (!orbDrag) return;
+  if (!orbDrag.moved && Math.hypot(e.clientX - orbDrag.sx, e.clientY - orbDrag.sy) < 6) return;
+  if (!orbDrag.moved) {
+    orbDrag.moved = true; orb.classList.remove('fan', 'snap'); orb.classList.add('dragging');
+    document.documentElement.style.setProperty('--zt', `${orbTop() - 4}px`); document.body.classList.add('orb-dragging');
+  }
+  const W = window.innerWidth, H = window.innerHeight, top = orbTop();
+  const x = Math.min(W - ORB, Math.max(0, e.clientX - orbDrag.ox)), y = Math.min(H - ORB, Math.max(top - 8, e.clientY - orbDrag.oy));
+  orb.style.left = `${x}px`; orb.style.top = `${y}px`;
+  const d = { left: x + ORB / 2, right: W - x - ORB / 2, top: y + ORB / 2 - top, bottom: H - y - ORB / 2 }, near = Object.keys(d).sort((a, b) => d[a] - d[b])[0];
+  orbZones.forEach((z) => z.classList.toggle('on', z.dataset.z === near));
+});
+const endOrbDrag = () => { orb.classList.remove('dragging'); document.body.classList.remove('orb-dragging'); };
+orb.addEventListener('pointerup', () => {
+  if (!orbDrag) return;
+  const d = orbDrag; orbDrag = null;
+  if (!d.moved) { setDash(!dashOpen); return; }
+  const r = orb.getBoundingClientRect();
+  snapOrb(r.left + ORB / 2, r.top + ORB / 2);
+  endOrbDrag(); orb.classList.add('snap'); orbSig = ''; paintDash();
+  setTimeout(() => orb.classList.remove('snap'), 350);
+});
+orb.addEventListener('pointercancel', () => { if (orbDrag) { orbDrag = null; endOrbDrag(); orbSig = ''; paintDash(); } });
+orb.addEventListener('click', (e) => {
+  const sat = e.target.closest('.orb-sat');
+  if (sat) { orb.classList.remove('fan'); setDash(true); const p = panes.find((x) => x.id === sat.dataset.id); if (p) { front(p); p.el.focus({ preventScroll: true }); } return; }
+  if (e.detail === 0 && e.target.closest('.orb-main')) setDash(!dashOpen); // keyboard: Enter / Space
+});
+orb.addEventListener('keydown', (e) => {
+  if (!e.shiftKey || !e.key.startsWith('Arrow')) return;
+  e.preventDefault();
+  const dir = e.key.slice(5).toLowerCase(), edges = { left: 'left', right: 'right', up: 'top', down: 'bottom' };
+  const along = orbPos.edge === 'left' || orbPos.edge === 'right' ? ['up', 'down'] : ['left', 'right'];
+  orbPos = along.includes(dir) ? { edge: orbPos.edge, t: Math.min(1, Math.max(0, orbPos.t + (dir === 'up' || dir === 'left' ? -0.15 : 0.15))) } : { edge: edges[dir], t: orbPos.t };
+  saveOrb(); orb.classList.add('snap'); orbSig = ''; paintDash(); $('.orb-main', orb)?.focus();
+  setTimeout(() => orb.classList.remove('snap'), 350);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() !== 'd' || e.metaKey || e.ctrlKey || e.altKey || e.isComposing || !panes.length || state.modalOpen || typingIn(e.target) || document.querySelector('.popover')) return;
+  e.preventDefault(); setDash(!dashOpen);
+});
+new MutationObserver(() => paintDepth()).observe(document.body, { childList: true });
+window.addEventListener('resize', () => { orbSig = ''; paintOrb(); paintDepth(); });
 
 // ---- sections: the parts of a card, in two columns, reorderable inside a column ----
 function applyPaneLayoutTo(el) {
@@ -1830,6 +2036,7 @@ async function openCard(cardId, init = null) {
     if (panes.length >= PANE_MAX) { toast(`開いておけるカードは ${PANE_MAX} 枚までです`, true); return; }
     p = newPane(cardId, init);
   } else if (!init) front(p);
+  if (!init) { if (fresh && panes.length > 1 && !dashOpen && paneCollect) { orbBump(); paintOrb(); } else setDash(true, { quiet: true }); }
   let d;
   try {
     d = await bridge.callTool('canban_get_session', { cardId, messages: 14 });
@@ -1841,7 +2048,7 @@ async function openCard(cardId, init = null) {
   }
   if (!panes.includes(p)) return;
   renderPane(p, d);
-  if (fresh && !init) p.el.focus({ preventScroll: true });
+  if (fresh && !init && dashOpen) p.el.focus({ preventScroll: true });
 }
 
 function updateNoteLine(p) {

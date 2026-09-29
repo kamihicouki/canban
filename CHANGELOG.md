@@ -10,6 +10,9 @@
   - Every setting is a default (bar above the panes) that each pane follows unless it is overridden from that pane (空間 button, 表示 popover). Bulk buttons: すべて付箋に / すべて広げる / すべて固定 / すべて自由 / 全体設定に従う.
   - The parts of a card (conversation, prompt box, labels, memo, plan, edited files, model and permission, context meter, resume, ...) can be reordered by drag and drop or by `↑` `↓` on the grip, inside their own column only. The order is shared by all panes; 部品の並びを初期化 resets it.
   - Open panes, their settings and positions are remembered (per host app, in the UI's local storage).
+  - **Dashboard button**: all panes fold into one round button (`D`, or the button itself). The button carries a ring of the cards' states (running / waiting / done), a count badge, and fans the cards out on hover so one can be picked. It can be dragged to any edge of the window and snaps to the nearest one (`Shift`+arrows moves it from the keyboard); the fan opens toward the inside and the position is remembered.
+  - Picking cards is easier: while folded, clicking a card adds it to the dashboard without opening it (the 畳んだまま足す switch in the bar; clicking a card that is already in the dashboard opens it).
+  - The background always darkens while the dashboard is open, not only for fixed panes; anything laid over the panes (menus) adds another translucent veil, and a depth meter at the bottom shows how far from the home board you are (ホーム / ダッシュボード / メニュー).
 - The live watch follows every open pane: `canban_watch` takes `feeds` (up to 8 `{cardId, offset, size, codexItems}`) and returns `feeds` keyed by card. `cardId` / `feed` still work for one card. The live hub watches all focused logs, and presence lists every open card.
 - Fix: the filter row's agent buttons no longer share the highlight logic with other segmented controls.
 
