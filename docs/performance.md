@@ -9,6 +9,7 @@ Canban reads a lot of data. A real history used while building 0.8.0 had 4,461 C
 | `buildBoard` | 300 ms | Warm cache |
 | `sessionDetail` | 300 ms | One tail read serves the messages, the live feed and the permissions |
 | `live.watch` | 50 ms | Turning file events into card patches and the open session's appended lines (the wait itself is not counted) |
+| `git.status` | 1000 ms | One `git --no-optional-locks status` for the folder of a running session (or the open card); runs in the background, at most 4 at a time |
 | `sessions.all` | 300 ms | Local and remote listings plus status |
 | `codex.list` | 50 ms | 0 queries when the DB and WAL are unchanged; a delta by `updated_at` otherwise |
 | `claude.list` | 100 ms | Transcript summaries cached by mtime and size |

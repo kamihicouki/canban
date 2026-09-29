@@ -18,7 +18,7 @@ import { readFeedDelta } from './feed.mjs';
 import { onSessions, dropLocalCache } from './board.mjs';
 import { perf } from './perf.mjs';
 import { currentLimits, cardSignals } from './signals.mjs';
-import { gitDirOf, refreshGit } from './gitlive.mjs';
+import { gitDirOf, refreshGit, peekGit } from './gitlive.mjs';
 
 export const WATCH_MAX_MS = 45000;
 
@@ -50,6 +50,13 @@ export function createWatch(hub, { presence = null } = {}) {
     if (hub.active) trackGit(busy, ++gitGen); // servers without an open board run nothing
   });
 
+  function kickGit(cwd, grew) {
+    refreshGit(cwd, { grew }).then(async ({ changed }) => {
+      const d = changed && (await gitDirOf(cwd));
+      if (d) hub.emit('git', d.gitDir);
+    }).catch(() => {});
+  }
+
   // Watch the repos of running sessions and push their git state once it is known.
   async function trackGit(busy, gen) {
     const found = await Promise.all(busy.map(async (s) => [s, await gitDirOf(s.cwd)]));
@@ -70,7 +77,10 @@ export function createWatch(hub, { presence = null } = {}) {
     const probe = { ...s, updatedAt: Math.max(s.updatedAt || 0, st.mtimeMs) };
     const status = await localStatus(probe);
     const busy = status === 'running' || status === 'waiting';
-    const git = (busy || focused) && s.cwd ? (await refreshGit(s.cwd, { grew })).value : null;
+    // git runs in the background (a changed state comes back as a 'git' event), so the
+    // patch only takes what is known.
+    if ((busy || focused) && s.cwd) kickGit(s.cwd, grew);
+    const git = (busy || focused) && s.cwd ? peekGit(s.cwd) : null;
     return { id: s.id, status, updatedAt: probe.updatedAt, activity: probe.activity || null, signals: cardSignals(probe.signals), git, full: probe.signals || null };
   }
 
@@ -162,7 +172,7 @@ export function createWatch(hub, { presence = null } = {}) {
         } else if (e.kind === 'git') {
           const dir = byGitDir.has(e.path) ? e.path : path.dirname(e.path);
           for (const id of byGitDir.get(dir) || []) changed.add(id);
-          if (focus?.cwd && byGitDir.get(dir)?.includes(focus.id)) changed.add(focus.id);
+          if (focus?.cwd && (await gitDirOf(focus.cwd))?.gitDir === dir) changed.add(focus.id);
         } else if (e.kind === 'file') {
           const id = byPath.get(e.path);
           if (id) changed.add(id);

@@ -6,6 +6,7 @@
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { stat } from './sources/readonly.mjs';
+import { perf } from './perf.mjs';
 
 const REFRESH_MS = 10e3;
 const TIMEOUT_MS = 3000;
@@ -83,7 +84,7 @@ export function refreshGit(cwd, { grew = false, now = Date.now() } = {}) {
     const sig = await signature(d.gitDir);
     const hit = states.get(cwd);
     if (hit && hit.sig === sig && !(grew && now - hit.at >= REFRESH_MS)) return { value: hit.value, changed: false };
-    const out = await git(cwd, ['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=normal']);
+    const out = await perf.timed('git.status', () => git(cwd, ['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=normal']));
     if (out == null) return { value: hit?.value ?? null, changed: false };
     const value = parseStatus(out);
     states.set(cwd, { sig, at: now, value, gitDir: d.gitDir });
