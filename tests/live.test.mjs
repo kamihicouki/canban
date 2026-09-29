@@ -138,6 +138,77 @@ test('LiveHub falls back to stat polling when fs.watch is unavailable', async ()
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('LiveHub follows several focused logs and drops the ones that are no longer open', () => {
+  const dir = tmp();
+  const [a, b, c] = ['a', 'b', 'c'].map((n) => path.join(dir, `${n}.jsonl`));
+  for (const f of [a, b, c]) fs.writeFileSync(f, '{}\n');
+  const hub = new LiveHub({ dataDir: path.join(dir, 'data'), idleMs: 10000, watch: () => { throw new Error('ENOSYS'); } });
+  hub.touch();
+  hub.focus([a, b]);
+  assert.deepEqual([hub.polled.has(a), hub.polled.has(b), hub.polled.has(c)], [true, true, false]);
+  hub.focus([b, c]);
+  assert.deepEqual([hub.polled.has(a), hub.polled.has(b), hub.polled.has(c)], [false, true, true]);
+  hub.focus(null);
+  assert.deepEqual([hub.polled.has(a), hub.polled.has(b), hub.polled.has(c)], [false, false, false]);
+  hub.close();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('canban_watch streams every session that is open in a pane', async () => {
+  const fx = makeFixtures();
+  const dataDir = tmp();
+  const child = spawn(process.execPath, ['--no-warnings', path.join(root, 'server', 'index.mjs')], {
+    env: { ...process.env, CANBAN_DATA_DIR: dataDir, CANBAN_CODEX_HOME: fx.codexHome, CANBAN_CLAUDE_HOME: fx.claudeHome, CANBAN_CLAUDE_DESKTOP_DIR: fx.desktopDir, CANBAN_LAUNCH_DRYRUN: '1', CANBAN_SEARCH_INDEX: '0', CANBAN_BACKGROUND: '0', CANBAN_GH: path.join(root, 'tests', 'fake-gh.sh'), CANBAN_GLAB: path.join(root, 'tests', 'fake-glab.sh'), FAKE_GH_DATA: '/dev/null' },
+    stdio: ['pipe', 'pipe', 'ignore'],
+  });
+  let nextId = 1;
+  const waiting = new Map();
+  readline.createInterface({ input: child.stdout }).on('line', (l) => {
+    const m = JSON.parse(l);
+    waiting.get(m.id)?.(m);
+  });
+  const rpc = (method, params) => {
+    const id = nextId++;
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
+    return new Promise((resolve) => waiting.set(id, resolve));
+  };
+  const call = async (name, args = {}) => (await rpc('tools/call', { name, arguments: args })).result.structuredContent;
+  try {
+    await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '0' } });
+    const d1 = await call('canban_get_session', { cardId: 'claude:c1' });
+    const d2 = await call('canban_get_session', { cardId: 'claude:c2' });
+    const feedsArg = (r1 = d1.feed, r2 = d2.feed) => [{ cardId: 'claude:c1', offset: r1.offset, size: r1.size }, { cardId: 'claude:c2', offset: r2.offset, size: r2.size }];
+    const first = await call('canban_watch', { since: null });
+    await new Promise((r) => setTimeout(r, 300));
+    const { seq } = await call('canban_watch', { since: first.seq, feeds: feedsArg(), timeoutMs: 0 });
+    const pending = call('canban_watch', { since: seq, feeds: feedsArg(), timeoutMs: 10000 });
+    await new Promise((r) => setTimeout(r, 200));
+    for (const [n, file] of [['c1', 'README.md'], ['c2', 'index.html']]) {
+      fs.appendFileSync(path.join(fx.claudeHome, 'projects', '-r-web', `${n}.jsonl`), line({ type: 'assistant', timestamp: new Date().toISOString(), message: { content: [{ type: 'tool_use', id: `x-${n}`, name: 'Read', input: { file_path: `/r/web/${file}` } }] } }));
+    }
+    let r = await pending;
+    const got = { ...r.feeds };
+    // the second append may arrive in a later call
+    for (let i = 0; i < 5 && Object.keys(got).length < 2; i++) {
+      const next = await call('canban_watch', { since: r.seq, feeds: feedsArg(got['claude:c1'] || d1.feed, got['claude:c2'] || d2.feed), timeoutMs: 2000 });
+      Object.assign(got, next.feeds);
+      r = next;
+    }
+    assert.deepEqual(Object.keys(got).sort(), ['claude:c1', 'claude:c2']);
+    assert.deepEqual(got['claude:c1'].items.map((i) => i.summary), ['README.md']);
+    assert.deepEqual(got['claude:c2'].items.map((i) => i.summary), ['index.html']);
+    assert.ok(got['claude:c1'].signals && got['claude:c2'].signals, 'each open card gets the full signals');
+    // the older single-session arguments still work and fill `feed`
+    const behind = await call('canban_watch', { since: r.seq, cardId: 'claude:c2', offset: d2.feed.offset, size: d2.feed.size, timeoutMs: 0 });
+    assert.deepEqual(behind.feed, behind.feeds['claude:c2']);
+    assert.equal(behind.feed.items[0].summary, 'index.html');
+  } finally {
+    child.kill();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+    fx.cleanup();
+  }
+});
+
 test('canban_watch over stdio: patches the card and streams the open session', async () => {
   const fx = makeFixtures();
   const dataDir = tmp();

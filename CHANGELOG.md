@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.13.0 — 2026-09-29
+- Card details are now **panes** instead of one modal: open several cards at once, like pinned sticky notes (up to 8).
+  - A pane never grows taller than the screen; each column of the card scrolls inside it.
+  - **Display modes** — テキスト (plain, compact, monospaced feel), プレビュー (the previous look), 要点 (digest: tool calls and thinking are hidden, replies cut to three lines).
+  - **Sizes** S / M / L per pane.
+  - **Space** — 固定 (packed into a grid, one row or one column, centered) or 自由 (drag anywhere, edges and other panes snap). Fixed panes are reordered by dragging their title. Below 720 px wide the panes stack.
+  - **付箋** — fold a pane down to its title and one line of what the session is doing; unfold to get it back.
+  - Every setting is a default (bar above the panes) that each pane follows unless it is overridden from that pane (空間 button, 表示 popover). Bulk buttons: すべて付箋に / すべて広げる / すべて固定 / すべて自由 / 全体設定に従う.
+  - The parts of a card (conversation, prompt box, labels, memo, plan, edited files, model and permission, context meter, resume, ...) can be reordered by drag and drop or by `↑` `↓` on the grip, inside their own column only. The order is shared by all panes; 部品の並びを初期化 resets it.
+  - Open panes, their settings and positions are remembered (per host app, in the UI's local storage).
+- The live watch follows every open pane: `canban_watch` takes `feeds` (up to 8 `{cardId, offset, size, codexItems}`) and returns `feeds` keyed by card. `cardId` / `feed` still work for one card. The live hub watches all focused logs, and presence lists every open card.
+- Fix: the filter row's agent buttons no longer share the highlight logic with other segmented controls.
+
 ## 0.12.0 — 2026-09-29
 - Live signals from the session logs, updated with the realtime board:
   - Context in use after the last reply (Codex: share of `model_context_window`; Claude: tokens, share when the window is known). Cards show `◔ 62%`; any card over 75% / 90% turns orange / red.
