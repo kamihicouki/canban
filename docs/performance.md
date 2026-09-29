@@ -7,7 +7,8 @@ Canban reads a lot of data. A real history used while building 0.8.0 had 4,461 C
 | Operation | Budget | Notes |
 |---|---|---|
 | `buildBoard` | 300 ms | Warm cache |
-| `sessionDetail` | 300 ms | One tail read serves both the messages and the permissions |
+| `sessionDetail` | 300 ms | One tail read serves the messages, the live feed and the permissions |
+| `live.watch` | 50 ms | Turning file events into card patches and the open session's appended lines (the wait itself is not counted) |
 | `sessions.all` | 300 ms | Local and remote listings plus status |
 | `codex.list` | 50 ms | 0 queries when the DB and WAL are unchanged; a delta by `updated_at` otherwise |
 | `claude.list` | 100 ms | Transcript summaries cached by mtime and size |
@@ -18,7 +19,8 @@ Canban reads a lot of data. A real history used while building 0.8.0 had 4,461 C
 | `codexApp.read` | 30 ms | Parse of `~/.codex/.codex-global-state.json`; only when its mtime / size changes, shared by projects, pins, follow-ups and remote hosts |
 | `tick.rules` / `tick.search` | 1 s / 3 s | Leader only |
 | Event-loop delay | p99 < 50 ms | |
-| Non-leader idle CPU | ≈ 0 | No background timers except the 30 s leader heartbeat |
+| Non-leader idle CPU | ≈ 0 | No background timers except the 30 s leader heartbeat; no file watchers unless its board is open |
+| Open board, nothing happening | 1 tool call / 20 s | The long poll waits on `fs.watch`; no timers, no reads |
 | RSS | ≤ 300 MB per server | |
 
 Cold starts (the first full read after a server starts) are expected to go over budget once.
@@ -35,6 +37,11 @@ Cold starts (the first full read after a server starts) are expected to go over 
   - Remote runs are polled every 20 s, one ssh call per host.
   - Claude runs use `--output-format json`, so run logs hold one result.
   - Logs are removed with their request (50 kept per session, 1,000 overall) or after 14 days.
+- **Realtime** (`server/live.mjs`, `server/watch.mjs`, `server/feed.mjs`):
+  - Watchers exist only while a board is open (60 s after its last `canban_watch`). They cover the data dir, the Codex home (state DB / WAL), `~/.claude/projects` (recursive) and the logs of running sessions and of the open session.
+  - A grown log becomes a card patch from one cached tail read (the same cache as the status). No session listing, no PR lookups. A Codex DB change runs the incremental listing, which is a delta query.
+  - The open session's log is read from the client's offset. More than 1 MB behind restarts from the tail.
+  - Bursts of writes are coalesced (150 ms), and the UI rebuilds the whole board at most every 1.5 s.
 - The board payload carries only per-card request counts. Queues and history load with the detail.
 
 ## Watching it
