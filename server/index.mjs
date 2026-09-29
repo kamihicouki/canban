@@ -348,10 +348,14 @@ const TOOLS = [
       type: 'object',
       properties: {
         since: { type: ['number', 'null'], description: '前回の seq。null で現在の seq だけ返す' },
-        cardId: { type: ['string', 'null'], description: '詳細を開いているセッション' },
+        cardId: { type: ['string', 'null'], description: '詳細を開いているセッション（1 件のとき）' },
         offset: { type: ['number', 'null'], description: 'そのセッションのログの読み取り位置' },
         size: { type: ['number', 'null'], description: '前回見たログのサイズ' },
         codexItems: { type: 'boolean' },
+        feeds: {
+          type: 'array', maxItems: 8, description: '詳細を開いているセッションが複数あるとき。cardId / offset / size / codexItems の組',
+          items: { type: 'object', properties: { cardId: { type: 'string' }, offset: { type: ['number', 'null'] }, size: { type: ['number', 'null'] }, codexItems: { type: 'boolean' } }, required: ['cardId'], additionalProperties: false },
+        },
         timeoutMs: { type: 'number' },
       },
       additionalProperties: false,
@@ -361,7 +365,7 @@ const TOOLS = [
     handler: async (args) => {
       if (!watch) return { text: 'live off', structured: { off: true } };
       const r = await watch(args);
-      return { text: `seq ${r.seq}${r.reload ? ' reload' : ''} ${r.patches.length} patches${r.feed ? ` ${r.feed.items.length} items` : ''}`, structured: r };
+      return { text: `seq ${r.seq}${r.reload ? ' reload' : ''} ${r.patches.length} patches${Object.keys(r.feeds || {}).length ? ` ${Object.values(r.feeds).reduce((n, f) => n + f.items.length, 0)} items` : ''}`, structured: r };
     },
   },
   {

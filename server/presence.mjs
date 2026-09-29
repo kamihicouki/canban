@@ -1,6 +1,7 @@
 // Who has a board open: every server whose board is live keeps a heartbeat entry in
-// <dataDir>/presence.json ({ app, cardId, at } per process), so a board in Codex can
-// show that Claude Desktop has it (or a card) open, and the other way round.
+// <dataDir>/presence.json ({ app, cardId, cardIds, at } per process), so a board in Codex can
+// show that Claude Desktop has it (or cards) open, and the other way round.
+// cardIds lists every card open in a detail pane; cardId is the first one (older boards read that).
 // Canban's own file; entries expire when their board stops polling.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -44,13 +45,15 @@ export class Presence {
     } catch {}
   }
 
-  // This board is live (and looking at `cardId`): refresh its entry when that changed or it is due.
+  // This board is live (and looking at `cardId`, or a list of cards): refresh its entry when that changed or it is due.
   beat(cardId = null, now = Date.now()) {
-    if (this.last && this.last.cardId === cardId && now - this.last.at < this.beatMs) return false;
+    const ids = [].concat(cardId || []).filter((x) => typeof x === 'string');
+    const key = ids.join('\0');
+    if (this.last && this.last.key === key && now - this.last.at < this.beatMs) return false;
     const all = this.read(now);
-    all[this.self] = { app: this.app(), cardId, at: now };
+    all[this.self] = { app: this.app(), cardId: ids[0] ?? null, cardIds: ids, at: now };
     this.write(all);
-    this.last = { cardId, at: now };
+    this.last = { key, at: now };
     return true;
   }
 
@@ -62,11 +65,16 @@ export class Presence {
     this.last = null;
   }
 
-  // Other live boards: [{ app, cardId }], sorted so the result compares by value.
+  // Other live boards: [{ app, cardId }] (one row per open card), sorted so the result compares by value.
   others(now = Date.now()) {
-    return Object.entries(this.read(now))
-      .filter(([k]) => k !== this.self)
-      .map(([, v]) => ({ app: String(v.app || 'ボード'), cardId: typeof v.cardId === 'string' ? v.cardId : null }))
-      .sort((a, b) => `${a.app}\0${a.cardId}`.localeCompare(`${b.app}\0${b.cardId}`));
+    const rows = [];
+    for (const [k, v] of Object.entries(this.read(now))) {
+      if (k === this.self) continue;
+      const app = String(v.app || 'ボード');
+      const ids = Array.isArray(v.cardIds) ? v.cardIds.filter((x) => typeof x === 'string') : typeof v.cardId === 'string' ? [v.cardId] : [];
+      if (!ids.length) rows.push({ app, cardId: null });
+      else for (const cardId of ids) rows.push({ app, cardId });
+    }
+    return rows.sort((a, b) => `${a.app}\0${a.cardId}`.localeCompare(`${b.app}\0${b.cardId}`));
   }
 }

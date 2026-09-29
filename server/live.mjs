@@ -11,7 +11,7 @@
 //   Claude desktop sessions (rec.)  local_<id>.json, archived-sessions.idx → desktop (title / archive / status)
 //   git dirs of running sessions    HEAD, index → git (branch, commits, staged changes; see gitlive.mjs)
 //   hot files                        logs of running / waiting sessions outside the above (Codex rollouts)
-//   focus file                       the log of the session open in the detail view
+//   focus files                      the logs of the sessions open in detail panes
 import fs from 'node:fs';
 import path from 'node:path';
 import { stat } from './sources/readonly.mjs';
@@ -21,6 +21,7 @@ const COALESCE_MS = 150;
 const POLL_MS = 2000;
 const RING = 500;
 const MAX_HOT = 24;
+export const MAX_FOCUS = 8; // detail panes open at once whose logs are followed
 
 export class LiveHub {
   constructor({ dataDir, codexHome, claudeProjects, claudeDesktop, idleMs = LIVE_IDLE_MS, watch = fs.watch } = {}) {
@@ -34,7 +35,7 @@ export class LiveHub {
     this.polled = new Map(); // path -> { kind, sig }
     this.hot = new Set();
     this.gitDirs = new Set();
-    this.focusPath = null;
+    this.focusPaths = new Set();
     this.onStop = null; // called when watching stops (the board closed)
     this.active = false;
     this.idleTimer = null;
@@ -66,7 +67,7 @@ export class LiveHub {
     if (claudeProjects) this.watchPath('claude', claudeProjects, { recursive: true }, (f) => (f.endsWith('.jsonl') ? 'file' : null));
     if (claudeDesktop) this.watchPath('desktop', claudeDesktop, { recursive: true }, (f) => (/^local_.*\.json$/.test(f) || f === 'archived-sessions.idx' ? 'desktop' : null));
     for (const p of this.hot) this.watchFile(p, 'file');
-    if (this.focusPath) this.watchFile(this.focusPath, 'file');
+    for (const p of this.focusPaths) this.watchFile(p, 'file');
     for (const d of this.gitDirs) this.watchGit(d);
   }
 
@@ -157,7 +158,7 @@ export class LiveHub {
   // Logs of running sessions that the directory watches do not cover.
   setHot(paths) {
     const next = new Set([...paths].filter(Boolean).slice(0, MAX_HOT));
-    for (const p of this.hot) if (!next.has(p) && p !== this.focusPath) this.unwatchFile(p);
+    for (const p of this.hot) if (!next.has(p) && !this.focusPaths.has(p)) this.unwatchFile(p);
     this.hot = next;
     if (this.active) for (const p of next) this.watchFile(p, 'file');
   }
@@ -181,11 +182,13 @@ export class LiveHub {
     if (this.active) for (const d of next) this.watchGit(d);
   }
 
-  focus(file) {
-    if (file === this.focusPath) return;
-    if (this.focusPath && !this.hot.has(this.focusPath)) this.unwatchFile(this.focusPath);
-    this.focusPath = file || null;
-    if (file) this.watchFile(file, 'file');
+  // The logs of the sessions open in detail panes: one path, or a list.
+  focus(files) {
+    const next = new Set([].concat(files || []).filter(Boolean).slice(0, MAX_FOCUS));
+    for (const p of this.focusPaths) if (!next.has(p) && !this.hot.has(p)) this.unwatchFile(p);
+    const added = [...next].filter((p) => !this.focusPaths.has(p));
+    this.focusPaths = next;
+    for (const p of added) this.watchFile(p, 'file');
   }
 
   coveredByDir(file) {

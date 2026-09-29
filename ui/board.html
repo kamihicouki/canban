@@ -34,6 +34,7 @@
   --claude: #d46f4c;
   --c-gray: #8590a2; --c-blue: #579dff; --c-green: #4bce97; --c-yellow: #f5cd47; --c-orange: #fea362;
   --c-red: #f87168; --c-purple: #9f8fef; --c-pink: #e774bb; --c-sky: #6cc3e0; --c-lime: #94c748;
+  --txt-bg: #fbfbfc; --txt-fg: #1d2733; --txt-dim: #6b778c; --note-bg: #fdf0a6; --note-fg: #3d3200;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -59,6 +60,7 @@
   --danger: #f87168;
   --warn-bg: #533f04;
   --warn-fg: #f5cd47;
+  --txt-bg: #0e1215; --txt-fg: #c9d4df; --txt-dim: #7d8b99; --note-bg: #5c4b0a; --note-fg: #ffeaa0;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -448,6 +450,189 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #172b4d; color: #fff; padding: 8px 16px; border-radius: 6px; z-index: 1100; box-shadow: 0 4px 8px #0004; }
 .toast.error { background: var(--danger); }
 .loading { color: #fff; padding: 24px; }
+/* ---------- detail panes: several cards at once, fixed (cosmos) or free (chaos) ---------- */
+.pane-layer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 800; display: flex; flex-direction: column; pointer-events: none; }
+.pane-layer[hidden] { display: none; }
+.pane-dim { position: absolute; inset: 0; background: var(--overlay); opacity: 0; transition: opacity .2s; pointer-events: none; }
+.pane-layer.dim .pane-dim { opacity: .45; }
+.pane-bar { position: relative; z-index: 2; pointer-events: auto; display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; padding: 6px 12px; margin: 8px 12px 0; border-radius: 10px; background: var(--header-bg); color: var(--header-fg); backdrop-filter: blur(6px); font-size: 12px; }
+.pane-bar .pb-group { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pane-bar .pb-label { opacity: .85; }
+.pane-bar .pb-sp { flex: 1; }
+.pane-bar .seg button { height: 26px; padding: 0 9px; font-size: 12px; }
+.pane-bar .hbtn { height: 26px; font-size: 12px; }
+.pane-stage { position: relative; flex: 1; min-height: 0; pointer-events: none; overflow: hidden; }
+.pane-stage.scrolls { pointer-events: auto; overflow: auto; }
+.pane-canvas { position: relative; min-width: 100%; min-height: 100%; }
+.pane { position: absolute; left: 0; top: 0; z-index: 1; display: flex; flex-direction: column; pointer-events: auto;
+  width: var(--pw); max-width: calc(var(--area-w, 1200px) - 16px); max-height: calc(var(--area-h, 700px) - 16px);
+  background: var(--modal-bg); color: var(--list-fg); border-radius: 12px; overflow: hidden; font-size: var(--fs); line-height: 1.55;
+  box-shadow: 0 8px 24px #091e4240, 0 0 1px #091e4280; transition: left .28s ease, top .28s ease; }
+.pane.fresh, .pane.moving { transition: none; }
+.pane.moving { box-shadow: 0 16px 40px #091e4270; }
+.pane.floating { z-index: 5; }
+.pane:focus { outline: none; }
+.pane:focus-within { box-shadow: 0 8px 24px #091e4260, 0 0 0 2px var(--focus); }
+.pane[data-size="S"] { --pw: 440px; --fs: 12px; --side: 148px; }
+.pane[data-size="M"] { --pw: 640px; --fs: 13px; --side: 200px; }
+.pane[data-size="L"] { --pw: 860px; --fs: 14px; --side: 236px; }
+.pane.is-note { --pw: 260px; --fs: 12.5px; background: var(--note-bg); color: var(--note-fg); }
+.pane.tilt { transform: rotate(var(--rot, -1deg)); }
+.pane-h { padding: 12px 12px 6px 16px; flex: none; }
+.ph-top { display: flex; align-items: flex-start; gap: 8px; }
+.pane.movable .ph-top { cursor: grab; touch-action: none; }
+.pane.movable .ph-top:active { cursor: grabbing; }
+.pane h2 { margin: 0; font-size: 1.43em; line-height: 1.3; font-weight: 700; flex: 1; min-width: 0; word-break: break-word; }
+.pane.is-note h2 { font-size: 1.1em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane .sub { color: var(--list-muted); font-size: .93em; margin-top: 4px; flex-wrap: wrap; gap: 4px 8px; }
+.pane.is-note .sub, .pane.is-note .pane-b { display: none; }
+.ph-btns { display: inline-flex; gap: 2px; flex: none; }
+.pane .icon-btn { width: 28px; height: 28px; border-radius: 6px; flex: none; }
+.pane .icon-btn svg { display: block; }
+.pane.is-note .icon-btn { color: inherit; opacity: .8; }
+.note-line { display: none; margin-top: 4px; font-size: .96em; line-height: 1.45; overflow: hidden; -webkit-line-clamp: 3; -webkit-box-orient: vertical; word-break: break-word; }
+.pane.is-note .note-line { display: -webkit-box; }
+.pane-loading { padding: 20px 16px; }
+.pane-b { display: grid; grid-template-columns: minmax(0, 1fr) var(--side); grid-template-rows: minmax(0, 1fr); gap: 16px; padding: 4px 8px 12px 16px; min-height: 0; flex: 1; }
+.pcol { min-height: 0; overflow-y: auto; padding-right: 8px; position: relative; overscroll-behavior: contain; }
+.pcol.nope { outline: 2px dashed var(--danger); outline-offset: -2px; border-radius: 6px; cursor: not-allowed; }
+.psec { margin-bottom: 12px; }
+.psec-h { display: flex; align-items: center; gap: 4px; margin: 0 0 6px; min-height: 22px; }
+.psec-h h3 { margin: 0; font-size: 1.02em; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
+.pcol[data-col="side"] .psec-h h3 { font-size: .9em; color: var(--list-muted); }
+.psec-h .sp { flex: 1; }
+.grip { width: 20px; height: 22px; border-radius: 4px; display: inline-grid; place-items: center; opacity: .3; cursor: grab; color: var(--list-muted); flex: none; margin-left: -5px; }
+.psec:hover .grip, .grip:focus-visible { opacity: 1; }
+.grip:hover { background: var(--btn-subtle-hover); }
+.pchev { width: 22px; height: 22px; border-radius: 4px; display: grid; place-items: center; color: var(--list-muted); }
+.pchev:hover { background: var(--btn-subtle-hover); }
+.pchev svg { transition: transform .15s; }
+.psec.collapsed .pchev svg { transform: rotate(-90deg); }
+.psec.collapsed .psec-b { display: none; }
+.psec.collapsed { margin-bottom: 6px; }
+.psec.dragging { opacity: .35; }
+.drop-line { height: 3px; background: var(--accent); border-radius: 2px; margin: -2px 0 8px; pointer-events: none; }
+.psec-b .section-title:first-child { margin-top: 0; }
+.psec-b > .msg:last-child { margin-bottom: 0; }
+.pane .feed { max-height: calc(var(--area-h, 700px) * .42); }
+.pane .field-label:first-child { margin-top: 0; }
+.pane .sub-h { margin: 8px 0 4px; font-size: .9em; font-weight: 600; color: var(--list-muted); }
+.pane .psec-b .send-section .section-title { display: none; }
+.pane .psec-b .send-section { margin-top: 0; }
+.p-seg { display: inline-flex; border-radius: 6px; padding: 2px; gap: 2px; background: var(--btn-subtle); }
+.p-seg button { padding: 2px 10px; border-radius: 4px; color: var(--list-muted); font-size: 12px; white-space: nowrap; }
+.p-seg button:hover { color: var(--list-fg); }
+.p-seg button[aria-pressed="true"] { background: var(--modal-panel); color: var(--list-fg); font-weight: 600; box-shadow: 0 1px 2px #091e4240; }
+.pv-row { margin-bottom: 10px; }
+.pv-row .field-label { margin: 0 0 4px; }
+.pv-note { font-size: 12px; color: var(--list-muted); margin-top: 6px; }
+.follow-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); position: absolute; right: 3px; top: 3px; }
+.icon-btn.rel { position: relative; }
+/* the assistant's text: raw (text, digest) or rendered (preview) */
+.fi-asst .md { display: none; white-space: normal; }
+.fi-asst .md p { margin: .3em 0; } .fi-asst .md ul { margin: .3em 0; padding-left: 1.3em; }
+.fi-asst .md pre { margin: .4em 0; padding: 6px 8px; border-radius: 6px; background: var(--btn-subtle); white-space: pre-wrap; font-size: .9em; line-height: 1.45; overflow-x: auto; }
+.fi-asst .md code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; background: var(--btn-subtle); padding: 0 4px; border-radius: 3px; }
+.fi-asst .md pre code { background: none; padding: 0; }
+.pane[data-mode="preview"] .fi-asst .raw { display: none; }
+.pane[data-mode="preview"] .fi-asst .md { display: block; }
+/* 要点: only what was said, shortened */
+.pane[data-mode="digest"] .fi-tool, .pane[data-mode="digest"] .fi-think, .pane[data-mode="digest"] .fi-note { display: none; }
+.pane[data-mode="digest"] .fi-asst .raw { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.pane[data-mode="digest"] .fi-user { max-width: 100%; }
+/* テキスト: log / terminal like */
+.pane[data-mode="text"]:not(.is-note) { background: var(--txt-bg); color: var(--txt-fg); border: 1px solid var(--btn-subtle-hover); border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, "Noto Sans Mono CJK JP", monospace; }
+.pane[data-mode="text"] h2 { font-size: 1.15em; }
+.pane[data-mode="text"] .sub, .pane[data-mode="text"] .muted, .pane[data-mode="text"] .readonly-note { color: var(--txt-dim); }
+.pane[data-mode="text"] .psec-h h3::before { content: "## "; color: var(--txt-dim); }
+.pane[data-mode="text"] .psec-h h3 { color: var(--txt-fg); font-weight: 700; }
+.pane[data-mode="text"] .feed { background: none; padding: 0; gap: 2px; font-size: 1em; }
+.pane[data-mode="text"] .fi-user { align-self: stretch; max-width: none; background: none; color: var(--accent); border-radius: 0; padding: 4px 0 0; font-weight: 700; }
+.pane[data-mode="text"] .fi-user::before { content: "» "; }
+.pane[data-mode="text"] .fi-asst { padding: 0 0 2px; }
+.pane[data-mode="text"] .fi-asst::before { content: "● "; color: var(--txt-dim); }
+.pane[data-mode="text"] .fi-tool .tn { color: var(--txt-fg); }
+.pane[data-mode="text"] .fi-tool pre, .pane[data-mode="text"] .fi-think .tt { background: none; border-left: 2px solid var(--btn-subtle-hover); border-radius: 0; }
+.pane[data-mode="text"] .sig-box, .pane[data-mode="text"] .msg, .pane[data-mode="text"] .send-box, .pane[data-mode="text"] .req-row { background: none; padding-left: 0; padding-right: 0; border-radius: 0; }
+.pane[data-mode="text"] .msg.user { border-left: 0; }
+.pane[data-mode="text"] .sig-box .chip { background: none; border: 1px solid var(--btn-subtle-hover); border-radius: 0; }
+.pane[data-mode="text"] textarea, .pane[data-mode="text"] .text-input, .pane[data-mode="text"] select, .pane[data-mode="text"] input { background: none; border-radius: 0; font-family: inherit; color: var(--txt-fg); }
+.pane[data-mode="text"] .side-btn { background: none; padding: 1px 0; border-radius: 0; margin-bottom: 2px; }
+.pane[data-mode="text"] .side-btn::before { content: "› "; color: var(--txt-dim); }
+.pane[data-mode="text"] .side-btn:hover { text-decoration: underline; background: none; }
+.pane[data-mode="text"] .seg-row { display: block; }
+.pane[data-mode="text"] .seg-btn { display: block; background: none; padding: 1px 0; }
+.pane[data-mode="text"] .seg-btn::before { content: "› "; color: var(--txt-dim); }
+.pane[data-mode="text"] .btn-primary { background: none; color: var(--accent); border: 1px solid var(--accent); border-radius: 0; }
+.pane[data-mode="text"] .btn, .pane[data-mode="text"] .picker-btn { background: none; border: 1px solid var(--btn-subtle-hover); border-radius: 0; }
+.pane[data-mode="text"] .p-seg { background: none; border: 1px solid var(--btn-subtle-hover); border-radius: 0; }
+.pane[data-mode="text"] .kv { grid-template-columns: 9em minmax(0, 1fr); }
+.pane[data-mode="text"] .kv dt { color: var(--txt-dim); }
+/* the workspace on narrow screens: one column, scrolling */
+.pane-layer.stack { pointer-events: auto; }
+.pane-layer.stack .pane-stage { pointer-events: auto; overflow-y: auto; }
+.pane-layer.stack .pane-dim { opacity: 1; }
+.pane-layer.stack .pane-canvas { display: flex; flex-direction: column; gap: 12px; padding: 12px; min-height: 0; width: auto !important; height: auto !important; }
+.pane-layer.stack .pane { position: relative; left: auto !important; top: auto !important; height: auto !important; width: 100%; max-width: none; max-height: 90vh; transform: none; flex: none; }
+.pane-layer.stack .pane-b { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; overflow-y: auto; }
+.pane-layer.stack .pcol { overflow: visible; }
+.pane-layer.stack .pane.movable .ph-top { cursor: default; }
+.pane-layer.stack .pb-desk { display: none; }
+
+/* ---------- the dashboard (all panes) folds into one round button that can sit on any edge ---------- */
+.pane-layer { transform-origin: var(--ox, 90%) var(--oy, 90%); transition: transform .36s cubic-bezier(.3, .7, .2, 1), opacity .26s; }
+.pane-layer.closed, .pane-layer.stack.closed { transform: scale(.05); opacity: 0; visibility: hidden; pointer-events: none;
+  transition: transform .36s cubic-bezier(.3, .7, .2, 1), opacity .26s, visibility 0s .36s; }
+.pane-layer.lite .pane-dim { opacity: .18; }
+.pane-layer.closed .pane-dim { opacity: 0; }
+.pop-veil { position: fixed; inset: 0; z-index: 850; background: var(--overlay); opacity: 0; pointer-events: none; transition: opacity .25s; }
+.pop-veil.on { opacity: .32; }
+.orb { position: fixed; z-index: 810; width: 60px; height: 60px; touch-action: none; --orb-ring: rgba(133, 144, 162, .55); --orb-disc: color-mix(in srgb, var(--modal-bg) 86%, transparent); }
+.orb[hidden] { display: none; }
+.orb.snap { transition: left .28s cubic-bezier(.3, .8, .3, 1.1), top .28s cubic-bezier(.3, .8, .3, 1.1); }
+.orb-main { position: relative; width: 60px; height: 60px; padding: 0; border: 0; border-radius: 50%; cursor: grab; display: grid; place-items: center; color: var(--list-fg);
+  background: var(--ring, var(--orb-ring)); box-shadow: 0 6px 18px #04102055, 0 0 0 1px #ffffff40; transition: transform .2s, box-shadow .2s; touch-action: none; }
+.orb-main::before { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--orb-disc); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: inset 0 1px 0 #ffffff70; }
+.orb-main:hover { transform: scale(1.06); box-shadow: 0 8px 22px #04102066, 0 0 0 1px #ffffff59; }
+.orb-main:active { cursor: grabbing; }
+.orb-main:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.orb-main svg { position: relative; width: 24px; height: 24px; }
+.orb.open .orb-main { transform: scale(.82); }
+.orb.open .orb-main:hover { transform: scale(.88); }
+.orb.bump .orb-main { animation: orbBump .45s ease-out; }
+@keyframes orbBump { 35% { transform: scale(1.14); box-shadow: 0 0 0 5px var(--focus), 0 6px 18px #04102055; } }
+.orb-count { position: absolute; z-index: 1; right: -3px; top: -3px; min-width: 21px; height: 21px; border-radius: 11px; padding: 0 5px; display: grid; place-items: center;
+  background: var(--accent); color: var(--accent-fg); font-size: 11.5px; font-weight: 700; box-shadow: 0 0 0 2px var(--modal-bg); }
+.orb-sat { position: absolute; left: 13px; top: 13px; width: 34px; height: 34px; padding: 0; display: grid; place-items: center; border-radius: 50%; cursor: pointer;
+  border: 2px solid var(--agent, var(--c-gray)); background: var(--modal-panel); color: var(--list-fg); font-size: 13px; font-weight: 700; box-shadow: 0 4px 12px #04102059;
+  opacity: 0; pointer-events: none; transform: scale(.4); transition: transform .3s cubic-bezier(.3, .8, .3, 1.2), opacity .18s; transition-delay: calc(var(--i) * 20ms); }
+.orb-sat .sdot { position: absolute; right: -3px; top: -3px; width: 12px; height: 12px; margin: 0; border: 2px solid var(--modal-panel); box-sizing: border-box; }
+.orb.fan .orb-sat { opacity: 1; pointer-events: auto; transform: translate(calc(var(--dx) * 1px), calc(var(--dy) * 1px)); }
+.orb.open .orb-sat, .orb.dragging .orb-sat { display: none; }
+.orb::before { content: ""; position: absolute; left: 50%; top: 50%; width: 400px; height: 400px; transform: translate(-50%, -50%); border-radius: 50%; display: none; z-index: -1; }
+.orb.fan::before { display: block; }
+.orb-sat::after { content: attr(data-tip); position: absolute; left: 50%; transform: translateX(-50%); bottom: 40px; white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis;
+  padding: 3px 8px; border-radius: 6px; background: #091e42e6; color: #fff; font-size: 11px; font-weight: 400; opacity: 0; pointer-events: none; transition: opacity .15s; }
+.orb[data-tip="below"] .orb-sat::after { bottom: auto; top: 40px; }
+.orb-sat:hover::after, .orb-sat:focus-visible::after { opacity: 1; }
+.orb-sat:hover { z-index: 2; }
+.orb-zone { position: fixed; z-index: 805; pointer-events: none; opacity: 0; transition: opacity .2s; background: #ffffff38; box-shadow: inset 0 0 0 2px #ffffff8c; border-radius: 12px; }
+.orb-zone.on { background: #ffffff66; }
+body.orb-dragging .orb-zone { opacity: 1; }
+.orb-zone.l { left: 4px; top: var(--zt, 60px); bottom: 4px; width: 84px; } .orb-zone.r { right: 4px; top: var(--zt, 60px); bottom: 4px; width: 84px; }
+.orb-zone.t { left: 4px; right: 4px; top: var(--zt, 60px); height: 78px; } .orb-zone.b { left: 4px; right: 4px; bottom: 4px; height: 78px; }
+.depth-meter { position: fixed; z-index: 1050; bottom: 12px; left: 12px; display: flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 999px; font-size: 11.5px;
+  background: color-mix(in srgb, var(--modal-bg) 78%, transparent); color: var(--list-fg); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: 0 4px 14px #04102040; pointer-events: none; }
+.depth-meter[hidden] { display: none; }
+.depth-meter.right { left: auto; right: 12px; }
+.depth-meter .gi { display: flex; align-items: center; gap: 4px; opacity: .45; }
+.depth-meter .gi i { width: 10px; height: 10px; border-radius: 50%; border: 2px solid currentColor; box-sizing: border-box; }
+.depth-meter .gi.on { opacity: 1; } .depth-meter .gi.on i { background: currentColor; }
+.depth-meter .gi.cur { font-weight: 700; }
+.depth-meter .gi + .gi::before { content: ""; width: 12px; height: 2px; background: currentColor; opacity: .4; margin-right: 4px; }
+@media (max-width: 720px) { .depth-meter .gi:not(.cur) span { display: none; } }
+@media (prefers-reduced-motion: reduce) { .pane-layer, .orb, .orb-sat { transition: none !important; } .orb.bump .orb-main { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .pane, .pane-dim, .pchev svg { transition: none; } }
 @media (max-width: 720px) {
   .hsearch { width: 140px; }
   .sidebar { position: fixed; z-index: 750; left: 0; bottom: 0; top: 0; box-shadow: 4px 0 12px #0006; background: var(--board-bg); }
@@ -624,12 +809,14 @@ const state = {
 };
 
 const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 function h(tag, attrs = {}, ...kids) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
     if (v == null || v === false) continue;
     if (k === 'class') el.className = v;
     else if (k === 'text') el.textContent = v;
+    else if (k === 'html') el.innerHTML = v; // trusted markup only (icons)
     else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
     else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
     else el.setAttribute(k, v === true ? '' : v);
@@ -710,7 +897,7 @@ function render() {
   if (state.drag) return; // don't disturb an active drag
 
   // header
-  document.querySelectorAll('.seg button').forEach((btn) => btn.setAttribute('aria-pressed', String(btn.dataset.agent === state.filters.agent)));
+  document.querySelectorAll('.seg button[data-agent]').forEach((btn) => btn.setAttribute('aria-pressed', String(btn.dataset.agent === state.filters.agent)));
   $('#projectBtn').textContent = `${scopeLabel(b)} ▾`;
   $('#projectBtn').setAttribute('aria-pressed', String(!!(state.filters.project || state.filters.directory)));
   $('#days').value = String(state.filters.days);
@@ -1253,45 +1440,635 @@ function labelsManager(anchor) {
 }
 
 // ======================================================================
-// Card detail modal (Trello "back of card")
+// Card detail panes (Trello "back of card"), several at once
+//   time   the conversation flows down and the newest is always at the bottom
+//   info   a card is the same parts everywhere: two columns, the order inside a column is yours
+//   space  fixed (cosmos: grid / row / column) or free (chaos: anywhere); each card follows
+//          the global setting or overrides it, and remembers where it floated
 // ======================================================================
-function closeModal() {
-  live.feed = null;
-  const had = document.querySelector('.overlay');
+const PANE_MODES = [['text', 'テキスト'], ['preview', 'プレビュー'], ['digest', '要点']];
+const PANE_SIZES = [['S', 'S'], ['M', 'M'], ['L', 'L']];
+const PANE_SPACES = [['fixed', '固定'], ['free', '自由']];
+const PANE_ARRANGES = [['grid', 'グリッド'], ['row', '横一列'], ['col', '縦一列']];
+const PANE_DEF = { space: 'fixed', arrange: 'grid', mode: 'preview', size: 'L' };
+const PANE_MAX = 8;
+const oneOf = (v, list, d) => (list.some(([k]) => k === v) ? v : d);
+const paneGlobal = (() => {
+  const s = store.get('paneGlobal', {}) || {};
+  return { space: oneOf(s.space, PANE_SPACES, PANE_DEF.space), arrange: oneOf(s.arrange, PANE_ARRANGES, PANE_DEF.arrange), mode: oneOf(s.mode, PANE_MODES, PANE_DEF.mode), size: oneOf(s.size, PANE_SIZES, PANE_DEF.size) };
+})();
+const saveGlobal = () => store.set('paneGlobal', paneGlobal);
+const PANE_SECS = {
+  conv: ['main', '会話'], progress: ['main', '進捗'], send: ['main', '指示を送る'], labels: ['main', 'ラベル'], memo: ['main', 'メモ'], detail: ['main', '詳細'],
+  pr: ['main', 'プルリクエスト'], related: ['main', '関連'], first: ['main', '最初の依頼'],
+  resume: ['side', '再開'], task: ['side', null], add: ['side', 'カードに追加'], prio: ['side', '優先度・期限'], other: ['side', 'その他'],
+};
+const secTitle = (id) => (id === 'task' ? T.taskCard : PANE_SECS[id][1]);
+const PANE_LAYOUT_DEF = { main: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'main'), side: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'side'), collapsed: [] };
+const sameSet = (a, b) => Array.isArray(a) && a.length === b.length && [...a].sort().join() === [...b].sort().join();
+let paneLayout = (() => {
+  const s = store.get('paneLayout', null);
+  return s && sameSet(s.main, PANE_LAYOUT_DEF.main) && sameSet(s.side, PANE_LAYOUT_DEF.side) ? { main: s.main, side: s.side, collapsed: (Array.isArray(s.collapsed) ? s.collapsed : []).filter((x) => PANE_SECS[x]) } : structuredClone(PANE_LAYOUT_DEF);
+})();
+const savePaneLayout = () => store.set('paneLayout', paneLayout);
+
+const PIC = {
+  grip: '<g fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></g>',
+  chev: '<path d="M6 9l6 6 6-6"/>', close: '<path d="M6 6l12 12M18 6L6 18"/>', note: '<path d="M5 5h14v9l-5 5H5z"/><path d="M14 19v-5h5"/>',
+  lock: '<path d="M8 11V8a4 4 0 018 0v3"/><rect x="5" y="11" width="14" height="9" rx="2"/>',
+  free: '<path d="M14 4h6v6M20 4l-9 9M10 6H5v13h13v-5"/>',
+  follow: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/>',
+  view: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',
+};
+const picon = (n, s = 16) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PIC[n]}</svg>`;
+const pbtn = (icon, label, fn, cls = '') => h('button', { class: `icon-btn ${cls}`, type: 'button', 'aria-label': label, title: label, html: picon(icon), onclick: (e) => { e.stopPropagation(); fn(e); } });
+
+// ---- the assistant's text as a preview (Markdown, lightly) ----
+const escH = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const mdInline = (s) => escH(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+function mdHtml(src) {
+  const out = [];
+  let list = null, code = null;
+  const flush = () => { if (list) { out.push(`<ul>${list.join('')}</ul>`); list = null; } };
+  for (const line of String(src).split('\n')) {
+    if (/^\s*```/.test(line)) { if (code) { out.push(`<pre><code>${escH(code.join('\n'))}</code></pre>`); code = null; } else { flush(); code = []; } continue; }
+    if (code) { code.push(line); continue; }
+    const li = line.match(/^\s*[-*] (.*)$/);
+    if (li) { (list = list || []).push(`<li>${mdInline(li[1])}</li>`); continue; }
+    flush();
+    const hd = line.match(/^#{1,6}\s+(.*)$/);
+    if (hd) out.push(`<p><strong>${mdInline(hd[1])}</strong></p>`);
+    else if (line.trim()) out.push(`<p>${mdInline(line)}</p>`);
+  }
+  flush();
+  if (code) out.push(`<pre><code>${escH(code.join('\n'))}</code></pre>`);
+  return out.join('');
+}
+
+// ---- the layer that holds the panes ----
+const paneLayer = h('div', { id: 'paneLayer', class: 'pane-layer', hidden: true });
+const paneBar = h('div', { class: 'pane-bar', role: 'toolbar', 'aria-label': 'カードの表示設定' });
+const paneStage = h('div', { class: 'pane-stage' });
+const paneCanvas = h('div', { class: 'pane-canvas' });
+paneStage.append(paneCanvas);
+paneLayer.append(h('div', { class: 'pane-dim' }), paneBar, paneStage);
+document.body.append(paneLayer);
+const panes = []; // open panes in the order they were opened; the order of the fixed ones is the order of their tiles
+const eff = (p, k) => p[k] || paneGlobal[k];
+let paneZ = 10;
+const front = (p) => { if (p.el.classList.contains('floating')) p.el.style.zIndex = ++paneZ; };
+
+function savePanes() {
+  store.set('panes', panes.map((p) => ({ id: p.id, space: p.space, mode: p.mode, size: p.size, note: p.note, free: p.free })));
+}
+function paneMetrics() {
+  paneLayer.style.top = `${Math.max(0, $('.shell')?.getBoundingClientRect().top ?? 0)}px`;
+  const stack = window.innerWidth < 720;
+  paneLayer.classList.toggle('stack', stack);
+  // clientWidth / clientHeight ignore the scale transform that folds the layer into the round button
+  paneLayer.style.setProperty('--area-w', `${paneStage.clientWidth}px`);
+  paneLayer.style.setProperty('--area-h', `${Math.round(stack ? window.innerHeight * 0.9 : paneStage.clientHeight)}px`);
+  return stack;
+}
+
+// ---- placing panes ----
+const PANE_GAP = 12;
+const setXY = (el, x, y) => { el.style.left = `${Math.round(x)}px`; el.style.top = `${Math.round(y)}px`; };
+const curXY = (el) => ({ x: parseFloat(el.style.left) || 0, y: parseFloat(el.style.top) || 0 });
+function packPanes(els, kind, W, H) {
+  const gap = PANE_GAP, maxH = H - gap * 2;
+  if (!els.length) return { rects: [], width: W, height: H };
+  els.forEach((e) => { e.style.height = ''; });
+  const it = els.map((e) => ({ e, w: e.offsetWidth, h: Math.min(e.offsetHeight, maxH), note: e.classList.contains('is-note') }));
+  const rects = [];
+  let width = W, height = H;
+  const rowRects = (row, y, rh) => {
+    const rowW = row.reduce((n, i) => n + i.w, 0) + gap * (row.length - 1);
+    let x = Math.max(gap, (W - rowW) / 2);
+    for (const i of row) { rects.push({ e: i.e, x, y, h: i.note ? Math.min(i.h, rh) : rh }); x += i.w + gap; }
+    return x;
+  };
+  if (kind === 'row') {
+    const rh = Math.max(...it.map((i) => i.h));
+    width = Math.max(W, rowRects(it, gap * 2, rh));
+  } else if (kind === 'col') {
+    let y = gap * 2;
+    for (const i of it) { rects.push({ e: i.e, x: Math.max(gap, (W - i.w) / 2), y, h: i.h }); y += i.h + gap; }
+    height = Math.max(H, y);
+  } else {
+    const rows = [];
+    let row = [], x = gap;
+    for (const i of it) { if (row.length && x + i.w > W - gap) { rows.push(row); row = []; x = gap; } row.push(i); x += i.w + gap; }
+    rows.push(row);
+    const cap = Math.floor((H - gap * (rows.length + 1)) / rows.length);
+    const fit = cap >= 320;
+    let y = rows.length === 1 ? gap * 2 : gap;
+    for (const r of rows) {
+      let rh = Math.max(...r.map((i) => i.h));
+      if (fit) rh = Math.min(rh, cap);
+      rowRects(r, y, rh);
+      y += rh + gap;
+    }
+    height = Math.max(H, y);
+  }
+  return { rects, width, height };
+}
+function clampXY(el, x, y) {
+  const W = paneStage.clientWidth, H = paneStage.clientHeight;
+  return { x: Math.max(0, Math.min(x, Math.max(0, W - el.offsetWidth))), y: Math.max(0, Math.min(y, Math.max(0, H - el.offsetHeight))) };
+}
+function nextFree() { const n = panes.filter((p) => p.free).length; return { x: 48 + (n % 6) * 36, y: 24 + (n % 6) * 30 }; }
+let layoutQueued = false;
+function layoutPanes() {
+  if (layoutQueued) return;
+  layoutQueued = true;
+  requestAnimationFrame(() => { layoutQueued = false; doPaneLayout(); });
+}
+function doPaneLayout() {
+  paneLayer.hidden = !panes.length;
+  paintDash();
+  if (!panes.length) return;
+  panes.forEach(applyPaneAttrs);
+  const stack = paneMetrics();
+  if (stack) {
+    for (const p of panes) p.el.style.left = p.el.style.top = p.el.style.height = '';
+    paneCanvas.style.width = paneCanvas.style.height = '';
+    paneStage.classList.remove('scrolls');
+    return;
+  }
+  const W = paneStage.clientWidth, H = paneStage.clientHeight;
+  const fixed = panes.filter((p) => eff(p, 'space') === 'fixed');
+  const free = panes.filter((p) => eff(p, 'space') === 'free');
+  const res = packPanes(fixed.map((p) => p.el), paneGlobal.arrange, W, H);
+  for (const r of res.rects) { setXY(r.e, r.x, r.y); r.e.style.height = `${r.h}px`; }
+  for (const p of free) {
+    p.el.style.height = '';
+    if (!p.free) p.free = nextFree();
+    const c = clampXY(p.el, p.free.x, p.free.y);
+    setXY(p.el, c.x, c.y);
+  }
+  paneCanvas.style.width = `${Math.max(W, res.width)}px`;
+  paneCanvas.style.height = `${Math.max(H, res.height)}px`;
+  paneStage.classList.toggle('scrolls', res.width > W || res.height > H);
+
+}
+function applyPaneAttrs(p) {
+  const el = p.el, space = eff(p, 'space');
+  el.dataset.mode = eff(p, 'mode');
+  el.dataset.size = eff(p, 'size');
+  el.classList.toggle('is-note', p.note);
+  el.classList.toggle('floating', space === 'free');
+  el.classList.toggle('movable', true);
+  el.classList.toggle('tilt', p.note && space === 'free');
+  el.style.setProperty('--rot', `${panes.indexOf(p) % 2 ? 1.2 : -1.4}deg`);
+  if (space !== 'free') el.style.zIndex = '';
+}
+
+// ---- moving panes: free ones go anywhere (and snap to edges), fixed ones change their place in the order ----
+function snapXY(el, c, others) {
+  const T_ = 10, w = el.offsetWidth, hh = el.offsetHeight, W = paneStage.clientWidth, H = paneStage.clientHeight;
+  const xs = [12, W - w - 12], ys = [12, H - hh - 12];
+  for (const o of others) { const { x: l, y: t } = curXY(o), r = l + o.offsetWidth, b = t + o.offsetHeight; xs.push(l, r + 12, l - w - 12, r - w); ys.push(t, b + 12, t - hh - 12, b - hh); }
+  const pick = (v, arr) => { let best = v, d = T_ + 1; for (const a of arr) { const dd = Math.abs(a - v); if (dd < d) { d = dd; best = a; } } return best; };
+  return { x: pick(c.x, xs), y: pick(c.y, ys) };
+}
+function bindPaneDrag(handle, p) {
+  handle.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || paneLayer.classList.contains('stack') || e.target.closest('button,select,input,textarea,a')) return;
+    const el = p.el, sr = paneCanvas.getBoundingClientRect(), pr = el.getBoundingClientRect();
+    const dx = e.clientX - pr.left, dy = e.clientY - pr.top;
+    let moved = false;
+    const isFree = () => eff(p, 'space') === 'free';
+    handle.setPointerCapture(e.pointerId);
+    front(p);
+    const move = (ev) => {
+      if (!moved && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) < 4) return;
+      if (!moved) { moved = true; el.classList.add('moving'); }
+      const x = ev.clientX - sr.left - dx, y = ev.clientY - sr.top - dy;
+      if (isFree()) {
+        const c = snapXY(el, clampXY(el, x, y), panes.filter((o) => o !== p).map((o) => o.el));
+        p.free = c;
+        setXY(el, c.x, c.y);
+      } else setXY(el, x, y);
+    };
+    const up = (ev) => {
+      handle.releasePointerCapture?.(ev.pointerId);
+      handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', up); handle.removeEventListener('pointercancel', up);
+      el.classList.remove('moving');
+      if (!moved) return;
+      if (!isFree()) reorderPane(p, ev.clientX - sr.left, ev.clientY - sr.top);
+      layoutPanes(); savePanes();
+    };
+    handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', up); handle.addEventListener('pointercancel', up);
+  });
+}
+function reorderPane(p, px, py) {
+  let best = null, bd = Infinity;
+  for (const o of panes) {
+    if (o === p || eff(o, 'space') !== 'fixed') continue;
+    const { x, y } = curXY(o.el), cx = x + o.el.offsetWidth / 2, cy = y + o.el.offsetHeight / 2, d = Math.hypot(px - cx, py - cy);
+    if (d < bd) { bd = d; best = { o, cx, cy }; }
+  }
+  if (!best) return;
+  const after = paneGlobal.arrange === 'col' ? py > best.cy : px > best.cx;
+  panes.splice(panes.indexOf(p), 1);
+  const i = panes.indexOf(best.o);
+  panes.splice(after ? i + 1 : i, 0, p);
+}
+
+// ---- settings: global, and per card ("follow global" is null) ----
+const followLabel = (key, list) => `全体設定（${labelOf(list, paneGlobal[key])}）`;
+const labelOf = (list, v) => list.find(([k]) => k === v)?.[1] ?? '';
+const SPACE_CYCLE = [null, 'fixed', 'free'];
+function liftIfNeeded(p, was) {
+  if (was === 'fixed' && eff(p, 'space') === 'free' && !p.free) { const c = curXY(p.el); p.free = { x: c.x + 24, y: c.y + 24 }; }
+}
+function setPaneProp(p, key, val) {
+  const was = eff(p, 'space');
+  p[key] = val || null;
+  if (key === 'space') liftIfNeeded(p, was);
+  refreshPane(p);
+  layoutPanes(); savePanes(); paintPaneBar();
+}
+function refreshPane(p) { applyPaneAttrs(p); paintPaneButtons(p); updateNoteLine(p); if (eff(p, 'space') === 'free') front(p); }
+function setGlobal(key, val) {
+  const was = new Map(panes.map((p) => [p, eff(p, 'space')]));
+  paneGlobal[key] = val; saveGlobal();
+  for (const p of panes) { if (key === 'space') liftIfNeeded(p, was.get(p)); refreshPane(p); }
+  layoutPanes(); savePanes(); paintPaneBar();
+}
+function bulk(fn) { panes.forEach((p) => { const was = eff(p, 'space'); fn(p); liftIfNeeded(p, was); refreshPane(p); }); layoutPanes(); savePanes(); paintPaneBar(); }
+const pseg = (attrs, options, isOn, onPick) => {
+  const w = h('div', { class: 'p-seg', role: 'group', ...attrs });
+  for (const [v, t] of options) w.append(h('button', { type: 'button', 'data-v': v ?? '', 'aria-pressed': String(isOn(v)), onclick: () => { onPick(v); $$('button', w).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === (v ?? '')))); } }, t));
+  return w;
+};
+function paneViewMenu(p, anchor) {
+  const row = (key, label, list) => h('div', { class: 'pv-row' }, h('div', { class: 'field-label', text: label }),
+    pseg({ 'aria-label': label }, [[null, followLabel(key, list)], ...list], (v) => (p[key] || null) === v, (v) => setPaneProp(p, key, v)));
+  const noteRow = h('div', { class: 'pv-row' }, h('div', { class: 'field-label', text: '付箋' }),
+    pseg({ 'aria-label': '付箋' }, [[false, '広げる'], [true, 'たたむ']], (v) => p.note === v, (v) => { p.note = v; refreshPane(p); layoutPanes(); savePanes(); paintPaneBar(); }));
+  popover(anchor, 'このカードの表示', h('div', {}, row('space', '空間', PANE_SPACES), row('mode', '表示モード', PANE_MODES), row('size', 'サイズ', PANE_SIZES), noteRow,
+    h('div', { class: 'pv-note', text: '「全体設定」のままにすると、上のバーで変えたときにこのカードも変わります。' })), { width: 340 });
+}
+function paneButtons(p) {
+  const space = eff(p, 'space'), own = p.space;
+  const next = SPACE_CYCLE[(SPACE_CYCLE.indexOf(own) + 1) % SPACE_CYCLE.length];
+  const nowLabel = own ? labelOf(PANE_SPACES, own) : `全体設定に従う（${labelOf(PANE_SPACES, space)}）`;
+  const nextLabel = next ? labelOf(PANE_SPACES, next) : '全体設定に従う';
+  return [
+    pbtn(own ? (own === 'fixed' ? 'lock' : 'free') : 'follow', `空間: ${nowLabel}。押すと ${nextLabel}`, () => setPaneProp(p, 'space', next), 'space-btn'),
+    pbtn('view', 'このカードの表示（モード・サイズ・空間）', (e) => paneViewMenu(p, e.currentTarget)),
+    pbtn('note', p.note ? '付箋を広げる' : '付箋にたたむ', () => { p.note = !p.note; refreshPane(p); layoutPanes(); savePanes(); paintPaneBar(); }),
+    pbtn('close', '閉じる', () => closePane(p.id), 'pclose'),
+  ];
+}
+function paintPaneButtons(p) { const slot = $('.ph-btns', p.el); if (slot) slot.replaceChildren(...paneButtons(p)); }
+
+let dashOpen = store.get('dashOpen', true) !== false;
+let paneCollect = store.get('paneCollect', true) !== false;
+let orbPos = (() => { const v = store.get('orbPos', null); return v && ['left', 'right', 'top', 'bottom'].includes(v.edge) && Number.isFinite(v.t) ? { edge: v.edge, t: v.t } : { edge: 'right', t: 1 }; })();
+// ---- the global bar ----
+const barOpen = store.get('paneBarOpen', true);
+function buildPaneBar() {
+  const seg = (key, label, list) => h('div', { class: 'pb-group' }, h('span', { class: 'pb-label', text: label }),
+    h('div', { class: 'seg', role: 'group', 'aria-label': label }, ...list.map(([v, t]) => h('button', { type: 'button', 'data-k': key, 'data-v': v, 'aria-pressed': 'false', onclick: () => setGlobal(key, v) }, t))));
+  const btn = (label, fn, title) => h('button', { class: 'hbtn', type: 'button', title, onclick: fn }, label);
+  const groups = [seg('space', '空間', PANE_SPACES), seg('arrange', '固定の並べ方', PANE_ARRANGES), seg('mode', '表示', PANE_MODES), seg('size', 'サイズ', PANE_SIZES)];
+  groups[0].classList.add('pb-desk'); groups[1].classList.add('pb-desk');
+  const bulkG = h('div', { class: 'pb-group pb-desk' }, h('span', { class: 'pb-label', text: '一括' }),
+    btn('全体設定に従う', () => bulk((p) => { p.space = null; p.mode = null; p.size = null; }), 'すべてのカードの空間・表示・サイズを全体設定に戻す'),
+    btn('すべて固定', () => bulk((p) => { p.space = 'fixed'; }), 'すべてのカードを固定空間へ（整列）'),
+    btn('すべて自由', () => bulk((p) => { p.space = 'free'; }), 'すべてのカードを自由空間へ（今の場所から浮かせる）'));
+  const noteG = h('div', { class: 'pb-group' },
+    btn('すべて付箋に', () => bulk((p) => { p.note = true; }), 'すべてのカードを付箋にたたむ'),
+    btn('すべて広げる', () => bulk((p) => { p.note = false; }), 'すべてのカードを広げる'));
+  const toggle = h('button', { class: 'hbtn', type: 'button', 'aria-expanded': String(paneBarOpen), onclick: () => { paneBarOpen = !paneBarOpen; store.set('paneBarOpen', paneBarOpen); paintPaneBar(); layoutPanes(); } }, '表示設定');
+  const collectBtn = h('button', { class: 'hbtn', type: 'button', 'aria-pressed': String(paneCollect), title: '畳んでいるとき、カードを選んでも開かずにダッシュボードへ足すだけにします',
+    onclick: (e) => { paneCollect = !paneCollect; store.set('paneCollect', paneCollect); e.currentTarget.setAttribute('aria-pressed', String(paneCollect)); } }, '畳んだまま足す');
+  const extra = [...groups, bulkG, noteG, h('div', { class: 'pb-group' }, collectBtn), btn('部品の並びを初期化', resetPaneLayout, 'すべてのカードで部品の並びを初期状態に戻す')];
+  paneBar.append(h('span', { class: 'pb-count' }), toggle, ...extra.map((g) => (g.classList.add('pb-extra'), g)), h('span', { class: 'pb-sp' }),
+    btn('畳む', () => setDash(false), 'ダッシュボードを畳む（D）'), btn('すべて閉じる', () => [...panes].forEach((p) => closePane(p.id)), '開いているカードをすべて閉じる'));
+}
+let paneBarOpen = barOpen;
+function paintPaneBar() {
+  $('.pb-count', paneBar).textContent = `カード ${panes.length} 枚`;
+  $('button[aria-expanded]', paneBar).setAttribute('aria-expanded', String(paneBarOpen));
+  $$('.pb-extra', paneBar).forEach((g) => { g.hidden = !paneBarOpen; });
+  $$('button[data-k]', paneBar).forEach((b) => b.setAttribute('aria-pressed', String(paneGlobal[b.dataset.k] === b.dataset.v)));
+}
+buildPaneBar();
+new ResizeObserver(() => layoutPanes()).observe(document.body);
+
+// ---- the dashboard button: every pane folds into one round button that can sit on any edge ----
+const ORB = 60, ORB_M = 14;
+const orb = h('div', { id: 'paneOrb', class: 'orb', hidden: true });
+const depthMeter = h('div', { class: 'depth-meter', role: 'status', 'aria-label': '階層メーター', hidden: true });
+const popVeil = h('div', { class: 'pop-veil' });
+const orbZones = ['l', 'r', 't', 'b'].map((k) => h('div', { class: `orb-zone ${k}`, 'data-z': { l: 'left', r: 'right', t: 'top', b: 'bottom' }[k] }));
+document.body.append(popVeil, orb, depthMeter, ...orbZones);
+const ORB_GLYPH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="12.5" height="10" rx="2.2"/><rect x="8.5" y="9.5" width="12.5" height="10" rx="2.2" fill="var(--modal-bg)"/></svg>';
+const ORB_CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+const ST_COLOR = { running: 'var(--c-blue)', waiting: 'var(--c-orange)', completed: 'var(--c-green)', aborted: 'var(--c-red)' };
+const stColor = (st) => ST_COLOR[st] || 'var(--c-gray)';
+function paneInfo(p) {
+  let c = null;
+  for (const l of state.board?.lists || []) { c = l.cards.find((x) => x.id === p.id); if (c) break; }
+  const s = p.d?.session;
+  return { title: s?.title || c?.title || p.id, agent: s?.agent || c?.agent || 'claude', status: p.status || c?.status || 'idle', act: String(p.activity || p.lastText || '').split('\n').find((x) => x.trim()) || '' };
+}
+function orbTop() { return Math.max(0, $('.shell')?.getBoundingClientRect().top ?? 0) + 8; }
+function orbXY(pos = orbPos) {
+  const W = window.innerWidth, H = window.innerHeight, x0 = ORB_M, x1 = W - ORB_M - ORB, y0 = orbTop(), y1 = H - ORB_M - ORB, t = Math.min(1, Math.max(0, pos.t));
+  if (pos.edge === 'right') return [x1, y0 + (y1 - y0) * t];
+  if (pos.edge === 'left') return [x0, y0 + (y1 - y0) * t];
+  if (pos.edge === 'top') return [x0 + (x1 - x0) * t, y0];
+  return [x0 + (x1 - x0) * t, y1];
+}
+function orbFan(cx, cy, n) {
+  const W = window.innerWidth, H = window.innerHeight, top = orbTop();
+  const a0 = Math.atan2((top + H) / 2 - cy, W / 2 - cx);
+  const corner = Math.min(cx, W - cx) < 90 && Math.min(cy - top, H - cy) < 90;
+  const spread = (corner ? 92 : 150) * Math.PI / 180, inner = Math.min(n, 5), outer = n - inner;
+  const at = (k, m, R) => { const a = a0 + (m > 1 ? k / (m - 1) - 0.5 : 0) * spread; return [Math.round(Math.cos(a) * R), Math.round(Math.sin(a) * R)]; };
+  return Array.from({ length: n }, (_, i) => (i < inner ? at(i, inner, 90) : at(i - inner, outer, 148)));
+}
+let orbSig = '';
+function paintOrb() {
+  orb.hidden = !panes.length;
+  if (!panes.length) { orbSig = ''; return; }
+  const [x, y] = orbXY(), infos = panes.map(paneInfo), n = panes.length;
+  orb.style.left = `${x}px`; orb.style.top = `${y}px`;
+  orb.dataset.tip = y + ORB / 2 < window.innerHeight / 2 ? 'below' : 'above';
+  orb.classList.toggle('open', dashOpen);
+  paneLayer.style.setProperty('--ox', `${x + ORB / 2}px`);
+  paneLayer.style.setProperty('--oy', `${y + ORB / 2 - (parseFloat(paneLayer.style.top) || 0)}px`);
+  const sig = JSON.stringify([panes.map((p) => p.id), infos.map((i) => [i.title, i.agent, i.status, i.act]), orbPos, dashOpen, ORB_M, window.innerWidth, window.innerHeight]);
+  if (sig === orbSig) return;
+  orbSig = sig;
+  const order = ['running', 'waiting', 'completed', 'aborted'], cnt = {};
+  infos.forEach((i) => { const k = order.includes(i.status) ? i.status : 'idle'; cnt[k] = (cnt[k] || 0) + 1; });
+  let acc = 0;
+  const seg = [...order, 'idle'].filter((k) => cnt[k]).map((k) => { const from = acc / n * 100; acc += cnt[k]; return `${stColor(k)} ${from}% ${acc / n * 100}%`; }).join(', ');
+  orb.style.setProperty('--ring', `conic-gradient(${seg})`);
+  const offs = orbFan(x + ORB / 2, y + ORB / 2, n);
+  const sats = panes.map((p, i) => h('button', { type: 'button', class: 'orb-sat', 'data-id': p.id, style: `--i:${i}; --dx:${offs[i][0]}; --dy:${offs[i][1]}; --agent: var(--${infos[i].agent})`,
+    'data-tip': `${infos[i].title}${infos[i].act ? `：${infos[i].act}` : ''}`, 'aria-label': `${infos[i].title} を開く` },
+    [...infos[i].title.trim()][0] || '?', h('span', { class: `sdot s-${infos[i].status}` })));
+  const main = h('button', { type: 'button', class: 'orb-main', 'aria-label': `カードのダッシュボード（${n} 枚）を${dashOpen ? '畳む' : '開く'}。ドラッグで動かせます`, title: `ダッシュボードを${dashOpen ? '畳む' : '開く'}（D）` },
+    h('span', { class: 'orb-count', text: String(n) }), h('span', { class: 'orb-ic', html: dashOpen ? ORB_CHEV : ORB_GLYPH }));
+  orb.replaceChildren(...sats, main);
+}
+function paintDepth() {
+  const has = panes.length > 0, pop = !!document.querySelector('.popover');
+  const lv = [true, has && dashOpen, has && dashOpen && pop], cur = lv.lastIndexOf(true);
+  depthMeter.hidden = !has;
+  depthMeter.replaceChildren(...['ホーム', 'ダッシュボード', 'メニュー'].map((t, i) => h('span', { class: `gi${lv[i] ? ' on' : ''}${i === cur ? ' cur' : ''}` }, h('i'), h('span', { text: t }))));
+  popVeil.classList.toggle('on', has && dashOpen && pop);
+  const [ox, oy] = orbXY(), right = ox < 240 && oy > window.innerHeight - 140;
+  depthMeter.classList.toggle('right', right);
+}
+function paintDash() {
+  paneLayer.classList.toggle('closed', !dashOpen);
+  paneLayer.classList.toggle('dim', panes.some((p) => !p.note));
+  paneLayer.classList.toggle('lite', panes.length > 0 && !panes.some((p) => !p.note));
+  paintOrb(); paintDepth();
+}
+function setDash(v, { quiet = false } = {}) {
+  dashOpen = v; store.set('dashOpen', v);
+  if (!v) closePopover();
+  paintDash();
+  if (v) layoutPanes();
+  if (!quiet) kickLive();
+}
+const orbBump = () => { orb.classList.remove('bump'); void orb.offsetWidth; orb.classList.add('bump'); };
+function saveOrb() { store.set('orbPos', orbPos); }
+function snapOrb(cx, cy) {
+  const W = window.innerWidth, H = window.innerHeight, top = orbTop(), d = { left: cx, right: W - cx, top: cy - top, bottom: H - cy };
+  const edge = Object.keys(d).sort((a, b) => d[a] - d[b])[0];
+  const x0 = ORB_M, x1 = W - ORB_M - ORB, y0 = top, y1 = H - ORB_M - ORB;
+  const t = edge === 'left' || edge === 'right' ? (cy - ORB / 2 - y0) / (y1 - y0) : (cx - ORB / 2 - x0) / (x1 - x0);
+  orbPos = { edge, t: Math.min(1, Math.max(0, t)) }; saveOrb();
+}
+let orbDrag = null;
+orb.addEventListener('pointerenter', () => { if (!orbDrag && !dashOpen) orb.classList.add('fan'); });
+orb.addEventListener('pointerleave', () => { if (!orbDrag) orb.classList.remove('fan'); });
+orb.addEventListener('focusin', () => { if (!dashOpen) orb.classList.add('fan'); });
+orb.addEventListener('focusout', (e) => { if (!orb.contains(e.relatedTarget)) orb.classList.remove('fan'); });
+orb.addEventListener('pointerdown', (e) => {
+  const m = e.target.closest('.orb-main'); if (!m || e.button !== 0) return;
+  const r = orb.getBoundingClientRect();
+  orbDrag = { sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, moved: false };
+  m.setPointerCapture(e.pointerId);
+});
+orb.addEventListener('pointermove', (e) => {
+  if (!orbDrag) return;
+  if (!orbDrag.moved && Math.hypot(e.clientX - orbDrag.sx, e.clientY - orbDrag.sy) < 6) return;
+  if (!orbDrag.moved) {
+    orbDrag.moved = true; orb.classList.remove('fan', 'snap'); orb.classList.add('dragging');
+    document.documentElement.style.setProperty('--zt', `${orbTop() - 4}px`); document.body.classList.add('orb-dragging');
+  }
+  const W = window.innerWidth, H = window.innerHeight, top = orbTop();
+  const x = Math.min(W - ORB, Math.max(0, e.clientX - orbDrag.ox)), y = Math.min(H - ORB, Math.max(top - 8, e.clientY - orbDrag.oy));
+  orb.style.left = `${x}px`; orb.style.top = `${y}px`;
+  const d = { left: x + ORB / 2, right: W - x - ORB / 2, top: y + ORB / 2 - top, bottom: H - y - ORB / 2 }, near = Object.keys(d).sort((a, b) => d[a] - d[b])[0];
+  orbZones.forEach((z) => z.classList.toggle('on', z.dataset.z === near));
+});
+const endOrbDrag = () => { orb.classList.remove('dragging'); document.body.classList.remove('orb-dragging'); };
+orb.addEventListener('pointerup', () => {
+  if (!orbDrag) return;
+  const d = orbDrag; orbDrag = null;
+  if (!d.moved) { setDash(!dashOpen); return; }
+  const r = orb.getBoundingClientRect();
+  snapOrb(r.left + ORB / 2, r.top + ORB / 2);
+  endOrbDrag(); orb.classList.add('snap'); orbSig = ''; paintDash();
+  setTimeout(() => orb.classList.remove('snap'), 350);
+});
+orb.addEventListener('pointercancel', () => { if (orbDrag) { orbDrag = null; endOrbDrag(); orbSig = ''; paintDash(); } });
+orb.addEventListener('click', (e) => {
+  const sat = e.target.closest('.orb-sat');
+  if (sat) { orb.classList.remove('fan'); setDash(true); const p = panes.find((x) => x.id === sat.dataset.id); if (p) { front(p); p.el.focus({ preventScroll: true }); } return; }
+  if (e.detail === 0 && e.target.closest('.orb-main')) setDash(!dashOpen); // keyboard: Enter / Space
+});
+orb.addEventListener('keydown', (e) => {
+  if (!e.shiftKey || !e.key.startsWith('Arrow')) return;
+  e.preventDefault();
+  const dir = e.key.slice(5).toLowerCase(), edges = { left: 'left', right: 'right', up: 'top', down: 'bottom' };
+  const along = orbPos.edge === 'left' || orbPos.edge === 'right' ? ['up', 'down'] : ['left', 'right'];
+  orbPos = along.includes(dir) ? { edge: orbPos.edge, t: Math.min(1, Math.max(0, orbPos.t + (dir === 'up' || dir === 'left' ? -0.15 : 0.15))) } : { edge: edges[dir], t: orbPos.t };
+  saveOrb(); orb.classList.add('snap'); orbSig = ''; paintDash(); $('.orb-main', orb)?.focus();
+  setTimeout(() => orb.classList.remove('snap'), 350);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() !== 'd' || e.metaKey || e.ctrlKey || e.altKey || e.isComposing || !panes.length || state.modalOpen || typingIn(e.target) || document.querySelector('.popover')) return;
+  e.preventDefault(); setDash(!dashOpen);
+});
+new MutationObserver(() => paintDepth()).observe(document.body, { childList: true });
+window.addEventListener('resize', () => { orbSig = ''; paintOrb(); paintDepth(); });
+
+// ---- sections: the parts of a card, in two columns, reorderable inside a column ----
+function applyPaneLayoutTo(el) {
+  for (const col of ['main', 'side']) {
+    const c = el.querySelector(`.pcol[data-col="${col}"]`);
+    if (c) for (const id of paneLayout[col]) { const s = c.parentElement.querySelector(`[data-sec="${id}"]`); if (s) c.append(s); }
+  }
+  $$('.psec', el).forEach((s) => s.classList.toggle('collapsed', paneLayout.collapsed.includes(s.dataset.sec)));
+}
+function applyPaneLayoutAll() { panes.forEach((p) => applyPaneLayoutTo(p.el)); layoutPanes(); }
+function moveSection(id, col, beforeId) {
+  paneLayout[col] = paneLayout[col].filter((x) => x !== id);
+  const i = beforeId ? paneLayout[col].indexOf(beforeId) : -1;
+  paneLayout[col].splice(i < 0 ? paneLayout[col].length : i, 0, id);
+  savePaneLayout(); applyPaneLayoutAll();
+}
+function toggleSection(id) {
+  const i = paneLayout.collapsed.indexOf(id);
+  i < 0 ? paneLayout.collapsed.push(id) : paneLayout.collapsed.splice(i, 1);
+  savePaneLayout(); applyPaneLayoutAll();
+}
+function resetPaneLayout() { paneLayout = structuredClone(PANE_LAYOUT_DEF); savePaneLayout(); applyPaneLayoutAll(); toast('部品の並びを初期化しました'); }
+function sectionEl(id, nodes, { extra = null, title = secTitle(id) } = {}) {
+  const col = PANE_SECS[id][0];
+  const grip = h('button', { class: 'grip', type: 'button', title: 'ドラッグで並べ替え（同じ列の中・すべてのカードで共通）。キーボードは ↑↓', 'aria-label': `${title}を並べ替え`, html: picon('grip', 14),
+    onkeydown: (e) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      const list = paneLayout[col], i = list.indexOf(id), j = i + (e.key === 'ArrowUp' ? -1 : 1);
+      if (j < 0 || j >= list.length) return;
+      const g = e.currentTarget;
+      moveSection(id, col, e.key === 'ArrowUp' ? list[j] : list[j + 1]);
+      requestAnimationFrame(() => g.focus());
+    } });
+  return h('section', { class: 'psec', 'data-sec': id, 'data-col': col },
+    h('div', { class: 'psec-h' }, grip, h('h3', {}, title, extra), h('span', { class: 'sp' }),
+      h('button', { class: 'pchev', type: 'button', 'aria-label': `${title}を開閉`, html: picon('chev', 14), onclick: () => toggleSection(id) })),
+    h('div', { class: 'psec-b' }, ...nodes));
+}
+let dnd = null;
+document.addEventListener('pointerdown', (e) => { const g = e.target.closest?.('.grip'); if (g) g.closest('.psec').draggable = true; });
+document.addEventListener('pointerup', () => $$('.psec[draggable=true]').forEach((s) => { s.draggable = false; }));
+document.addEventListener('dragstart', (e) => {
+  const sec = e.target.closest?.('.psec');
+  if (!sec || !sec.draggable) return;
+  dnd = { id: sec.dataset.sec, col: sec.dataset.col, el: sec, before: undefined };
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', dnd.id);
+  requestAnimationFrame(() => sec.classList.add('dragging'));
+});
+document.addEventListener('dragover', (e) => {
+  if (!dnd) return;
+  $$('.pcol.nope').forEach((c) => c.classList.remove('nope'));
+  const col = e.target.closest?.('.pcol');
+  if (!col) return;
+  if (col.dataset.col !== dnd.col) { col.classList.add('nope'); e.dataTransfer.dropEffect = 'none'; return; } // a part stays in its own column
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  $$('.drop-line').forEach((d) => d.remove());
+  const next = $$(':scope > .psec', col).filter((s) => s !== dnd.el).find((s) => { const r = s.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; });
+  dnd.before = next ? next.dataset.sec : null;
+  const line = h('div', { class: 'drop-line' });
+  next ? col.insertBefore(line, next) : col.append(line);
+});
+document.addEventListener('drop', (e) => {
+  if (!dnd) return;
+  const col = e.target.closest?.('.pcol');
+  if (!col || col.dataset.col !== dnd.col || dnd.before === undefined) return;
+  e.preventDefault();
+  moveSection(dnd.id, dnd.col, dnd.before);
+  toast('並び順をすべてのカードに適用しました');
+});
+document.addEventListener('dragend', () => {
+  $$('.drop-line').forEach((d) => d.remove());
+  $$('.pcol.nope').forEach((c) => c.classList.remove('nope'));
+  $$('.psec.dragging').forEach((s) => s.classList.remove('dragging'));
+  $$('.psec[draggable=true]').forEach((s) => { s.draggable = false; });
+  dnd = null;
+});
+
+// ---- opening, closing ----
+function closeTaskOverlay() {
   document.querySelectorAll('.overlay').forEach((o) => o.remove());
   state.modalOpen = false;
+}
+function closeModal() { // the overlay dialogs (task cards)
+  const had = document.querySelector('.overlay');
+  closeTaskOverlay();
   if (had) refocus(state.modalReturn);
 }
 function modalOpened() {
   if (!state.modalOpen) state.modalReturn = document.activeElement?.closest?.('.card') || document.activeElement;
 }
-
-async function openCard(cardId) {
+function newPane(id, init) {
+  const p = { id, el: null, space: null, mode: null, size: null, note: false, free: null, d: null, status: null, lastText: '', returnTo: document.activeElement?.closest?.('.card') || null, ...(init || {}) };
+  p.el = h('article', { class: 'pane fresh', role: 'region', 'aria-label': 'セッション詳細', tabindex: -1, 'data-card-id': id }, h('div', { class: 'muted pane-loading', text: '読み込み中…' }));
+  p.el.addEventListener('pointerdown', () => front(p), true);
+  p.el.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.popover')) closePane(id); });
+  panes.push(p);
+  if (!p.free && eff(p, 'space') === 'free') p.free = nextFree();
+  paneCanvas.append(p.el);
+  paintPaneButtonsLater(p);
+  paintPaneBar();
+  layoutPanes();
+  if (!init) savePanes();
+  setTimeout(() => p.el.classList.remove('fresh'), 400);
+  return p;
+}
+const paintPaneButtonsLater = (p) => queueMicrotask(() => paintPaneButtons(p));
+function closePane(id) {
+  const i = panes.findIndex((p) => p.id === id);
+  if (i < 0) return;
+  const [p] = panes.splice(i, 1);
+  clearInterval(p.el._reqTimer);
+  live.feeds.delete(id);
+  p.el.remove();
+  closePopover();
+  if (p.returnTo) refocus(p.returnTo);
+  paintPaneBar(); layoutPanes(); savePanes(); kickLive();
+}
+async function openCard(cardId, init = null) {
   if (cardId.startsWith('task:')) return openTaskModal(cardId);
-  modalOpened();
+  closeTaskOverlay();
   for (const l of state.board?.lists || []) for (const c of l.cards) if (c.id === cardId && c.unread) { c.unread = false; render(); }
   closePopover();
-  document.querySelectorAll('.overlay').forEach((o) => o.remove());
-  state.modalOpen = true;
-  const overlay = h('div', { class: 'overlay', onclick: (e) => { if (e.target === overlay) closeModal(); } });
-  const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'セッション詳細', tabindex: -1 }, h('div', { class: 'muted', text: '読み込み中…' }));
-  overlay.append(modal);
-  overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
-  document.body.append(overlay);
-  modal.focus();
+  let p = panes.find((x) => x.id === cardId);
+  const fresh = !p;
+  if (fresh) {
+    if (panes.length >= PANE_MAX) { toast(`開いておけるカードは ${PANE_MAX} 枚までです`, true); return; }
+    p = newPane(cardId, init);
+  } else if (!init) front(p);
+  if (!init) { if (fresh && panes.length > 1 && !dashOpen && paneCollect) { orbBump(); paintOrb(); } else setDash(true, { quiet: true }); }
   let d;
   try {
     d = await bridge.callTool('canban_get_session', { cardId, messages: 14 });
   } catch (e) {
-    modal.replaceChildren(h('p', { text: `読み込みに失敗しました: ${e.message}` }));
+    if (init) return closePane(cardId); // a remembered card that is gone
+    if (p.d) return toast(e.message, true);
+    p.el.replaceChildren(h('p', { class: 'muted pane-loading', text: `読み込みに失敗しました: ${e.message}` }), h('button', { class: 'btn', style: { margin: '0 16px 16px' }, text: '閉じる', onclick: () => closePane(cardId) }));
     return;
   }
-  renderModal(modal, d);
+  if (!panes.includes(p)) return;
+  renderPane(p, d);
+  if (fresh && !init && dashOpen) p.el.focus({ preventScroll: true });
 }
 
-function renderModal(modal, d) {
-  live.feed = null;
+function updateNoteLine(p) {
+  const slot = $('.note-line', p.el);
+  if (!slot) return;
+  const text = String(p.activity || p.lastText || '').split('\n').find((x) => x.trim()) || '';
+  slot.replaceChildren(h('span', { class: `sdot s-${p.status || 'idle'}` }), ' ', text.replace(/\*\*|`/g, ''));
+}
+function paintViewers(p) {
+  const slot = $('.viewers', p.el);
+  if (!slot) return;
+  const v = live.viewers.get(p.id);
+  slot.hidden = !v;
+  slot.textContent = v ? `👁 ${v.join('・')}でも開いています` : '';
+}
+
+function renderPane(p, d) {
+  const el = p.el;
   const s = d.session;
+  p.d = d;
   const b = state.board;
   const labelsById = new Map(b.labels.map((l) => [l.id, l]));
   const card = { ...d.card };
@@ -1352,82 +2129,97 @@ function renderModal(modal, d) {
     if (!v) return;
     if (v === '__unlink') await act('canban_unlink_session', { taskId: d.task.id, sessionId: s.id }, { okMsg: '紐付けを解除しました' });
     else await act('canban_link_session', { taskId: v, sessionId: s.id }, { okMsg: `${T.taskCard}に紐付けました` });
-    closeModal();
+    closePane(s.id);
   };
-  const side = h('div', {},
-    h('div', { class: 'field-label', text: '再開' }), resumeBox,
-    h('div', { class: 'field-label', text: `${T.taskCard}` }), taskSel,
-    h('div', { class: 'field-label', text: 'カードに追加' }),
-    h('button', { class: 'side-btn', text: '🏷 ラベル', title: 'ボード上では l キー', onclick: (e) => labelPicker(e.currentTarget, s.id, card, paintLabels) }),
-    dirBtn,
-    h('div', { class: 'field-label', text: '優先度' }), prio,
-    h('div', { class: 'field-label', text: '期限' }), due,
-    h('div', { class: 'field-label', text: 'その他' }),
-    s.prUrl ? h('button', { class: 'side-btn', text: '↗ PR を開く', onclick: () => bridge.openLink(s.prUrl).catch(() => copyText(s.prUrl, 'PR URL')) }) : null,
-    h('button', { class: 'side-btn', text: '⧉ セッション ID をコピー', onclick: () => copyText(s.nativeId, 'セッション ID') }),
-    s.sourcePath ? h('button', { class: 'side-btn', text: '⧉ ログのパスをコピー', onclick: () => copyText(s.sourcePath, 'パス') }) : null,
-    h('button', { class: 'side-btn', text: card.hidden ? '👁 ボードに再表示' : '🙈 ボードから隠す',
-      onclick: async () => { await act('canban_update_card', { cardId: s.id, hidden: !card.hidden }, { okMsg: card.hidden ? '再表示しました' : '隠しました' }); closeModal(); } }),
-  );
 
   const msgs = d.recentMessages.length
     ? d.recentMessages.map((m) => h('div', { class: `msg ${m.role}` }, h('div', { class: 'who', text: `${m.role === 'user' ? 'ユーザー' : 'エージェント'}${m.at ? ` · ${fmtDate(Date.parse(m.at))}` : ''}` }), m.text))
     : [h('p', { class: 'muted', text: d.messagesError ? `メッセージを取得できませんでした: ${d.messagesError}` : 'メッセージはありません' })];
 
-  const main = h('div', {},
-    h('div', { class: 'section-title' }, d.feed ? '会話' : '直近のやりとり',
-      d.feed ? h('span', { class: `live-badge${live.on ? ' on' : ''}`, title: live.on ? 'セッションの変化をそのまま表示します' : '', text: live.on ? 'ライブ' : '' }) : null),
-    ...(d.feed ? [renderFeed(d), renderSignals(s.signals, d.git)] : msgs),
-    renderDispatch(d),
-    h('div', { class: 'section-title', text: 'ラベル' }), labelWrap,
-    h('div', { class: 'section-title', text: 'メモ' }), note,
-    h('div', { class: 'readonly-note', text: '⌘/Ctrl + Enter または フォーカスを外すと保存' }),
-    h('div', { class: 'section-title', text: '詳細' }),
-    h('dl', { class: 'kv' },
-      ...kv('AI App', s.agent === 'codex' ? 'Codex' : 'Claude Code'),
-      ...kv('マシン', s.host ? `${s.host.label}（SSH: ${s.host.alias}）` : 'このマシン'),
-      ...kv(`${T.category}`, card.directory ? `${card.directory.name}${card.directoryId ? '' : '（フォルダから自動）'}` : '-'),
-      ...kv('プロジェクト', s.codexProject ? `${s.codexProject.name}（Codex のプロジェクト）` : s.project || '-'),
-      ...kv(T.folder, s.folder || '-'),
-      ...kv('作業ディレクトリ', s.cwd || '-'),
-      ...kv('ブランチ', s.branch || '-'),
-      ...kv('モデル', s.model || '-'),
-      ...kv('作成', fmtDate(s.createdAt)),
-      ...kv('最終更新', fmtDate(s.updatedAt)),
-      ...kv('状態', [s.agent === 'claude' && !s.desktopKnown ? 'アーカイブ状態は不明（Claude デスクトップの情報がディスクにありません）' : s.archived ? 'アーカイブ済' : '進行中/未アーカイブ', s.pinnedInAgent ? '📌 Codex でピン留め' : null, s.subagent ? 'サブエージェント' : null, s.automation ? '⏰ Codex オートメーション' : null].filter(Boolean).join(' · ')),
-    ),
+  const related = [
     d.task ? h('div', { class: 'msg' }, `このセッションは${T.taskCard} `, h('button', { class: 'link-btn', text: `「${d.task.title}」`, onclick: () => openCard(d.task.id) }), ' に紐付いています。') : null,
-    d.children && d.children.length ? h('div', { class: 'section-title', text: `サブエージェント（${d.children.length}）` }) : null,
+    d.children && d.children.length ? h('div', { class: 'sub-h', text: `サブエージェント（${d.children.length}）` }) : null,
     ...(d.children || []).map((c) => h('button', { class: 'sub-row', onclick: () => openCard(c.id) },
       h('span', { class: `sdot s-${c.status}` }), h('span', { class: 'ellipsis grow', text: c.agentName ? `${c.agentName}: ${c.title}` : c.title }),
       h('span', { class: 'muted', text: relTime(c.updatedAt) }))),
     d.parentId ? h('div', { class: 'msg' }, h('button', { class: 'link-btn', text: '↑ 親セッションを開く', onclick: () => openCard(d.parentId) })) : null,
-    d.pr ? h('div', { class: 'section-title' }, d.pr.provider === 'gitlab' ? 'マージリクエスト ' : 'プルリクエスト ', prPill(d.pr)) : null,
-    d.pr ? h('div', { class: 'msg' },
-      h('button', { class: 'link-btn', text: `${d.pr.title}`, onclick: () => bridge.openLink(d.pr.url).catch(() => copyText(d.pr.url, 'PR の URL')) }),
-      h('div', { class: 'muted', text: `${String(d.repo).replace(/^gitlab:/, 'GitLab: ')} · ${d.pr.branch}` }),
-      ...(d.pr.checkRuns || []).map((c) => h('div', { class: 'check-row' }, h('span', { class: `ck ck-${/fail|error|cancel|timed/.test(c.state) ? 'failing' : /success|pass|neutral|skipped/.test(c.state) ? 'passing' : 'pending'}`, text: /fail|error|cancel|timed/.test(c.state) ? '✗' : /success|pass|neutral|skipped/.test(c.state) ? '✓' : '●' }), ` ${c.name}`))) : null,
-    d.sameBranch && d.sameBranch.length ? h('div', { class: 'section-title', text: `同じブランチのセッション（${d.sameBranch.length}）` }) : null,
+    d.sameBranch && d.sameBranch.length ? h('div', { class: 'sub-h', text: `同じブランチのセッション（${d.sameBranch.length}）` }) : null,
     ...(d.sameBranch || []).map((c) => h('button', { class: 'sub-row', onclick: () => openCard(c.id) },
       h('span', { class: `sdot s-${c.status}` }), h('span', { class: `badge ${c.agent}`, text: c.agent === 'codex' ? 'Codex' : 'Claude' }),
       h('span', { class: 'ellipsis grow', text: c.title }), h('span', { class: 'muted', text: relTime(c.updatedAt) }))),
-    h('div', { class: 'section-title', text: '最初の依頼' }),
-    h('div', { class: 'msg user' }, s.preview || '-'),
-  );
+  ].filter(Boolean);
 
-  modal.replaceChildren(
-    h('button', { class: 'icon-btn close', 'aria-label': '閉じる', text: '✕', onclick: closeModal }),
-    h('h2', { text: s.title }),
-    h('div', { class: 'sub row' }, h('span', { class: `badge ${s.agent}`, text: s.agent === 'codex' ? 'Codex' : 'Claude' }),
-      s.host ? h('span', { class: 'host-chip', text: `⌂ ${s.host.label}` }) : null,
-      h('span', { class: 'row modal-status', style: { gap: '0' } }, h('span', { class: `sdot s-${s.status || 'idle'}` }), STATUS_LABELS[s.status || 'idle']),
-      'リスト:', listSel, h('span', { class: 'pill viewer-pill viewers', hidden: true })),
-    h('div', { class: 'modal-grid' }, main, side),
-  );
-  modal.querySelector('.close').focus();
-  paintModalViewers();
-  if (d.feed) scrollFeedToEnd();
-  if (!live.on) watchRequests(modal, d);
+  // The parts of the card. Which column each belongs to is fixed (PANE_SECS); the order inside a column is the user's (paneLayout).
+  const secs = {};
+  secs.conv = { title: d.feed ? '会話' : '直近のやりとり', nodes: d.feed ? [renderFeed(d, p)] : msgs,
+    extra: d.feed ? h('span', { class: `live-badge${live.on ? ' on' : ''}`, title: live.on ? 'セッションの変化をそのまま表示します' : '', text: live.on ? 'ライブ' : '' }) : null };
+  if (d.feed) secs.progress = { nodes: [renderSignals(s.signals, d.git)] };
+  secs.send = { nodes: [renderDispatch(d)] };
+  secs.labels = { nodes: [labelWrap] };
+  secs.memo = { nodes: [note, h('div', { class: 'readonly-note', text: '⌘/Ctrl + Enter または フォーカスを外すと保存' })] };
+  secs.detail = { nodes: [h('dl', { class: 'kv' },
+    ...kv('AI App', s.agent === 'codex' ? 'Codex' : 'Claude Code'),
+    ...kv('マシン', s.host ? `${s.host.label}（SSH: ${s.host.alias}）` : 'このマシン'),
+    ...kv(`${T.category}`, card.directory ? `${card.directory.name}${card.directoryId ? '' : '（フォルダから自動）'}` : '-'),
+    ...kv('プロジェクト', s.codexProject ? `${s.codexProject.name}（Codex のプロジェクト）` : s.project || '-'),
+    ...kv(T.folder, s.folder || '-'),
+    ...kv('作業ディレクトリ', s.cwd || '-'),
+    ...kv('ブランチ', s.branch || '-'),
+    ...kv('モデル', s.model || '-'),
+    ...kv('作成', fmtDate(s.createdAt)),
+    ...kv('最終更新', fmtDate(s.updatedAt)),
+    ...kv('状態', [s.agent === 'claude' && !s.desktopKnown ? 'アーカイブ状態は不明（Claude デスクトップの情報がディスクにありません）' : s.archived ? 'アーカイブ済' : '進行中/未アーカイブ', s.pinnedInAgent ? '📌 Codex でピン留め' : null, s.subagent ? 'サブエージェント' : null, s.automation ? '⏰ Codex オートメーション' : null].filter(Boolean).join(' · ')),
+  )] };
+  if (d.pr) secs.pr = { title: d.pr.provider === 'gitlab' ? 'マージリクエスト' : 'プルリクエスト', extra: prPill(d.pr), nodes: [h('div', { class: 'msg' },
+    h('button', { class: 'link-btn', text: `${d.pr.title}`, onclick: () => bridge.openLink(d.pr.url).catch(() => copyText(d.pr.url, 'PR の URL')) }),
+    h('div', { class: 'muted', text: `${String(d.repo).replace(/^gitlab:/, 'GitLab: ')} · ${d.pr.branch}` }),
+    ...(d.pr.checkRuns || []).map((c) => h('div', { class: 'check-row' }, h('span', { class: `ck ck-${/fail|error|cancel|timed/.test(c.state) ? 'failing' : /success|pass|neutral|skipped/.test(c.state) ? 'passing' : 'pending'}`, text: /fail|error|cancel|timed/.test(c.state) ? '✗' : /success|pass|neutral|skipped/.test(c.state) ? '✓' : '●' }), ` ${c.name}`)))] };
+  if (related.length) secs.related = { nodes: related };
+  secs.first = { nodes: [h('div', { class: 'msg user', text: s.preview || '-' })] };
+  secs.resume = { nodes: [resumeBox] };
+  secs.task = { nodes: [taskSel] };
+  secs.add = { nodes: [h('button', { class: 'side-btn', text: '🏷 ラベル', title: 'ボード上では l キー', onclick: (e) => labelPicker(e.currentTarget, s.id, card, paintLabels) }), dirBtn] };
+  secs.prio = { nodes: [prio, due] };
+  secs.other = { nodes: [
+    s.prUrl ? h('button', { class: 'side-btn', text: '↗ PR を開く', onclick: () => bridge.openLink(s.prUrl).catch(() => copyText(s.prUrl, 'PR URL')) }) : null,
+    h('button', { class: 'side-btn', text: '⧉ セッション ID をコピー', onclick: () => copyText(s.nativeId, 'セッション ID') }),
+    s.sourcePath ? h('button', { class: 'side-btn', text: '⧉ ログのパスをコピー', onclick: () => copyText(s.sourcePath, 'パス') }) : null,
+    h('button', { class: 'side-btn', text: card.hidden ? '👁 ボードに再表示' : '🙈 ボードから隠す',
+      onclick: async () => { await act('canban_update_card', { cardId: s.id, hidden: !card.hidden }, { okMsg: card.hidden ? '再表示しました' : '隠しました' }); closePane(s.id); } }),
+  ].filter(Boolean) };
+
+  const cols = { main: h('div', { class: 'pcol', 'data-col': 'main' }), side: h('div', { class: 'pcol', 'data-col': 'side' }) };
+  for (const id of Object.keys(PANE_SECS)) {
+    const sc = secs[id];
+    if (sc) cols[PANE_SECS[id][0]].append(sectionEl(id, sc.nodes, { extra: sc.extra, title: sc.title ?? secTitle(id) }));
+  }
+  const scroll = ['main', 'side'].map((c) => $(`.pcol[data-col="${c}"]`, el)?.scrollTop ?? 0);
+  p.status = s.status || 'idle';
+  p.activity = activityText(s.activity, p.status, s.signals);
+  if (!d.feed) p.lastText = s.preview || '';
+  const top = h('div', { class: 'ph-top' }, h('h2', { text: s.title, title: s.title }), h('span', { class: 'ph-btns' }));
+  el.setAttribute('aria-label', `セッション詳細: ${s.title}`);
+  el.replaceChildren(
+    h('div', { class: 'pane-h' }, top,
+      h('div', { class: 'sub row' }, h('span', { class: `badge ${s.agent}`, text: s.agent === 'codex' ? 'Codex' : 'Claude' }),
+        s.host ? h('span', { class: 'host-chip', text: `⌂ ${s.host.label}` }) : null,
+        h('span', { class: 'row pane-status', style: { gap: '0' } }, h('span', { class: `sdot s-${p.status}` }), STATUS_LABELS[p.status]),
+        'リスト:', listSel, h('span', { class: 'pill viewer-pill viewers', hidden: true })),
+      h('div', { class: 'note-line' })),
+    h('div', { class: 'pane-b' }, cols.main, cols.side));
+  applyPaneLayoutTo(el);
+  cols.main.scrollTop = scroll[0];
+  cols.side.scrollTop = scroll[1];
+  const prog = $('[data-sec="progress"]', el);
+  if (prog) prog.hidden = !!$('.sig-box', prog)?.hidden;
+  bindPaneDrag(top, p);
+  paintPaneButtons(p);
+  applyPaneAttrs(p);
+  updateNoteLine(p);
+  paintViewers(p);
+  if (d.feed) scrollFeedToEnd(live.feeds.get(s.id));
+  if (!live.on) watchRequests(el, d);
+  layoutPanes();
 }
 
 // ======================================================================
@@ -1544,11 +2336,11 @@ function editRequest(row, r, done) {
 
 // While a request is queued or running, refresh the section every few seconds.
 function watchRequests(modal, d) {
-  clearInterval(state.requestTimer);
+  clearInterval(modal._reqTimer);
   if (!d.dispatch.active.length && !d.dispatch.queue.length) return;
-  state.requestTimer = setInterval(async () => {
+  modal._reqTimer = setInterval(async () => {
     if (!document.body.contains(modal) || modal.querySelector('.send-box textarea:focus, .req-row textarea')) {
-      if (!document.body.contains(modal)) clearInterval(state.requestTimer);
+      if (!document.body.contains(modal)) clearInterval(modal._reqTimer);
       return;
     }
     try {
@@ -1556,7 +2348,7 @@ function watchRequests(modal, d) {
       const sig = (list) => list.map((r) => `${r.id}:${r.state}`).join(',');
       const cur = [...d.dispatch.active, ...d.dispatch.queue, ...d.dispatch.history];
       if (sig(res.requests.slice().sort((a, b) => a.id.localeCompare(b.id))) !== sig(cur.slice().sort((a, b) => a.id.localeCompare(b.id)))) {
-        clearInterval(state.requestTimer);
+        clearInterval(modal._reqTimer);
         openCard(d.session.id);
         load();
       }
@@ -1572,7 +2364,7 @@ const fmtClock = (at) => (at ? new Date(at).toLocaleTimeString('ja-JP', { hour: 
 
 function feedItem(it, f) {
   if (it.k === 'user') return h('div', { class: 'fi fi-user', title: fmtDate(Date.parse(it.at)), text: it.text });
-  if (it.k === 'assistant') return h('div', { class: 'fi fi-asst', text: it.text });
+  if (it.k === 'assistant') return h('div', { class: 'fi fi-asst' }, h('span', { class: 'raw', text: it.text }), h('div', { class: 'md', html: mdHtml(it.text) }));
   if (it.k === 'commentary') return h('div', { class: 'fi fi-note', text: it.text });
   if (it.k === 'thinking') {
     if (!it.text) return null;
@@ -1590,23 +2382,24 @@ function feedItem(it, f) {
   return null;
 }
 
-function renderFeed(d) {
+function renderFeed(d, p) {
   const list = h('div', { class: 'feed', role: 'log', 'aria-live': 'polite', 'aria-label': 'セッションの会話' });
   const foot = h('div', { class: 'feed-foot' });
-  const newBtn = h('button', { class: 'feed-new', text: '↓ 新着', hidden: true, onclick: () => scrollFeedToEnd() });
-  const f = { cardId: d.session.id, offset: d.feed.offset, size: d.feed.size, codexItems: d.feed.codexItems, list, foot, newBtn, tools: new Map(), status: d.session.status || 'idle', activity: d.session.activity || null, signals: d.session.signals || null, git: d.git || null };
+  const newBtn = h('button', { class: 'feed-new', text: '↓ 新着', hidden: true, onclick: () => scrollFeedToEnd(f) });
+  const f = { pane: p, cardId: d.session.id, offset: d.feed.offset, size: d.feed.size, codexItems: d.feed.codexItems, list, foot, newBtn, tools: new Map(), status: d.session.status || 'idle', activity: d.session.activity || null, signals: d.session.signals || null, git: d.git || null };
   list.addEventListener('scroll', () => { if (atFeedEnd(list)) newBtn.hidden = true; });
   for (const it of d.feed.items) { const el = feedItem(it, f); if (el) list.append(el); }
+  const lastSaid = [...d.feed.items].reverse().find((it) => it.k === 'assistant');
+  p.lastText = lastSaid ? lastSaid.text : d.session.preview || '';
   if (!d.feed.items.length) list.append(h('div', { class: 'muted', text: 'まだやりとりはありません' }));
-  live.feed = f;
+  live.feeds.set(f.cardId, f);
   paintFeedFoot(f);
   kickLive();
   return h('div', { class: 'feed-wrap' }, list, newBtn, foot);
 }
 
 const atFeedEnd = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-function scrollFeedToEnd() {
-  const f = live.feed;
+function scrollFeedToEnd(f) {
   if (!f) return;
   f.list.scrollTop = f.list.scrollHeight;
   f.newBtn.hidden = true;
@@ -1617,8 +2410,12 @@ function paintFeedFoot(f) {
   if (st === 'running') f.foot.replaceChildren(h('span', { class: 'sdot s-running' }), h('span', { class: 'grow', title: f.activity || '' }, h('span', { class: 'dots', text: '作業中' }), f.activity ? `  ${f.activity}` : ''));
   else if (st === 'waiting') f.foot.replaceChildren(h('span', { class: 'sdot s-waiting' }), h('span', { class: 'grow', text: `${WAIT_TEXT[f.signals?.wait] || '入力待ち'}${f.activity ? `  ${f.activity}` : ''}（アプリで答えてください）` }));
   else f.foot.replaceChildren(h('span', { class: `sdot s-${st}` }), h('span', { class: 'grow', text: STATUS_LABELS[st] || '' }));
-  const hdr = document.querySelector('.modal .modal-status');
+  const p = f.pane;
+  const hdr = p.el.querySelector('.pane-status');
   if (hdr) hdr.replaceChildren(h('span', { class: `sdot s-${st}` }), STATUS_LABELS[st] || '');
+  p.status = st;
+  p.activity = activityText(f.activity, st, f.signals);
+  updateNoteLine(p);
 }
 
 function applyFeed(f, feed) {
@@ -1635,6 +2432,7 @@ function applyFeed(f, feed) {
       if (it.out) { t.out.textContent = it.out; t.out.hidden = false; }
       continue;
     }
+    if (it.k === 'assistant') f.pane.lastText = it.text;
     const el = feedItem(it, f);
     if (el) { f.list.append(el); added++; }
   }
@@ -1644,20 +2442,25 @@ function applyFeed(f, feed) {
   f.size = feed.size;
   f.codexItems = feed.codexItems;
   if (feed.status) {
-    if (feed.status !== f.status) refreshDispatch(); // "busy" rules for sending follow the status
+    if (feed.status !== f.status) refreshDispatch(f); // "busy" rules for sending follow the status
     f.status = feed.status;
     f.activity = feed.activity || null;
     f.signals = feed.signals || null;
     if (feed.git) f.git = feed.git;
     paintFeedFoot(f);
-    const box = document.querySelector('.modal .sig-box');
-    if (box) box.replaceWith(renderSignals(f.signals, f.git));
-  }
-  if (added) { if (stick) scrollFeedToEnd(); else f.newBtn.hidden = false; }
+    const box = f.pane.el.querySelector('.sig-box');
+    if (box) {
+      const next = renderSignals(f.signals, f.git);
+      box.replaceWith(next);
+      const sec = next.closest('.psec');
+      if (sec) sec.hidden = next.hidden;
+    }
+  } else updateNoteLine(f.pane);
+  if (added) { if (stick) scrollFeedToEnd(f); else f.newBtn.hidden = false; }
 }
 
 // ---- the long poll ----
-const live = { on: false, seq: null, feed: null, mode: 'long', inflight: 0, lastLoad: 0, loadTimer: null, dirty: false, ownActAt: 0, lastWatchEnd: 0, presence: [], viewers: new Map() };
+const live = { on: false, seq: null, feeds: new Map(), mode: 'long', inflight: 0, lastLoad: 0, loadTimer: null, dirty: false, ownActAt: 0, lastWatchEnd: 0, presence: [], viewers: new Map() };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const liveIdle = () => !state.drag && !document.querySelector('.popover, .list-title-input, .composer');
 
@@ -1692,7 +2495,7 @@ function applyPatches(patches) {
     const { card, list, link } = hit;
     if (link) { if (link.status !== p.status) rebuild = true; continue; }
     if (card.status !== p.status) { rebuild = true; continue; }
-    const openHere = live.feed?.cardId === p.id;
+    const openHere = live.feeds.has(p.id);
     if ((p.updatedAt || 0) > (card.updatedAt || 0) && !openHere) card.unread = true;
     card.updatedAt = Math.max(card.updatedAt || 0, p.updatedAt || 0);
     card.activity = p.activity;
@@ -1709,14 +2512,13 @@ function applyPatches(patches) {
   if (rebuild) scheduleLoad();
 }
 
-async function refreshDispatch() {
-  const f = live.feed;
-  const modal = document.querySelector('.modal');
-  if (!f || !modal || modal.querySelector('.send-box textarea:focus, .req-row textarea')) return;
+async function refreshDispatch(f) {
+  const el = f?.pane.el;
+  if (!el || el.querySelector('.send-box textarea:focus, .req-row textarea')) return;
   try {
     const d = await bridge.callTool('canban_get_session', { cardId: f.cardId, messages: 1 });
-    const old = modal.querySelector('.send-section');
-    if (old && live.feed === f) old.replaceWith(renderDispatch(d));
+    const old = el.querySelector('.send-section');
+    if (old && live.feeds.get(f.cardId) === f) old.replaceWith(renderDispatch(d));
   } catch {}
 }
 
@@ -1744,14 +2546,7 @@ function applyPresence(list) {
       if (focused) next.focus();
     }
   }
-  paintModalViewers();
-}
-function paintModalViewers() {
-  const slot = document.querySelector('.modal .viewers');
-  if (!slot) return;
-  const v = live.feed && live.viewers.get(live.feed.cardId);
-  slot.hidden = !v;
-  slot.textContent = v ? `👁 ${v.join('・')}でも開いています` : '';
+  panes.forEach(paintViewers);
 }
 
 function applyLive(r, args) {
@@ -1760,15 +2555,17 @@ function applyLive(r, args) {
   if (r.patches?.length) applyPatches(r.patches);
   if (r.limits) renderLimits(r.limits);
   if (r.reload) scheduleLoad();
-  if (r.requests) { refreshDispatch(); scheduleLoad(); }
-  const f = live.feed;
-  if (r.feed && f && f.cardId === args.cardId && f.offset === args.offset) applyFeed(f, r.feed);
+  if (r.requests) { for (const f of live.feeds.values()) refreshDispatch(f); scheduleLoad(); }
+  for (const [id, feed] of Object.entries(r.feeds || {})) {
+    const f = live.feeds.get(id);
+    const sent = args.feeds?.find((x) => x.cardId === id);
+    if (f && sent && f.offset === sent.offset) applyFeed(f, feed);
+  }
 }
 
 function watchArgs(timeoutMs) {
   const args = { since: live.seq, timeoutMs };
-  const f = live.feed;
-  if (f) Object.assign(args, { cardId: f.cardId, offset: f.offset, size: f.size ?? null, codexItems: !!f.codexItems });
+  if (live.feeds.size) args.feeds = [...live.feeds.values()].map((f) => ({ cardId: f.cardId, offset: f.offset, size: f.size ?? null, codexItems: !!f.codexItems }));
   return args;
 }
 
@@ -3154,7 +3951,7 @@ document.addEventListener('keydown', (e) => {
     if (!state.modalOpen) commandPalette();
     return;
   }
-  if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing || state.modalOpen || typingIn(e.target) || document.querySelector('.popover')) return;
+  if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing || state.modalOpen || typingIn(e.target) || e.target.closest?.('#paneLayer') || document.querySelector('.popover')) return;
   const onCard = e.target.classList?.contains('card');
   const k = e.key;
   const run = {
@@ -3191,6 +3988,16 @@ bridge.on('ui/notifications/host-context-changed', (p) => { if (p?.theme) applyT
 window.addEventListener('openai:set_globals', (e) => { const t = e.detail?.globals?.theme; if (t) applyTheme(t); });
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { if (!state.hostTheme) applyTheme(); });
 
+// Panes that were open last time come back (a card that no longer exists just drops out).
+async function restorePanes() {
+  const saved = store.get('panes', []);
+  if (!Array.isArray(saved)) return;
+  for (const x of saved.slice(0, PANE_MAX)) {
+    if (!x || typeof x.id !== 'string' || x.id.startsWith('task:')) continue;
+    const free = x.free && Number.isFinite(x.free.x) && Number.isFinite(x.free.y) ? { x: x.free.x, y: x.free.y } : null;
+    await openCard(x.id, { space: oneOf(x.space, PANE_SPACES, null), mode: oneOf(x.mode, PANE_MODES, null), size: oneOf(x.size, PANE_SIZES, null), note: x.note === true, free });
+  }
+}
 function idle() { return !state.drag && !state.modalOpen && !document.querySelector('.popover, .list-title-input, .composer'); }
 let lastPoll = 0;
 setInterval(() => {
@@ -3213,6 +4020,7 @@ window.addEventListener('resize', () => bridge.reportSize());
   await load();
   live.on = true;
   liveLoop();
+  restorePanes();
 })();
 })();
 </script>

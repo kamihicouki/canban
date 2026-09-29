@@ -6,6 +6,7 @@
 //   patches   [{ id, status, updatedAt, activity, signals }] for sessions whose log grew;
 //             no listing, just one cached tail read per changed log
 //   feed      items appended to the open session's log since `offset`
+//   feeds     the same for every session open in a detail pane: { [cardId]: feed } (`feed` is the first)
 //   limits    Codex rate limits, when a Codex log changed (see signals.mjs)
 //   presence  the other live boards and the card each has open (presence.mjs)
 // Patches of running sessions (and the open one) also carry `git` (gitlive.mjs).
@@ -16,6 +17,7 @@ import { listCodexSessions } from './sources/codex.mjs';
 import { localStatus } from './status.mjs';
 import { readFeedDelta } from './feed.mjs';
 import { onSessions, dropLocalCache } from './board.mjs';
+import { MAX_FOCUS } from './live.mjs';
 import { perf } from './perf.mjs';
 import { currentLimits, cardSignals } from './signals.mjs';
 import { gitDirOf, refreshGit, peekGit } from './gitlive.mjs';
@@ -117,25 +119,33 @@ export function createWatch(hub, { presence = null } = {}) {
     return !s.desktopKnown || (j.isArchived === true) !== !!s.archived || (j.title ?? null) !== (s.desktopTitle ?? null) || status !== (s.desktopStatus ?? null);
   }
 
-  // offset: where the client's feed continues; size: the log size it last saw (a partial
-  // last line keeps size > offset without anything new to show).
-  return async function watch({ since = null, cardId = null, offset = null, size = null, codexItems = false, timeoutMs = 20000 } = {}) {
-    const focus = cardId ? byId.get(cardId) : null;
-    hub.focus(focus?.sourcePath || null);
-    presence?.beat(cardId || null);
+  // feeds: the sessions open in detail panes, [{ cardId, offset, size, codexItems }]
+  //   offset: where the client's feed continues; size: the log size it last saw (a partial
+  //   last line keeps size > offset without anything new to show).
+  // cardId / offset / size / codexItems alone are the same thing for one session.
+  return async function watch({ since = null, cardId = null, offset = null, size = null, codexItems = false, feeds = null, timeoutMs = 20000 } = {}) {
+    const asked = (Array.isArray(feeds) ? feeds : cardId ? [{ cardId, offset, size, codexItems }] : []).filter((f) => f && typeof f.cardId === 'string').slice(0, MAX_FOCUS);
+    const foci = asked.map((f) => ({ ...f, s: byId.get(f.cardId) })).filter((f) => f.s);
+    const focusIds = new Set(foci.map((f) => f.s.id));
+    hub.focus(foci.map((f) => f.s.sourcePath));
+    presence?.beat(asked.map((f) => f.cardId));
     if (since == null) {
       const starting = !hub.active;
       hub.touch();
       if (starting) trackGit(lastBusy, ++gitGen);
       const p = others();
       sentPresence = JSON.stringify(p);
-      return { seq: hub.seq, reload: false, requests: false, patches: [], feed: null, presence: p };
+      return { seq: hub.seq, reload: false, requests: false, patches: [], feed: null, feeds: {}, presence: p };
     }
-    // The open session's log grew since the client's offset (e.g. while it was opening): answer now.
+    // An open session's log grew since the client's offset (e.g. while it was opening): answer now.
+    const behindOne = async (f) => {
+      if (!f.s.sourcePath || f.offset == null) return false;
+      const st = await stat(f.s.sourcePath);
+      return !!st && st.size !== Number(f.size ?? f.offset);
+    };
     const behind = async () => {
-      if (!focus?.sourcePath || offset == null) return false;
-      const st = await stat(focus.sourcePath);
-      return !!st && st.size !== Number(size ?? offset);
+      for (const f of foci) if (await behindOne(f)) return true;
+      return false;
     };
     const wait = (await behind()) ? 0 : Math.min(Math.max(Number(timeoutMs) || 0, 0), WATCH_MAX_MS);
     // Heartbeats that change nothing this board shows (including its own) keep it waiting.
@@ -150,7 +160,7 @@ export function createWatch(hub, { presence = null } = {}) {
     }
     const { seq, events } = got;
     return perf.timed('live.watch', async () => {
-      const res = { seq, reload: events === null, requests: events === null, patches: [], feed: null, limits: null, presence: others() };
+      const res = { seq, reload: events === null, requests: events === null, patches: [], feed: null, feeds: {}, limits: null, presence: others() };
       sentPresence = JSON.stringify(res.presence);
       const changed = new Set();
       const seenDesktop = new Set();
@@ -172,7 +182,7 @@ export function createWatch(hub, { presence = null } = {}) {
         } else if (e.kind === 'git') {
           const dir = byGitDir.has(e.path) ? e.path : path.dirname(e.path);
           for (const id of byGitDir.get(dir) || []) changed.add(id);
-          if (focus?.cwd && (await gitDirOf(focus.cwd))?.gitDir === dir) changed.add(focus.id);
+          for (const f of foci) if (f.s.cwd && (await gitDirOf(f.s.cwd))?.gitDir === dir) changed.add(f.s.id);
         } else if (e.kind === 'file') {
           const id = byPath.get(e.path);
           if (id) changed.add(id);
@@ -181,16 +191,19 @@ export function createWatch(hub, { presence = null } = {}) {
       }
       for (const id of changed) {
         const s = byId.get(id);
-        const p = s && (await patchFor(s, { focused: s.id === focus?.id }));
+        const p = s && (await patchFor(s, { focused: focusIds.has(s.id) }));
         if (p) res.patches.push(p);
       }
-      if (focus && offset != null && (events === null || changed.has(focus.id) || (await behind()))) {
+      for (const f of foci) {
+        if (f.offset == null || !(events === null || changed.has(f.s.id) || (await behindOne(f)))) continue;
         try {
-          res.feed = await readFeedDelta(focus, Number(offset), { codexItems });
-          const p = res.patches.find((x) => x.id === focus.id) || (await patchFor(focus, { focused: true }));
-          if (p) Object.assign(res.feed, { status: p.status, activity: p.activity, signals: p.full, git: p.git });
+          const feed = await readFeedDelta(f.s, Number(f.offset), { codexItems: !!f.codexItems });
+          const p = res.patches.find((x) => x.id === f.s.id) || (await patchFor(f.s, { focused: true }));
+          if (p) Object.assign(feed, { status: p.status, activity: p.activity, signals: p.full, git: p.git });
+          res.feeds[f.cardId] = feed;
         } catch {}
       }
+      res.feed = foci.length ? res.feeds[foci[0].cardId] || null : null;
       if (relist) dropLocalCache();
       for (const p of res.patches) delete p.full; // the detail's copy rides on the feed
       if (res.patches.some((p) => p.id.startsWith('codex'))) res.limits = currentLimits();
