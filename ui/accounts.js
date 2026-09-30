@@ -232,8 +232,7 @@ function runnerSection(v, anchor) {
     act('canban_account_create', { agent: agent.value, name: name.value.trim() }, { reload: false }).then((res) => {
       const l = res?.result?.login;
       toast(l?.opened ? 'フォルダを作り、ターミナルでログインを開きました。終わったらボードを再読み込みしてください' : `フォルダを作りました。ターミナルでログインしてください: ${l?.command}`);
-      load();
-      accountsMenu(anchor);
+      load().then(() => accountsMenu(anchor)); // the new folder is in the next board
     }).catch(() => {});
   };
   name.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) create(); };
