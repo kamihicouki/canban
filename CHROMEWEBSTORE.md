@@ -1,0 +1,133 @@
+# Chrome Web Store — Canban
+
+最終更新: 2026-09-30
+
+## ストア掲載情報
+
+名前: Canban
+
+短い説明（manifest と同一）: Codex / Claude Code のセッションをカンバンで管理します。
+
+カテゴリ: 仕事効率化 / ワークフローと計画
+
+主要言語: 日本語（ja）
+
+単一用途: Codex / Claude Code のセッションをカンバンで一覧表示し、整理・操作する。
+
+詳細説明（ストアに貼り付ける本文）:
+
+```text
+Canban は、Codex / Claude Code のセッションを Chrome からカンバンで整理する拡張です。
+
+セッションを一覧表示し、検索、分類、ラベル、メモで作業を整理できます。会話や実行状態を確認し、複数のセッションを並べて表示できます。Canban を利用している Codex / Claude の画面と、ボードの分類や表示設定を共有できます。
+
+利用には Chrome 拡張に加え、コンピューターへの Canban 連携ソフトの導入が必要です。macOS / Linux と Node.js 22.13 以降に対応します。Chrome 拡張だけをインストールしてもセッションは表示されません。導入手順はサポートサイトをご覧ください。
+
+1. サポートサイトの手順で Canban 連携ソフトを導入します。
+2. インストールした拡張の ID を使って、ローカル連携を登録します。
+3. Chrome の Canban アイコンをクリックしてボードを開きます。
+
+セッションやメモを Canban 開発者のサーバーへ送信しません。閲覧履歴や一般のウェブページを読み取らず、広告や追跡機能もありません。利用者がリモート接続や AI への指示の送信を選んだ場合は、利用者が設定した接続先と通信します。
+
+Canban は MIT ライセンスのオープンソースです。ソース、導入手順、問い合わせ先:
+https://github.com/kamihicouki/canban
+```
+
+サポート / ホームページ: https://github.com/kamihicouki/canban
+
+プライバシーポリシー: https://github.com/kamihicouki/canban/blob/codex/chrome-web-store/PRIVACY.md （公開ブランチの文書。main 統合後は main の URL に変更する）
+
+## 画像
+
+| 素材 | サイズ | ファイル / 状態 |
+|---|---|---|
+| ストアアイコン | 128×128 PNG | `chrome/icons/icon-128.png` |
+| ツールバーアイコン | 16×16 / 48×48 PNG | `chrome/icons/icon-16.png`, `icon-48.png` |
+| スクリーンショット | 1280×800 または 640×400 | `chrome/store/screenshot-board.jpg`（1280×800、同一 UI と隔離した MCP 開発ホスト・テストデータで撮影。ストア版インストールの動作証拠ではない） |
+| 宣伝用タイル（任意） | 440×280 | 未作成 |
+
+## 権限の説明
+
+| 権限 | 審査向け説明 |
+|---|---|
+| nativeMessaging | The extension displays and manages the user's local Codex and Claude Code sessions through the Canban companion installed by the user. Native Messaging connects only to `com.kamihicouki.canban` on the same computer. The companion reads session metadata and conversations and stores board organization locally. User-initiated session actions use the installed agent applications. No browsing history or website content is accessed. |
+
+host_permissions、content_scripts、tabs、identity、storage 権限なし。リモート配信コードなし。拡張コードはすべて ZIP に同梱し、インラインスクリプトも除外する。
+
+## プライバシー申告
+
+開発者へのデータ収集・販売・広告利用なし。ローカル連携プロセスへ渡すデータは、会話・メモ・検索条件・作業フォルダー・実行状態など。指示送信や SSH 接続は利用者が設定した外部サービスを使うため、単に「外部通信は一切ない」とは申告しない。
+
+ストアのフォームは、開発者が収集するデータとローカルで処理するデータを区別して記入する。ローカルで扱う種類は Personal communications / User activity / Website content（会話や生成コード）に相当しうる。実際のフォーム文言を確認し、PRIVACY.md と整合させる。閲覧履歴、決済、健康、位置情報を収集する機能はない。
+
+販売しない、単一用途以外に使用・転送しない、信用情報・融資の判断に使用しない、の各宣言は実装と整合する。
+
+## ストア項目
+
+Publisher ID: `97689f5d-07e8-4c7c-85d6-465f31dc56d4`
+
+ストア用拡張 ID: `kmnkdbmckholannmfhjfmceofmjdbndh`
+
+管理画面: https://chrome.google.com/webstore/devconsole/97689f5d-07e8-4c7c-85d6-465f31dc56d4/kmnkdbmckholannmfhjfmceofmjdbndh/edit
+
+2026-09-30 に 0.14.0 の ZIP をアップロードし、新規ドラフトを作成済み。審査申請・公開は未実施。
+
+## 初回登録と継続デプロイ
+
+初回ストア項目の作成、掲載情報、画像、プライバシー申告は Developer Dashboard で行う。API は既存項目のパッケージ更新用であり、新規項目や掲載文面を作成しない。
+
+```sh
+node scripts/package-chrome-web-store.mjs
+```
+
+成果物: `dist/canban-web-store.zip` と SHA-256。ZIP のルートに manifest.json を配置。ローカル連携ソフトは ZIP に含めない。
+
+GitHub Actions の `chrome-web-store` Environment に以下を設定する。値を文書やチャットに貼らない。
+
+| 種別 | 名前 | 内容 |
+|---|---|---|
+| Variable | CWS_PUBLISHER_ID | Developer Dashboard の publisher ID |
+| Variable | CWS_EXTENSION_ID | ストアで発行された32文字の拡張 ID |
+| Secret | CWS_CLIENT_ID | Chrome Web Store API を有効にした Google Cloud の OAuth クライアント ID |
+| Secret | CWS_CLIENT_SECRET | 同クライアントの secret |
+| Secret | CWS_REFRESH_TOKEN | ストア項目を管理できるアカウントで `https://www.googleapis.com/auth/chromewebstore` を許可した refresh token |
+
+Google 側の設定: https://developer.chrome.com/docs/webstore/using-api
+
+公式 API 定義: https://chromewebstore.googleapis.com/$discovery/rest?version=v2
+
+認証の作成・同意はアカウント所有者が行う。GitHub の secret 登録には `gh secret set NAME --env chrome-web-store` の対話入力を使う。コマンド引数やログへ値を露出させない。
+
+PR / main 更新時はテストと ZIP 作成のみ。`chrome-v<package.json の version>` タグを push すると審査申請し、承認後に公開する。手動実行は main のみ、`upload`（アップロードのみ）か `publish`（審査申請）を選択できる。拡張本体の変更が main に統合されるまでは、このワークフローを有効化しない。
+
+同じストア項目へのデプロイを直列化する。既存の審査中・公開待ち申請がある場合、警告・ポリシー措置がある場合、アップロードが失敗した場合は停止する。申請後は API で状態を再取得する。`PENDING_REVIEW` は審査待ちであり、公開済みではない。
+
+公開後の確認: ストアの公開 URL、バージョン、ストアからのインストール、ストア ID に対する Native Messaging 登録、ボード表示と基本操作を確認する。開発用拡張 ID を流用しない。
+
+## 審査担当者向け導入手順
+
+Node.js 22.13 以降、macOS または Linux、Codex / Claude Code のローカルセッションが必要。Windows のローカル連携は未対応。
+
+```sh
+git clone https://github.com/kamihicouki/canban.git
+cd canban
+npm run install:chrome-native-host -- --extension-id kmnkdbmckholannmfhjfmceofmjdbndh
+```
+
+Chrome の Canban アイコンからボードを開く。認証用の Canban アカウントは不要。セッションがない場合は空の一覧になる。ローカル連携ソフトがない場合は接続エラーと導入方法を表示する。
+
+## バージョン履歴
+
+2026-09-30: 0.14.0 のローカル拡張ソースを使った ZIP 作成、ストア用アイコン、プライバシー文書、API v2 デプロイの準備。ストア項目を新規作成し ZIP のアップロードまで実施。審査申請・掲載は未実施。
+
+## 公開前チェック
+
+- [x] GitHub OSS 公開、MIT ライセンス
+- [x] Manifest V3、nativeMessaging のみ、ローカル同梱コード
+- [x] 個別サイズの PNG、配布ファイルの allowlist、ZIP の整合性確認
+- [x] 掲載文面、権限説明、プライバシーポリシーの作成
+- [ ] 拡張本体の開発変更を main に統合
+- [x] Developer Dashboard の本人確認・開発者登録確認
+- [ ] ストア項目作成、画像、データ申告、必要な連絡先・地域情報の登録
+- [ ] GitHub Environment の認証設定
+- [ ] 審査申請、承認、公開ストアからの動作確認
