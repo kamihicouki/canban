@@ -11,9 +11,10 @@ import { database, executionContext } from '../server/sqlite-client.mjs';
 import { Leader } from '../server/leader.mjs';
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(),'canban-sqlite-'));
 const root = new URL('../',import.meta.url).pathname;
-function processRun(args, input) {
+function processRun(args, input, onReady) {
   return new Promise((resolve,reject) => {
-    const child=spawn(process.execPath,['--no-warnings',...args],{cwd:root,stdio:['pipe','pipe','pipe']});
+    const child=spawn(process.execPath,['--no-warnings',...args],{cwd:root,stdio:onReady?['pipe','pipe','pipe','ipc']:['pipe','pipe','pipe']});
+    if(onReady)child.on('message',message=>{if(message==='ready')onReady(child);});
     let out='',err=''; child.stdout.on('data',b=>out+=b);child.stderr.on('data',b=>err+=b);
     child.on('error',reject);child.on('close',code=>resolve({code,out,err}));child.stdin.end(input);
   });
@@ -22,10 +23,20 @@ const migrate = (dir,...args) => processRun(['scripts/migrate-sqlite.mjs','--dat
 
 test('10 processes preserve 1000 accepted updates with bounded contention', async (t) => {
   const dir=tmp(), store=new Store(dir); await store.load();
+  // Start writes only after every DB connection is initialized. Startup failure
+  // is a separate contract from preserving accepted writes under contention.
+  const ready=[];
+  const onReady=child=>{ready.push(child);if(ready.length===10)for(const c of ready)c.send('start');};
   const results=await Promise.all(Array.from({length:10},(_,client)=>processRun(['--input-type=module'],`
     import {Store} from './server/store.mjs';
     const s=new Store(${JSON.stringify(dir)});
-    await s.load();let max=0,rejected=0,accepted=0;
+    await s.load();
+    const started=new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(new Error('DB clients did not become ready')),15000);
+      process.once('message',()=>{clearTimeout(timer);resolve();});
+    });
+    process.send('ready');await started;process.disconnect();
+    let max=0,rejected=0,accepted=0;
     for(let i=0;i<100;i++){
       for(let attempt=0;;attempt++){
         const start=performance.now();
@@ -41,7 +52,7 @@ test('10 processes preserve 1000 accepted updates with bounded contention', asyn
       }
     }
     console.log(JSON.stringify({max,rejected,accepted}));await s.close();
-  `)));
+  `,onReady)));
   let rejected=0;
   for(const result of results) {
     assert.equal(result.code,0,result.err);

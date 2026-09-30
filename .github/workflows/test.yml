@@ -17,4 +17,6 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: python3 --version
-      - run: npm test
+      # Keep timing-sensitive DB tests independent from other test-file workers.
+      # sqlite.test.mjs still exercises ten concurrent clients itself.
+      - run: node --no-warnings --test --test-concurrency=1 tests/*.test.mjs
