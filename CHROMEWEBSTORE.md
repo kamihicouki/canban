@@ -58,7 +58,7 @@ host_permissions、content_scripts、tabs、identity、storage 権限なし。�
 
 開発者へのデータ収集・販売・広告利用なし。ローカル連携プロセスへ渡すデータは、会話・メモ・検索条件・作業フォルダー・実行状態など。指示送信や SSH 接続は利用者が設定した外部サービスを使うため、単に「外部通信は一切ない」とは申告しない。
 
-ストアのフォームは、開発者が収集するデータとローカルで処理するデータを区別して記入する。ローカルで扱う種類は Personal communications / User activity / Website content（会話や生成コード）に相当しうる。実際のフォーム文言を確認し、PRIVACY.md と整合させる。閲覧履歴、決済、健康、位置情報を収集する機能はない。
+Google の [User Data FAQ](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq) は、ローカルだけで処理・保存するデータも開示が必要としている。ストアのフォームには Personal communications（会話）/ User activity（セッションの操作・実行状態）/ Website content（表示する会話テキストや生成コード）を選択し、開発者への送信はないことを PRIVACY.md に記載する。閲覧履歴、決済、健康、位置情報を収集する機能はない。
 
 販売しない、単一用途以外に使用・転送しない、信用情報・融資の判断に使用しない、の各宣言は実装と整合する。
 
@@ -70,9 +70,11 @@ Publisher ID: `97689f5d-07e8-4c7c-85d6-465f31dc56d4`
 
 管理画面: https://chrome.google.com/webstore/devconsole/97689f5d-07e8-4c7c-85d6-465f31dc56d4/kmnkdbmckholannmfhjfmceofmjdbndh/edit
 
-2026-09-30 に 0.14.0 の ZIP をアップロードし、新規ドラフトを作成済み。説明・ホームページ・サポート URL は下書き保存済み。カテゴリ・言語・画像・プライバシー申告は未完了。審査申請・公開は未実施。
+2026-09-30 に 0.14.0 の ZIP をアップロードし、新規ドラフトを作成済み。説明・ホームページ・サポート URL、および単一用途・権限理由・リモートコード不使用・扱うデータ3種類・プライバシーポリシー URL は下書き保存済み。カテゴリと日本語は入力済みだが、保存後の再確認は未実施。画像・データ使用に関する3つの宣言・テスト手順は未完了。審査申請・公開は未実施。
 
 検証: 本体のローカル未コミット変更を専用 worktree にコピーした状態で144テスト成功。公開 PR はその本体変更を含まない。ZIP の SHA-256 は `170a71343f1d846763795b59eb320729c4ca727fe14b2c8da30deecc0cea7cf0`。ストア版の実動作は未検証。
+
+公開設定の Draft PR: https://github.com/kamihicouki/canban/pull/6 。GitHub の通常テストは Node.js 22/24 × Ubuntu/macOS の4ジョブで成功。配布パッケージの CI は、本体の `scripts/build-chrome.mjs` が未収録のため失敗しており、デプロイは実行されていない。
 
 ## 初回登録と継続デプロイ
 
