@@ -10,6 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { DatabaseSync } from 'node:sqlite';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -18,10 +19,16 @@ const opt = (n) => (argv.includes(n) ? argv[argv.indexOf(n) + 1] : null);
 
 const realData = process.env.CANBAN_DATA_DIR || path.join(os.homedir(), '.canban');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-bench-'));
+// A copy of the real board (read-only snapshot of canban.sqlite); remote hosts off unless --remote.
 try {
-  const board = JSON.parse(fs.readFileSync(path.join(realData, 'board.json'), 'utf8'));
-  if (!flag('--remote')) board.remoteHosts = {};
-  fs.writeFileSync(path.join(tmp, 'board.json'), JSON.stringify(board));
+  const src = new DatabaseSync(path.join(realData, 'canban.sqlite'), { readOnly: true });
+  src.exec(`VACUUM INTO '${path.join(tmp, 'canban.sqlite').replace(/'/g, "''")}'`);
+  src.close();
+  if (!flag('--remote')) {
+    const db = new DatabaseSync(path.join(tmp, 'canban.sqlite'));
+    db.exec("DELETE FROM board_records WHERE kind = 'remoteHosts'; DELETE FROM requests; DELETE FROM leases; DELETE FROM presence; DELETE FROM instances;");
+    db.close();
+  }
 } catch {}
 process.env.CANBAN_DATA_DIR = tmp;
 process.env.CANBAN_BACKGROUND = '0';
@@ -45,10 +52,10 @@ async function benchOps() {
     return r;
   };
   perf.startLoopMonitor();
-  await run('allSessions (cold)', () => board.allSessions(store.load()));
+  await run('allSessions (cold)', async () => board.allSessions(await store.load()));
   await new Promise((r) => setTimeout(r, 4200)); // past the local cache TTL
-  const { sessions } = await run('allSessions (warm, cache expired)', () => board.allSessions(store.load()));
-  await run('allSessions (warm, cached)', () => board.allSessions(store.load()));
+  const { sessions } = await run('allSessions (warm, cache expired)', async () => board.allSessions(await store.load()));
+  await run('allSessions (warm, cached)', async () => board.allSessions(await store.load()));
   await run('buildBoard (warm)', () => board.buildBoard(store, { days: 30 }));
   await new Promise((r) => setTimeout(r, 4200));
   await run('buildBoard (cache expired)', () => board.buildBoard(store, { days: 30 }));
