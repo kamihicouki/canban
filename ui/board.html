@@ -2328,11 +2328,12 @@ function renderDispatch(d) {
   const ta = h('textarea', { placeholder: 'このセッションに送るプロンプト（⌘/Ctrl + Enter で今すぐ送信）', 'aria-label': '送るプロンプト' });
   const ack = p?.elevated ? h('input', { type: 'checkbox', 'aria-label': '制限なしで実行されることを確認しました' }) : null;
   const busy = s.status === 'running' || s.status === 'waiting' || !!s.codexFollowUps;
+  const onLimit = limitSwitchToggle(s);
   const send = async (when) => {
     const prompt = ta.value.trim();
     if (!prompt) return ta.focus();
     try {
-      await bridge.callTool('canban_dispatch', { cardId: s.id, prompt, when, expectedUpdatedAt: s.updatedAt || null, allowElevated: !!ack?.checked });
+      await bridge.callTool('canban_dispatch', { cardId: s.id, prompt, when, expectedUpdatedAt: s.updatedAt || null, allowElevated: !!ack?.checked, ...(onLimit?.input.checked ? { onLimit: 'switch' } : {}) });
       ta.value = '';
       toast(when === 'now' ? '送信しました' : 'キューに追加しました');
       openCard(s.id);
@@ -2354,6 +2355,7 @@ function renderDispatch(d) {
       h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap', marginBottom: '6px' } }, permChip),
       ta,
       ack ? h('label', { class: 'send-note row', style: { gap: '6px' } }, ack, 'このセッションはサンドボックス／確認なしで動いています。そのまま実行されることを確認しました') : null,
+      onLimit?.el,
       busy ? h('div', { class: 'muted', style: { marginTop: '6px' }, text: s.codexFollowUps
         ? `Codex アプリのキューにフォローアップが ${s.codexFollowUps} 件あります。二重に送らないよう、アプリ側で送るか消すまで Canban からは送りません。`
         : `セッションが${s.status === 'running' ? '実行中' : '入力待ち'}のため、今すぐは送れません。入力を保持します。状態を確認してから再操作してください。` }) : null,
@@ -2372,7 +2374,7 @@ function renderDispatch(d) {
 }
 
 function requestRow(s,r,{index=-1,queue=[],review=null}={}) {
-  const who = r.origin === 'model' ? '🤖 ' : '';
+  const who = `${r.origin === 'model' ? '🤖 ' : ''}${requestAccountText(r)}`;
   const when = r.endedAt ? `${relTime(r.endedAt)}${r.startedAt ? `・${Math.max(1, Math.round((r.endedAt - r.startedAt) / 1000))} 秒` : ''}` : r.startedAt ? `${relTime(r.startedAt)}から` : relTime(r.createdAt);
   const btns = h('div', { class: 'req-btns' });
   const refresh = () => openCard(s.id);

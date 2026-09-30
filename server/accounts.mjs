@@ -217,6 +217,13 @@ export function runAs(s, key) {
   return { ok: true, session: next };
 }
 
+// The account a CLI run of `s` uses: whoever is signed in to the folder it runs in
+// (s.account may be older history, e.g. the desktop account that started it).
+export function runningAccount(s) {
+  if (s.host?.local === false) return null;
+  return homeAccount(s.agent, s.home || 'default');
+}
+
 // Accounts a session can run as right now (same agent, a signed-in folder that sees it).
 export function accountChoices(s) {
   return [...registry.accounts.values()].filter((a) => a.agent === s.agent && runAs(s, a.key).ok).map((a) => a.key);
@@ -224,15 +231,23 @@ export function accountChoices(s) {
 
 // The account with the most room left (the fuller of its two windows), among those
 // signed in to a folder. Accounts without any usage record come last.
-export function roomiest(agent, codexLimits, { exclude = [] } = {}) {
+// How full an account is: the fuller of its two windows (%), or null without a record.
+export function usedPercent(key, codexLimits = new Map()) {
+  const l = accountLimits(codexLimits).find((x) => x.key === key);
+  if (!l) return null;
+  return Math.max(...[l.primary, l.secondary].filter(Boolean).map((w) => w.usedPercent), 0);
+}
+
+// among: limit the pick to these keys (e.g. the accounts a session can run as).
+export function roomiest(agent, codexLimits, { exclude = [], among = null, below = 101 } = {}) {
   const limits = new Map(accountLimits(codexLimits).map((l) => [l.key, l]));
-  const cands = (registry.homes[agent] || []).map((h) => h.account).filter((k) => k && !exclude.includes(k));
+  const cands = (registry.homes[agent] || []).map((h) => h.account).filter((k) => k && !exclude.includes(k) && (!among || among.includes(k)));
   const used = (k) => {
     const l = limits.get(k);
-    if (!l) return 101;
+    if (!l) return 100.5; // no record: after every account with room, before the full ones
     return Math.max(...[l.primary, l.secondary].filter(Boolean).map((w) => w.usedPercent), 0);
   };
-  return [...new Set(cands)].sort((a, b) => used(a) - used(b))[0] || null;
+  return [...new Set(cands)].filter((k) => !limits.has(k) || used(k) < below).sort((a, b) => used(a) - used(b))[0] || null;
 }
 
 // Environment for running the agent's CLI against a session's home.

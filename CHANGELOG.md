@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.16.0 — 2026-10-01
+- **Account runner**: several accounts of the same agent at once (off by default; 👤 → アカウントを追加).
+  - Canban creates an account folder per account in `~/.canban/accounts/` and opens the agent's own login in the terminal (`claude auth login` / `codex login` with the folder in the environment). Claude folders share the default folder's conversations (`projects/`) and CLAUDE.md, skills, …; Codex folders copy `config.toml` and share AGENTS.md, skills, prompts. Removing a folder moves it to `.trash`.
+  - Each session runs as an account: the one chosen in the card detail (or `auto`: the most room left), else the account Canban last ran it as, else the recorded one. Resume, prompts and queues run in that account's folder. A Claude conversation moves only to folders that share it; a Codex thread stays in its folder. Task cards can start a session as an account.
+  - At a plan limit: with 「上限なら別のアカウントで続ける」, a prompt goes to the account with the most room when the session's account is at the threshold (95% by default), and a turn stopped by a usage limit is sent once more as another account; the queue keeps going.
+  - Claude usage for CLI-only accounts: runner folders record `rate_limits` from the statusline (`scripts/statusline-tap.mjs`) and still show the original status line.
+  - New tools: `canban_set_session_account` (model); `canban_send_prompt` / `canban_start_session` take `account`, `canban_send_prompt` takes `onLimit`. Board-only: `canban_account_create` / `_login` / `_remove`.
+  - A shared `projects/` folder is listed and watched once.
+
 ## 0.15.0 — 2026-09-30
 
 - Codex・Claude・Chrome共通のサイドバーを追加。ホーム、カード、利用上限、分析、管理画面を切り替えられます。

@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createHome, removeHome, listRunnerHomes, loginCommand, readTapUsage, slugName, MARKER } from '../server/runner.mjs';
 import { configureAccounts, refreshAccounts, claudeHomes, accountLimits, resetAccountsForTest, runAs, accountChoices, roomiest, homeEnv } from '../server/accounts.mjs';
-import { applyCardAccounts, startFolderFor, pinSessionAccount } from '../server/accounts-mcp.mjs';
+import { applyCardAccounts, startFolderFor, pinSessionAccount, accountForRun, retryAccount, LIMIT_ERROR } from '../server/accounts-mcp.mjs';
 import { newSessionCommand, resumeCommand } from '../server/agents.mjs';
 import { Store } from '../server/store.mjs';
 import { listClaudeSessions } from '../server/sources/claude.mjs';
@@ -207,4 +207,29 @@ test('pins are stored on the card; a session started as an account remembers it'
   const task = await store.createTask({ title: 't' });
   await store.resolvePending([{ taskId: task.cardId || task.id, sessionId: 'claude:new', startedAt: 1, account: 'claude:acct-w' }]);
   assert.equal((await store.load()).cards['claude:new'].lastAccount, 'claude:acct-w');
+});
+
+// ---- plan limits (phase C) --------------------------------------------------------
+test('at the limit, a switch request runs as the account with room; otherwise it stays', async () => {
+  const s1 = await signedIn(); // acct-d (default, no record), acct-w 20%, acct-s 90% (not sharing)
+  write(path.join(data, 'usage', 'home-claude-work.json'), JSON.stringify({ at: Date.now(), five_hour: { used_percentage: 97, resets_at: 4102444800 }, seven_day: { used_percentage: 40, resets_at: 4102444800 } }));
+  const [onW] = applyCardAccounts([s1], { cards: { [s1.id]: { lastAccount: 'claude:acct-w' } } });
+  const sw = accountForRun(onW, { onLimit: 'switch' }, { limitAt: 95, codexLimits: new Map() });
+  assert.deepEqual(sw.switched, { from: 'claude:acct-w', to: 'claude:acct-d' }); // acct-s is not sharing the conversation
+  assert.equal(sw.session.homeDir, undefined);
+  assert.equal(accountForRun(onW, { onLimit: 'wait' }, { limitAt: 95, codexLimits: new Map() }).switched, null);
+  assert.equal(accountForRun(onW, { onLimit: 'switch' }, { limitAt: 99, codexLimits: new Map() }).switched, null); // under the threshold
+  // a retry's account is applied as is
+  assert.equal(accountForRun(s1, { runAccount: 'claude:acct-w' }, { codexLimits: new Map() }).session.account, 'claude:acct-w');
+});
+
+test('a turn stopped by a usage limit is retried once, as another account', async () => {
+  const s1 = await signedIn();
+  write(path.join(data, 'usage', 'home-claude-work.json'), JSON.stringify({ at: Date.now(), five_hour: { used_percentage: 10, resets_at: 4102444800 } }));
+  const req = { onLimit: 'switch', account: 'claude:acct-d' };
+  assert.equal(retryAccount(req, s1, 'Claude AI usage limit reached|1790000000', { codexLimits: new Map() }), 'claude:acct-w');
+  assert.equal(retryAccount({ ...req, switchedFrom: 'req-1' }, s1, 'usage limit reached', { codexLimits: new Map() }), null); // once
+  assert.equal(retryAccount({ ...req, onLimit: 'wait' }, s1, 'usage limit reached', { codexLimits: new Map() }), null);
+  assert.equal(retryAccount(req, s1, 'Failed to authenticate', { codexLimits: new Map() }), null); // other errors pause as before
+  for (const m of ["You've hit your usage limit", 'Rate limit reached', 'rate_limit_error', "You've hit your limit · resets 5pm"]) assert.match(m, LIMIT_ERROR);
 });

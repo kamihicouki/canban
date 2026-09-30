@@ -277,15 +277,16 @@ const TOOLS = [
         prompt: { type: 'string' },
         when: { type: 'string', enum: ['now', 'queue'], description: '既定 queue' },
         account: { type: 'string', description: "このアカウントで送る（canban_set_session_account と同じ。'auto' で一番余裕のあるアカウント）。以後もこのアカウントで動かす" },
+        onLimit: { type: 'string', enum: ['wait', 'switch'], description: "switch: アカウントの使用量が上限に近い／上限で止まったとき、余裕のある別アカウントで続ける（Claude の会話を共有しているアカウントのみ）。既定 wait" },
       },
       required: ['cardId', 'prompt'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     _meta: appAndModel,
-    handler: async ({ cardId, prompt, when = 'queue', account }) => {
+    handler: async ({ cardId, prompt, when = 'queue', account, onLimit }) => {
       if (account) await pinSessionAccount({ store, findSession }, { cardId, account });
-      const r = await dispatcherFor(store).submit({ cardId, prompt, when, origin: 'model' });
+      const r = await dispatcherFor(store).submit({ cardId, prompt, when, onLimit, origin: 'model' });
       return { text: `${r.state === 'queued' ? 'キューに追加しました' : '送信しました'}（${r.id}）`, structured: requestView(r) };
     },
   },
@@ -330,6 +331,7 @@ const TOOLS = [
         when: { type: 'string', enum: ['now', 'queue'] },
         expectedUpdatedAt: { type: ['number', 'null'] },
         allowElevated: { type: 'boolean' },
+        onLimit: { type: 'string', enum: ['wait', 'switch'] },
       },
       required: ['cardId', 'prompt', 'when'],
       additionalProperties: false,

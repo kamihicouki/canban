@@ -3,7 +3,7 @@
 // server/accounts.mjs; this file only wires it in (index.mjs / board.mjs call these).
 import fs from 'node:fs';
 import path from 'node:path';
-import { configureAccounts, codexHomes, claudeHomes, claudeDesktopRoots, claudeDesktopSessionsDir, refreshAccounts, accountsView, accountLabel, desktopAccountMismatch, runAs, accountChoices, roomiest, homeForAccount } from './accounts.mjs';
+import { configureAccounts, codexHomes, claudeHomes, claudeDesktopRoots, claudeDesktopSessionsDir, refreshAccounts, accountsView, accountLabel, desktopAccountMismatch, runAs, accountChoices, roomiest, homeForAccount, usedPercent, runningAccount } from './accounts.mjs';
 import { limitsByAccount } from './signals.mjs';
 import { createHome, removeHome, loginCommand, listRunnerHomes } from './runner.mjs';
 import { runInTerminal, installedTerminals } from './launcher.mjs';
@@ -90,6 +90,34 @@ export async function pinSessionAccount({ store, findSession, limits = limitsByA
   if (!r.ok) throw new Error(r.reason);
   await store.updateCardAccount({ cardId, pin: key });
   return { cardId, account: key, label: accountLabel(key, state.settings.accounts.labels) };
+}
+
+// ---- usage limits: continue on another account (requests with onLimit 'switch') ----
+// The agents' own words when a plan limit stops a turn.
+export const LIMIT_ERROR = /usage limit|rate[ _-]?limit|hit your limit|limit (?:reached|exceeded)|out of (?:usage|credits)|quota/i;
+
+// Before a run. runAccount: the account a retry was queued for. With onLimit 'switch',
+// a session whose account is at or over limitAt runs as the account with the most
+// room that can take it. Returns { session, switched: { from, to } | null }.
+export function accountForRun(session, { onLimit = 'wait', runAccount = null } = {}, { limitAt = 95, codexLimits = limitsByAccount() } = {}) {
+  let s = session;
+  if (runAccount) {
+    const r = runAs(s, runAccount);
+    if (r.ok) s = r.session;
+  }
+  const current = runningAccount(s);
+  if (onLimit !== 'switch' || !current) return { session: s, switched: null };
+  const used = usedPercent(current, codexLimits);
+  if (used == null || used < limitAt) return { session: s, switched: null };
+  const to = roomiest(s.agent, codexLimits, { exclude: [current], among: accountChoices({ ...s, account: null }), below: limitAt });
+  return to ? { session: runAs({ ...s, account: current }, to).session, switched: { from: current, to } } : { session: s, switched: null };
+}
+
+// After a run failed: the account to try once more with, or null.
+export function retryAccount(req, session, error, { limitAt = 95, codexLimits = limitsByAccount() } = {}) {
+  if (req.onLimit !== 'switch' || req.switchedFrom || !LIMIT_ERROR.test(String(error || ''))) return null;
+  const from = req.account || runningAccount(session);
+  return roomiest(session.agent, codexLimits, { exclude: [from].filter(Boolean), among: accountChoices({ ...session, account: null }), below: limitAt });
 }
 
 // The folder to start a new session in for `account` (a key or 'auto'): { key, homeDir }.

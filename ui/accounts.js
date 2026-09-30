@@ -37,6 +37,21 @@ function accountKv(s) {
   return [h('dt', { text: 'アカウント' }), dd, ...(s.homeDir ? kv('設定フォルダ', s.homeDir) : [])];
 }
 
+// Send box: continue on another account when this one is at its plan limit. Shown when
+// the session can run as more than one account; the choice is remembered per board.
+function limitSwitchToggle(s) {
+  if (s.host || (s.accountChoices || []).length < 2) return null;
+  const input = h('input', { type: 'checkbox', checked: !!store.get('onLimitSwitch', false), onchange: (e) => store.set('onLimitSwitch', e.target.checked) });
+  return { input, el: h('label', { class: 'send-note row', style: { gap: '6px' }, title: `使用量が上限の手前（${state.board?.accounts?.runner?.limitAt ?? 95}%）か、上限で止まったとき、会話を共有している別のアカウントで続けます（1 回まで）` }, input, '上限なら別のアカウントで続ける') };
+}
+// Request rows: which account ran it, and a retry on another account.
+function requestAccountText(r) {
+  const parts = [];
+  if (r.account) parts.push(`👤 ${accountLabel(r.account)}`);
+  if (r.retriedAs) parts.push(`上限 → ${accountLabel(r.retriedAs)} で再送`);
+  return parts.length ? `${parts.join('・')} ` : '';
+}
+
 // Task card start form: which account to start as (terminal route; local machine only).
 function startAccountSelect(agentSel, hostSel) {
   const sel = h('select', { class: 'text-input', 'aria-label': '始めるアカウント' });
