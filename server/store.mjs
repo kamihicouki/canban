@@ -356,6 +356,17 @@ export class Store {
     });
   }
 
+  // Which account a session runs as (see server/accounts-mcp.mjs applyCardAccounts):
+  // pin = chosen by the user ('' / null clears), last = the account Canban last ran it as.
+  updateCardAccount({ cardId, pin, last }) {
+    return this.mutate((s) => {
+      const card = (s.cards[cardId] ||= {});
+      if (pin !== undefined) { if (pin) card.accountPin = String(pin).slice(0, 140); else delete card.accountPin; }
+      if (last !== undefined && last) card.lastAccount = String(last).slice(0, 140);
+      return { cardId, accountPin: card.accountPin || null, lastAccount: card.lastAccount || null };
+    });
+  }
+
   // ---- task cards (not backed by a session) -------------------------------
   async createTask({ title, listId, description = '' }) {
     title = String(title || '').trim();
@@ -445,6 +456,7 @@ export class Store {
         if (task?.kind !== 'task') continue;
         task.pending = (task.pending || []).filter((p) => p.startedAt !== r.startedAt);
         if (!(task.links || []).includes(r.sessionId)) task.links = [...(task.links || []), r.sessionId];
+        if (r.account) (s.cards[r.sessionId] ||= {}).lastAccount = r.account; // started as a chosen account
       }
       return resolved;
     });

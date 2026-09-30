@@ -3,7 +3,7 @@
 // server/accounts.mjs; this file only wires it in (index.mjs / board.mjs call these).
 import fs from 'node:fs';
 import path from 'node:path';
-import { configureAccounts, codexHomes, claudeHomes, claudeDesktopRoots, claudeDesktopSessionsDir, refreshAccounts, accountsView, accountLabel, desktopAccountMismatch } from './accounts.mjs';
+import { configureAccounts, codexHomes, claudeHomes, claudeDesktopRoots, claudeDesktopSessionsDir, refreshAccounts, accountsView, accountLabel, desktopAccountMismatch, runAs, accountChoices, roomiest, homeForAccount } from './accounts.mjs';
 import { limitsByAccount } from './signals.mjs';
 import { createHome, removeHome, loginCommand, listRunnerHomes } from './runner.mjs';
 import { runInTerminal, installedTerminals } from './launcher.mjs';
@@ -15,6 +15,20 @@ export const accountFilterProp = { type: 'string', description: "アカウント
 // '__none' = sessions of this machine whose account is not known.
 export function matchesAccount(account, s) {
   return account === '__none' ? !s.account && s.host?.local !== false : s.account === account;
+}
+
+// The account each session runs as: the card's pin, else the account Canban last ran it
+// as, else what the logs say (accounts.mjs). Returns new objects for the ones that change;
+// a pin that cannot apply (the folder does not see the conversation) is reported instead.
+export function applyCardAccounts(sessions, state) {
+  return sessions.map((s) => {
+    const card = state.cards?.[s.id];
+    const key = card?.accountPin || card?.lastAccount;
+    if (!key || s.host?.local === false) return s;
+    const r = runAs(s, key);
+    if (r.ok) return r.session === s ? { ...s, accountSource: card.accountPin ? 'pin' : 'last' } : { ...r.session, accountSource: card.accountPin ? 'pin' : 'last' };
+    return card.accountPin ? { ...s, accountPinProblem: r.reason } : s;
+  });
 }
 
 // The Claude desktop app lists only the signed-in account's sessions: opening another
@@ -56,8 +70,54 @@ const windowText = (w) => (w ? `${w.windowMinutes >= 1440 ? '週' : `${Math.roun
 const signedText = (x) => (x === 'desktop' ? 'デスクトップ' : x.startsWith('desktop:') ? `デスクトップ（${x.slice(8)}）` : `CLI ${x.slice(4)}`);
 
 // getLive: () => the LiveHub (or null), so a change of folders is watched at once.
-export function accountTools({ store, allSessions, appTool, meta, getLive = () => null }) {
+// Choose the account a session runs as. key: an account key, 'auto' (most room left
+// among the accounts that can run it) or null (back to the recorded / last-used one).
+export async function pinSessionAccount({ store, findSession, limits = limitsByAccount() }, { cardId, account }) {
+  const { session, state } = await findSession(store, cardId);
+  if (!account) {
+    await store.updateCardAccount({ cardId, pin: null });
+    return { cardId, account: null };
+  }
+  const base = { ...session, account: session.accountSource ? null : session.account }; // judge from the logs, not the old pin
+  let key = account;
+  if (account === 'auto') {
+    const choices = accountChoices(base);
+    key = roomiest(session.agent, limits, { exclude: [] });
+    if (!choices.includes(key)) key = choices[0] || null;
+    if (!key) throw new Error('このセッションを続けられるアカウントがありません（👤 → アカウントを追加）');
+  }
+  const r = runAs(base, key);
+  if (!r.ok) throw new Error(r.reason);
+  await store.updateCardAccount({ cardId, pin: key });
+  return { cardId, account: key, label: accountLabel(key, state.settings.accounts.labels) };
+}
+
+// The folder to start a new session in for `account` (a key or 'auto'): { key, homeDir }.
+// The default folder has homeDir null. Throws when no folder is signed in to it.
+export function startFolderFor(agent, account) {
+  if (!account) return { key: null, homeDir: null };
+  const key = account === 'auto' ? roomiest(agent, limitsByAccount()) : account;
+  const h = key && homeForAccount(agent, key);
+  if (!h) throw new Error(account === 'auto' ? 'ログインしたフォルダのあるアカウントがありません' : 'このアカウントでログインしたフォルダがありません（👤 → アカウントを追加）');
+  return { key, homeDir: h.default ? null : h.dir };
+}
+
+// findSession: board.mjs findSession (passed in to keep this module free of board.mjs).
+export function accountTools({ store, allSessions, findSession, appTool, meta, getLive = () => null }) {
   return [
+    {
+      name: 'canban_set_session_account',
+      title: 'セッションのアカウントを選ぶ',
+      description:
+        "セッションを動かすアカウントを選ぶ（再開・指示の送信・キューに使う）。account は canban_get_usage の key、'auto'（使用量に一番余裕のあるアカウント）、null（記録どおりに戻す）。Claude の会話は、その会話を共有しているフォルダのアカウントにだけ移せる。Codex のスレッドは作ったフォルダのアカウントのまま。",
+      inputSchema: { type: 'object', properties: { cardId: { type: 'string' }, account: { type: ['string', 'null'] } }, required: ['cardId'], additionalProperties: false },
+      annotations: { readOnlyHint: false, destructiveHint: false },
+      _meta: meta,
+      handler: async (a) => {
+        const r = await pinSessionAccount({ store, findSession }, a);
+        return { text: r.account ? `このセッションは ${r.label} で動かします` : '記録どおりのアカウントに戻しました', structured: r };
+      },
+    },
     {
       name: 'canban_get_usage',
       title: 'アカウントと使用量',

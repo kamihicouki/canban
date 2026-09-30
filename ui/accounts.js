@@ -18,8 +18,39 @@ function applyAccountLimits(list) {
   workspace.renderLimitChip(state.board.limits);
   if (workspace.page === 'usage') workspace.render(state.board);
 }
+// Card detail: which account the session runs as (resume / send / queue), and its folder.
 function accountKv(s) {
-  return [...(s.host ? [] : kv('アカウント', s.accountLabel || '不明（記録なし）')), ...(s.homeDir ? kv('設定フォルダ', s.homeDir) : [])];
+  if (s.host) return [];
+  const choices = s.accountChoices || [];
+  const src = { pin: '（選択）', last: '（前回）' }[s.accountSource] || '';
+  const dd = h('dd', {});
+  if (choices.length > 1 || s.accountSource === 'pin') {
+    const sel = h('select', { class: 'text-input', 'aria-label': 'このセッションを動かすアカウント', title: '再開・指示の送信に使うアカウント' },
+      h('option', { value: '', text: s.accountSource === 'pin' ? '記録どおりに戻す' : `${s.accountLabel || '不明'}（記録どおり）` }),
+      h('option', { value: 'auto', text: '自動（余裕のあるアカウント）' }),
+      ...choices.map((k) => h('option', { value: k, text: accountLabel(k) })));
+    sel.value = s.accountSource === 'pin' ? s.account : '';
+    sel.onchange = () => act('canban_set_session_account', { cardId: s.id, account: sel.value || null }, { okMsg: sel.value ? 'アカウントを選びました（再開・送信はこのアカウントで動きます）' : '記録どおりに戻しました' }).catch(() => {});
+    dd.append(sel);
+  } else dd.append(`${s.accountLabel || '不明（記録なし）'}${src}`);
+  if (s.accountPinProblem) dd.append(h('div', { class: 'muted', text: `⚠ 選んだアカウントでは動かせません: ${s.accountPinProblem}` }));
+  return [h('dt', { text: 'アカウント' }), dd, ...(s.homeDir ? kv('設定フォルダ', s.homeDir) : [])];
+}
+
+// Task card start form: which account to start as (terminal route; local machine only).
+function startAccountSelect(agentSel, hostSel) {
+  const sel = h('select', { class: 'text-input', 'aria-label': '始めるアカウント' });
+  const fill = () => {
+    const accts = (state.board?.accounts?.accounts || []).filter((a) => a.agent === agentSel.value && a.homes?.length);
+    sel.replaceChildren(h('option', { value: '', text: 'アカウント: 既定のフォルダ' }), ...(accts.length > 1 ? [h('option', { value: 'auto', text: 'アカウント: 自動（余裕のあるもの）' })] : []),
+      ...accts.map((a) => h('option', { value: a.key, text: `アカウント: ${a.label}` })));
+    sel.hidden = hostSel.value !== 'local' || accts.length < 2;
+    if (sel.hidden) sel.value = '';
+  };
+  agentSel.addEventListener('change', fill);
+  hostSel.addEventListener?.('change', fill);
+  fill();
+  return sel;
 }
 function accountLaneKey(card) {
   if (card.kind === 'task') return `${T.taskCard}`;

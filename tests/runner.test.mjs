@@ -8,7 +8,10 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createHome, removeHome, listRunnerHomes, loginCommand, readTapUsage, slugName, MARKER } from '../server/runner.mjs';
-import { configureAccounts, refreshAccounts, claudeHomes, accountLimits, resetAccountsForTest } from '../server/accounts.mjs';
+import { configureAccounts, refreshAccounts, claudeHomes, accountLimits, resetAccountsForTest, runAs, accountChoices, roomiest, homeEnv } from '../server/accounts.mjs';
+import { applyCardAccounts, startFolderFor, pinSessionAccount } from '../server/accounts-mcp.mjs';
+import { newSessionCommand, resumeCommand } from '../server/agents.mjs';
+import { Store } from '../server/store.mjs';
 import { listClaudeSessions } from '../server/sources/claude.mjs';
 import { normalizeAccounts, applyAccountPatch } from '../server/accounts-settings.mjs';
 import { accountTools } from '../server/accounts-mcp.mjs';
@@ -127,4 +130,81 @@ test('creating a folder is refused while the runner is off', async () => {
   const create = tools.find((t) => t.name === 'canban_account_create');
   await assert.rejects(create.fn({ agent: 'claude', name: 'x' }), /オフ/);
   assert.ok(!fs.existsSync(path.join(data, 'accounts', 'claude-x')));
+});
+
+// ---- sessions and accounts (phase B) --------------------------------------------
+async function signedIn() {
+  // claude-work (shared projects) is acct-w; a second folder without shared conversations is acct-s
+  if (!fs.existsSync(path.join(data, 'accounts', 'claude-solo'))) {
+    createHome({ dataDir: data, agent: 'claude', name: 'solo', sourceHome: claude, shareProjects: false });
+    write(path.join(data, 'accounts', 'claude-solo', '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: 'acct-s', emailAddress: 's@example.com' } }));
+  }
+  write(path.join(claude, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: 'acct-d', emailAddress: 'd@example.com' } }));
+  await refreshAccounts({ force: true });
+  const { sessions } = await listClaudeSessions({ desktopDir: path.join(root, 'none') });
+  return sessions.find((x) => x.nativeId === 's1');
+}
+
+test('a Claude conversation moves only to accounts whose folder shares it', async () => {
+  const s1 = await signedIn();
+  const r = runAs(s1, 'claude:acct-w');
+  assert.equal(r.ok, true);
+  assert.equal(r.session.homeDir, path.join(data, 'accounts', 'claude-work'));
+  assert.match(resumeCommand(r.session), /CLAUDE_CONFIG_DIR=\S*claude-work claude --resume s1/);
+  assert.deepEqual(homeEnv(r.session), { CLAUDE_CONFIG_DIR: path.join(data, 'accounts', 'claude-work') }); // what a sent prompt runs with
+  assert.match(runAs(s1, 'claude:acct-s').reason, /共有していません/);
+  assert.match(runAs(s1, 'claude:nobody').reason, /フォルダがありません/);
+  assert.match(runAs(s1, 'codex:cx').reason, /別の AI App/);
+  assert.deepEqual(accountChoices({ ...s1, account: null }).sort(), ['claude:acct-d', 'claude:acct-w']);
+  // back to the default folder's account: no folder in the environment
+  const back = runAs(r.session, 'claude:acct-d');
+  assert.equal(back.session.homeDir, undefined);
+  assert.doesNotMatch(resumeCommand(back.session), /CLAUDE_CONFIG_DIR/);
+});
+
+test('a Codex thread stays with the folder that made it', () => {
+  const t = { id: 'codex:t', agent: 'codex', nativeId: 't', account: 'codex:a', host: { local: true } };
+  assert.match(runAs(t, 'codex:b').reason, /フォルダ/);
+});
+
+test('card pin wins over the last-used account; a pin that cannot apply is reported', async () => {
+  const s1 = await signedIn();
+  const [pinned] = applyCardAccounts([s1], { cards: { [s1.id]: { accountPin: 'claude:acct-w', lastAccount: 'claude:acct-d' } } });
+  assert.equal(pinned.account, 'claude:acct-w');
+  assert.equal(pinned.accountSource, 'pin');
+  const [last] = applyCardAccounts([s1], { cards: { [s1.id]: { lastAccount: 'claude:acct-w' } } });
+  assert.equal(last.accountSource, 'last');
+  assert.ok(last.homeDir);
+  const [bad] = applyCardAccounts([s1], { cards: { [s1.id]: { accountPin: 'claude:acct-s' } } });
+  assert.match(bad.accountPinProblem, /共有していません/);
+  assert.equal(bad.homeDir, undefined);
+  const [untouched] = applyCardAccounts([s1], { cards: {} });
+  assert.equal(untouched, s1);
+});
+
+test('new sessions start in the chosen account folder; auto picks the one with most room', async () => {
+  await signedIn();
+  write(path.join(data, 'usage', 'home-claude-work.json'), JSON.stringify({ at: Date.now(), five_hour: { used_percentage: 10, resets_at: 4102444800 }, seven_day: { used_percentage: 20, resets_at: 4102444800 } }));
+  write(path.join(data, 'usage', 'home-claude-solo.json'), JSON.stringify({ at: Date.now(), five_hour: { used_percentage: 90, resets_at: 4102444800 }, seven_day: { used_percentage: 5, resets_at: 4102444800 } }));
+  assert.equal(roomiest('claude', new Map()), 'claude:acct-w'); // 20% vs 90%; acct-d has no record: last
+  const f = startFolderFor('claude', 'auto');
+  assert.equal(f.key, 'claude:acct-w');
+  assert.match(newSessionCommand('claude', { host: { local: true }, cwd: '/r/app', prompt: 'hi', homeDir: f.homeDir }), /^cd \/r\/app 2>\/dev\/null; CLAUDE_CONFIG_DIR=\S*claude-work claude hi$/);
+  assert.deepEqual(startFolderFor('claude', 'claude:acct-d'), { key: 'claude:acct-d', homeDir: null });
+  assert.throws(() => startFolderFor('claude', 'claude:nobody'), /フォルダがありません/);
+});
+
+test('pins are stored on the card; a session started as an account remembers it', async () => {
+  const s1 = await signedIn();
+  const store = new Store(fs.mkdtempSync(path.join(root, 'store-')));
+  const findSession = async () => ({ session: s1, state: await store.load() });
+  const r = await pinSessionAccount({ store, findSession, limits: new Map() }, { cardId: s1.id, account: 'auto' });
+  assert.equal(r.account, 'claude:acct-w');
+  assert.equal((await store.load()).cards[s1.id].accountPin, 'claude:acct-w');
+  await assert.rejects(pinSessionAccount({ store, findSession }, { cardId: s1.id, account: 'claude:acct-s' }), /共有していません/);
+  await pinSessionAccount({ store, findSession }, { cardId: s1.id, account: null });
+  assert.equal((await store.load()).cards[s1.id].accountPin, undefined);
+  const task = await store.createTask({ title: 't' });
+  await store.resolvePending([{ taskId: task.cardId || task.id, sessionId: 'claude:new', startedAt: 1, account: 'claude:acct-w' }]);
+  assert.equal((await store.load()).cards['claude:new'].lastAccount, 'claude:acct-w');
 });

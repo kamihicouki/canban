@@ -119,9 +119,10 @@ export function newSessionLink(agent, { host, cwd, prompt }) {
   return null;
 }
 
-export function newSessionCommand(agent, { host, cwd, prompt }) {
+// homeDir: run as the account of that config folder (CLAUDE_CONFIG_DIR / CODEX_HOME).
+export function newSessionCommand(agent, { host, cwd, prompt, homeDir = null }) {
   const bin = agent === 'codex' ? 'codex' : agent === 'claude' ? 'claude' : null;
   if (!bin) return null;
-  const inner = `${cwd ? `cd ${shq(cwd)} 2>/dev/null; ` : ''}${bin}${prompt ? ` ${shq(prompt)}` : ''}`;
+  const inner = `${cwd ? `cd ${shq(cwd)} 2>/dev/null; ` : ''}${homePrefix({ agent, host, homeDir })}${bin}${prompt ? ` ${shq(prompt)}` : ''}`;
   return host && host.local === false ? `ssh -t ${shq(host.alias)} ${shq(inner)}` : inner;
 }

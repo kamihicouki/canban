@@ -28,6 +28,7 @@ import { codexAppState, annotateCodexApp } from './sources/codex-app.mjs';
 import { pool, hostsWithState } from './board.mjs';
 import { perf } from './perf.mjs';
 import { homeEnv, configureAccounts } from './accounts.mjs';
+import { applyCardAccounts } from './accounts-mcp.mjs';
 
 export const QUIET_MS = Number(process.env.CANBAN_DISPATCH_QUIET_MS) || 20e3;
 const INSPECT_BYTES = 256 * 1024;
@@ -156,9 +157,11 @@ export async function resolveSession(store, cardId) {
   if (!m) throw new Error(String(cardId).startsWith('task:') ? 'タスクカードには送れません。紐付いたセッションに送ってください' : `セッションが見つかりません: ${cardId}`);
   const [, agent, alias, nativeId] = m;
   if (!alias) {
-    configureAccounts((await store.load()).settings.accounts); // sessions from the extra config folders too
-    const s = agent === 'codex' ? await findCodexSession(nativeId) : (await listClaudeSessions()).sessions.find((x) => x.nativeId === nativeId);
-    if (!s) throw new Error(`セッションが見つかりません: ${cardId}`);
+    const state = await store.load();
+    configureAccounts(state.settings.accounts); // sessions from the extra config folders too
+    const found = agent === 'codex' ? await findCodexSession(nativeId) : (await listClaudeSessions()).sessions.find((x) => x.nativeId === nativeId);
+    if (!found) throw new Error(`セッションが見つかりません: ${cardId}`);
+    const [s] = applyCardAccounts([found], state); // runs as the pinned / last-used account
     annotateCodexApp([s], await codexAppState());
     return { session: s, host: null };
   }
@@ -342,7 +345,9 @@ export class Dispatcher {
 
     child.unref();
     if (child.pid) this.children.set(req.id, child);
-    const running = await this.requests.transition(req.id,['starting'],{state:'running',pid:child.pid ?? null,logPath,permission,argv:[h.bin,...h.args]},{owner:req.ownerUuid,generation:req.leaseGeneration});
+    const running = await this.requests.transition(req.id,['starting'],{state:'running',pid:child.pid ?? null,logPath,permission,argv:[h.bin,...h.args],account:session.account || null},{owner:req.ownerUuid,generation:req.leaseGeneration});
+    // The account this session last ran as (it keeps running as that one unless pinned).
+    if (session.account) await this.store.updateCardAccount({ cardId: req.cardId, last: session.account }).catch(() => {});
     if (!running) { try { child.kill?.('SIGTERM'); } catch {} throw new Error('送信の実行権が失われました'); }
     child.stdin.end(req.prompt);
     return running;

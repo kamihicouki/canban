@@ -3204,12 +3204,13 @@ function openTaskModal(cardId) {
   const cwd = h('input', { class: 'text-input', list: dl.id, placeholder: '作業フォルダ（絶対パス）', value: t.cwd || '', 'aria-label': '作業フォルダ' });
   const fillFolders = () => dl.replaceChildren(...b.folders.filter((f) => f.hostId === hostSel.value).map((f) => h('option', { value: f.cwd, label: f.project || '' })));
   fillFolders();
+  const acctSel = startAccountSelect(agentSel, hostSel);
   const prompt = h('textarea', { class: 'note', 'aria-label': '依頼文' });
   prompt.value = [card.title, card.description].filter(Boolean).join('\n\n');
   prompt.defaultValue = prompt.value;
   const start = async (opts = {}) => {
     try {
-      const r = await bridge.callTool('canban_start_session', { taskId: cardId, agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim(), prompt: prompt.value, ...opts });
+      const r = await bridge.callTool('canban_start_session', { taskId: cardId, agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim(), prompt: prompt.value, ...(acctSel.value ? { account: acctSel.value } : {}), ...opts });
       toast(r.note || `${agentSel.value === 'codex' ? 'Codex' : 'Claude'} で開始しました。セッションが現れると自動で紐付きます`, !!r.note);
       closeModal();
       load();
@@ -3252,7 +3253,7 @@ function openTaskModal(cardId) {
         linkRows.length ? linkRows : h('p', { class: 'muted', text: 'まだありません。下から開始するか、ボード上のセッションカードをこのカードへドラッグしてください。' }),
         ...pendingRows,
         h('div', { class: 'section-title', text: '新しいセッションを開始' }),
-        h('div', { class: 'start-grid' }, agentSel, hostSel, cwd, dl),
+        h('div', { class: 'start-grid' }, agentSel, hostSel, cwd, dl, acctSel),
         prompt,
         h('div', { class: 'row', style: { marginTop: '8px', flexWrap: 'wrap' } },
           h('button', { class: 'btn-primary', title: shortcutHelp(), text: `▶ 開始（${routeLabel(b.settings.launch.route, { desktop: true })}）`, onclick: (e) => start(optsFromEvent(e)) }),

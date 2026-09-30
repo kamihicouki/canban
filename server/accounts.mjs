@@ -19,6 +19,7 @@
 //
 // Usage: Codex rate limits per account come from the logs (signals.mjs); Claude's
 // 5-hour / weekly usage per organization from each desktop profile's plan-usage-history.json.
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { exists, listDir, listSubdirs, readJson, realpath, stat } from './sources/readonly.mjs';
@@ -177,6 +178,61 @@ export async function claudeHomes() {
 export async function codexHomes() {
   const d = await discover();
   return buildHomes('codex', defaultCodexHome(), config.codexHomes, d.codex);
+}
+
+// ---- running a session as an account -----------------------------------------
+// The folder signed in to an account (the default one first), or null.
+export function homeForAccount(agent, key) {
+  const homes = registry.homes[agent] || [];
+  return homes.find((h) => h.default && h.account === key) || homes.find((h) => h.account === key) || null;
+}
+
+function realOf(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
+// Run `s` as account `key`: { ok, session } with home / homeDir pointing at that
+// account's folder, or { ok:false, reason }. A Claude conversation can move to another
+// account only when that folder sees the same projects/ (shared by the runner);
+// a Codex thread stays in the folder that made it.
+export function runAs(s, key) {
+  if (!key || key === s.account) return { ok: true, session: s };
+  if (s.host?.local === false) return { ok: false, reason: 'リモートのセッションはアカウントを選べません' };
+  if (!key.startsWith(`${s.agent}:`)) return { ok: false, reason: '別の AI App のアカウントです' };
+  const h = homeForAccount(s.agent, key);
+  if (!h) return { ok: false, reason: 'このアカウントでログインしたフォルダがありません（👤 → アカウントを追加）' };
+  const at = h.default ? {} : { home: h.id, homeDir: h.dir };
+  if (s.agent === 'codex') {
+    if ((s.homeDir || null) !== (at.homeDir || null)) return { ok: false, reason: 'Codex のセッションは、作ったフォルダのアカウントでしか続けられません' };
+    return { ok: true, session: { ...s, account: key } };
+  }
+  const projects = s.sourcePath ? path.dirname(path.dirname(s.sourcePath)) : null;
+  if (!projects || realOf(projects) !== realOf(path.join(h.dir, 'projects'))) return { ok: false, reason: 'そのアカウントのフォルダは、この会話を共有していません（アカウントを追加するときに「会話を共有」をオンに）' };
+  const next = { ...s, account: key, home: at.home, homeDir: at.homeDir };
+  if (!at.home) delete next.home, delete next.homeDir;
+  return { ok: true, session: next };
+}
+
+// Accounts a session can run as right now (same agent, a signed-in folder that sees it).
+export function accountChoices(s) {
+  return [...registry.accounts.values()].filter((a) => a.agent === s.agent && runAs(s, a.key).ok).map((a) => a.key);
+}
+
+// The account with the most room left (the fuller of its two windows), among those
+// signed in to a folder. Accounts without any usage record come last.
+export function roomiest(agent, codexLimits, { exclude = [] } = {}) {
+  const limits = new Map(accountLimits(codexLimits).map((l) => [l.key, l]));
+  const cands = (registry.homes[agent] || []).map((h) => h.account).filter((k) => k && !exclude.includes(k));
+  const used = (k) => {
+    const l = limits.get(k);
+    if (!l) return 101;
+    return Math.max(...[l.primary, l.secondary].filter(Boolean).map((w) => w.usedPercent), 0);
+  };
+  return [...new Set(cands)].sort((a, b) => used(a) - used(b))[0] || null;
 }
 
 // Environment for running the agent's CLI against a session's home.

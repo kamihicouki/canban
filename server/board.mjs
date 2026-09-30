@@ -15,8 +15,8 @@ import { launchInfo } from './agents.mjs';
 import { installedTerminals } from './launcher.mjs';
 import { annotateStatus, STATUSES } from './status.mjs';
 import { currentLimits, cardSignals, limitsByAccount } from './signals.mjs';
-import { configureAccounts, accountsView, accountLabel } from './accounts.mjs';
-import { matchesAccount, withAccountNote } from './accounts-mcp.mjs';
+import { configureAccounts, accountsView, accountLabel, accountChoices } from './accounts.mjs';
+import { matchesAccount, withAccountNote, applyCardAccounts } from './accounts-mcp.mjs';
 
 import { peekGit, refreshGit } from './gitlive.mjs';
 import { RuleEngine } from './rules.mjs';
@@ -65,11 +65,12 @@ async function allSessionsImpl(state, { force = false } = {}) {
   const hosts = await hostsWithState(state);
   const enabled = hosts.filter((h) => h.enabled);
   const [local, remote] = await Promise.all([localSessions({ force }), perf.timed('remote.list', () => pool.sessions(enabled, { force }))]);
-  const all = [...local.sessions, ...remote];
+  const mine = applyCardAccounts(local.sessions, state); // pinned / last-used accounts
+  const all = [...mine, ...remote];
   const app = await codexAppState();
   annotateCodexApp(all, app); // Codex projects, pins and follow-ups kept by the Codex app
   await perf.timed('status', () => annotateStatus(all));
-  for (const fn of sessionHooks) fn(local.sessions);
+  for (const fn of sessionHooks) fn(mine);
   const now = Date.now();
   await prs.annotate(all.filter((s) => (s.updatedAt || 0) >= now - PR_WINDOW_MS || state.cards[s.id]?.listId));
   const errors = [...local.errors];
@@ -77,7 +78,7 @@ async function allSessionsImpl(state, { force = false } = {}) {
     const st = pool.hostStatus(h.id);
     if (st.state === 'error' && st.error) errors.push(`${h.label}: ${st.error}`);
   }
-  return { sessions: [...local.sessions, ...remote], errors, hosts, app };
+  return { sessions: [...mine, ...remote], errors, hosts, app };
 }
 
 // Cards without an explicit order sort by recency: newest at the top.
@@ -240,7 +241,7 @@ export function matchPending(state, sessions) {
         .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
       if (cands[0]) {
         used.add(cands[0].id);
-        resolved.push({ taskId, sessionId: cands[0].id, startedAt: p.startedAt });
+        resolved.push({ taskId, sessionId: cands[0].id, startedAt: p.startedAt, account: p.account || null });
       }
     }
   }
@@ -358,6 +359,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       host: s.host?.local === false ? { id: s.host.id, alias: s.host.alias, label: s.host.label } : null,
       account: s.account || null,
       home: s.home || null,
+      accountSource: s.accountSource || null,
       title: s.title,
       project: s.project,
       folder: s.folder,
@@ -590,7 +592,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   const { host: h, ...rest } = s;
   const labels = state.settings.accounts.labels;
   return {
-    session: { ...rest, host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: accountLabel(s.account, labels) },
+    session: { ...rest, host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: accountLabel(s.account, labels), accountChoices: h?.local === false ? [] : accountChoices({ ...s, account: null }) },
     card: {
       listId, labels: card.labels || [], note: card.note || '', priority: card.priority || null, due: card.due || null, hidden: !!card.hidden,
       directory: dirView(resolveDirectory(state, card, s.cwd)), directoryId: card.directoryId || null,
