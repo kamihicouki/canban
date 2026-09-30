@@ -25,3 +25,11 @@ test('non-contention failures are never retried', async () => {
     sleep: async () => { assert.fail('must not delay'); },
   }), actual => actual === error);
 });
+
+test('native busy waits with scheduling overhead cannot consume a partial final attempt', async () => {
+  let clock = 0, attempts = 0;
+  await assert.rejects(retrySqliteBusy(() => {
+    attempts++; clock += 500; throw new Error('database is locked');
+  }, { now: () => clock, sleep: async () => { clock = 1700; } }), { code: 'db_busy' });
+  assert.equal(attempts, 1);
+});
