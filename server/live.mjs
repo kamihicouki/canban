@@ -6,8 +6,9 @@
 // nothing). Where fs.watch is unavailable, the same paths are stat-polled instead.
 //
 //   data dir (non-recursive)        board.json → store, requests.json → requests, presence.json → presence
-//   Codex home (non-recursive)      state_<n>.sqlite(-wal) → codex, .codex-global-state.json → app
-//   ~/.claude/projects (recursive)  <project>/<session>.jsonl → file
+//   Codex homes (non-recursive)     state_<n>.sqlite(-wal) → codex, .codex-global-state.json → app
+//   Claude homes' projects (rec.)   <project>/<session>.jsonl → file
+//     (the default home plus other config folders, see accounts.mjs; `extraRoots()` gives those)
 //   Claude desktop sessions (rec.)  local_<id>.json, archived-sessions.idx → desktop (title / archive / status)
 //   git dirs of running sessions    HEAD, index → git (branch, commits, staged changes; see gitlive.mjs)
 //   hot files                        logs of running / waiting sessions outside the above (Codex rollouts)
@@ -25,11 +26,13 @@ const MAX_HOT = 24;
 export const MAX_FOCUS = 8; // detail panes open at once whose logs are followed
 
 export class LiveHub {
-  constructor({ dataDir, codexHome, claudeProjects, claudeDesktop, idleMs = LIVE_IDLE_MS, watch = fs.watch } = {}) {
+  constructor({ dataDir, codexHome, claudeProjects, claudeDesktop, extraRoots = null, idleMs = LIVE_IDLE_MS, watch = fs.watch } = {}) {
     this.database = dataDir ? database(dataDir) : null;
     this.dbRevisions = null;
     this.dbPolling = false;
     this.roots = { dataDir, codexHome, claudeProjects, claudeDesktop };
+    this.extraRoots = extraRoots; // async () => ({ codexHomes: [], claudeProjects: [], claudeDesktop: [] })
+    this.claudeDirs = []; // watched Claude projects folders beyond the default
     this.idleMs = idleMs;
     this.watchFn = watch;
     this.seq = 0;
@@ -79,6 +82,23 @@ export class LiveHub {
     for (const p of this.hot) this.watchFile(p, 'file');
     for (const p of this.focusPaths) this.watchFile(p, 'file');
     for (const d of this.gitDirs) this.watchGit(d);
+    this.watchExtra();
+  }
+
+  // Other config folders: watched like the default ones, keyed by path.
+  async watchExtra() {
+    if (!this.extraRoots) return;
+    let extra;
+    try {
+      extra = await this.extraRoots();
+    } catch {
+      return;
+    }
+    if (!this.active) return;
+    for (const dir of extra.codexHomes || []) this.watchPath(`codex:${dir}`, dir, {}, (f) => (/^state_\d+\.sqlite(-wal)?$/.test(f) ? 'codex' : null));
+    for (const dir of extra.claudeProjects || []) this.watchPath(`claude:${dir}`, dir, { recursive: true }, (f) => (f.endsWith('.jsonl') ? 'file' : null));
+    for (const dir of extra.claudeDesktop || []) this.watchPath(`desktop:${dir}`, dir, { recursive: true }, (f) => (/^local_.*\.json$/.test(f) || f === 'archived-sessions.idx' ? 'desktop' : null));
+    this.claudeDirs = (extra.claudeProjects || []).filter((d) => this.watchers.has(`claude:${d}`));
   }
 
   stop() {
@@ -96,7 +116,7 @@ export class LiveHub {
     if (this.watchers.has(key) || !fs.existsSync(dir)) return;
     try {
       const w = this.watchFn(dir, { persistent: false, ...opts }, (_type, name) => {
-        if (!name) return this.emit(key === 'desktop' ? 'desktop' : key.startsWith('git:') ? 'git' : opts.recursive ? 'rescan' : 'store', dir);
+        if (!name) return this.emit(key.startsWith('desktop') ? 'desktop' : key.startsWith('git:') ? 'git' : opts.recursive ? 'rescan' : 'store', dir);
         const f = String(name);
         const kind = classify(path.basename(f));
         if (kind) this.emit(kind, path.join(dir, f));
@@ -217,7 +237,8 @@ export class LiveHub {
 
   coveredByDir(file) {
     const c = this.roots.claudeProjects;
-    return !!c && this.watchers.has('claude') && file.startsWith(c + path.sep);
+    if (c && this.watchers.has('claude') && file.startsWith(c + path.sep)) return true;
+    return this.claudeDirs.some((d) => file.startsWith(d + path.sep));
   }
 
   emit(kind, file) {

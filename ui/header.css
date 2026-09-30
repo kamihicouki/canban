@@ -1,0 +1,10 @@
+/* One-row header: labels drop first, then [data-pri] items fold into the ⋯ menu (ui/header.js). */
+.topbar > * { flex: none; }
+.topbar .hsearch { flex: 0 1 220px; min-width: 90px; }
+.topbar .hbtn { display: inline-flex; align-items: center; gap: 5px; }
+.topbar.compact .hbtn[data-pri] .lbl { display: none; }
+.topbar [data-pri].folded { display: none !important; }
+.more-menu .menu-item { display: flex; align-items: center; gap: 8px; }
+.more-menu .more-row { display: flex; gap: 4px; padding: 2px 6px 6px; flex-wrap: wrap; }
+.more-menu .more-row button { padding: 3px 8px; border-radius: 4px; background: var(--btn-subtle); font-size: 12px; }
+.more-menu .more-row button[aria-pressed="true"] { background: var(--c-blue); color: #fff; }

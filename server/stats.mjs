@@ -1,6 +1,7 @@
 // Board analytics: activity per day, breakdowns with token usage, time spent in
 // lists and cycle time to the last list (read from the cards' move history).
 import { resolveDirectory } from './store.mjs';
+import { accountLabel } from './accounts.mjs';
 
 const DAY = 86400e3;
 
@@ -29,13 +30,14 @@ function breakdown(sessions, keyOf, limit) {
   return [...m.values()].sort((a, b) => b.sessions - a.sessions).slice(0, limit);
 }
 
-export function computeStats(state, sessions, { days = 30, agent = 'all', host = null, project = null, directory = null, includeSubagents = false, now = Date.now() } = {}) {
+export function computeStats(state, sessions, { days = 30, agent = 'all', host = null, account = null, project = null, directory = null, includeSubagents = false, now = Date.now() } = {}) {
   const since = now - days * DAY;
   const pick = sessions.filter(
     (s) =>
       (includeSubagents || !s.subagent) &&
       (agent === 'all' || s.agent === agent) &&
       (!host || (s.host?.local === false ? s.host.id : 'local') === host) &&
+      (!account || (account === '__none' ? !s.account : s.account === account)) &&
       (!project || s.project === project),
   );
   const dirOf = (s) => resolveDirectory(state, state.cards[s.id], s.cwd);
@@ -89,6 +91,7 @@ export function computeStats(state, sessions, { days = 30, agent = 'all', host =
     directories: breakdown(inRange, (s) => dirOf(s)?.name, 12),
     hosts: breakdown(inRange, (s) => (s.host?.local === false ? s.host.label : 'このマシン'), 12),
     agents: breakdown(inRange, (s) => (s.agent === 'codex' ? 'Codex' : 'Claude Code'), 5),
+    accounts: breakdown(inRange, (s) => (s.account ? `${s.agent === 'codex' ? 'Codex' : 'Claude'} · ${accountLabel(s.account, state.settings.accounts?.labels)}` : null), 12),
     lists: lists.map(({ dwell, ...l }) => ({ ...l, medianDwellMs: median(dwell) })),
     cycle: {
       doneListId: lastList,

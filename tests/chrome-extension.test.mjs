@@ -38,13 +38,15 @@ test('adopting shared view state refreshes the board and analytics toggle', () =
   const adopt = html.match(/function adoptSharedUi\(record\) \{([\s\S]*?)\n\}\n\nasync function applySharedUi/);
   const toggle = html.match(/function syncViewButton\(\) \{[\s\S]*?\n\}/)[0];
   const button = { setAttribute(name, value) { this[name] = value; } };
+  const icon = {}, label = {};
   const state = { view: 'board' };
-  const context = vm.createContext({ state, sharedUi: {}, SHARED_UI_KEYS: ['view'], store: { cache() {} },
-    $: (selector) => selector === '#analyticsBtn' ? button : null });
+  const context = vm.createContext({ state, sharedUi: {}, SHARED_UI_KEYS: ['view'], workspacePage: (page,fallback) => page || fallback, workspace: { navigate() {} }, store: { cache() {} },
+    $: (selector) => selector === '#analyticsBtn' ? button : selector === '#analyticsBtn .ic' ? icon : selector === '#analyticsBtn .lbl' ? label : null });
   vm.runInContext(`${toggle}\nfunction adoptSharedUi(record) {${adopt[1]}\n}\nadoptSharedUi({revision: 1, state: {view: 'analytics'}});`, context);
   assert.equal(state.view, 'analytics');
   assert.equal(button['aria-pressed'], 'true');
-  assert.equal(button.textContent, '▦ ボード');
+  assert.equal(icon.textContent, '▦');
+  assert.equal(label.textContent, 'ボード');
 });
 
 test('Chrome bridge waits for every large-response chunk before decoding', () => {
@@ -84,7 +86,7 @@ test('foreground synchronization preserves an unsent session prompt', async () =
   const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
   const source = html.slice(html.indexOf('function hasUnsavedPaneInput()'), html.indexOf('function scheduleSharedUiCheck()'));
   let reads = 0;
-  const context = vm.createContext({ sharedUi: { ready: true }, idle: () => true,
+  const context = vm.createContext({ sharedUi: { ready: true }, workspace: { hasDrafts: () => false }, idle: () => true,
     document: { visibilityState: 'visible', querySelectorAll: () => [{ value: 'まだ送らない指示' }] },
     bridge: { callTool() { reads++; return Promise.resolve({ revision: 0 }); } },
     sharedUiRecord: (value) => value, applySharedUi() {}, console });
@@ -107,7 +109,7 @@ test('foreground synchronization preserves an edited card note', async () => {
   const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
   const source = html.slice(html.indexOf('function hasUnsavedPaneInput()'), html.indexOf('function scheduleSharedUiCheck()'));
   let reads = 0;
-  const context = vm.createContext({ sharedUi: { ready: true }, idle: () => true,
+  const context = vm.createContext({ sharedUi: { ready: true }, workspace: { hasDrafts: () => false }, idle: () => true,
     document: { visibilityState: 'visible', querySelectorAll: (selector) => selector === 'textarea.note' ? [{ value: '編集中', defaultValue: '保存済み' }] : [] },
     bridge: { callTool() { reads++; } }, console });
   await vm.runInContext(`${source}\ncheckSharedUiOnReturn();`, context);

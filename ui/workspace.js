@@ -31,6 +31,12 @@ const workspace = {
     this.pages = h('main', { class: 'workspace-pages', hidden: true, 'aria-label': 'ページの内容' });
     this.content.prepend(this.toolbar); this.content.append(this.pages);
     this.content.querySelector('.topbar').prepend(this.mobileButton());
+    this.content.querySelector('#logo').textContent = 'ホーム';
+    this.content.querySelector('#sideBtn').setAttribute('aria-label', '絞り込みパネル');
+    this.content.querySelector('#sideBtn').title = 'カテゴリ・プロジェクトの絞り込み（b）';
+    for (const id of ['rulesBtn','viewsBtn','analyticsBtn','labelsBtn','hostsBtn','settingsBtn']) {
+      const el = this.content.querySelector(`#${id}`); el.hidden = true; el.removeAttribute('data-pri');
+    }
     paneBar.prepend(this.mobileButton());
     document.body.append(this.nav, this.content);
     this.nav.addEventListener('keydown', e => {
@@ -143,19 +149,20 @@ const workspace = {
     bridge.reportSize();
   },
   renderSettings(entry, anchor, body) {
-    const tabs = [['launch', '再開・送信'], ['display', '表示'], ['shortcuts', 'ショートカット']];
+    const tabs = [['launch', '再開・送信'], ['display', '表示'], ['accounts', 'アカウント'], ['shortcuts', 'ショートカット']];
     entry.el.prepend(h('div', { class: 'page-tabs', role: 'group', 'aria-label': '設定の種類' }, tabs.map(([key, name]) =>
       h('button', { text: name, 'aria-pressed': String(this.settingsTab === key), onclick: () => {
         this.settingsTab = key; this.render(state.board);
       } }))));
-    if (this.settingsTab === 'display') optionsMenu(anchor);
+    if (this.settingsTab === 'accounts') accountsMenu(anchor);
+    else if (this.settingsTab === 'display') optionsMenu(anchor);
     else if (this.settingsTab === 'shortcuts') body.append(h('div', { class: 'keys' }, SHORTCUTS.flatMap(([group, keys]) =>
       [h('h4', { text: group }), ...keys.flatMap(([k, v]) => [h('kbd', { text: k }), h('span', { text: v })])])));
     else settingsMenu(anchor);
     body.append(h('div', { class: 'sep' }), h('h3', { text: '画面状態の共有' }),
       h('p', { class: 'page-help', text: sharedUi.blocked ? '別の画面で更新されました。この画面と入力を保持したまま同期を停止しています。' : '前面に戻ったときに共有設定を取り込みます。入力途中の文章は共有しません。' }),
-      h('p', { class: 'page-help', text: `共有リビジョン：${sharedUi.revision ?? '未取得'}` }),
-      sharedUi.blocked ? h('button', { class: 'btn', text: '共有状態を読み込む', onclick: () => notifySharedUiConflict() }) : null);
+      h('p', { class: 'page-help', text: `共有リビジョン：${sharedUi.revision ?? '未取得'}` }));
+    if (sharedUi.blocked) body.append(h('button', { class: 'btn', text: '共有状態を読み込む', onclick: () => reloadSharedUi() }));
   },
   renderDirectories(entry, board) {
     entry.el.replaceChildren();
@@ -185,13 +192,20 @@ const workspace = {
     } })));
     entry.el.append(projects); this.trackDrafts(entry.el);
   },
+  usageAccounts(board) {
+    if (board?.accounts) return board.accounts.accounts;
+    return [{ agent: 'codex', label: 'Codex', limits: board?.limits }];
+  },
   renderLimitChip(limits) {
-    const windows = limits ? [limits.primary, limits.secondary].map(w => usageWindow(w, limits.at)).filter(Boolean) : [];
-    const selected = windows.at(-1);
-    const text = selected ? `Codex ${selected.label} ${selected.stale ? '要更新' : `残り${selected.remaining}%`}` : 'Codex 未取得';
-    this.limit.textContent = `${text} · Claude 未取得`;
-    const bar = $('#limitsBar'); bar.hidden = false;
-    bar.replaceChildren(h('button', { class: 'hbtn', text: this.limit.textContent, 'aria-label': 'Agent Usageを開く', onclick: () => this.navigate('usage') }));
+    const list = this.usageAccounts(state.board || { limits }).filter(a => a.inHeader !== false);
+    const text = list.map(a => {
+      const selected = usageWindows(a.limits).map(w => usageWindow(w, a.limits.at)).filter(Boolean).at(-1);
+      return `${a.label} ${selected ? `${selected.label} ${selected.stale ? '要更新' : `残り${selected.remaining}%`}` : '未取得'}`;
+    }).join(' · ') || 'アカウントの利用上限：未取得';
+    this.limit.textContent = text;
+    // Account rings in the home header are the compact entry point to quota details.
+    const bar = $('#limitsBar'); if (bar) bar.hidden = true;
+    $('#accountsBtn')?.setAttribute('title', text);
   },
   table(headings, rows) {
     return h('div', { class: 'page-table-wrap' }, h('table', { class: 'page-table' },
@@ -200,22 +214,33 @@ const workspace = {
   },
   renderUsage(entry, board) {
     entry.el.replaceChildren();
-    const limits = board.limits, windows = limits ? [limits.primary, limits.secondary].map(w => usageWindow(w, limits.at)).filter(Boolean) : [];
-    const codex = h('section', { class: 'page-panel' }, h('div', { class: 'usage-heading' },
-      h('h2', { text: 'Codexの利用上限' }), h('span', { class: 'page-help', text: 'アカウント単位・最終取得時点' })),
-      h('p', { class: 'page-help', text: `取得元：Codexセッションログ · 最終取得：${fmtDate(limits?.at)}` }));
-    if (!windows.length) codex.append(h('p', { text: '未取得：利用上限を確認できるログがありません。' }));
-    for (const w of windows) codex.append(h('div', { class: 'usage-window' },
-      h('strong', { text: w.label }),
-      w.stale ? h('div', { class: 'usage-stale', text: '要更新 — 残量を確定できません' }) :
-        h('div', {}, h('div', { class: 'usage-meter', role: 'meter', 'aria-label': `${w.label}の使用率`, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': w.used },
-          h('span', { class: 'usage-used', style: { width: `${w.used}%` }, text: w.used >= 20 ? `使用 ${w.used}%` : '' }),
-          h('span', { class: 'usage-remaining', text: w.remaining >= 20 ? `残り ${w.remaining}%` : '' })),
-          h('div', { class: 'usage-numbers', text: `使用 ${w.used}% · 残り ${w.remaining}%` })),
-      h('span', { class: 'page-help', text: w.resetsAt ? `リセット：${fmtDate(w.resetsAt)}` : 'リセット時刻は未取得' })));
-    codex.append(h('p', { class: 'page-help', text: 'ログの最終取得値です。15分以上更新がない場合、またはリセット期限を過ぎた場合は「要更新」と表示します。' }));
-    entry.el.append(codex, h('section', { class: 'page-panel' }, h('h2', { text: 'Claudeの利用上限' }),
-      h('p', { text: '未取得' }), h('p', { class: 'page-help', text: '利用上限を確認できるデータがありません。未取得を0%として扱いません。' })));
+    const quotaGrid = h('div', { class: 'quota-grid' });
+    const accounts = this.usageAccounts(board);
+    for (const agent of ['codex', 'claude']) {
+      const list = accounts.filter(a => a.agent === agent);
+      if (!list.length) quotaGrid.append(h('section', { class: 'page-panel' }, h('h2', { text: `${agent === 'codex' ? 'Codex' : 'Claude'}の利用上限` }),
+        h('p', { text: '未取得' }), h('p', { class: 'page-help', text: '利用上限を確認できる記録がありません。' })));
+      for (const a of list) {
+        const windows = usageWindows(a.limits).map(w => usageWindow(w, a.limits.at)).filter(Boolean);
+        const panel = h('section', { class: 'page-panel' }, h('div', { class: 'usage-heading' },
+          h('h2', { text: `${agent === 'codex' ? 'Codex' : 'Claude'} · ${a.label}` }),
+          h('span', { class: 'page-help', text: a.plan || 'アカウント単位' })),
+          h('p', { class: 'page-help', text: `取得元：${a.limits?.source === 'desktop' ? 'Claude Desktopの記録' : 'セッションログ'} · 最終取得：${fmtDate(a.limits?.at)}` }));
+        if (!windows.length) panel.append(h('p', { text: '未取得：利用上限を確認できる記録がありません。' }));
+        for (const w of windows) panel.append(h('div', { class: 'usage-window' }, h('strong', { text: w.label }),
+          w.stale ? h('div', { class: 'usage-stale', text: '要更新 — 残量を確定できません' }) :
+            h('div', {}, h('div', { class: 'usage-meter', role: 'meter', 'aria-label': `${a.label} ${w.label}の使用率`, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': w.used },
+              h('span', { class: 'usage-used', style: { width: `${w.used}%` }, text: w.used >= 20 ? `使用 ${w.used}%` : '' }),
+              h('span', { class: 'usage-remaining', text: w.remaining >= 20 ? `残り ${w.remaining}%` : '' })),
+              h('div', { class: 'usage-numbers', text: `使用 ${w.used}% · 残り ${w.remaining}%` })),
+          h('span', { class: 'page-help', text: w.resetsAt ? `リセット：${fmtDate(w.resetsAt)}` : 'リセット時刻は未取得' })));
+        panel.append(h('p', { class: 'page-help', text: `${a.count ?? 0} セッション · 15分以上更新がない記録や期限を過ぎた記録は「要更新」と表示します。` }));
+        quotaGrid.append(panel);
+      }
+    }
+    entry.el.append(h('div', { class: 'page-heading' }, h('div', {}, h('h2', { text: 'アカウントの利用上限' }),
+      h('p', { class: 'page-help', text: 'アカウントごとの使用率と残量です。セッションのコンテキスト量は下段で確認できます。' })),
+      h('button', { class: 'btn', text: 'アカウントを管理', onclick: () => { this.settingsTab = 'accounts'; this.navigate('settings'); } })), quotaGrid);
     const cards = board.lists.flatMap(l => l.cards).filter(c => c.kind !== 'task');
     const contexts = h('section', { class: 'page-panel' }, h('h2', { text: 'セッションのコンテキスト' }),
       h('p', { class: 'page-help', text: '現在のホームの絞り込みに一致するセッションです。コンテキスト量はアカウントの利用上限とは別の値です。' }));

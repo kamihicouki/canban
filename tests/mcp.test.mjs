@@ -182,3 +182,18 @@ test('shared view state tools are app-only and return stale-write conflicts', as
   const conflict = await call('canban_save_ui_state', { expectedRevision: 0, state: { view: 'analytics' } });
   assert.deepEqual(conflict.structuredContent.result, { saved: false, conflict: true, revision: 1, state });
 });
+
+test('accounts: usage is visible to the model, account settings only to the board', async () => {
+  const { result } = await rpc('tools/list');
+  const vis = (n) => result.tools.find((t) => t.name === n)?._meta?.ui?.visibility?.join();
+  assert.equal(vis('canban_get_usage'), 'model,app');
+  assert.equal(vis('canban_update_accounts'), 'app');
+  const usage = (await call('canban_get_usage', {})).structuredContent;
+  assert.ok(usage.accounts.some((a) => a.key === 'claude:a' && a.agent === 'claude'));
+  assert.ok(usage.homes.some((h) => h.agent === 'claude' && h.default));
+  await call('canban_update_accounts', { label: { key: 'claude:a', name: '個人' } });
+  const board = (await call('canban_get_board', { days: 0, account: 'claude:a' })).structuredContent;
+  assert.equal(board.accounts.accounts.find((a) => a.key === 'claude:a').label, '個人');
+  const ids = board.lists.flatMap((l) => l.cards.map((c) => c.id)); // c2, possibly inside a task card
+  assert.ok(ids.length && !ids.some((id) => id.startsWith('codex:')));
+});

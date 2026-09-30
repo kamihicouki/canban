@@ -3,13 +3,11 @@
 // Detail source: the thread's rollout JSONL file.
 // Row normalization and message extraction are shared with the remote collector.
 import path from 'node:path';
-import os from 'node:os';
 import { exists, listDir, queryReadOnly, readTailJsonLines, stat } from './readonly.mjs';
 import { projectName, clip, cleanPrompt, firstLine, LOCAL_HOST, sessionKey } from './util.mjs';
+import { defaultCodexHome, codexHomes, refreshAccounts, sessionAccount } from '../accounts.mjs';
 
-export function codexHome() {
-  return process.env.CANBAN_CODEX_HOME || process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
-}
+export const codexHome = defaultCodexHome;
 
 // Columns read from `threads`; missing ones are skipped so older/newer schemas keep working.
 // Keep in sync with CODEX_COLUMNS in server/remote/collect.py.
@@ -17,6 +15,7 @@ export const CODEX_COLUMNS = [
   'id', 'rollout_path', 'created_at', 'updated_at', 'created_at_ms', 'updated_at_ms', 'source', 'thread_source',
   'cwd', 'title', 'name', 'archived', 'git_branch', 'model', 'first_user_message', 'preview', 'agent_role',
   'agent_nickname', 'is_pinned', 'git_origin_url', 'tokens_used', 'sandbox_policy', 'approval_mode', 'thread_section_id',
+  'creator_account_id',
 ];
 
 // Pick the highest-numbered state_<n>.sqlite so a schema bump keeps working.
@@ -69,6 +68,7 @@ export function normalizeCodexRow(r, host = LOCAL_HOST) {
     sourcePath: r.rollout_path || null,
     rawStatus: r.rawStatus ?? null,
     statusMtimeMs: r.statusMtimeMs ?? null,
+    creatorAccount: r.creator_account_id || null,
   };
 }
 
@@ -102,24 +102,52 @@ async function cachedThreads(home, now) {
   return c;
 }
 
-export async function listCodexSessions({ home = codexHome(), now = Date.now() } = {}) {
+// Every Codex home (the default one and other CODEX_HOME folders, see accounts.mjs).
+async function homesFor(home) {
+  return home ? [{ id: 'default', dir: home, default: true }] : codexHomes();
+}
+
+function sessionOf(c, h, x) {
+  const s = { ...x, codexSection: c.sections.get(x.nativeId) || null };
+  if (!h.default) Object.assign(s, { home: h.id, homeDir: h.dir });
+  s.account = sessionAccount(s);
+  return s;
+}
+
+export async function listCodexSessions({ home = null, now = Date.now() } = {}) {
   try {
-    const c = await cachedThreads(home, now);
-    if (!c) return { sessions: [], error: null };
-    const sessions = [...c.rows.values()].map((x) => ({ ...x, codexSection: c.sections.get(x.nativeId) || null }));
-    attachSpawnEdges(sessions, c.edges);
-    return { sessions, error: null };
+    await refreshAccounts();
+    const byId = new Map();
+    for (const h of await homesFor(home)) {
+      const c = await cachedThreads(h.dir, now);
+      if (!c) continue;
+      const mine = [];
+      for (const x of c.rows.values()) {
+        if (byId.has(x.id)) continue; // the same thread in two homes (a copied folder): the first home wins
+        const s = sessionOf(c, h, x);
+        byId.set(s.id, s);
+        mine.push(s);
+      }
+      attachSpawnEdges(mine, c.edges);
+    }
+    return { sessions: [...byId.values()], error: null };
   } catch (err) {
     return { sessions: [], error: `Codex DB 読み取り失敗: ${err.message}` };
   }
 }
 
 // One thread from the same cache, without copying the whole listing (dispatch ticks).
-export async function findCodexSession(nativeId, { home = codexHome(), now = Date.now() } = {}) {
-  const c = await cachedThreads(home, now);
-  const s = c?.rows.get(nativeId);
-  if (!s) return null;
-  return { ...s, codexSection: c.sections.get(nativeId) || null, subagent: s.subagent || c.edges.some((e) => e.child === nativeId) };
+export async function findCodexSession(nativeId, { home = null, now = Date.now() } = {}) {
+  await refreshAccounts();
+  for (const h of await homesFor(home)) {
+    const c = await cachedThreads(h.dir, now);
+    const x = c?.rows.get(nativeId);
+    if (!x) continue;
+    const s = sessionOf(c, h, x);
+    s.subagent = s.subagent || c.edges.some((e) => e.child === nativeId);
+    return s;
+  }
+  return null;
 }
 
 function readThreads(dbPath, prev, sig, now) {

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.15.0 — 2026-09-30
+
+- Codex・Claude・Chrome共通のサイドバーを追加。ホーム、カード、利用上限、分析、管理画面を切り替えられます。
+- カードダッシュボードを表示領域全体へ拡張。固定カードの高さ、複数行グリッド、内部スクロール、小さな画面のナビゲーションを調整しました。
+- 画面切り替え時に未送信のプロンプトとフォームを保持。入力中の共有設定の読み込みを保留します。
+- Claude側の複数アカウント対応（PR #5）をSQLiteへ統合。アカウント設定・フィルター・設定フォルダ・送信時の環境指定を維持しました。
+- Agent Usageでアカウント上限・セッションのコンテキスト・接続画面を分離。未取得や古い利用上限を残量として表示しません。
+
+
+## 0.14.0 — 2026-09-30
+- **Multiple accounts.** Sessions of every account are on the board together, so switching accounts in Claude Desktop or Codex no longer hides anything.
+  - Each session knows its account: Claude from where the desktop app keeps it (`claude-code-sessions/<account>/<org>/`), Codex from `threads.creator_account_id`. Sessions with no record show as アカウント不明.
+  - Header **アカウント** menu: accounts per AI App with their e-mail / plan, session count, where they are signed in (desktop profile, CLI config folder) and usage. Click one to filter the board (`account` filter, also in saved views, analytics and the MCP tools); ✎ gives it a display name. Cards carry a 👤 chip when there is more than one account; swimlanes can group by account; analytics adds アカウント別.
+  - The Claude desktop app only opens the signed-in account's sessions: another account's session resumes in the terminal by default, and its detail says why.
+- **Config folders.** Other `CLAUDE_CONFIG_DIR` / `CODEX_HOME` folders are read too: found under `~/.claude-*`, `~/.claude-profiles/*`, `~/.codex-*` (can be turned off) or added in the menu. Their sessions resume and receive prompts with that folder in the environment, and the live watch follows them.
+- **Claude desktop profiles.** Other app data folders beside `Application Support/Claude` (`Claude-*`, `Claude-Profiles/*`) are read as well. Folders shared between accounts through symlinks are read once and belong to their real location; a session visible to the signed-in account through a link is not flagged.
+- **Usage per account.** The header shows 5-hour / weekly usage for every account that has a record: Codex rate limits from the logs (now kept per account) and Claude plan usage from each desktop profile's `plan-usage-history.json` (older than an hour: dimmed). New model-visible tool `canban_get_usage`.
+- Account files are read only for the account id, e-mail, plan and usage; tokens are never read into anything Canban returns.
+- **One-row header.** The header no longer wraps. When it does not fit, button labels go first (icons stay), then items move into a new ⋯ menu from the lowest priority up (本文 → 自動化 → ビュー → ラベル → マシン → 分析 → 表示 → 期間 → 📁 → AI Apps → 実行状態). The run-state chips are dots with counts; the session totals moved to the Canban title's tooltip.
+- **Usage rings.** Usage is one double ring per account on the 👤 button: outer = 5-hour window, inner = weekly, green / orange / red by how full; the center carries the account's initial on its own color and a corner mark says Codex or Claude. In the 👤 menu each account can be left out of the header (checkbox) and given a name, a 1–2 character initial and a color (✎). Card chips use the same initial and color.
+- Fix: `h()` now sets CSS custom properties given in `style`.
+- Code layout: the account and header UI live in `ui/accounts.{js,css}` and `ui/header.{js,css}`, inlined into `ui/board.html` at `@include` markers by `server/ui.mjs` (the page stays one `<style>` + one `<script>`). Server glue is in `server/accounts-settings.mjs` (settings) and `server/accounts-mcp.mjs` (tools, filter, desktop notes, watch folders); `board.html`, `store.mjs`, `index.mjs` and `board.mjs` keep one-line hooks.
+
 ## 0.13.0 — 2026-09-29
 - Card details are now **panes** instead of one modal: open several cards at once, like pinned sticky notes (up to 8).
   - A pane never grows taller than the screen; each column of the card scrolls inside it.

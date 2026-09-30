@@ -2,6 +2,7 @@
 // writes inside the kanban data directory (default ~/.canban).
 import { isMainThread, proxyStore } from './sqlite-client.mjs';
 import { readBoard, writeBoard, transaction, currentFence } from './sqlite-backend.mjs';
+import { defaultAccounts, normalizeAccounts, applyAccountPatch } from './accounts-settings.mjs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
@@ -42,8 +43,11 @@ export function defaultSettings() {
     views: [],
     // Sending prompts to sessions (headless turns through the agents' CLIs).
     dispatch: defaultDispatch(),
+    // Accounts: display names, and the agents' extra config folders (see accounts.mjs).
+    accounts: defaultAccounts(),
   };
 }
+
 
 export function defaultDispatch() {
   return { enabled: true, maxLocal: 2, maxPerHost: 1, allowModel: true, allowModelElevated: false, modelPerHour: 10 };
@@ -63,7 +67,7 @@ function normalizeDispatch(x) {
   };
 }
 
-const VIEW_FILTER_KEYS = ['agent', 'host', 'status', 'project', 'folder', 'section', 'directory', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'includeHidden', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
+const VIEW_FILTER_KEYS = ['agent', 'host', 'account', 'status', 'project', 'folder', 'section', 'directory', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'includeHidden', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
 function normalizeView(v) {
   if (!v || typeof v.id !== 'string' || !String(v.name || '').trim()) return null;
   const filters = {};
@@ -100,6 +104,7 @@ function normalizeSettings(s) {
     seenAllAt: typeof s?.seenAllAt === 'number' ? s.seenAllAt : null,
     views: Array.isArray(s?.views) ? s.views.map(normalizeView).filter(Boolean).slice(0, 20) : [],
     dispatch: normalizeDispatch(s?.dispatch),
+    accounts: normalizeAccounts(s?.accounts),
   };
 }
 
@@ -546,6 +551,13 @@ export class Store {
     return this.mutate((s) => {
       s.settings = normalizeSettings({ ...s.settings, dispatch: { ...s.settings.dispatch, ...patch } });
       return s.settings.dispatch;
+    });
+  }
+
+  updateAccountSettings(patch = {}) {
+    return this.mutate((s) => {
+      s.settings = normalizeSettings({ ...s.settings, accounts: applyAccountPatch(s.settings.accounts, patch) });
+      return s.settings.accounts;
     });
   }
 

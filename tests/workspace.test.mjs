@@ -70,3 +70,30 @@ test('MCP UI includes feature modules and still compiles as one self-contained s
   assert.equal([...html.matchAll(/<style>/g)].length,1);
   new vm.Script(html.match(/<script>([\s\S]*?)<\/script>/)[1]);
 });
+
+test('explicit shared-state reload keeps edited forms and open panes', async () => {
+  const html = boardHtml();
+  const source = html.slice(html.indexOf('async function applySharedUi('), html.indexOf('async function reloadSharedUi('));
+  let closed = 0, adopted = 0, warned = 0;
+  const context = vm.createContext({
+    hasUnsavedPaneInput: () => true, toast: () => warned++,
+    panes: [{ id: 'codex:test' }], closePane: () => closed++,
+    adoptSharedUi: () => adopted++, sharedUi: {},
+  });
+  await vm.runInContext(`${source}\napplySharedUi({state:{view:'board'}});`, context);
+  assert.equal(closed,0); assert.equal(adopted,0); assert.equal(warned,1);
+});
+
+test('account rings show unknown when the recorded window has expired', () => {
+  const src = fs.readFileSync(new URL('../ui/accounts.js', import.meta.url), 'utf8');
+  const ring = src.slice(src.indexOf('function ringFor('), src.indexOf('function renderUsage('));
+  const now = Date.now();
+  const context = vm.createContext({
+    usageWindows: l => [l.primary,l.secondary].filter(Boolean), usageWindow: model.usageWindow,
+    usageTitle: () => '要更新', heat: () => 'green', colorVar: () => 'blue',
+    h: (tag, attrs, ...children) => ({tag,attrs,children}),
+  });
+  const result = vm.runInContext(`${ring}\nringFor({agent:'claude',label:'確認',short:'確',color:'blue',limits:{at:${now},primary:{usedPercent:90,windowMinutes:300,resetsAt:${now-1}}}});`,context);
+  assert.match(result.attrs.class,/no-a/);
+  assert.match(result.attrs.class,/old/);
+});

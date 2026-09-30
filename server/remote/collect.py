@@ -26,6 +26,7 @@ CODEX_COLUMNS = [
     "id", "rollout_path", "created_at", "updated_at", "created_at_ms", "updated_at_ms", "source", "thread_source",
     "cwd", "title", "name", "archived", "git_branch", "model", "first_user_message", "preview", "agent_role",
     "agent_nickname", "is_pinned", "git_origin_url", "tokens_used", "sandbox_policy", "approval_mode", "thread_section_id",
+    "creator_account_id",
 ]
 SUMMARY_PROMPTS = 3
 TAIL_BYTES = 768 * 1024
@@ -278,6 +279,9 @@ def desktop_meta():
                     continue
                 if isinstance(j, dict) and j.get("cliSessionId"):
                     meta[j["cliSessionId"]] = {k: j.get(k) for k in ("sessionId", "title", "isArchived", "lastActivityAt", "cwd", "model", "postTurnSummary")}
+                    rel = os.path.relpath(root, DESKTOP_DIR).split(os.sep)
+                    if len(rel) == 2:  # <account>/<org>, as in claude.mjs
+                        meta[j["cliSessionId"]]["_account"] = rel[0]
     return meta
 
 def claude_summaries(known):

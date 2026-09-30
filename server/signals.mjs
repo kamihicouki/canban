@@ -158,11 +158,20 @@ export function limitsFrom(records) {
   return null;
 }
 
-// Latest snapshot seen by this server (any Codex session read since it started).
+// Latest snapshot seen by this server (any Codex session read since it started), and
+// the latest per account (the account that ran the session, see accounts.mjs).
 let latest = null;
-export function noteLimits(l) {
+const byAccount = new Map();
+export function noteLimits(l, account = null) {
   if (l && (!latest || l.at > latest.at)) latest = l;
+  if (l && account) {
+    const cur = byAccount.get(account);
+    if (!cur || l.at > cur.at) byAccount.set(account, l);
+  }
   return latest;
+}
+export function limitsByAccount() {
+  return byAccount;
 }
 export function currentLimits() {
   if (!latest) return null;
@@ -173,6 +182,7 @@ export function currentLimits() {
 }
 export function resetLimitsForTest() {
   latest = null;
+  byAccount.clear();
 }
 
 // What a card on the board needs (the detail view gets the full signals).

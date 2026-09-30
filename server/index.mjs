@@ -7,7 +7,6 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { Store } from './store.mjs';
-import { boardHtml } from './ui.mjs';
 import { leaderFor } from './leader.mjs';
 import { perf } from './perf.mjs';
 import { dispatcherFor, tickDispatch, setSpawner, dryRunSpawner } from './dispatch.mjs';
@@ -22,6 +21,8 @@ import { createWatch } from './watch.mjs';
 import { Presence, appLabel } from './presence.mjs';
 import { codexHome } from './sources/codex.mjs';
 import { claudeHome, claudeDesktopSessionsDir } from './sources/claude.mjs';
+import { accountTools, accountFilterProp, accountDesktopNote, extraWatchRoots } from './accounts-mcp.mjs';
+import { boardHtml } from './ui.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // The Codex plugin manifest is absent when installed another way (Claude Desktop extension, a bare copy).
@@ -45,7 +46,7 @@ function readManifest(...candidates) {
 
 const store = new Store();
 // Realtime: watches nothing until a board calls canban_watch (see server/live.mjs).
-const live = process.env.CANBAN_LIVE === '0' ? null : new LiveHub({ dataDir: store.dir, codexHome: codexHome(), claudeProjects: path.join(claudeHome(), 'projects'), claudeDesktop: claudeDesktopSessionsDir() });
+const live = process.env.CANBAN_LIVE === '0' ? null : new LiveHub({ dataDir: store.dir, codexHome: codexHome(), claudeProjects: path.join(claudeHome(), 'projects'), claudeDesktop: claudeDesktopSessionsDir(), extraRoots: extraWatchRoots(store) });
 const watch = live ? createWatch(live, { presence: new Presence(store.dir, { app: () => appLabel(client) }) }) : null;
 let client = null; // clientInfo from initialize: which host started this server
 const log = (...a) => process.stderr.write(`[canban] ${a.join(' ')}\n`);
@@ -63,6 +64,7 @@ const appAndModel = { ui: { visibility: ['model', 'app'] }, 'openai/widgetAccess
 const filterProps = {
   agent: { type: 'string', enum: ['all', 'codex', 'claude'], description: 'AI App（codex / claude）で絞り込み' },
   host: { type: 'string', description: "マシンで絞り込み（'local' またはリモート接続の hostId）" },
+  account: accountFilterProp,
   project: { type: 'string', description: 'プロジェクトで絞り込み（Codex のプロジェクト名。Codex のプロジェクトに入っていないセッションは作業フォルダ名）' },
   folder: { type: 'string', description: '作業フォルダ名（cwd の末尾）で絞り込み' },
   section: { type: 'string', description: "Codex のセクション ID で絞り込み。'__none' でセクションなし" },
@@ -159,6 +161,7 @@ const TOOLS = [
       const text = [
         `${s.title} (${s.agent}, ${s.status || 'idle'})`,
         `リスト: ${d.list?.title ?? '-'} / プロジェクト: ${s.project ?? '-'} / ブランチ: ${s.branch ?? '-'}`,
+        s.account ? `アカウント: ${s.accountLabel}${s.home ? `（設定フォルダ: ${s.homeDir}）` : ''}` : null,
         `更新: ${new Date(s.updatedAt || 0).toISOString()}`,
         d.card.note ? `メモ: ${d.card.note}` : null,
         d.dispatch.permission ? `送信時の権限: ${d.dispatch.permission.label}${d.dispatch.permission.elevated ? '（制限なし）' : ''}` : null,
@@ -246,9 +249,14 @@ const TOOLS = [
         if (route === 'desktop') throw new Error('このセッションはデスクトップアプリでは開けません。ターミナルで再開してください。');
         useRoute = 'terminal';
       }
+      // Claude desktop signed in to another account would not find the session: the
+      // default route resumes it in the terminal instead (an explicit desktop still opens).
+      const accountNote = accountDesktopNote(session, state.settings.accounts.labels);
+      if (useRoute === 'desktop' && accountNote && !route) useRoute = 'terminal';
       if (useRoute === 'desktop') {
         await openUrl(link.url);
-        return { text: `${link.label}: ${link.url}`, structured: { route: 'desktop', url: link.url, exact: link.exact, note: link.note || null } };
+        const note = accountNote || link.note || null;
+        return { text: `${link.label}: ${link.url}${accountNote ? `\n${note}` : ''}`, structured: { route: 'desktop', url: link.url, exact: link.exact, note } };
       }
       const term = terminal || prefs.terminal;
       if (!installedTerminals().some((t) => t.id === term)) throw new Error(`${TERMINAL_LABELS[term] || term} が見つかりません。設定でターミナルを選んでください。`);
@@ -401,6 +409,7 @@ const TOOLS = [
     if (!hosts.some((h) => h.id === a.hostId)) throw new Error('Codex に登録されていない接続です');
     return store.setRemoteHost(a);
   }),
+  ...accountTools({ store, allSessions, appTool, meta: appAndModel, getLive: () => live }),
   appTool('canban_update_settings', '再開方法の既定を変更', {
     route: { type: 'string', enum: ['desktop', 'terminal'] },
     terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
@@ -487,7 +496,7 @@ const TOOLS = [
     name: 'canban_get_stats',
     title: '分析',
     description: 'セッション数・トークン量の推移、プロジェクト／カテゴリ／マシン別の内訳、リストの滞留時間、完了までのサイクルタイムを返す。',
-    inputSchema: { type: 'object', properties: { days: { type: 'number' }, agent: filterProps.agent, host: filterProps.host, project: filterProps.project, directory: filterProps.directory, includeSubagents: { type: 'boolean' } }, additionalProperties: false },
+    inputSchema: { type: 'object', properties: { days: { type: 'number' }, agent: filterProps.agent, host: filterProps.host, account: filterProps.account, project: filterProps.project, directory: filterProps.directory, includeSubagents: { type: 'boolean' } }, additionalProperties: false },
     annotations: { readOnlyHint: true },
     _meta: appAndModel,
     handler: async (args) => {

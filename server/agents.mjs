@@ -74,10 +74,16 @@ export function headlessArgs(s, permission) {
   return { bin: h.bin, args: h.args(s, permission) };
 }
 
+// A session from another config folder (CLAUDE_CONFIG_DIR / CODEX_HOME profile) resumes there.
+export function homePrefix(s) {
+  if (!s.homeDir || (s.host && !s.host.local)) return '';
+  return `${s.agent === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR'}=${shq(s.homeDir)} `;
+}
+
 export function resumeCommand(s) {
   const agent = AGENTS[s.agent];
   if (!agent) return null;
-  const inner = `${s.cwd ? `cd ${shq(s.cwd)} 2>/dev/null; ` : ''}${agent.cli(s)}`;
+  const inner = `${s.cwd ? `cd ${shq(s.cwd)} 2>/dev/null; ` : ''}${homePrefix(s)}${agent.cli(s)}`;
   return s.host && !s.host.local ? `ssh -t ${shq(s.host.alias)} ${shq(inner)}` : inner;
 }
 

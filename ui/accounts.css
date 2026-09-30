@@ -1,0 +1,38 @@
+/* Accounts: usage rings on the 👤 button, card chips, the 👤 menu (ui/accounts.js). */
+/* usage rings: outer = 5-hour window, inner = weekly; the center carries the account's
+   initial on its own color, the corner mark says Codex / Claude */
+.acct-btn { gap: 6px; padding: 0 8px; }
+.acct-btn .rings { display: inline-flex; gap: 5px; }
+.acct-btn .rings:empty { display: none; }
+.acct-lbl { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.acct-lbl:empty { display: none; }
+.ring2 { --a: 0; --b: 0; --ca: var(--c-green); --cb: var(--c-green); position: relative; width: 28px; height: 28px; flex: none; display: inline-block; }
+.ring2::before, .ring2::after { content: ""; position: absolute; border-radius: 50%; }
+.ring2::before { inset: 0; background: conic-gradient(var(--ca) calc(var(--a) * 1%), var(--ring-track, rgba(255,255,255,.22)) 0);
+  -webkit-mask: radial-gradient(circle, transparent 10.5px, #000 11px); mask: radial-gradient(circle, transparent 10.5px, #000 11px); }
+.ring2::after { inset: 4px; background: conic-gradient(var(--cb) calc(var(--b) * 1%), var(--ring-track, rgba(255,255,255,.22)) 0);
+  -webkit-mask: radial-gradient(circle, transparent 6.5px, #000 7px); mask: radial-gradient(circle, transparent 6.5px, #000 7px); }
+.ring2.no-a::before, .ring2.no-b::after { background: var(--ring-track, rgba(255,255,255,.22)); opacity: .5; }
+.acct-row { --ring-track: var(--btn-subtle-hover); }
+.acct-row .ring2 .agm { border-color: var(--modal-bg, #fff); }
+.ring2 .ini { position: absolute; inset: 8px; border-radius: 50%; display: grid; place-items: center; font-size: 9px; font-weight: 700; line-height: 1; color: #fff; }
+.ring2 .agm { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 3px; border: 1.5px solid #2c4f8f; }
+.agm.codex, .acct-dot.codex { background: #10a37f; }
+.agm.claude, .acct-dot.claude { background: #d97757; }
+.ring2.stale { opacity: .5; }
+.ring2.none { opacity: .7; }
+.acct-dot { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; font-size: 9px; font-weight: 700; color: #fff; flex: none; }
+.acct-swatches { display: flex; gap: 4px; }
+.acct-swatches button { width: 18px; height: 18px; border-radius: 50%; border: 2px solid transparent; padding: 0; }
+.acct-swatches button[aria-pressed="true"] { border-color: var(--list-fg); }
+.acct-chip { display: inline-flex; align-items: center; border-radius: 3px; padding: 0 4px; background: var(--btn-subtle-hover); max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-row { display: flex; align-items: center; gap: 6px; }
+.acct-row .menu-item { flex: 1; min-width: 0; }
+.acct-usage { display: flex; gap: 10px; font-size: 11px; color: var(--list-muted); margin-top: 2px; }
+.acct-usage .lm { display: inline-flex; align-items: center; gap: 4px; }
+.acct-usage .bar { width: 48px; height: 5px; border-radius: 3px; background: var(--btn-subtle-hover); overflow: hidden; }
+.acct-usage .bar > i { display: block; height: 100%; background: var(--c-green); }
+.acct-usage .bar > i.warn { background: var(--c-orange); }
+.acct-usage .bar > i.hot { background: var(--c-red); }
+.home-row { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 0; }
+.home-row .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }

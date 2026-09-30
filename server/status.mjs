@@ -8,6 +8,7 @@
 import { stat } from './sources/readonly.mjs';
 import { itemsFor, activityOf, readLines, FEED_MAX_DELTA } from './feed.mjs';
 import { newAcc, foldSignals, signalsView, limitsFrom, noteLimits } from './signals.mjs';
+import { limitsAccount } from './accounts.mjs';
 
 export const STATUSES = ['running', 'waiting', 'completed', 'aborted', 'idle'];
 export const RECENT_MS = 24 * 3600e3; // older sessions are always idle
@@ -96,13 +97,13 @@ async function signalsOf(session, tail) {
     if (!d.reset) {
       foldSignals(e.acc, d.records);
       e.offset = d.offset;
-      if (session.agent === 'codex') noteLimits(limitsFrom(d.records));
+      if (session.agent === 'codex') noteLimits(limitsFrom(d.records), limitsAccount(session));
       return signalsView(e.acc);
     }
   }
   e = { agent: session.agent, offset: tail.offset, acc: foldSignals(newAcc(session.agent), tail.records) };
   sigAcc.set(file, e);
-  if (session.agent === 'codex') noteLimits(limitsFrom(tail.records));
+  if (session.agent === 'codex') noteLimits(limitsFrom(tail.records), limitsAccount(session));
   return signalsView(e.acc);
 }
 

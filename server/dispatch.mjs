@@ -27,6 +27,7 @@ import { listClaudeSessions } from './sources/claude.mjs';
 import { codexAppState, annotateCodexApp } from './sources/codex-app.mjs';
 import { pool, hostsWithState } from './board.mjs';
 import { perf } from './perf.mjs';
+import { homeEnv, configureAccounts } from './accounts.mjs';
 
 export const QUIET_MS = Number(process.env.CANBAN_DISPATCH_QUIET_MS) || 20e3;
 const INSPECT_BYTES = 256 * 1024;
@@ -155,6 +156,7 @@ export async function resolveSession(store, cardId) {
   if (!m) throw new Error(String(cardId).startsWith('task:') ? 'タスクカードには送れません。紐付いたセッションに送ってください' : `セッションが見つかりません: ${cardId}`);
   const [, agent, alias, nativeId] = m;
   if (!alias) {
+    configureAccounts((await store.load()).settings.accounts); // sessions from the extra config folders too
     const s = agent === 'codex' ? await findCodexSession(nativeId) : (await listClaudeSessions()).sessions.find((x) => x.nativeId === nativeId);
     if (!s) throw new Error(`セッションが見つかりません: ${cardId}`);
     annotateCodexApp([s], await codexAppState());
@@ -325,7 +327,7 @@ export class Dispatcher {
     try {
       fs.mkdirSync(this.requests.runsDir, { recursive: true });
       fd = fs.openSync(logPath, 'a', 0o600);
-      child = spawner(bin, h.args, { cwd: session.cwd, env: cleanEnv(), stdio: ['pipe', fd, fd], detached: true });
+      child = spawner(bin, h.args, { cwd: session.cwd, env: { ...cleanEnv(), ...homeEnv(session) }, stdio: ['pipe', fd, fd], detached: true });
     } catch (error) {
       throw Object.assign(error, {code:'pre_spawn'});
     } finally {

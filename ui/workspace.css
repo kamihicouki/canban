@@ -35,6 +35,15 @@ body { display: grid; grid-template-columns: var(--nav-w) minmax(0,1fr); height:
 .page-panel .rule-row,.page-panel .host-row { border-bottom: 1px solid var(--btn-subtle-hover); padding: 14px 0; }
 .page-panel .keys { max-width: 900px; }
 .page-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(300px,.8fr); gap: 16px; }
+.page-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.page-heading h2 { font-size: 22px; margin: 0; }
+.quota-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(440px,100%),1fr)); gap: 16px; }
+.quota-grid .usage-window { grid-template-columns: 80px minmax(0,1fr); gap: 12px; }
+.quota-grid .usage-window > .page-help { grid-column: 2; }
+body[data-page="settings"] .page-panel { max-width: 1000px; }
+body[data-page="settings"] .page-panel > .field-label { font-weight: 600; border-top: 1px solid var(--btn-subtle-hover); padding-top: 20px; }
+body[data-page="settings"] .page-panel > .seg { display: flex; flex-wrap: wrap; }
+.pane-layer.closed { visibility: hidden; }
 .page-table-wrap { overflow: auto; overscroll-behavior: contain; }
 .page-table { width: 100%; border-collapse: collapse; }
 .page-table th,.page-table td { padding: 12px 10px; text-align: left; border-bottom: 1px solid var(--btn-subtle-hover); vertical-align: middle; }
