@@ -17,7 +17,7 @@ export function database(dir) {
   worker.on('message', ({ id, value, error }) => {
     const p = pending.get(id); if (!p) return;
     pending.delete(id);
-    if (error) p.reject(Object.assign(new Error(error.message), { code: error.code })); else p.resolve(value);
+    if (error) p.reject(Object.assign(new Error(error.message), { code: error.code, busyElapsedMs: error.busyElapsedMs })); else p.resolve(value);
     if (!pending.size) worker.unref();
   });
   worker.unref();
