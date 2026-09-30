@@ -1,20 +1,9 @@
 import crypto from 'node:crypto';
 import { parentPort, workerData } from 'node:worker_threads';
-import { setTimeout as delay } from 'node:timers/promises';
+import { retrySqliteBusy as retry } from './sqlite-retry.mjs';
 import { openDatabase, db, revision, leaseAcquire, transaction, bump, setFence, currentFence, writeBoard } from './sqlite-backend.mjs';
 import { Store, defaultState } from './store.mjs';
 import { RequestStore } from './requests.mjs';
-const busy = (error) => /database (?:is )?(?:locked|busy)/i.test(error.message);
-async function retry(fn) {
-  const deadline = Date.now() + 2000;
-  for (;;) {
-    try { return await fn(); } catch (error) {
-      if (!busy(error)) throw error;
-      if (Date.now() + 250 >= deadline) throw Object.assign(new Error('別の画面が更新中です。少し待って再操作してください。'), { code: 'db_busy' });
-      await delay(15 + Math.floor(Math.random() * 25));
-    }
-  }
-}
 await retry(() => openDatabase(workerData.dir));
 const board = new Store(workerData.dir), requests = new RequestStore(workerData.dir);
 if (!db().prepare("SELECT 1 FROM metadata WHERE key='initialized'").get()) {
