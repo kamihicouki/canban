@@ -21,6 +21,8 @@ import { createWatch } from './watch.mjs';
 import { Presence, appLabel } from './presence.mjs';
 import { codexHome } from './sources/codex.mjs';
 import { claudeHome, claudeDesktopSessionsDir } from './sources/claude.mjs';
+import { configureAccounts, codexHomes, claudeHomes, claudeDesktopRoots, refreshAccounts, accountsView, accountLabel, desktopAccountMismatch } from './accounts.mjs';
+import { limitsByAccount } from './signals.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // The Codex plugin manifest is absent when installed another way (Claude Desktop extension, a bare copy).
@@ -44,7 +46,24 @@ function readManifest(...candidates) {
 
 const store = new Store();
 // Realtime: watches nothing until a board calls canban_watch (see server/live.mjs).
-const live = process.env.CANBAN_LIVE === '0' ? null : new LiveHub({ dataDir: store.dir, codexHome: codexHome(), claudeProjects: path.join(claudeHome(), 'projects'), claudeDesktop: claudeDesktopSessionsDir() });
+const realOr = (p) => {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return p;
+  }
+};
+const extraRoots = async () => {
+  configureAccounts(store.load().settings.accounts);
+  const [codex, claude, desktop] = await Promise.all([codexHomes(), claudeHomes(), claudeDesktopRoots()]);
+  return {
+    codexHomes: codex.filter((h) => !h.default).map((h) => h.dir),
+    claudeProjects: claude.filter((h) => !h.default).map((h) => path.join(h.dir, 'projects')),
+    // Profiles often link their session folder to a shared one: watch each real folder once.
+    claudeDesktop: [...new Set(desktop.map((r) => realOr(r.sessionsDir)))].filter((d) => d !== realOr(claudeDesktopSessionsDir())),
+  };
+};
+const live = process.env.CANBAN_LIVE === '0' ? null : new LiveHub({ dataDir: store.dir, codexHome: codexHome(), claudeProjects: path.join(claudeHome(), 'projects'), claudeDesktop: claudeDesktopSessionsDir(), extraRoots });
 const watch = live ? createWatch(live, { presence: new Presence(store.dir, { app: () => appLabel(client) }) }) : null;
 let client = null; // clientInfo from initialize: which host started this server
 const log = (...a) => process.stderr.write(`[canban] ${a.join(' ')}\n`);
@@ -62,6 +81,7 @@ const appAndModel = { ui: { visibility: ['model', 'app'] }, 'openai/widgetAccess
 const filterProps = {
   agent: { type: 'string', enum: ['all', 'codex', 'claude'], description: 'AI App（codex / claude）で絞り込み' },
   host: { type: 'string', description: "マシンで絞り込み（'local' またはリモート接続の hostId）" },
+  account: { type: 'string', description: "アカウントで絞り込み（canban_get_usage の key。例 'claude:<uuid>' / 'codex:<id>'）。'__none' でアカウント不明" },
   project: { type: 'string', description: 'プロジェクトで絞り込み（Codex のプロジェクト名。Codex のプロジェクトに入っていないセッションは作業フォルダ名）' },
   folder: { type: 'string', description: '作業フォルダ名（cwd の末尾）で絞り込み' },
   section: { type: 'string', description: "Codex のセクション ID で絞り込み。'__none' でセクションなし" },
@@ -158,6 +178,7 @@ const TOOLS = [
       const text = [
         `${s.title} (${s.agent}, ${s.status || 'idle'})`,
         `リスト: ${d.list?.title ?? '-'} / プロジェクト: ${s.project ?? '-'} / ブランチ: ${s.branch ?? '-'}`,
+        s.account ? `アカウント: ${s.accountLabel}${s.home ? `（設定フォルダ: ${s.homeDir}）` : ''}` : null,
         `更新: ${new Date(s.updatedAt || 0).toISOString()}`,
         d.card.note ? `メモ: ${d.card.note}` : null,
         d.dispatch.permission ? `送信時の権限: ${d.dispatch.permission.label}${d.dispatch.permission.elevated ? '（制限なし）' : ''}` : null,
@@ -245,9 +266,15 @@ const TOOLS = [
         if (route === 'desktop') throw new Error('このセッションはデスクトップアプリでは開けません。ターミナルで再開してください。');
         useRoute = 'terminal';
       }
+      // Claude desktop signed in to another account would not find the session: the
+      // default route resumes it in the terminal instead (an explicit desktop still opens).
+      const mismatch = desktopAccountMismatch(session);
+      if (useRoute === 'desktop' && mismatch && !route) useRoute = 'terminal';
       if (useRoute === 'desktop') {
         await openUrl(link.url);
-        return { text: `${link.label}: ${link.url}`, structured: { route: 'desktop', url: link.url, exact: link.exact, note: link.note || null } };
+        const labels = state.settings.accounts.labels;
+        const note = mismatch ? `Claude デスクトップは ${accountLabel(mismatch.active, labels)} でサインイン中です。このセッション（${accountLabel(mismatch.session, labels)}）を開くにはアカウントを切り替えてください。` : link.note || null;
+        return { text: `${link.label}: ${link.url}${mismatch ? `\n${note}` : ''}`, structured: { route: 'desktop', url: link.url, exact: link.exact, note } };
       }
       const term = terminal || prefs.terminal;
       if (!installedTerminals().some((t) => t.id === term)) throw new Error(`${TERMINAL_LABELS[term] || term} が見つかりません。設定でターミナルを選んでください。`);
@@ -400,6 +427,42 @@ const TOOLS = [
     if (!hosts.some((h) => h.id === a.hostId)) throw new Error('Codex に登録されていない接続です');
     return store.setRemoteHost(a);
   }),
+  {
+    name: 'canban_get_usage',
+    title: 'アカウントと使用量',
+    description:
+      'Codex / Claude のアカウントごとの使用量（5 時間・週の利用上限の使用率）と、各アカウントのセッション数・サインイン状況・設定フォルダを返す。Codex はセッションのログ、Claude は Claude デスクトップアプリの記録から読む。',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true },
+    _meta: appAndModel,
+    handler: async () => {
+      const state = store.load();
+      const { sessions } = await allSessions(state);
+      const v = accountsView({ labels: state.settings.accounts.labels, sessions: sessions.filter((s) => !s.subagent), codexLimits: limitsByAccount() });
+      const win = (w) => (w ? `${w.windowMinutes >= 1440 ? '週' : `${Math.round(w.windowMinutes / 60)}h`} ${Math.round(w.usedPercent)}%` : null);
+      const lines = v.accounts.map((a) => {
+        const l = a.limits;
+        const usage = l ? [win(l.primary), win(l.secondary)].filter(Boolean).join(' · ') : '使用量の記録なし';
+        const signed = a.signedIn.length ? `（サインイン中: ${a.signedIn.map((x) => (x === 'desktop' ? 'デスクトップ' : `CLI ${x.slice(4)}`)).join(', ')}）` : '';
+        return `${a.agent === 'codex' ? 'Codex' : 'Claude'} ${a.label}${a.plan ? ` [${a.plan}]` : ''}: ${usage} / ${a.count} セッション${signed}`;
+      });
+      if (v.unknown.codex || v.unknown.claude) lines.push(`アカウント不明: Codex ${v.unknown.codex} / Claude ${v.unknown.claude} セッション`);
+      return { text: lines.join('\n') || 'アカウントが見つかりません', structured: v };
+    },
+  },
+  appTool('canban_update_accounts', 'アカウントと設定フォルダを変更', {
+    label: { type: 'object', properties: { key: { type: 'string' }, name: { type: 'string' } } },
+    claudeHomes: { type: 'array', items: { type: 'string' } },
+    codexHomes: { type: 'array', items: { type: 'string' } },
+    discover: { type: 'boolean' },
+  }, [], async (a) => {
+    const res = await store.updateAccountSettings(a);
+    if (configureAccounts(res)) {
+      await refreshAccounts({ force: true });
+      if (live?.active) live.watchExtra();
+    }
+    return res;
+  }),
   appTool('canban_update_settings', '再開方法の既定を変更', {
     route: { type: 'string', enum: ['desktop', 'terminal'] },
     terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
@@ -486,7 +549,7 @@ const TOOLS = [
     name: 'canban_get_stats',
     title: '分析',
     description: 'セッション数・トークン量の推移、プロジェクト／カテゴリ／マシン別の内訳、リストの滞留時間、完了までのサイクルタイムを返す。',
-    inputSchema: { type: 'object', properties: { days: { type: 'number' }, agent: filterProps.agent, host: filterProps.host, project: filterProps.project, directory: filterProps.directory, includeSubagents: { type: 'boolean' } }, additionalProperties: false },
+    inputSchema: { type: 'object', properties: { days: { type: 'number' }, agent: filterProps.agent, host: filterProps.host, account: filterProps.account, project: filterProps.project, directory: filterProps.directory, includeSubagents: { type: 'boolean' } }, additionalProperties: false },
     annotations: { readOnlyHint: true },
     _meta: appAndModel,
     handler: async (args) => {

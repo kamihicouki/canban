@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.0 — 2026-09-30
+- **Multiple accounts.** Sessions of every account are on the board together, so switching accounts in Claude Desktop or Codex no longer hides anything.
+  - Each session knows its account: Claude from where the desktop app keeps it (`claude-code-sessions/<account>/<org>/`), Codex from `threads.creator_account_id`. Sessions with no record show as アカウント不明.
+  - Header **アカウント** menu: accounts per AI App with their e-mail / plan, session count, where they are signed in (desktop profile, CLI config folder) and usage. Click one to filter the board (`account` filter, also in saved views, analytics and the MCP tools); ✎ gives it a display name. Cards carry a 👤 chip when there is more than one account; swimlanes can group by account; analytics adds アカウント別.
+  - The Claude desktop app only opens the signed-in account's sessions: another account's session resumes in the terminal by default, and its detail says why.
+- **Config folders.** Other `CLAUDE_CONFIG_DIR` / `CODEX_HOME` folders are read too: found under `~/.claude-*`, `~/.claude-profiles/*`, `~/.codex-*` (can be turned off) or added in the menu. Their sessions resume and receive prompts with that folder in the environment, and the live watch follows them.
+- **Claude desktop profiles.** Other app data folders beside `Application Support/Claude` (`Claude-*`, `Claude-Profiles/*`) are read as well. Folders shared between accounts through symlinks are read once and belong to their real location; a session visible to the signed-in account through a link is not flagged.
+- **Usage per account.** The header shows 5-hour / weekly usage for every account that has a record: Codex rate limits from the logs (now kept per account) and Claude plan usage from each desktop profile's `plan-usage-history.json` (older than an hour: dimmed). New model-visible tool `canban_get_usage`.
+- Account files are read only for the account id, e-mail, plan and usage; tokens are never read into anything Canban returns.
+
 ## 0.13.0 — 2026-09-29
 - Card details are now **panes** instead of one modal: open several cards at once, like pinned sticky notes (up to 8).
   - A pane never grows taller than the screen; each column of the card scrolls inside it.

@@ -3,20 +3,12 @@
 // Desktop app metadata: ~/Library/Application Support/Claude/claude-code-sessions/*/*/local_*.json
 // Summary normalization and message extraction are shared with the remote collector.
 import path from 'node:path';
-import os from 'node:os';
-import { exists, listDir, readJson, readJsonLines, readTailJsonLines, stat } from './readonly.mjs';
+import { exists, listDir, listSubdirs, readJson, readJsonLines, readTailJsonLines, stat } from './readonly.mjs';
 import { projectName, clip, cleanPrompt, firstLine, LOCAL_HOST, sessionKey } from './util.mjs';
+import { defaultClaudeHome, claudeDesktopSessionsDir, claudeDesktopFolders, claudeHomes, refreshAccounts, sessionAccount } from '../accounts.mjs';
 
-export function claudeHome() {
-  return process.env.CANBAN_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
-}
-
-export function claudeDesktopSessionsDir() {
-  return (
-    process.env.CANBAN_CLAUDE_DESKTOP_DIR ||
-    path.join(os.homedir(), 'Library', 'Application Support', 'Claude', 'claude-code-sessions')
-  );
-}
+export { claudeDesktopSessionsDir };
+export const claudeHome = defaultClaudeHome;
 
 // How many leading human prompts a summary keeps; the first non-empty one after
 // cleanup becomes the preview. Keep in sync with collect.py.
@@ -149,44 +141,83 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
     entrypoint: s.entrypoint || null,
     rawStatus: s.rawStatus ?? null,
     statusMtimeMs: s.statusMtimeMs ?? null,
+    // Claude desktop keeps each account's sessions apart (claude-code-sessions/<account>/<org>/).
+    desktopAccount: dm?._account ?? null,
+    desktopReach: dm?._reach?.length > 1 ? dm._reach : undefined,
   };
 }
 
-// Desktop app metadata keyed by CLI session id.
+// Desktop app metadata keyed by CLI session id, from every desktop profile (see
+// accounts.mjs). _account: the account folder it really lives in; _reach: the accounts
+// that see it (a folder linked into several accounts). A session kept by two profiles
+// separately takes the copy with the latest activity.
+const metaCache = new Map(); // file -> { mtimeMs, size, j }
+async function readMeta(file) {
+  const st = await stat(file);
+  if (!st) return null;
+  const hit = metaCache.get(file);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.j;
+  try {
+    const j = await readJson(file);
+    metaCache.set(file, { mtimeMs: st.mtimeMs, size: st.size, j });
+    return j;
+  } catch {
+    return hit?.j ?? null;
+  }
+}
+
+async function desktopFolders(dir) {
+  if (dir === claudeDesktopSessionsDir()) return claudeDesktopFolders();
+  const out = [];
+  for (const a of await listSubdirs(dir)) for (const b of await listSubdirs(path.join(dir, a))) out.push({ dir: path.join(dir, a, b), owner: a, org: b, reach: new Set([a]) });
+  return out;
+}
+
 async function loadDesktopMeta(dir = claudeDesktopSessionsDir()) {
   const meta = new Map();
-  for (const a of await listDir(dir)) {
-    if (!a.isDirectory()) continue;
-    for (const b of await listDir(path.join(dir, a.name))) {
-      if (!b.isDirectory()) continue;
-      const d = path.join(dir, a.name, b.name);
-      for (const f of await listDir(d)) {
-        if (!f.isFile() || !/^local_.*\.json$/.test(f.name)) continue;
-        try {
-          const j = await readJson(path.join(d, f.name));
-          if (j?.cliSessionId) meta.set(j.cliSessionId, j);
-        } catch {}
+  for (const folder of await desktopFolders(dir)) {
+    for (const f of await listDir(folder.dir)) {
+      if (!f.isFile() || !/^local_.*\.json$/.test(f.name)) continue;
+      const j = await readMeta(path.join(folder.dir, f.name));
+      if (!j?.cliSessionId) continue;
+      const prev = meta.get(j.cliSessionId);
+      const reach = [...new Set([...(prev?._reach || []), ...folder.reach])];
+      if (prev && Number(prev.lastActivityAt || 0) >= Number(j.lastActivityAt || 0)) {
+        prev._reach = reach;
+        continue;
       }
+      meta.set(j.cliSessionId, { ...j, _account: folder.owner, _org: folder.org, _reach: reach });
     }
   }
   return meta;
 }
 
-export async function listClaudeSessions({ home = claudeHome(), desktopDir = claudeDesktopSessionsDir() } = {}) {
-  const projectsDir = path.join(home, 'projects');
-  if (!exists(projectsDir)) return { sessions: [], error: null };
+// Every Claude home (the default one and other CLAUDE_CONFIG_DIR folders, see
+// accounts.mjs). A transcript found in two homes is listed once (the newest copy).
+export async function listClaudeSessions({ home = null, desktopDir = claudeDesktopSessionsDir() } = {}) {
   try {
+    await refreshAccounts();
+    const homes = home ? [{ id: 'default', dir: home, default: true }] : await claudeHomes();
     const desktop = await loadDesktopMeta(desktopDir);
-    const sessions = [];
-    for (const p of await listDir(projectsDir)) {
-      if (!p.isDirectory()) continue;
-      for (const f of await listDir(path.join(projectsDir, p.name))) {
-        if (!f.isFile() || !f.name.endsWith('.jsonl')) continue;
-        const s = await summarizeTranscript(path.join(projectsDir, p.name, f.name));
-        const session = s && normalizeClaudeSummary(s, desktop.get(s.sessionId));
-        if (session) sessions.push(session);
+    const byId = new Map();
+    for (const h of homes) {
+      const projectsDir = path.join(h.dir, 'projects');
+      if (!exists(projectsDir)) continue;
+      for (const p of await listDir(projectsDir)) {
+        if (!p.isDirectory()) continue;
+        for (const f of await listDir(path.join(projectsDir, p.name))) {
+          if (!f.isFile() || !f.name.endsWith('.jsonl')) continue;
+          const s = await summarizeTranscript(path.join(projectsDir, p.name, f.name));
+          const session = s && normalizeClaudeSummary(s, desktop.get(s.sessionId));
+          if (!session) continue;
+          if (!h.default) Object.assign(session, { home: h.id, homeDir: h.dir });
+          const prev = byId.get(session.id);
+          if (!prev || (session.updatedAt || 0) > (prev.updatedAt || 0)) byId.set(session.id, session);
+        }
       }
     }
+    const sessions = [...byId.values()];
+    for (const s of sessions) s.account = sessionAccount(s);
     return { sessions, error: null };
   } catch (err) {
     return { sessions: [], error: `Claude セッション読み取り失敗: ${err.message}` };

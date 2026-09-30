@@ -49,7 +49,27 @@ export function defaultSettings() {
     views: [],
     // Sending prompts to sessions (headless turns through the agents' CLIs).
     dispatch: defaultDispatch(),
+    // Accounts: display names, and the agents' extra config folders (see accounts.mjs).
+    accounts: defaultAccounts(),
   };
+}
+
+export function defaultAccounts() {
+  return { labels: {}, claudeHomes: [], codexHomes: [], discover: true };
+}
+
+const ACCOUNT_KEY = /^(codex|claude):[A-Za-z0-9._@:-]{1,128}$/;
+function normalizeHomes(list) {
+  if (!Array.isArray(list)) return [];
+  return [...new Set(list.map((p) => String(p || '').trim().replace(/\/+$/, '')).filter((p) => p.startsWith('/') || p.startsWith('~/')))].slice(0, 10);
+}
+function normalizeAccounts(x) {
+  const labels = {};
+  for (const [k, v] of Object.entries(x?.labels && typeof x.labels === 'object' ? x.labels : {})) {
+    const name = String(v ?? '').trim().slice(0, 60);
+    if (ACCOUNT_KEY.test(k) && name) labels[k] = name;
+  }
+  return { labels, claudeHomes: normalizeHomes(x?.claudeHomes), codexHomes: normalizeHomes(x?.codexHomes), discover: x?.discover !== false };
 }
 
 export function defaultDispatch() {
@@ -70,7 +90,7 @@ function normalizeDispatch(x) {
   };
 }
 
-const VIEW_FILTER_KEYS = ['agent', 'host', 'status', 'project', 'folder', 'section', 'directory', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'includeHidden', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
+const VIEW_FILTER_KEYS = ['agent', 'host', 'account', 'status', 'project', 'folder', 'section', 'directory', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'includeHidden', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
 function normalizeView(v) {
   if (!v || typeof v.id !== 'string' || !String(v.name || '').trim()) return null;
   const filters = {};
@@ -107,6 +127,7 @@ function normalizeSettings(s) {
     seenAllAt: typeof s?.seenAllAt === 'number' ? s.seenAllAt : null,
     views: Array.isArray(s?.views) ? s.views.map(normalizeView).filter(Boolean).slice(0, 20) : [],
     dispatch: normalizeDispatch(s?.dispatch),
+    accounts: normalizeAccounts(s?.accounts),
   };
 }
 
@@ -586,6 +607,22 @@ export class Store {
     return this.mutate((s) => {
       s.settings = normalizeSettings({ ...s.settings, dispatch: { ...s.settings.dispatch, ...patch } });
       return s.settings.dispatch;
+    });
+  }
+
+  // patch: { label: { key, name } } renames an account ('' clears it); homes / discover replace.
+  updateAccountSettings({ label, claudeHomes, codexHomes, discover } = {}) {
+    return this.mutate((s) => {
+      const a = { ...s.settings.accounts, labels: { ...s.settings.accounts.labels } };
+      if (label && typeof label.key === 'string') {
+        if (!ACCOUNT_KEY.test(label.key)) throw new Error('アカウントが不正です');
+        a.labels[label.key] = label.name;
+      }
+      if (claudeHomes !== undefined) a.claudeHomes = claudeHomes;
+      if (codexHomes !== undefined) a.codexHomes = codexHomes;
+      if (discover !== undefined) a.discover = discover;
+      s.settings = normalizeSettings({ ...s.settings, accounts: a });
+      return s.settings.accounts;
     });
   }
 

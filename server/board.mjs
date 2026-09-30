@@ -13,7 +13,17 @@ import { RemotePool } from './remote/pool.mjs';
 import { launchInfo } from './agents.mjs';
 import { installedTerminals } from './launcher.mjs';
 import { annotateStatus, STATUSES } from './status.mjs';
-import { currentLimits, cardSignals } from './signals.mjs';
+import { currentLimits, cardSignals, limitsByAccount } from './signals.mjs';
+import { configureAccounts, accountsView, accountLabel, desktopAccountMismatch } from './accounts.mjs';
+
+// The Claude desktop app lists only the signed-in account's sessions: opening another
+// account's session there would not find it, so say so (the terminal resumes it).
+function withAccountNote(launch, s, labels) {
+  const m = desktopAccountMismatch(s);
+  if (!m || !launch.desktop) return launch;
+  const note = `このセッションは ${accountLabel(m.session, labels)} のものです。Claude デスクトップは今 ${accountLabel(m.active, labels)} でサインインしているため、開くにはアカウントを切り替えるか、ターミナルで再開してください。`;
+  return { ...launch, desktop: { ...launch.desktop, note, accountMismatch: { session: m.session, active: m.active } } };
+}
 import { peekGit, refreshGit } from './gitlive.mjs';
 import { RuleEngine } from './rules.mjs';
 import { PrService } from './git.mjs';
@@ -57,6 +67,7 @@ export function allSessions(state, opts) {
 }
 
 async function allSessionsImpl(state, { force = false } = {}) {
+  if (configureAccounts(state.settings.accounts)) force = true; // homes changed: list again
   const hosts = await hostsWithState(state);
   const enabled = hosts.filter((h) => h.enabled);
   const [local, remote] = await Promise.all([localSessions({ force }), perf.timed('remote.list', () => pool.sessions(enabled, { force }))]);
@@ -86,9 +97,15 @@ function matchesDirectory(f, dir) {
   return f.directory === '__none' ? !dir : dir?.id === f.directory;
 }
 
+// '__none' = sessions of this machine whose account is not known.
+function matchesAccount(account, s) {
+  return account === '__none' ? !s.account && s.host?.local !== false : s.account === account;
+}
+
 function matches(session, card, f, labelsById, hits, dir) {
   if (f.agent && f.agent !== 'all' && session.agent !== f.agent) return false;
   if (f.host && (session.host?.id || 'local') !== f.host) return false;
+  if (f.account && !matchesAccount(f.account, session)) return false;
   if (f.project && session.project !== f.project) return false;
   if (f.folder && session.folder !== f.folder) return false;
   if (f.section && (f.section === '__none' ? session.codexSection : session.codexSection?.id !== f.section)) return false;
@@ -122,6 +139,7 @@ function matchesTask(t, links, status, f, labelsById, dir) {
   if (f.section && !anyLink((s) => (f.section === '__none' ? !s.codexSection : s.codexSection?.id === f.section))) return false;
   if (f.agent && f.agent !== 'all' && !(anyLink((s) => s.agent === f.agent) || t.target?.agent === f.agent)) return false;
   if (f.host && !(anyLink((s) => (s.host?.id || 'local') === f.host) || (t.target?.hostId || 'local') === f.host)) return false;
+  if (f.account && !anyLink((s) => matchesAccount(f.account, s))) return false;
   if (f.project && !anyLink((s) => s.project === f.project)) return false;
   if (f.q) {
     const q = f.q.toLowerCase();
@@ -137,6 +155,7 @@ export function normalizeFilters(f = {}) {
   return {
     agent: ['codex', 'claude'].includes(f.agent) ? f.agent : 'all',
     host: typeof f.host === 'string' && f.host ? f.host : null,
+    account: typeof f.account === 'string' && f.account ? f.account : null,
     project: f.project || null,
     folder: typeof f.folder === 'string' && f.folder ? f.folder : null,
     section: typeof f.section === 'string' && f.section ? f.section : null,
@@ -320,6 +339,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
   const sections = new Map(); // Codex sidebar sections
   const dirCounts = new Map();
   const hostCounts = new Map();
+  const visible = [];
 
   for (const s of sessions) {
     const card = state.cards[s.id];
@@ -328,6 +348,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
     if (s.project && visibleKind) projects.set(s.project, (projects.get(s.project) || 0) + 1);
     if (s.folder && s.folder !== s.project && visibleKind) folders.set(s.folder, (folders.get(s.folder) || 0) + 1);
     if (s.codexSection) sections.set(s.codexSection.id, { ...s.codexSection, count: (sections.get(s.codexSection.id)?.count || 0) + 1 });
+    if (visibleKind) visible.push(s);
     if (visibleKind) hostCounts.set(s.host?.id || 'local', (hostCounts.get(s.host?.id || 'local') || 0) + 1);
     const dir = resolveDirectory(state, card, s.cwd);
     if (dir && visibleKind && !toTask.has(s.id)) dirCounts.set(dir.id, (dirCounts.get(dir.id) || 0) + 1);
@@ -340,6 +361,8 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       id: s.id,
       agent: s.agent,
       host: s.host?.local === false ? { id: s.host.id, alias: s.host.alias, label: s.host.label } : null,
+      account: s.account || null,
+      home: s.home || null,
       title: s.title,
       project: s.project,
       folder: s.folder,
@@ -440,6 +463,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
     terminals: installedTerminals(),
     statusCounts,
     limits: currentLimits(),
+    accounts: accountsView({ labels: state.settings.accounts.labels, sessions: visible, codexLimits: limitsByAccount() }),
     search: searchFor(store).progress,
     git: { available: prs.status.available, reason: prs.status.reason, github: prs.status.github, gitlab: prs.status.gitlab },
     folders: recentFolders(sessions),
@@ -569,8 +593,9 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   const children = (s.children || []).map((id) => byId.get(id)).filter(Boolean)
     .map((c) => ({ id: c.id, title: c.title, status: c.status || 'idle', updatedAt: c.updatedAt, agentName: c.agentName || null }));
   const { host: h, ...rest } = s;
+  const labels = state.settings.accounts.labels;
   return {
-    session: { ...rest, host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null },
+    session: { ...rest, host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: accountLabel(s.account, labels) },
     card: {
       listId, labels: card.labels || [], note: card.note || '', priority: card.priority || null, due: card.due || null, hidden: !!card.hidden,
       directory: dirView(resolveDirectory(state, card, s.cwd)), directoryId: card.directoryId || null,
@@ -583,7 +608,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     repo: s.repo || null,
     parentId: s.parentId || null,
     tasks: taskEntries(state).map(([id, t]) => ({ id, title: t.title })),
-    launch: launchInfo(s),
+    launch: withAccountNote(launchInfo(s), s, labels),
     settings: state.settings,
     terminals: installedTerminals(),
     recentMessages: recent,

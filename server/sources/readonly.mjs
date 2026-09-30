@@ -23,12 +23,31 @@ export async function stat(p) {
   }
 }
 
+export async function realpath(p) {
+  try {
+    return await fsp.realpath(p);
+  } catch {
+    return null;
+  }
+}
+
 export async function listDir(p) {
   try {
     return await fsp.readdir(p, { withFileTypes: true });
   } catch {
     return [];
   }
+}
+
+// Sub-directory names, following symlinks (the Claude desktop app's profiles and shared
+// session folders are often linked).
+export async function listSubdirs(p) {
+  const out = [];
+  for (const e of await listDir(p)) {
+    if (e.isDirectory()) out.push(e.name);
+    else if (e.isSymbolicLink() && (await stat(`${p}/${e.name}`))?.isDirectory()) out.push(e.name);
+  }
+  return out;
 }
 
 export async function readJson(p) {

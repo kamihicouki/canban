@@ -19,7 +19,8 @@ import { readFeedDelta } from './feed.mjs';
 import { onSessions, dropLocalCache } from './board.mjs';
 import { MAX_FOCUS } from './live.mjs';
 import { perf } from './perf.mjs';
-import { currentLimits, cardSignals } from './signals.mjs';
+import { currentLimits, cardSignals, limitsByAccount } from './signals.mjs';
+import { accountLimits } from './accounts.mjs';
 import { gitDirOf, refreshGit, peekGit } from './gitlive.mjs';
 
 export const WATCH_MAX_MS = 45000;
@@ -206,7 +207,10 @@ export function createWatch(hub, { presence = null } = {}) {
       res.feed = foci.length ? res.feeds[foci[0].cardId] || null : null;
       if (relist) dropLocalCache();
       for (const p of res.patches) delete p.full; // the detail's copy rides on the feed
-      if (res.patches.some((p) => p.id.startsWith('codex'))) res.limits = currentLimits();
+      if (res.patches.some((p) => p.id.startsWith('codex'))) {
+        res.limits = currentLimits();
+        res.accountLimits = accountLimits(limitsByAccount());
+      }
       return res;
     });
   };
