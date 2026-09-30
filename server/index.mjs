@@ -7,6 +7,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { Store } from './store.mjs';
+import { boardHtml } from './ui.mjs';
 import { leaderFor } from './leader.mjs';
 import { perf } from './perf.mjs';
 import { dispatcherFor, tickDispatch, setSpawner, dryRunSpawner } from './dispatch.mjs';
@@ -571,7 +572,7 @@ function send(msg) {
 }
 
 function uiHtml() {
-  return fs.readFileSync(path.join(here, '..', 'ui', 'board.html'), 'utf8').replaceAll('__CANBAN_VERSION__', PKG.version);
+  return boardHtml({ version: PKG.version });
 }
 
 async function handle(method, params = {}) {

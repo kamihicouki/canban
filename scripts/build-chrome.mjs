@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { boardHtml } from '../server/ui.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -10,7 +11,7 @@ const outDir = path.resolve(outIndex >= 0 ? args[outIndex + 1] : path.join(root,
 if (outIndex >= 0 && (!args[outIndex + 1] || args[outIndex + 1].startsWith('--'))) throw new Error('--outdir needs a path');
 
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-let html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8').replaceAll('__CANBAN_VERSION__', pkg.version);
+let html = boardHtml({ version: pkg.version });
 const styles = [...html.matchAll(/<style>([\s\S]*?)<\/style>/gi)];
 const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)];
 if (styles.length !== 1 || scripts.length !== 1) throw new Error('Chrome build expects one inline style block and one inline board script');

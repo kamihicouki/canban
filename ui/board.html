@@ -573,7 +573,7 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
 .pane-layer.stack .pane-stage { pointer-events: auto; overflow-y: auto; }
 .pane-layer.stack .pane-dim { opacity: 1; }
 .pane-layer.stack .pane-canvas { display: flex; flex-direction: column; gap: 12px; padding: 12px; min-height: 0; width: auto !important; height: auto !important; }
-.pane-layer.stack .pane { position: relative; left: auto !important; top: auto !important; height: auto !important; width: 100%; max-width: none; max-height: 90vh; transform: none; flex: none; }
+.pane-layer.stack .pane { position: relative; left: auto !important; top: auto !important; width: 100%; max-width: none; max-height: none; transform: none; flex: none; }
 .pane-layer.stack .pane-b { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; overflow-y: auto; }
 .pane-layer.stack .pcol { overflow: visible; }
 .pane-layer.stack .pane.movable .ph-top { cursor: default; }
@@ -639,6 +639,7 @@ body.orb-dragging .orb-zone { opacity: 1; }
   .side-close { display: block; }
   .modal-grid { grid-template-columns: 1fr; }
 }
+/* @include workspace.css */
 </style>
 </head>
 <body>
@@ -856,10 +857,11 @@ const bridge = (() => {
 // ======================================================================
 // State
 // ======================================================================
+// @include workspace-model.js
 const PAGE = 40;
 const COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
 const COLOR_NAMES = { gray: 'グレー', blue: '青', green: '緑', yellow: '黄', orange: 'オレンジ', red: '赤', purple: '紫', pink: 'ピンク', sky: '水色', lime: 'ライム' };
-const SHARED_UI_KEYS = ['filters', 'sidebar', 'view', 'labelsExpanded', 'paneGlobal', 'paneLayout', 'panes', 'dashOpen', 'paneCollect', 'orbPos', 'paneBarOpen', 'collapsedLanes'];
+const SHARED_UI_KEYS = ['filters', 'sidebar', 'view', 'workspacePage', 'navCollapsed', 'labelsExpanded', 'paneGlobal', 'paneLayout', 'panes', 'dashOpen', 'paneCollect', 'orbPos', 'paneBarOpen', 'collapsedLanes'];
 const sharedUi = { revision: null, ready: false, dirty: false, blocked: false, applying: false, inflight: false, generation: 0, timer: null, checkTimer: null };
 const store = {
   get(k, d) { try { const v = localStorage.getItem(`sk:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -998,6 +1000,8 @@ function render() {
   $('#seenBtn').hidden = !b.lists.some((l) => l.cards.some((c) => c.unread));
   $('#perfBtn').hidden = !b.perf?.slow?.length;
   announceAutoMoves(b);
+  workspace.render(b);
+  if (workspace.utilityPage()) return;
   const eb = $('#errbar');
   eb.hidden = !b.errors.length;
   eb.textContent = b.errors.join(' / ');
@@ -1338,6 +1342,11 @@ function closePopover(p = null) {
   if (!document.activeElement || document.activeElement === document.body) refocus(gone[0].returnFocus);
 }
 function popover(anchor, title, body, { width, stack = false } = {}) {
+  if (anchor?._pagePanel) {
+    anchor._pagePanel.replaceChildren(body);
+    workspace.trackDrafts(body);
+    return anchor._pagePanel;
+  }
   const returnFocus = stack ? document.activeElement : document.querySelector('.popover')?.returnFocus || document.activeElement;
   if (!stack) closePopover();
   const r = anchor.getBoundingClientRect();
@@ -1609,12 +1618,12 @@ function savePanes() {
   store.set('panes', panes.map((p) => ({ id: p.id, space: p.space, mode: p.mode, size: p.size, note: p.note, free: p.free })));
 }
 function paneMetrics() {
-  paneLayer.style.top = `${Math.max(0, $('.shell')?.getBoundingClientRect().top ?? 0)}px`;
-  const stack = window.innerWidth < 720;
+  paneLayer.style.top = '0px';
+  const stack = paneStage.clientWidth < 720;
   paneLayer.classList.toggle('stack', stack);
   // clientWidth / clientHeight ignore the scale transform that folds the layer into the round button
   paneLayer.style.setProperty('--area-w', `${paneStage.clientWidth}px`);
-  paneLayer.style.setProperty('--area-h', `${Math.round(stack ? window.innerHeight * 0.9 : paneStage.clientHeight)}px`);
+  paneLayer.style.setProperty('--area-h', `${paneStage.clientHeight}px`);
   return stack;
 }
 
@@ -1623,42 +1632,10 @@ const PANE_GAP = 12;
 const setXY = (el, x, y) => { el.style.left = `${Math.round(x)}px`; el.style.top = `${Math.round(y)}px`; };
 const curXY = (el) => ({ x: parseFloat(el.style.left) || 0, y: parseFloat(el.style.top) || 0 });
 function packPanes(els, kind, W, H) {
-  const gap = PANE_GAP, maxH = H - gap * 2;
-  if (!els.length) return { rects: [], width: W, height: H };
-  els.forEach((e) => { e.style.height = ''; });
-  const it = els.map((e) => ({ e, w: e.offsetWidth, h: Math.min(e.offsetHeight, maxH), note: e.classList.contains('is-note') }));
-  const rects = [];
-  let width = W, height = H;
-  const rowRects = (row, y, rh) => {
-    const rowW = row.reduce((n, i) => n + i.w, 0) + gap * (row.length - 1);
-    let x = Math.max(gap, (W - rowW) / 2);
-    for (const i of row) { rects.push({ e: i.e, x, y, h: i.note ? Math.min(i.h, rh) : rh }); x += i.w + gap; }
-    return x;
-  };
-  if (kind === 'row') {
-    const rh = Math.max(...it.map((i) => i.h));
-    width = Math.max(W, rowRects(it, gap * 2, rh));
-  } else if (kind === 'col') {
-    let y = gap * 2;
-    for (const i of it) { rects.push({ e: i.e, x: Math.max(gap, (W - i.w) / 2), y, h: i.h }); y += i.h + gap; }
-    height = Math.max(H, y);
-  } else {
-    const rows = [];
-    let row = [], x = gap;
-    for (const i of it) { if (row.length && x + i.w > W - gap) { rows.push(row); row = []; x = gap; } row.push(i); x += i.w + gap; }
-    rows.push(row);
-    const cap = Math.floor((H - gap * (rows.length + 1)) / rows.length);
-    const fit = cap >= 320;
-    let y = rows.length === 1 ? gap * 2 : gap;
-    for (const r of rows) {
-      let rh = Math.max(...r.map((i) => i.h));
-      if (fit) rh = Math.min(rh, cap);
-      rowRects(r, y, rh);
-      y += rh + gap;
-    }
-    height = Math.max(H, y);
-  }
-  return { rects, width, height };
+  els.forEach(e => { e.style.height = ''; });
+  const items = els.map((e, index) => ({ index, w: e.offsetWidth, h: e.offsetHeight, note: e.classList.contains('is-note') }));
+  const result = paneGeometry(items, kind, W, H);
+  return { ...result, rects: result.rects.map(r => ({ ...r, e: els[r.index] })) };
 }
 function clampXY(el, x, y) {
   const W = paneStage.clientWidth, H = paneStage.clientHeight;
@@ -1678,7 +1655,7 @@ function doPaneLayout() {
   panes.forEach(applyPaneAttrs);
   const stack = paneMetrics();
   if (stack) {
-    for (const p of panes) p.el.style.left = p.el.style.top = p.el.style.height = '';
+    for (const p of panes) { p.el.style.left = p.el.style.top = ''; p.el.style.height = p.note ? '' : `${Math.max(0, paneStage.clientHeight - PANE_GAP * 2)}px`; }
     paneCanvas.style.width = paneCanvas.style.height = '';
     paneStage.classList.remove('scrolls');
     return;
@@ -1917,9 +1894,12 @@ function paintDepth() {
 }
 function paintDash() {
   paneLayer.classList.toggle('closed', !dashOpen);
+  paneLayer.inert = !dashOpen;
+  paneLayer.setAttribute('aria-hidden', String(!dashOpen));
   paneLayer.classList.toggle('dim', panes.some((p) => !p.note));
   paneLayer.classList.toggle('lite', panes.length > 0 && !panes.some((p) => !p.note));
   paintOrb(); paintDepth();
+  workspace.syncDash();
 }
 function setDash(v, { quiet = false } = {}) {
   dashOpen = v; store.set('dashOpen', v);
@@ -2074,12 +2054,15 @@ document.addEventListener('dragend', () => {
 
 // ---- opening, closing ----
 function closeTaskOverlay() {
-  document.querySelectorAll('.overlay').forEach((o) => o.remove());
+  document.querySelectorAll('.overlay').forEach((o) => { o.hidden = true; });
+  workspace.activeTask = null;
   state.modalOpen = false;
 }
 function closeModal() { // the overlay dialogs (task cards)
   const had = document.querySelector('.overlay');
+  document.querySelector('.overlay:not([hidden])')?.remove();
   closeTaskOverlay();
+  workspace.syncShell();
   if (had) refocus(state.modalReturn);
 }
 function modalOpened() {
@@ -2831,6 +2814,7 @@ function scopeLabel(b) {
   return parts.length ? parts.join(' · ') : '📁 すべて';
 }
 function setScope(patch) {
+  if (workspace.utilityPage()) workspace.navigate('home', { reload: false });
   Object.assign(state.filters, patch);
   saveFilters();
   state.shown = {};
@@ -2991,6 +2975,7 @@ function syncHeaderInputs() {
   $('#fulltext').checked = !!state.filters.fulltext;
 }
 function applyView(v) {
+  workspace.navigate('home', { reload: false });
   state.filters = { ...DEFAULT_FILTERS, ...v.filters };
   state.soloLane = null;
   saveFilters();
@@ -3171,19 +3156,36 @@ function openTaskModal(cardId) {
   const found = findCard(cardId);
   if (!found) return toast('カードが見つかりません（絞り込みを確認してください）', true);
   const { card, list } = found;
+  const cached = $$('.overlay').find(o => o.dataset.taskId === cardId);
+  if (cached && workspace.hasDrafts(cached)) {
+    workspace.activeTask = cardId; cached.hidden = false;
+    workspace.navigate('cards', { reload: false });
+    return;
+  }
+  cached?.remove();
   const b = state.board;
   modalOpened();
   closePopover();
-  document.querySelectorAll('.overlay').forEach((o) => o.remove());
+  document.querySelectorAll('.overlay').forEach((o) => { o.hidden = true; });
   state.modalOpen = true;
   const overlay = h('div', { class: 'overlay', onclick: (e) => { if (e.target === overlay) closeModal(); } });
+  overlay.dataset.taskId = cardId;
   overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
   const title = h('input', { class: 'title-input', value: card.title, maxlength: 300, 'aria-label': 'タイトル' });
   title.onchange = () => title.value.trim() && act('canban_update_task', { cardId, title: title.value });
   const desc = h('textarea', { class: 'note', placeholder: '説明（新しいセッションへの依頼文にも使われます）', 'aria-label': '説明' });
   desc.value = card.description;
-  desc.onblur = () => desc.value !== card.description && act('canban_update_task', { cardId, description: desc.value }, { okMsg: '保存しました' });
+  desc.defaultValue = card.description;
+  desc.onblur = async () => {
+    if (desc.value === desc.defaultValue) return;
+    const value = desc.value;
+    try {
+      await act('canban_update_task', { cardId, description: value }, { okMsg: '保存しました' });
+      desc.defaultValue = value;
+      workspace.draftValues.set(desc, value);
+    } catch {}
+  };
 
   const listSel = pickerButton({ title: 'リスト', value: list.id, stack: false, className: 'btn picker-btn',
     items: () => b.lists.map((l) => ({ value: l.id, label: l.title, color: l.color, hint: l.count })),
@@ -3202,6 +3204,7 @@ function openTaskModal(cardId) {
   fillFolders();
   const prompt = h('textarea', { class: 'note', 'aria-label': '依頼文' });
   prompt.value = [card.title, card.description].filter(Boolean).join('\n\n');
+  prompt.defaultValue = prompt.value;
   const start = async (opts = {}) => {
     try {
       const r = await bridge.callTool('canban_start_session', { taskId: cardId, agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim(), prompt: prompt.value, ...opts });
@@ -3268,6 +3271,9 @@ function openTaskModal(cardId) {
           onclick: async () => { if (confirmInline(modal, `この${T.taskCard}を削除します。紐付いたセッション自体は消えません。`)) { await act('canban_delete_task', { cardId }, { okMsg: '削除しました' }); closeModal(); } } }))));
   overlay.append(modal);
   document.body.append(overlay);
+  workspace.activeTask = cardId;
+  workspace.trackDrafts(overlay);
+  workspace.navigate('cards', { reload: false });
   title.focus();
 }
 
@@ -3403,15 +3409,9 @@ function fmtReset(ms) {
 function windowName(w) { return !w.windowMinutes ? '' : w.windowMinutes >= 1440 ? (w.windowMinutes === 10080 ? '週' : `${Math.round(w.windowMinutes / 1440)}日`) : `${Math.round(w.windowMinutes / 60)}h`; }
 // Codex rate limits in the header (the latest snapshot any Codex log wrote).
 function renderLimits(l) {
-  const bar = $('#limitsBar');
-  if (!bar) return;
-  const ws = l ? [l.primary, l.secondary].filter(Boolean) : [];
-  bar.hidden = !ws.length;
-  if (!ws.length) return bar.replaceChildren();
-  bar.title = `Codex の利用上限${l.plan ? `（${l.plan}）` : ''}\n${ws.map((w) => `${windowName(w)}: ${Math.round(w.usedPercent)}% 使用 · ${fmtReset(w.resetsAt)}`).join('\n')}\n${fmtDate(l.at)} 時点`;
-  bar.replaceChildren(h('span', { text: 'Codex' }), ...ws.map((w) => h('span', { class: 'lm' }, h('span', { text: windowName(w) }),
-    h('span', { class: 'bar' }, h('i', { class: heat(w.usedPercent), style: { width: `${Math.min(100, w.usedPercent)}%` } })),
-    h('span', { text: `${Math.round(w.usedPercent)}%` }))));
+  if (state.board) state.board.limits = l;
+  workspace.renderLimitChip(l);
+  if (workspace.page === 'usage' && state.board) workspace.render(state.board);
 }
 function hasLive(b) { return (b.statusCounts?.running || 0) + (b.statusCounts?.waiting || 0) > 0; }
 
@@ -3946,11 +3946,8 @@ function syncViewButton() {
 }
 syncViewButton();
 function toggleAnalytics() {
-  state.view = state.view === 'analytics' ? 'board' : 'analytics';
-  store.set('view', state.view);
+  workspace.navigate(state.view === 'analytics' ? 'home' : 'analytics');
   syncViewButton();
-  if (state.view === 'board' && state.board) render();
-  load();
 }
 $('#analyticsBtn').addEventListener('click', toggleAnalytics);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.querySelector('.popover')) closePopover(); });
@@ -4067,6 +4064,9 @@ $('#board').addEventListener('wheel', (e) => {
 }, { passive: false });
 
 // ======================================================================
+// @include workspace-icons.js
+// @include workspace.js
+
 // Theme & lifecycle
 // ======================================================================
 function applyTheme(t) {
@@ -4090,7 +4090,7 @@ async function restorePanes() {
 
 function sharedUiSnapshot() {
   return {
-    filters: { ...state.filters }, sidebar: state.sideOpen, view: state.view, labelsExpanded: state.labelsExpanded,
+    filters: { ...state.filters }, sidebar: state.sideOpen, view: state.view, workspacePage: workspace.page, navCollapsed: workspace.collapsed, labelsExpanded: state.labelsExpanded,
     paneGlobal: { ...paneGlobal }, paneLayout: structuredClone(paneLayout), panes: store.get('panes', []),
     dashOpen, paneCollect, orbPos: { ...orbPos }, paneBarOpen, collapsedLanes: [...collapsedLanes],
   };
@@ -4106,6 +4106,7 @@ function adoptSharedUi(record) {
     for (const key of SHARED_UI_KEYS) if (Object.hasOwn(value, key)) store.cache(key, value[key]);
     if (value.filters && typeof value.filters === 'object' && !Array.isArray(value.filters)) state.filters = { ...DEFAULT_FILTERS, ...value.filters };
     if (typeof value.sidebar === 'boolean') state.sideOpen = value.sidebar;
+    if (typeof value.navCollapsed === 'boolean') workspace.setCollapsed(value.navCollapsed, false);
     if (value.view === 'board' || value.view === 'analytics') {
       state.view = value.view;
       syncViewButton();
@@ -4121,6 +4122,7 @@ function adoptSharedUi(record) {
       paneLayout = { main: value.paneLayout.main, side: value.paneLayout.side, collapsed: (Array.isArray(value.paneLayout.collapsed) ? value.paneLayout.collapsed : []).filter((key) => PANE_SECS[key]) };
     }
     if (typeof value.dashOpen === 'boolean') dashOpen = value.dashOpen;
+    workspace.navigate(workspacePage(value.workspacePage, value.view === 'analytics' ? 'analytics' : dashOpen && (value.panes || []).length ? 'cards' : 'home'), { save: false, reload: false });
     if (typeof value.paneCollect === 'boolean') paneCollect = value.paneCollect;
     if (value.orbPos && ['left', 'right', 'top', 'bottom'].includes(value.orbPos.edge) && Number.isFinite(value.orbPos.t)) orbPos = { edge: value.orbPos.edge, t: Math.min(1, Math.max(0, value.orbPos.t)) };
     if (typeof value.paneBarOpen === 'boolean') paneBarOpen = value.paneBarOpen;
@@ -4141,6 +4143,10 @@ function adoptSharedUi(record) {
 
 async function applySharedUi(record, { redraw = true } = {}) {
   if (!record?.state) return;
+  if (hasUnsavedPaneInput()) {
+    toast('入力途中の内容を保持しています。保存または入力を消してから共有状態を読み込んでください。', true);
+    return;
+  }
   const wasApplying = sharedUi.applying;
   sharedUi.applying = true;
   try { if (panes.length) for (const pane of [...panes]) closePane(pane.id); }
@@ -4232,7 +4238,7 @@ async function initializeSharedUi() {
 }
 
 function hasUnsavedPaneInput() {
-  return [...document.querySelectorAll('.send-box textarea')].some((input) => input.value.trim())
+  return workspace.hasDrafts() || [...document.querySelectorAll('.send-box textarea')].some((input) => input.value.trim())
     || [...document.querySelectorAll('textarea.note')].some((input) => input.value !== input.defaultValue);
 }
 
