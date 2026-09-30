@@ -14,16 +14,9 @@ import { launchInfo } from './agents.mjs';
 import { installedTerminals } from './launcher.mjs';
 import { annotateStatus, STATUSES } from './status.mjs';
 import { currentLimits, cardSignals, limitsByAccount } from './signals.mjs';
-import { configureAccounts, accountsView, accountLabel, desktopAccountMismatch } from './accounts.mjs';
+import { configureAccounts, accountsView, accountLabel } from './accounts.mjs';
+import { matchesAccount, withAccountNote } from './accounts-mcp.mjs';
 
-// The Claude desktop app lists only the signed-in account's sessions: opening another
-// account's session there would not find it, so say so (the terminal resumes it).
-function withAccountNote(launch, s, labels) {
-  const m = desktopAccountMismatch(s);
-  if (!m || !launch.desktop) return launch;
-  const note = `このセッションは ${accountLabel(m.session, labels)} のものです。Claude デスクトップは今 ${accountLabel(m.active, labels)} でサインインしているため、開くにはアカウントを切り替えるか、ターミナルで再開してください。`;
-  return { ...launch, desktop: { ...launch.desktop, note, accountMismatch: { session: m.session, active: m.active } } };
-}
 import { peekGit, refreshGit } from './gitlive.mjs';
 import { RuleEngine } from './rules.mjs';
 import { PrService } from './git.mjs';
@@ -97,10 +90,6 @@ function matchesDirectory(f, dir) {
   return f.directory === '__none' ? !dir : dir?.id === f.directory;
 }
 
-// '__none' = sessions of this machine whose account is not known.
-function matchesAccount(account, s) {
-  return account === '__none' ? !s.account && s.host?.local !== false : s.account === account;
-}
 
 function matches(session, card, f, labelsById, hits, dir) {
   if (f.agent && f.agent !== 'all' && session.agent !== f.agent) return false;

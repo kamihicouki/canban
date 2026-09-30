@@ -12,6 +12,7 @@
 - **One-row header.** The header no longer wraps. When it does not fit, button labels go first (icons stay), then items move into a new ⋯ menu from the lowest priority up (本文 → 自動化 → ビュー → ラベル → マシン → 分析 → 表示 → 期間 → 📁 → AI Apps → 実行状態). The run-state chips are dots with counts; the session totals moved to the Canban title's tooltip.
 - **Usage rings.** Usage is one double ring per account on the 👤 button: outer = 5-hour window, inner = weekly, green / orange / red by how full; the center carries the account's initial on its own color and a corner mark says Codex or Claude. In the 👤 menu each account can be left out of the header (checkbox) and given a name, a 1–2 character initial and a color (✎). Card chips use the same initial and color.
 - Fix: `h()` now sets CSS custom properties given in `style`.
+- Code layout: the account and header UI live in `ui/accounts.{js,css}` and `ui/header.{js,css}`, inlined into `ui/board.html` at `@include` markers by `server/ui.mjs` (the page stays one `<style>` + one `<script>`). Server glue is in `server/accounts-settings.mjs` (settings) and `server/accounts-mcp.mjs` (tools, filter, desktop notes, watch folders); `board.html`, `store.mjs`, `index.mjs` and `board.mjs` keep one-line hooks.
 
 ## 0.13.0 — 2026-09-29
 - Card details are now **panes** instead of one modal: open several cards at once, like pinned sticky notes (up to 8).

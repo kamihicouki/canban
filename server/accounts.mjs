@@ -22,6 +22,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { exists, listDir, listSubdirs, readJson, realpath, stat } from './sources/readonly.mjs';
+import { ACCOUNT_COLORS } from './accounts-settings.mjs';
 
 const DISCOVER_TTL_MS = 60e3;
 const MAX_HOMES = 12;
@@ -369,7 +370,6 @@ export function accountLimits(codexLimits = new Map(), now = Date.now()) {
 // the newest rate-limit snapshot seen in the logs.
 // Header marks: an initial and a color per account. Unset colors are dealt out in a
 // stable order (agent, then key) so the same account keeps its color.
-const MARK_COLORS = ['blue', 'purple', 'pink', 'sky', 'lime', 'yellow', 'gray'];
 function defaultShort(label) {
   const c = [...String(label || '').replace(/^[^\p{L}\p{N}]+/u, '')][0] || '?';
   return c.toUpperCase();
@@ -399,10 +399,10 @@ export function accountsView({ labels = {}, marks = {}, hidden = [], sessions = 
   }));
   accounts.sort((x, y) => (x.agent === y.agent ? y.count - x.count : x.agent === 'codex' ? -1 : 1));
   const taken = new Set(accounts.map((a) => marks[a.key]?.color).filter(Boolean));
-  const free = MARK_COLORS.filter((c) => !taken.has(c));
+  const free = ACCOUNT_COLORS.filter((c) => !taken.has(c));
   [...accounts].sort((x, y) => (x.agent + x.key < y.agent + y.key ? -1 : 1)).forEach((a, i) => {
     a.short = marks[a.key]?.short || defaultShort(a.label);
-    a.color = marks[a.key]?.color || free[i % Math.max(free.length, 1)] || MARK_COLORS[i % MARK_COLORS.length];
+    a.color = marks[a.key]?.color || free[i % Math.max(free.length, 1)] || ACCOUNT_COLORS[i % ACCOUNT_COLORS.length];
     a.inHeader = !hidden.includes(a.key);
   });
   return {
@@ -411,6 +411,7 @@ export function accountsView({ labels = {}, marks = {}, hidden = [], sessions = 
     homes: [...registry.homes.codex, ...registry.homes.claude].map((h) => ({ id: h.id, agent: h.agent, dir: h.dir, default: h.default, source: h.source, missing: !!h.missing, account: h.account })),
     desktopActive: registry.desktopActive,
     discover: config.discover,
+    colors: ACCOUNT_COLORS,
   };
 }
 

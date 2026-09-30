@@ -83,41 +83,8 @@ button { cursor: pointer; border: 0; background: none; }
 }
 .topbar h1 { font-size: 18px; margin: 0 8px 0 4px; font-weight: 700; white-space: nowrap; }
 .topbar .spacer { flex: 1 1 0; min-width: 4px; }
-.topbar > * { flex: none; }
-.topbar .hsearch { flex: 0 1 220px; min-width: 90px; }
-.topbar .hbtn { display: inline-flex; align-items: center; gap: 5px; }
-.topbar.compact .hbtn[data-pri] .lbl { display: none; }
-.topbar [data-pri].folded { display: none !important; }
-.more-menu .menu-item { display: flex; align-items: center; gap: 8px; }
-.more-menu .more-row { display: flex; gap: 4px; padding: 2px 6px 6px; flex-wrap: wrap; }
-.more-menu .more-row button { padding: 3px 8px; border-radius: 4px; background: var(--btn-subtle); font-size: 12px; }
-.more-menu .more-row button[aria-pressed="true"] { background: var(--c-blue); color: #fff; }
-/* usage rings: outer = 5-hour window, inner = weekly; the center carries the account's
-   initial on its own color, the corner mark says Codex / Claude */
-.acct-btn { gap: 6px; padding: 0 8px; }
-.acct-btn .rings { display: inline-flex; gap: 5px; }
-.acct-btn .rings:empty { display: none; }
-.acct-lbl { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
-.acct-lbl:empty { display: none; }
-.ring2 { --a: 0; --b: 0; --ca: var(--c-green); --cb: var(--c-green); position: relative; width: 28px; height: 28px; flex: none; display: inline-block; }
-.ring2::before, .ring2::after { content: ""; position: absolute; border-radius: 50%; }
-.ring2::before { inset: 0; background: conic-gradient(var(--ca) calc(var(--a) * 1%), var(--ring-track, rgba(255,255,255,.22)) 0);
-  -webkit-mask: radial-gradient(circle, transparent 10.5px, #000 11px); mask: radial-gradient(circle, transparent 10.5px, #000 11px); }
-.ring2::after { inset: 4px; background: conic-gradient(var(--cb) calc(var(--b) * 1%), var(--ring-track, rgba(255,255,255,.22)) 0);
-  -webkit-mask: radial-gradient(circle, transparent 6.5px, #000 7px); mask: radial-gradient(circle, transparent 6.5px, #000 7px); }
-.ring2.no-a::before, .ring2.no-b::after { background: var(--ring-track, rgba(255,255,255,.22)); opacity: .5; }
-.acct-row { --ring-track: var(--btn-subtle-hover); }
-.acct-row .ring2 .agm { border-color: var(--modal-bg, #fff); }
-.ring2 .ini { position: absolute; inset: 8px; border-radius: 50%; display: grid; place-items: center; font-size: 9px; font-weight: 700; line-height: 1; color: #fff; }
-.ring2 .agm { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 3px; border: 1.5px solid #2c4f8f; }
-.agm.codex, .acct-dot.codex { background: #10a37f; }
-.agm.claude, .acct-dot.claude { background: #d97757; }
-.ring2.stale { opacity: .5; }
-.ring2.none { opacity: .7; }
-.acct-dot { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; font-size: 9px; font-weight: 700; color: #fff; flex: none; }
-.swatches { display: flex; gap: 4px; }
-.swatches button { width: 18px; height: 18px; border-radius: 50%; border: 2px solid transparent; padding: 0; }
-.swatches button[aria-pressed="true"] { border-color: var(--list-fg); }
+/* @include header.css */
+/* @include accounts.css */
 .hbtn, .hselect, .hsearch {
   height: 32px; border-radius: 4px; background: rgba(255,255,255,0.2); color: #fff; border: 0; padding: 0 10px;
 }
@@ -267,28 +234,6 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .limits { display: inline-flex; gap: 8px; align-items: center; height: 28px; padding: 0 10px; border-radius: 14px; background: rgba(255,255,255,0.2); color: #fff; font-size: 12px; white-space: nowrap; }
 .limits[hidden] { display: none; }
 .viewer-pill { background: var(--c-purple); color: #fff; }
-.limits .lm { display: inline-flex; align-items: center; gap: 4px; }
-.limits .lm .bar { width: 36px; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.3); overflow: hidden; }
-.limits .lm .bar > i { display: block; height: 100%; background: var(--c-green); }
-.limits .lm .bar > i.warn { background: var(--c-orange); }
-.limits .lm .bar > i.hot { background: var(--c-red); }
-button.limits { border: 0; cursor: pointer; font: inherit; }
-button.limits:hover { background: rgba(255,255,255,0.3); }
-.limits .acct { display: inline-flex; align-items: center; gap: 6px; }
-.limits .acct + .acct { border-left: 1px solid rgba(255,255,255,0.35); padding-left: 8px; }
-.limits .acct.old { opacity: 0.6; }
-.limits .acct .who { max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
-.acct-chip { display: inline-flex; align-items: center; border-radius: 3px; padding: 0 4px; background: var(--btn-subtle-hover); max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.acct-row { display: flex; align-items: center; gap: 6px; }
-.acct-row .menu-item { flex: 1; min-width: 0; }
-.acct-usage { display: flex; gap: 10px; font-size: 11px; color: var(--list-muted); margin-top: 2px; }
-.acct-usage .lm { display: inline-flex; align-items: center; gap: 4px; }
-.acct-usage .bar { width: 48px; height: 5px; border-radius: 3px; background: var(--btn-subtle-hover); overflow: hidden; }
-.acct-usage .bar > i { display: block; height: 100%; background: var(--c-green); }
-.acct-usage .bar > i.warn { background: var(--c-orange); }
-.acct-usage .bar > i.hot { background: var(--c-red); }
-.home-row { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 0; }
-.home-row .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
 .live-badge { font-size: 11px; font-weight: 600; color: var(--list-muted); display: inline-flex; align-items: center; gap: 4px; }
 .live-badge.on::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--c-green); }
 .feed-wrap { position: relative; margin-bottom: 8px; }
@@ -961,12 +906,9 @@ function render() {
   const remoteOn = b.hosts.filter((x) => !x.local && x.enabled).length;
   $('#hostsBtn .lbl').textContent = `${activeHost ? activeHost.label : 'マシン'}${remoteOn ? `（+${remoteOn}）` : ''} ▾`;
   $('#hostsBtn').setAttribute('aria-pressed', String(!!activeHost));
-  const activeAcct = state.filters.account === '__none' ? { label: 'アカウント不明' } : (b.accounts?.accounts || []).find((a) => a.key === state.filters.account);
-  $('#accountsBtn .acct-lbl').textContent = activeAcct ? activeAcct.label : '';
-  $('#accountsBtn').setAttribute('aria-pressed', String(!!activeAcct));
+  renderAccountsButton(b);
   $('#logo').title = `表示 ${b.totals.shown} / Codex ${b.totals.codex}・Claude ${b.totals.claude}`;
   renderStatusBar(b);
-  renderUsage(b.accounts);
   $('#seenBtn').hidden = !b.lists.some((l) => l.cards.some((c) => c.unread));
   $('#perfBtn').hidden = !b.perf?.slow?.length;
   fitHeader();
@@ -2221,8 +2163,7 @@ function renderPane(p, d) {
   secs.detail = { nodes: [h('dl', { class: 'kv' },
     ...kv('AI App', s.agent === 'codex' ? 'Codex' : 'Claude Code'),
     ...kv('マシン', s.host ? `${s.host.label}（SSH: ${s.host.alias}）` : 'このマシン'),
-    ...(s.host ? [] : kv('アカウント', s.accountLabel || '不明（記録なし）')),
-    ...(s.homeDir ? kv('設定フォルダ', s.homeDir) : []),
+    ...accountKv(s),
     ...kv(`${T.category}`, card.directory ? `${card.directory.name}${card.directoryId ? '' : '（フォルダから自動）'}` : '-'),
     ...kv('プロジェクト', s.codexProject ? `${s.codexProject.name}（Codex のプロジェクト）` : s.project || '-'),
     ...kv(T.folder, s.folder || '-'),
@@ -2616,10 +2557,7 @@ function applyLive(r, args) {
   if (r.presence) applyPresence(r.presence);
   if (r.seq != null) live.seq = live.seq == null ? r.seq : Math.max(live.seq, r.seq);
   if (r.patches?.length) applyPatches(r.patches);
-  if (r.accountLimits && state.board?.accounts) {
-    for (const l of r.accountLimits) { const a = state.board.accounts.accounts.find((x) => x.key === l.key); if (a) a.limits = l; }
-    renderUsage(state.board.accounts);
-  }
+  applyAccountLimits(r.accountLimits);
   if (r.reload) scheduleLoad();
   if (r.requests) { for (const f of live.feeds.values()) refreshDispatch(f); scheduleLoad(); }
   for (const [id, feed] of Object.entries(r.feeds || {})) {
@@ -2702,7 +2640,7 @@ function laneKey(card, mode) {
   }
   if (mode === 'agent') return card.kind === 'task' ? `${T.taskCard}` : card.agent === 'codex' ? 'Codex' : 'Claude Code';
   if (mode === 'host') return card.kind === 'task' ? (card.links[0]?.host?.label || 'このマシン') : card.host?.label || 'このマシン';
-  if (mode === 'account') return card.kind === 'task' ? `${T.taskCard}` : card.host ? `⌂ ${card.host.label}` : card.account ? `${card.agent === 'codex' ? 'Codex' : 'Claude'} · ${accountLabel(card.account)}` : 'アカウント不明';
+  if (mode === 'account') return accountLaneKey(card);
   if (mode === 'label') {
     const l = state.board.labels.find((x) => card.labels.includes(x.id));
     return l ? l.name : 'ラベルなし';
@@ -3131,7 +3069,7 @@ function renderAnalytics(st) {
     h('div', { class: 'panel-grid' },
       h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', { text: 'プロジェクト別' }), legend.cloneNode(true)), breakdownRows(st.projects, tip)),
       h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', { text: 'マシン別' }), legend.cloneNode(true)), breakdownRows(st.hosts, tip)),
-      st.accounts?.length ? h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', { text: 'アカウント別' }), legend.cloneNode(true)), breakdownRows(st.accounts, tip)) : null,
+      accountsPanel(st, legend, tip),
       st.directories?.some((r) => r.name !== '（なし）') ? h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', { text: `${T.category}別` }), legend.cloneNode(true)), breakdownRows(st.directories, tip)) : null),
     h('div', { class: 'panel-grid' },
       h('section', { class: 'panel' }, h('h3', { text: 'リストの滞留時間' }), lists),
@@ -3374,62 +3312,6 @@ function gitPill(g, fallback) {
   const extra = [g.changed + g.untracked ? `±${g.changed + g.untracked}` : null, g.ahead ? `↑${g.ahead}` : null, g.behind ? `↓${g.behind}` : null].filter(Boolean).join(' ');
   return h('span', { class: 'ellipsis', title: gitTitle(g), text: `⎇ ${g.branch || fallback || 'detached'}${extra ? ` ${extra}` : ''}` });
 }
-function fmtReset(ms) {
-  if (!ms) return '';
-  const d = ms - Date.now();
-  if (d <= 0) return 'リセット済み';
-  const hrs = Math.floor(d / 3600e3), min = Math.round((d % 3600e3) / 60e3);
-  return hrs >= 24 ? `${new Date(ms).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} にリセット` : `あと ${hrs ? `${hrs} 時間 ` : ''}${min} 分でリセット`;
-}
-function windowName(w) { return !w.windowMinutes ? '' : w.windowMinutes >= 1440 ? (w.windowMinutes === 10080 ? '週' : `${Math.round(w.windowMinutes / 1440)}日`) : `${Math.round(w.windowMinutes / 60)}h`; }
-// Usage per account in the header: Codex rate limits (from its logs) and Claude plan
-// usage (from the desktop app), one group per account that has a record.
-const OLD_USAGE_MS = 3600e3;
-function usageWindows(l) { return l ? [l.primary, l.secondary].filter(Boolean) : []; }
-function usageTitle(a) {
-  const l = a.limits;
-  const ws = usageWindows(l);
-  return [`${a.agent === 'codex' ? 'Codex' : 'Claude'}: ${a.label}${a.plan ? `（${a.plan}）` : ''}`,
-    ...ws.map((w) => `${windowName(w)}: ${Math.round(w.usedPercent)}% 使用${w.resetsAt ? ` · ${fmtReset(w.resetsAt)}` : ''}`),
-    l ? `${fmtDate(l.at)} 時点（${l.source === 'desktop' ? 'Claude デスクトップの記録' : 'セッションのログ'}）` : '使用量の記録はまだありません'].join('\n');
-}
-function usageBars(l, cls = 'lm') {
-  return usageWindows(l).map((w) => h('span', { class: cls }, h('span', { text: windowName(w) }),
-    h('span', { class: 'bar' }, h('i', { class: heat(w.usedPercent), style: { width: `${Math.min(100, w.usedPercent)}%` } })),
-    h('span', { text: `${Math.round(w.usedPercent)}%` })));
-}
-function shortWho(label) { return String(label || '').replace(/@.*$/, ''); }
-function ringFor(a) {
-  const l = a.limits || {};
-  const five = [l.primary, l.secondary].find((w) => w && w.windowMinutes && w.windowMinutes < 1440) || null;
-  const week = [l.primary, l.secondary].find((w) => w && w.windowMinutes >= 1440) || null;
-  const col = (w) => (w ? `var(--c-${heat(w.usedPercent) === 'hot' ? 'red' : heat(w.usedPercent) === 'warn' ? 'orange' : 'green'})` : 'transparent');
-  const old = a.limits && a.limits.source === 'desktop' && Date.now() - (a.limits.at || 0) > OLD_USAGE_MS;
-  return h('span', { class: `ring2${five ? '' : ' no-a'}${week ? '' : ' no-b'}${old ? ' stale' : ''}${a.limits ? '' : ' none'}`, title: usageTitle(a),
-    style: { '--a': five ? Math.min(100, five.usedPercent) : 0, '--b': week ? Math.min(100, week.usedPercent) : 0, '--ca': col(five), '--cb': col(week) } },
-    h('b', { class: 'ini', style: { background: colorVar(a.color) }, text: a.short }),
-    h('i', { class: `agm ${a.agent}` }));
-}
-// The 👤 button carries one ring per account shown in the header (settings in its menu).
-function renderUsage(v) {
-  const box = $('#acctRings');
-  if (!box) return;
-  const list = (v?.accounts || []).filter((a) => a.inHeader && (a.limits || a.count));
-  box.replaceChildren(...list.map(ringFor));
-  $('#accountsBtn').title = list.length ? `${list.map(usageTitle).join('\n\n')}\n\nクリックでアカウント一覧・表示の設定` : 'アカウント・使用量・設定フォルダ';
-  fitHeader();
-}
-function accountLabel(key) {
-  return (state.board?.accounts?.accounts || []).find((a) => a.key === key)?.label || String(key || '').split(':').slice(1).join(':').slice(0, 8);
-}
-// Only worth a chip when there is more than one account.
-function acctChip(card) {
-  if (!card.account || (state.board?.accounts?.accounts || []).length < 2) return null;
-  const a = state.board.accounts.accounts.find((x) => x.key === card.account);
-  const label = accountLabel(card.account);
-  return h('span', { class: 'acct-chip', title: `アカウント: ${label}${card.home ? `（設定フォルダ: ${card.home}）` : ''}` },
-    a ? h('span', { class: 'acct-dot', style: { background: colorVar(a.color), width: '13px', height: '13px', fontSize: '8px', marginRight: '3px' }, text: a.short }) : null, shortWho(label));
-}
 function hasLive(b) { return (b.statusCounts?.running || 0) + (b.statusCounts?.waiting || 0) > 0; }
 
 const announced = new Set();
@@ -3629,125 +3511,6 @@ function hostsMenu(anchor) {
     h('div', { class: 'sep' }),
     h('p', { class: 'muted', text: 'リモート接続は Codex アプリに登録済みのものです。有効にすると ssh（鍵認証）で python3 を使い、セッションを読み取り専用で取得します。名前をクリックするとそのマシンだけを表示します。' }));
   popover(anchor, 'マシン', body, { width: 360 });
-}
-
-// ---- header: one row ----
-// When the header does not fit, labels go first (icons stay), then the items with
-// data-pri move into ⋯ from the lowest priority up.
-let fitting = false;
-function fitHeader() {
-  const bar = $('.topbar');
-  if (!bar || fitting) return;
-  fitting = true;
-  const items = [...bar.querySelectorAll('[data-pri]')].sort((x, y) => x.dataset.pri - y.dataset.pri);
-  items.forEach((el) => el.classList.remove('folded'));
-  bar.classList.remove('compact');
-  const more = $('#moreBtn');
-  more.hidden = true;
-  const over = () => bar.scrollWidth > bar.clientWidth + 1;
-  if (over()) { bar.classList.add('compact'); more.hidden = false; }
-  let n = 0;
-  for (const el of items) {
-    if (!over()) break;
-    el.classList.add('folded');
-    n++;
-  }
-  more.hidden = !n;
-  fitting = false;
-}
-function moreMenu(anchor) {
-  const folded = [...document.querySelectorAll('.topbar [data-pri].folded')].sort((x, y) => y.dataset.pri - x.dataset.pri);
-  const go = (fn) => () => { closePopover(); fn(); };
-  const rows = folded.map((el) => {
-    if (el.id === 'days') return h('div', {}, h('div', { class: 'field-label', text: '期間' }), h('div', { class: 'more-row' },
-      ...[...el.options].map((o) => h('button', { 'aria-pressed': String(o.value === el.value), text: o.textContent, onclick: go(() => { el.value = o.value; el.dispatchEvent(new Event('change')); }) }))));
-    if (el.classList.contains('seg')) return h('div', {}, h('div', { class: 'field-label', text: T.aiApps }), h('div', { class: 'more-row' },
-      ...[...el.querySelectorAll('button')].map((b) => h('button', { 'aria-pressed': b.getAttribute('aria-pressed'), text: b.textContent, onclick: go(() => b.click()) }))));
-    if (el.id === 'statusBar') return h('div', {}, h('div', { class: 'field-label', text: '実行状態' }), h('div', { class: 'more-row' },
-      ...[...el.querySelectorAll('button')].map((b) => h('button', { 'aria-pressed': b.getAttribute('aria-pressed'), text: b.title.replace(/（.*$/, ''), onclick: go(() => b.click()) }))));
-    if (el.classList.contains('ft-toggle')) {
-      const cb = $('#fulltext');
-      return h('button', { class: 'menu-item', onclick: go(() => { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }) }, `${cb.checked ? '☑' : '☐'} 本文も検索`);
-    }
-    const ic = el.querySelector('.ic')?.textContent || '';
-    const label = el.querySelector('.lbl')?.textContent.replace(/\s*▾$/, '') || el.textContent.replace(/\s*▾$/, '');
-    // Menus opened from here anchor to ⋯ (the folded button has no place on screen).
-    return h('button', { class: 'menu-item', onclick: () => { closePopover(); HEADER_OPEN[el.id]?.(anchor); } }, h('span', { text: ic }), label.replace(ic, '').trim());
-  });
-  popover(anchor, 'その他', h('div', { class: 'more-menu' }, ...rows), { width: 260 });
-}
-
-function accountsMenu(anchor) {
-  const v = state.board?.accounts;
-  if (!v) return;
-  const pick = (key) => { state.filters.account = state.filters.account === key ? '' : key; saveFilters(); closePopover(); load(); };
-  const signedText = (a) => a.signedIn.map((x) => (x === 'desktop' ? 'デスクトップ' : x.startsWith('desktop:') ? `デスクトップ（${x.slice(8)}）` : `CLI${x === 'cli:default' ? '' : `（${x.slice(4)}）`}`)).join('・');
-  const MARK_COLORS = ['blue', 'purple', 'pink', 'sky', 'lime', 'yellow', 'gray'];
-  // Name, initial and color: how the account reads in the header rings and on cards.
-  const edit = (a, row) => {
-    let color = a.color;
-    const name = h('input', { class: 'text-input', value: a.customLabel || '', placeholder: a.email || a.name || a.label, maxlength: 60, 'aria-label': '表示名' });
-    const short = h('input', { class: 'text-input', value: a.short, maxlength: 2, style: { width: '44px', textAlign: 'center' }, 'aria-label': 'リングの頭文字（2 文字まで）', title: 'リングの頭文字（2 文字まで）' });
-    const sw = h('div', { class: 'swatches', role: 'group', 'aria-label': '色' }, ...MARK_COLORS.map((c) => h('button', { 'aria-pressed': String(c === color), 'aria-label': COLOR_NAMES?.[c] || c, title: COLOR_NAMES?.[c] || c, style: { background: colorVar(c) },
-      onclick: (e) => { color = c; sw.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget))); } })));
-    const save = async () => {
-      try {
-        await act('canban_update_accounts', { label: { key: a.key, name: name.value.trim() } }, { reload: false });
-        await act('canban_update_accounts', { mark: { key: a.key, short: short.value.trim(), color } }, { okMsg: '保存しました' });
-      } catch {}
-      accountsMenu(anchor);
-    };
-    for (const i of [name, short]) i.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) save(); if (e.key === 'Escape') accountsMenu(anchor); };
-    row.replaceChildren(h('div', { class: 'grow', style: { display: 'grid', gap: '6px', padding: '4px 0' } },
-      h('div', { class: 'row' }, name, short),
-      h('div', { class: 'row' }, sw, h('span', { class: 'spacer' }), h('button', { class: 'btn', text: '取消', onclick: () => accountsMenu(anchor) }), h('button', { class: 'btn-primary', text: '保存', onclick: save }))));
-    name.focus();
-  };
-  const toggleHeader = (a, on) => act('canban_update_accounts', { visible: { key: a.key, on } }).then(() => accountsMenu(anchor)).catch(() => {});
-  const rows = v.accounts.map((a) => {
-    const sel = state.filters.account === a.key;
-    const sub = [a.label !== a.email && a.email ? a.email : null, a.plan, `${a.count} 件`, a.signedIn.length ? `サインイン中: ${signedText(a)}` : null].filter(Boolean).join('・');
-    const row = h('div', { class: 'acct-row', 'data-key': `${a.label} ${a.email || ''} ${a.agent}` });
-    row.append(
-      h('input', { type: 'checkbox', checked: a.inHeader, title: 'ヘッダのリングに出す', 'aria-label': `${a.label} をヘッダに出す`, onchange: (e) => toggleHeader(a, e.target.checked) }),
-      ringFor(a),
-      h('button', { class: `menu-item${sel ? ' active' : ''}`, title: `${usageTitle(a)}\n\nクリックでこのアカウントだけを表示`, onclick: () => pick(a.key) },
-        h('div', {}, h('span', { class: `badge ${a.agent}`, text: a.agent === 'codex' ? 'Codex' : 'Claude' }), ' ', a.label),
-        h('div', { class: 'muted', text: sub }),
-        usageWindows(a.limits).length ? h('div', { class: 'acct-usage' }, ...usageBars(a.limits), h('span', { text: relTime(a.limits.at) })) : null),
-      h('button', { class: 'icon-btn', title: '名前・頭文字・色を変更', 'aria-label': `${a.label} の名前・頭文字・色を変更`, text: '✎', onclick: () => edit(a, row) }));
-    return row;
-  });
-  const unknown = v.unknown.codex + v.unknown.claude;
-  if (unknown) {
-    const sel = state.filters.account === '__none';
-    rows.push(h('div', { class: 'acct-row', 'data-key': '不明 unknown' },
-      h('button', { class: `menu-item${sel ? ' active' : ''}`, title: 'どのアカウントで動いたか記録のないセッション（古い Codex スレッド、Claude CLI だけのセッションなど）', onclick: () => pick('__none') },
-        h('div', { text: 'アカウント不明' }), h('div', { class: 'muted', text: `Codex ${v.unknown.codex} 件・Claude ${v.unknown.claude} 件` }))));
-  }
-  // Config folders (CLAUDE_CONFIG_DIR / CODEX_HOME profiles)
-  const extra = { claude: v.homes.filter((x) => x.agent === 'claude' && x.source === 'settings').map((x) => x.dir), codex: v.homes.filter((x) => x.agent === 'codex' && x.source === 'settings').map((x) => x.dir) };
-  const saveHomes = (agent, dirs) => act('canban_update_accounts', { [agent === 'codex' ? 'codexHomes' : 'claudeHomes']: dirs }, { okMsg: '設定フォルダを更新しました' }).then(() => accountsMenu(anchor)).catch(() => {});
-  const homeRows = v.homes.map((x) => h('div', { class: 'home-row' },
-    h('span', { class: `badge ${x.agent}`, text: x.agent === 'codex' ? 'Codex' : 'Claude' }),
-    h('span', { class: 'path', title: x.dir, text: x.dir }),
-    h('span', { class: 'muted', text: `${{ default: '既定', discovered: '自動', settings: '追加' }[x.source]}${x.missing ? '・見つかりません' : ''}${x.account ? `・${accountLabel(x.account)}` : ''}` }),
-    x.source === 'settings' ? h('button', { class: 'icon-btn', title: '外す', 'aria-label': `${x.dir} を外す`, text: '×', onclick: () => saveHomes(x.agent, extra[x.agent].filter((d) => d !== x.dir)) }) : null));
-  const agentSel = h('select', { class: 'text-input', style: { width: 'auto' } }, h('option', { value: 'claude', text: 'Claude' }), h('option', { value: 'codex', text: 'Codex' }));
-  const dirInput = h('input', { class: 'text-input', placeholder: '~/.claude-work（CLAUDE_CONFIG_DIR / CODEX_HOME のフォルダ）' });
-  const addHome = () => { const d = dirInput.value.trim(); if (d) saveHomes(agentSel.value, [...extra[agentSel.value], d]); };
-  dirInput.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) addHome(); };
-  const body = h('div', {},
-    rows.length > 5 ? rowFilter(rows) : null,
-    rows.length ? rows : h('p', { class: 'muted', text: 'アカウントが見つかりません。' }),
-    h('div', { class: 'sep' }),
-    h('div', { class: 'field-label', text: '設定フォルダ' }),
-    ...homeRows,
-    h('div', { class: 'row' }, agentSel, dirInput, h('button', { class: 'btn-primary', text: '追加', onclick: addHome })),
-    h('label', { class: 'row muted' }, h('input', { type: 'checkbox', checked: v.discover, onchange: (e) => act('canban_update_accounts', { discover: e.target.checked }).then(() => accountsMenu(anchor)) }),
-      '~/.claude-*・~/.codex-*・Claude デスクトップのプロファイルを自動で探す'),
-    h('p', { class: 'muted', text: 'すべてのアカウントのセッションを 1 つのボードに表示します。アプリでアカウントを切り替えても消えません。名前をクリックするとそのアカウントだけを表示します。チェックを外したアカウントはヘッダのリングに出しません（リングは外側が 5 時間枠、内側が週枠、中央が頭文字、角の印が Codex／Claude）。別のフォルダのセッションは、再開・送信のときにそのフォルダ（CLAUDE_CONFIG_DIR / CODEX_HOME）で動かします。使用量は Codex はセッションのログ、Claude は Claude デスクトップの記録から読みます。' }));
-  popover(anchor, 'アカウント', body, { width: 440 });
 }
 
 function labelPicker(anchor, cardId, card, repaint) {
@@ -4066,19 +3829,14 @@ function focusSearch() {
 document.querySelectorAll('.seg button').forEach((btn) => btn.addEventListener('click', () => {
   state.filters.agent = btn.dataset.agent; saveFilters(); state.shown = {}; load();
 }));
+// @include header.js
+// @include accounts.js
 $('#projectBtn').addEventListener('click', (e) => scopePicker(e.currentTarget));
 $('#sideBtn').addEventListener('click', () => toggleSidebar());
 $('#days').addEventListener('change', (e) => { state.filters.days = Number(e.target.value); saveFilters(); state.shown = {}; load(); });
 $('#optBtn').addEventListener('click', (e) => optionsMenu(e.currentTarget));
 $('#labelsBtn').addEventListener('click', (e) => labelsManager(e.currentTarget));
 $('#hostsBtn').addEventListener('click', (e) => hostsMenu(e.currentTarget));
-$('#accountsBtn').addEventListener('click', (e) => accountsMenu(e.currentTarget));
-const HEADER_OPEN = {
-  projectBtn: (a) => scopePicker(a), optBtn: (a) => optionsMenu(a), rulesBtn: (a) => rulesMenu(a), viewsBtn: (a) => viewsMenu(a),
-  analyticsBtn: () => toggleAnalytics(), labelsBtn: (a) => labelsManager(a), hostsBtn: (a) => hostsMenu(a),
-};
-$('#moreBtn').addEventListener('click', (e) => moreMenu(e.currentTarget));
-if (typeof ResizeObserver === 'function') new ResizeObserver(() => fitHeader()).observe($('.topbar'));
 $('#rulesBtn').addEventListener('click', (e) => rulesMenu(e.currentTarget));
 $('#viewsBtn').addEventListener('click', (e) => viewsMenu(e.currentTarget));
 $('#fulltext').checked = !!state.filters.fulltext;

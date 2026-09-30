@@ -365,11 +365,14 @@ server/
   leader.mjs           背景処理を担当するサーバーの選出
   perf.mjs             処理時間の計測と予算
   accounts.mjs         アカウント・設定フォルダ・Claude デスクトップのプロファイル・アカウントごとの使用量
+  accounts-settings.mjs アカウントの設定（表示名・頭文字と色・ヘッダに出すか・設定フォルダ）の正規化
+  accounts-mcp.mjs     アカウントのツール・絞り込み・デスクトップへの注意書き・追加の監視フォルダ
+  ui.mjs               ボードの HTML を組み立てる（ui/ の @include を 1 つの <style> / <script> に埋め込む）
   sources/             Codex / Claude / リモート接続の読み取り専用リーダー
   remote/collect.py    リモートで動く収集スクリプト（読み取り専用、Python 標準ライブラリのみ）
   remote/dispatch.py   リモートで指示を送るスクリプト（CLI の起動・確認・停止）
   remote/pool.mjs      SSH の並列実行・キャッシュ・タイムアウト
-ui/board.html          ボード UI
+ui/board.html          ボード UI（ui/header.*・ui/accounts.* を @include で取り込む）
 ```
 
 ## 開発
