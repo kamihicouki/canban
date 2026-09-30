@@ -8,6 +8,7 @@ import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { claudeItems, codexItems, foldResults, activityOf, readLines, readFeed, readFeedDelta } from '../server/feed.mjs';
+import { Store } from '../server/store.mjs';
 import { LiveHub } from '../server/live.mjs';
 import { makeFixtures } from './helpers.mjs';
 
@@ -23,7 +24,7 @@ const claudeRecs = [
   { type: 'assistant', isSidechain: true, timestamp: 't3', message: { content: [{ type: 'text', text: 'サブエージェント' }] } },
 ];
 
-test('claude records become messages, tool calls with results, and turn ends', () => {
+test('claude records become messages, tool calls with results, and turn ends', async () => {
   const items = foldResults(claudeItems(claudeRecs));
   assert.deepEqual(items.map((i) => i.k), ['user', 'thinking', 'assistant', 'tool', 'tool']);
   const [bash, edit] = items.filter((i) => i.k === 'tool');
@@ -38,7 +39,7 @@ test('claude records become messages, tool calls with results, and turn ends', (
   assert.equal(activityOf(done), null);
 });
 
-test('codex records: item_completed messages, shell / patch calls and their outputs', () => {
+test('codex records: item_completed messages, shell / patch calls and their outputs', async () => {
   const recs = [
     { type: 'event_msg', payload: { type: 'task_started' } },
     { type: 'event_msg', payload: { type: 'user_message', message: '重複しないはず' } },
@@ -106,7 +107,7 @@ test('LiveHub wakes a waiting call on a write, and watches nothing once idle', a
   // A store write from another process is a 'store' event.
   const seq = hub.seq;
   const w2 = hub.wait(seq, { timeoutMs: 5000 });
-  setTimeout(() => fs.writeFileSync(path.join(data, 'board.json'), '{}'), 50);
+  setTimeout(() => new Store(data).createList({ title: 'DB update' }).catch(() => {}), 50);
   assert.ok((await w2).events.some((e) => e.kind === 'store'));
   // Timeout with nothing new.
   const quiet = await hub.wait(hub.seq, { timeoutMs: 50 });
@@ -138,7 +139,7 @@ test('LiveHub falls back to stat polling when fs.watch is unavailable', async ()
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('LiveHub follows several focused logs and drops the ones that are no longer open', () => {
+test('LiveHub follows several focused logs and drops the ones that are no longer open', async () => {
   const dir = tmp();
   const [a, b, c] = ['a', 'b', 'c'].map((n) => path.join(dir, `${n}.jsonl`));
   for (const f of [a, b, c]) fs.writeFileSync(f, '{}\n');
@@ -257,8 +258,7 @@ test('canban_watch over stdio: patches the card and streams the open session', a
     // A board edit made by another server shows up as a reload.
     const w = call('canban_watch', { since: quiet.seq, timeoutMs: 10000 });
     await new Promise((r2) => setTimeout(r2, 100));
-    const board = JSON.parse(fs.readFileSync(path.join(dataDir, 'board.json'), 'utf8'));
-    fs.writeFileSync(path.join(dataDir, 'board.json'), JSON.stringify(board));
+    await new Store(dataDir).createList({ title: 'DB update' });
     const afterBoard = await w;
     assert.equal(afterBoard.reload, true);
     // Claude desktop metadata: activity-only rewrites are ignored, a rename rebuilds the board.

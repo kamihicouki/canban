@@ -1,7 +1,7 @@
 // Kanban state store. This is the only module that writes to disk, and it only
 // writes inside the kanban data directory (default ~/.canban).
-import fs from 'node:fs';
-import fsp from 'node:fs/promises';
+import { isMainThread, proxyStore } from './sqlite-client.mjs';
+import { readBoard, writeBoard, transaction, currentFence } from './sqlite-backend.mjs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
@@ -15,13 +15,6 @@ export const TERMINAL_TARGETS = ['new-window', 'new-tab', 'split', 'current'];
 
 export function dataDir() {
   return process.env.CANBAN_DATA_DIR || path.join(os.homedir(), '.canban');
-}
-
-// v0.1 stored its board under ~/.session-kanban. It is read (never modified) when
-// the new store does not exist yet; the first save writes to the new location.
-function legacyFile(dir) {
-  if (process.env.CANBAN_DATA_DIR || dir !== dataDir()) return null;
-  return path.join(os.homedir(), '.session-kanban', 'board.json');
 }
 
 export const RULE_TRIGGERS = [
@@ -168,6 +161,7 @@ export function defaultState() {
     directories: [],
     cards: {},
     remoteHosts: {},
+    uiState: { revision: 0, state: null },
     settings: defaultSettings(),
   };
 }
@@ -176,7 +170,7 @@ function newId(prefix) {
   return `${prefix}-${crypto.randomBytes(5).toString('hex')}`;
 }
 
-function normalize(s) {
+export function normalize(s) {
   const d = defaultState();
   const out = {
     version: STORE_VERSION,
@@ -186,6 +180,7 @@ function normalize(s) {
     directories: Array.isArray(s?.directories) ? s.directories.map(normalizeDirectory).filter(Boolean) : [],
     cards: s?.cards && typeof s.cards === 'object' ? s.cards : {},
     remoteHosts: s?.remoteHosts && typeof s.remoteHosts === 'object' ? s.remoteHosts : {},
+    uiState: normalizeUiStateRecord(s?.uiState),
     settings: normalizeSettings(s?.settings),
   };
   if (!out.lists.length) out.lists = d.lists;
@@ -193,98 +188,63 @@ function normalize(s) {
   return out;
 }
 
-const LOCK_STALE_MS = 10000;
-const LOCK_WAIT_MS = 5000;
-const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-function pidAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === 'EPERM';
-  }
+function normalizeUiStateRecord(record) {
+  const revision = Number.isSafeInteger(record?.revision) && record.revision >= 0 ? record.revision : 0;
+  const state = record?.state && typeof record.state === 'object' && !Array.isArray(record.state) ? record.state : null;
+  return { revision, state };
 }
 
-// Exclusive lock across processes (held for one synchronous read-modify-write). A lock
-// left by a dead process, or older than LOCK_STALE_MS, is taken over.
-function lockFile(file) {
-  const deadline = Date.now() + LOCK_WAIT_MS;
-  for (;;) {
-    try {
-      const fd = fs.openSync(file, 'wx');
-      fs.writeSync(fd, String(process.pid));
-      fs.closeSync(fd);
-      return;
-    } catch (e) {
-      if (e.code !== 'EEXIST') throw e;
-    }
-    try {
-      const st = fs.statSync(file);
-      const owner = Number(fs.readFileSync(file, 'utf8'));
-      if (Date.now() - st.mtimeMs > LOCK_STALE_MS || (owner && owner !== process.pid && !pidAlive(owner))) fs.rmSync(file, { force: true });
-    } catch {}
-    if (Date.now() > deadline) throw new Error('ボードのロックを取得できませんでした');
-    sleep(10);
-  }
+function cloneUiState(state) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) throw new Error('画面状態の形式が正しくありません');
+  let serialized;
+  try { serialized = JSON.stringify(state); } catch { throw new Error('画面状態を保存できません'); }
+  if (serialized.length > 64 * 1024) throw new Error('画面状態が大きすぎます');
+  return JSON.parse(serialized);
 }
+
+const SKIP_WRITE = Symbol('skipWrite');
 
 export class Store {
   constructor(dir = dataDir()) {
     this.dir = dir;
-    this.file = path.join(dir, 'board.json');
-    this.lockFile = path.join(dir, 'board.lock');
+    this.file = path.join(dir, 'canban.sqlite');
+    if (isMainThread) return proxyStore(this, 'board');
   }
 
-  load() {
-    let raw;
-    try {
-      raw = fs.readFileSync(this.file, 'utf8');
-    } catch {
-      const legacy = legacyFile(this.dir);
-      try {
-        if (legacy) return normalize(JSON.parse(fs.readFileSync(legacy, 'utf8')));
-      } catch {}
-      return defaultState();
-    }
-    try {
-      return normalize(JSON.parse(raw));
-    } catch {
-      // Keep the broken file for inspection and start over.
-      try {
-        fs.renameSync(this.file, `${this.file}.corrupt-${Date.now()}`);
-      } catch {}
-      return defaultState();
-    }
+  getUiState() {
+    const { revision, state } = this.load().uiState;
+    return { revision, state };
   }
 
-  async save(state) {
-    await fsp.mkdir(this.dir, { recursive: true });
-    const tmp = `${this.file}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
-    await fsp.writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
-    await fsp.rename(tmp, this.file);
-  }
-
-  // Read-modify-write. Serialized within this process by a promise chain, and across
-  // processes (Codex and Claude Desktop each run servers on the same board, and the
-  // board updates live in both) by an exclusive lock file, so no edit is lost.
-  mutate(fn) {
-    const run = async () => {
-      await fsp.mkdir(this.dir, { recursive: true });
-      lockFile(this.lockFile);
-      try {
-        const state = this.load();
-        const result = fn(state);
-        const tmp = `${this.file}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
-        fs.writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
-        fs.renameSync(tmp, this.file);
-        return result;
-      } finally {
-        fs.rmSync(this.lockFile, { force: true });
+  saveUiState({ expectedRevision, state }) {
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw new Error('画面状態のリビジョンが正しくありません');
+    const nextState = cloneUiState(state);
+    return this.mutate((current) => {
+      const record = current.uiState;
+      if (record.revision !== expectedRevision) {
+        return {
+          [SKIP_WRITE]: true,
+          value: { saved: false, conflict: true, revision: record.revision, state: record.state },
+        };
       }
-    };
-    const p = (this.queue || Promise.resolve()).then(run, run);
-    this.queue = p.catch(() => {});
-    return p;
+      record.revision++;
+      record.state = nextState;
+      return { saved: true, revision: record.revision, state: record.state };
+    });
+  }
+
+  load() { return normalize(readBoard()); }
+
+  save(state) { return this.mutate(() => ({ replacement: normalize(state) })); }
+
+  mutate(fn) {
+    return transaction(() => {
+      const state = this.load();
+      const result = fn(state);
+      if (result?.[SKIP_WRITE]) return result.value;
+      writeBoard(result?.replacement || state);
+      return result?.replacement ? undefined : result;
+    }, { fence: currentFence });
   }
 
   // ---- lists -------------------------------------------------------------

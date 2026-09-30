@@ -11,7 +11,7 @@ import { Store } from '../server/store.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'canban-git-'));
 
-test('repo and PR URL parsing', () => {
+test('repo and PR URL parsing', async () => {
   for (const u of ['git@github.com:o/r.git', 'https://github.com/o/r', 'https://github.com/o/r.git', 'ssh://git@github.com/o/r.git', 'https://x-access-token:t@github.com/o/r.git'])
     assert.equal(parseRepo(u), 'o/r', u);
   assert.equal(parseRepo('git@gitlab.com:be/sub/proj.git'), 'gitlab:be/sub/proj');
@@ -21,7 +21,7 @@ test('repo and PR URL parsing', () => {
   assert.deepEqual(parsePrUrl('https://github.com/o/r/pull/12'), { repo: 'o/r', number: 12 });
 });
 
-test('check rollup aggregation', () => {
+test('check rollup aggregation', async () => {
   assert.equal(checksState([]), null);
   assert.equal(checksState([{ __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS' }]), 'passing');
   assert.equal(checksState([{ __typename: 'CheckRun', status: 'IN_PROGRESS', conclusion: '' }, { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS' }]), 'pending');
@@ -63,14 +63,14 @@ test('PR rules fire on transitions after a baseline', async () => {
   const engine = new RuleEngine(store);
   const t0 = 1_800_000_000_000;
   const base = { id: 'codex:x', createdAt: t0 - 1e7, updatedAt: t0, status: 'completed' };
-  const ev = (pr, now) => engine.evaluate({ rules: store.load().settings.rules, sessions: [{ ...base, pr }], listOf: () => 'doing', topOrder: () => 0, now });
+  const ev = async (pr, now) => engine.evaluate({ rules: (await store.load()).settings.rules, sessions: [{ ...base, pr }], listOf: () => 'doing', topOrder: () => 0, now });
   assert.deepEqual(await ev(undefined, t0), []); // PR data not loaded yet
   assert.deepEqual(await ev({ state: 'MERGED', checks: 'passing' }, t0 + 1), []); // old merged PR: baseline only
   const store2 = new Store(tmp());
   await store2.setRule({ id: 'f', enabled: true, trigger: 'ci:failed', fromListId: 'any', toListId: 'review' });
   await store2.setRule({ id: 'm', enabled: true, trigger: 'pr:merged', fromListId: 'any', toListId: 'done' });
   const e2 = new RuleEngine(store2);
-  const ev2 = (pr, now) => e2.evaluate({ rules: store2.load().settings.rules, sessions: [{ ...base, pr }], listOf: () => 'doing', topOrder: () => 0, now });
+  const ev2 = async (pr, now) => e2.evaluate({ rules: (await store2.load()).settings.rules, sessions: [{ ...base, pr }], listOf: () => 'doing', topOrder: () => 0, now });
   await ev2({ state: 'OPEN', checks: 'pending' }, t0);
   assert.deepEqual((await ev2({ state: 'OPEN', checks: 'failing' }, t0 + 1)).map((m) => m.toListId), ['review']);
   assert.deepEqual((await ev2({ state: 'MERGED', checks: 'passing' }, t0 + 2)).map((m) => m.toListId), ['done']);

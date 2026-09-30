@@ -1,6 +1,14 @@
 # Canban
 
-**Canban** は、Codex と Claude Code のセッションを Trello 風のカンバンで管理できる **Codex デスクトップアプリのサイドバーアプリ**です。**Claude デスクトップアプリ**にも拡張機能として入れられます（会話の中にボードが開きます）。
+**Canban** は、Codex と Claude Code のセッションを Trello 風のカンバンで管理するアプリです。**Codex Desktop・Claude Desktop・Chrome**から、同じボードと共有画面設定を使えます。
+
+| 表示するアプリ | 導入するもの | ボードの開き方 |
+|---|---|---|
+| Codex Desktop | このリポジトリのCodexプラグイン | サイドバー、または「Canbanを開いて」 |
+| Claude Desktop | `dist/canban.mcpb` | チャットで「Canbanを開いて」 |
+| Chrome | `dist/chrome`フォルダ＋Native Messaging Host | ツールバーのCanbanボタン |
+
+リポジトリ直下の`manifest.json`はClaude用のMCPB manifestです。Chromeには、ビルドで生成される`dist/chrome/manifest.json`（Manifest V3）を使います。
 
 ![Canban](docs/screenshot.png)
 
@@ -8,7 +16,7 @@
 - リストは自由に追加・改名・並べ替え・削除できます。カードはドラッグ＆ドロップで移動できます。ラベル・メモ・優先度・期限・WIP 制限にも対応しています。
 - カードから**ワンクリックでセッションを再開**できます。再開先は、Codex / Claude のデスクトップアプリか、ターミナル（新規ウィンドウ / 新規タブ / 分割 / 既存ウィンドウ）を選べます。
 - ボードは**リアルタイム**に動きます。実行中のカードには、いま何をしているか（`Bash: npm test` など）が出ます。カードを開くと、Codex / Claude アプリと同じように会話・ツールの実行・結果がその場で流れます。
-- カードから既存のセッションに**指示（プロンプト）を送れます**。今すぐ送るか、キューに積んでセッションが空いたら順に送ります。送信はエージェント公式の CLI で 1 ターンずつ行い、権限はそのセッションの設定をそのまま引き継ぎます。
+- カードから既存のセッションに**指示（プロンプト）を送れます**。今すぐ送るか、キューに積み、起動時の安全確認を通った依頼を順に送ります。使用中や状態不明の場合は止めて通知します。送信はエージェント公式の CLI で 1 ターンずつ行い、権限はそのセッションの設定をそのまま引き継ぎます。
 - Canban がセッションのファイルを**直接書き換えることはありません**。Canban 側の情報は `~/.canban/` にだけ保存します。
 
 > English summary: Canban is a Codex desktop sidebar app (also installable in Claude Desktop as an extension, where the board opens inside the conversation) that puts your Codex and Claude Code sessions — local and on SSH hosts registered in Codex — on a Trello-style board. It never writes agent data itself, stores its own state in `~/.canban`, and can resume any session in the agent's desktop app or in your terminal (new window / tab / split / current window). It can also send a prompt (now or queued) to an existing session: one headless turn through the agent's own CLI (`codex exec resume` / `claude -p --resume`), with the session's own sandbox / permission mode. Requires Node.js ≥ 22.13.
@@ -84,7 +92,40 @@ Claude デスクトップには、拡張機能（`.mcpb`）として入れます
 }
 ```
 
-Codex と Claude デスクトップの両方に入れた場合も、保存先は同じ `~/.canban/` なので、同じボードが見えます。背景処理（自動化・索引作成・指示のキュー）は、どちらのアプリのサーバーかにかかわらず 1 つだけが実行します。
+Codex と Claude デスクトップの両方に入れた場合も、保存先は同じ `~/.canban/` なので、同じボードが見えます。背景処理（自動化・索引作成・指示のキュー）は、SQLite の実行権を取得したサーバーだけが実行します。
+
+### Chrome で使う
+
+Chrome 拡張は Chrome Web Store ではなく、ローカルの unpacked 拡張として読み込みます。macOS／Linux と Node.js 22.13 以上が必要です。
+
+1. このリポジトリで拡張をビルドします。
+
+   ```bash
+   cd ~/plugins/canban
+   npm run build:chrome
+   ```
+
+2. Chrome で `chrome://extensions` を開き、「デベロッパー モード」を有効にして「パッケージ化されていない拡張機能を読み込む」から `dist/chrome` を選びます。表示された拡張 ID をコピーします。
+   **リポジトリ直下を選ばないでください。** `Invalid value for manifest_version` と表示された場合は、「キャンセル」で戻り、`dist/chrome`フォルダを選び直します。「再読み込み」では選択済みのフォルダは変わりません。
+
+3. 同じリポジトリから Native Messaging Host を登録します。`<拡張ID>` は手順 2 で表示された 32 文字の ID に置き換えます。
+
+   ```bash
+   npm run install:chrome-native-host -- --extension-id <拡張ID>
+   ```
+
+   登録するのはユーザー領域の Chrome Native Messaging Hosts マニフェスト 1 ファイルです。マニフェストはこのリポジトリ内の起動スクリプトを指し、接続を許可する拡張 ID を指定します。リポジトリを別の場所へ移動した場合は、再ビルドして Native Messaging Host を再登録してください。
+4. Chrome を再起動し、拡張をツールバーにピン留めしてボタンを押すと、Canban が専用タブで開きます。
+
+`Specified native messaging host not found` が表示された場合は、拡張の読み込みは成功していますが、手順3のホスト登録が未完了です。Chromeの拡張画面に表示されるIDで登録コマンドを実行し、Canbanのタブを再読み込みしてください。Codex／Claude／Chromeは同時に開けます。画面設定を同時に変更した場合は、競合を検知した画面の同期を止めます。 更新時は、既に動いているCodex／ClaudeのCanbanサーバーも再起動してください。旧版のサーバーは新しい画面設定の保存形式を知らないため、旧版と新版の併用中は共有画面設定が失われることがあります。
+
+登録を解除するときは、同じ拡張 ID を指定します。
+
+```bash
+npm run uninstall:chrome-native-host -- --extension-id <拡張ID>
+```
+
+Chrome も Codex／Claude と同じ MCP サーバーと `~/.canban/canban.sqlite` を使います。フィルター、ボード／分析表示、サイドバー、開いているカード、パネル配置、折り畳みレーンなどの画面設定はアプリ間で共有されます。起動時と画面に戻ったときに同期します。スクロール位置、フォーカス、入力途中の文字は共有しません。競合を検知すると自動マージせず、その画面からの保存を止めて「共有状態を読み込む」操作を表示します。
 
 ## 用語（Codex / Claude Code との対応）
 
@@ -232,7 +273,7 @@ AI App（Codex / Claude Code）ごとに、次のリンクやコマンドで再�
 - **Claude デスクトップでの変更**: Claude デスクトップでセッションの名前を変えたり、アーカイブしたり、状態が変わったりすると、すぐにボードへ反映します。アプリが活動記録のためだけに書き換えたときは、ボードを読み直しません。
 - **共同作業**: Codex と Claude デスクトップの両方でボードを開いていると、片方でカードを動かすともう片方にもすぐ反映されます。
   - ほかのアプリでボードを開いていると、ヘッダに「👁 Claude デスクトップ」のように出ます。相手がカードの詳細を開いていると、そのカードに 👁 が付きます（自分の詳細画面にも「〜でも開いています」と出ます）。
-  - ボードごとに `~/.canban/presence.json` へ 30 秒おきに印を残し、90 秒更新がなければ消えます（ボードを閉じたり、画面が隠れたりしたとき）。`board.json` の書き込みはプロセス間でロックするので、同時に操作しても更新が消えません。
+  - ボードごとに `canban.sqlite` の在席テーブル へ 30 秒おきに印を残し、90 秒更新がなければ消えます（ボードを閉じたり、画面が隠れたりしたとき）。ボードデータ の書き込みはプロセス間でロックするので、同時に操作しても更新が消えません。
 - 1 行ずつの更新です。Codex / Claude はトークン単位の途中経過をログに書かないため、文章は段落（ログの 1 行）ごとに現れます。
 - リモート（SSH）のセッションは監視できないため、これまでどおり定期的に読み直します。
 
@@ -275,7 +316,7 @@ AI App（Codex / Claude Code）ごとに、次のリンクやコマンドで再�
 
 セッションの詳細の下にある「指示を送る」から、既存のセッションにプロンプトを送れます。
 
-- **今すぐ送信**: その場で 1 ターン実行します。**キューに追加**: セッションが空いたら、積んだ順に 1 件ずつ送ります。
+- **今すぐ送信**: その場で 1 ターン実行します。**キューに追加**: 起動時の安全確認を通れば、積んだ順に 1 件ずつ送ります。使用中・状態不明の場合はキューを停止して通知します。
 - 送信は、Codex / Claude Code 公式の CLI をヘッドレスで再開して行います（Codex は `codex exec resume <id> -`、Claude Code は `claude -p --resume <id>`）。プロンプトは標準入力で渡し、コマンドライン引数やシェル文字列には載せません。結果（最終メッセージの先頭）は履歴に残り、会話そのものはいつもどおりボードから読めます。
 - **権限はそのセッションの設定を引き継ぎ、引き上げません。** Codex は最新ターンのサンドボックス（read-only / workspace-write / danger-full-access）で実行し、承認が必要な操作は失敗させます（ヘッドレスでは答えられないため）。Claude Code は最新の `permissionMode` で実行します。ワークスペースの設定（`.claude/settings*.json` など）は CLI 自身が読み込みます。
 - 制限なし（`danger-full-access` / `bypassPermissions`）のセッションは ⚠ で表示し、送るたびに確認が必要です。
@@ -313,7 +354,7 @@ Canban は自分自身の処理時間を計測し、予算（[docs/performance.m
 |---|---|
 | `~/.codex/state_*.sqlite`、`~/.codex/sessions/**` | Canban は読み取り専用（SQLite の read-only モード＋`PRAGMA query_only`）。指示を送ったときは、Codex 自身（`codex exec resume`）がセッションに 1 ターン追記します |
 | `~/.claude/projects/**`、Claude デスクトップのセッション情報 | Canban は読み取り専用。指示を送ったときは、Claude Code 自身（`claude -p --resume`）が追記します |
-| `~/.canban/board.json`、`board.lock`、`status.json`、`search.sqlite`、`requests.json`、`runs/*.log`、`leader.lock` | Canban が書き込むファイル（Canban 専用のディレクトリ） |
+| `~/.canban/canban.sqlite`（WAL を含む）、`search.sqlite`、`runs/*.log` | Canban が書き込むファイル（Canban 専用のディレクトリ） |
 
 詳しくは [SECURITY.md](SECURITY.md) を参照してください。
 
@@ -328,7 +369,7 @@ Canban は自分自身の処理時間を計測し、予算（[docs/performance.m
 server/
   index.mjs            MCP サーバー（stdio / JSON-RPC）
   board.mjs            セッション一覧とカンバン状態を合成
-  store.mjs            ~/.canban/board.json（プロセス間ロック付き）
+  store.mjs            SQLite Worker を通したボード操作
   live.mjs             ファイル監視（ボードを開いている間だけ）
   watch.mjs            canban_watch: 監視イベントをカードの差分・会話の追記分に変換
   feed.mjs             セッションログを会話の項目に変換し、追記分だけ読む
@@ -373,3 +414,24 @@ Issue や PR を歓迎します。
 ## ライセンス
 
 [MIT](LICENSE)
+
+## SQLite への移行（0.14.0）
+
+同一端末の Codex Desktop・Claude Desktop・Chrome は `~/.canban/canban.sqlite` を共有します。各 MCP プロセスの専用 Worker が DB 操作を行います。WAL によって閲覧を継続でき、書き込みは `BEGIN IMMEDIATE` で直列化します。ロック待ちは 250ms、DB 操作の再試行を含めて最大 2 秒です。取得できなければ「別の画面が更新中」と通知します。Turso による端末間同期は含みません。
+
+1. すべてのアプリの Canban を閉じ、Canban サーバーを停止します。
+2. `npm run migrate:sqlite` で停止状態と移行先を事前確認します。
+3. `npm run migrate:sqlite -- --apply` で移行します。旧 JSON は権限 0600、バックアップ用ディレクトリは 0700 で保存します。
+4. 同じ 0.14.0 の Codex プラグイン・Claude MCPB・Chrome 拡張を読み込み直します。Chrome のプロフィールと Native Messaging 登録は維持します。
+
+独立したデータディレクトリには `--data-dir /absolute/path` を指定できます。この場合も対象サーバーを事前に停止してください。プロセスの保存先・起動場所と DB 内の接続情報で停止を確認します。移行済みの DB には JSON を再取り込みせず、移行後は JSON への書き込み・障害時のフォールバックも行いません。実行中の依頼は `interrupted` として保存し、キューを停止します。在席情報と実行権は新しく作成します。
+
+ロールバック用の最新 JSON は、全サーバーを停止して `npm run export:json -- --apply` で書き出します。まず `npm run export:json` で事前確認できます。出力先の `export-*` にある JSON を旧版で使用してください。古いバックアップを戻すと最新の更新が失われるため、使用しません。
+
+### 送信が停止した場合
+
+使用中・状態不明・確認中の更新・外部 CLI の writer 競合は `blocked` として通知し、そのセッションのキューを停止します。履歴の「再送内容を確認」から入力欄へ戻し、状況を確認して明示的に送信してください。入力途中の文字は消しません。
+
+CLI が起動したか、終了したかを確定できない場合は `interrupted` にし、自動再送しません。実行権の期限切れや所有者の終了だけで再取得せず、子プロセスの終了が確認できるまで停止します。PID を保存できなかった要求や接続できないリモートの実行権も保持します。安全な停止を優先するため、こうした不明要求を再送するには実行状況の確認が必要です。DB の実行権を直接削除して解除しないでください。
+
+共有画面設定はリビジョンが一致するときだけ保存します。DB の変更番号を 2 秒おきに確認し、WAL の通知と前面復帰時の読み込みも使います。競合時は入力とローカル設定を維持し、明示的に共有状態を読み込めます。

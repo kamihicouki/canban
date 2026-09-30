@@ -11,6 +11,10 @@ if (process.env.FAKE_AGENT_LOG) fs.appendFileSync(process.env.FAKE_AGENT_LOG, JS
 ' "$prompt" "$@"
 echo '{"type":"thread.started","thread_id":"fake"}'
 echo '{"type":"turn.started"}'
+if [ "$FAKE_AGENT_WRITER" = "1" ]; then
+  echo '{"type":"turn.failed","error":{"message":"active writer: session locked"}}'
+  exit 1
+fi
 if [ "$FAKE_AGENT_FAIL" = "1" ]; then
   echo '{"type":"turn.failed","error":{"message":"fake failure"}}'
   exit 1

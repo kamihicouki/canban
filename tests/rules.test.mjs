@@ -16,7 +16,7 @@ async function setup(rules) {
   const lists = {};
   const run = async (sessions, now) => {
     const moves = await engine.evaluate({
-      rules: store.load().settings.rules,
+      rules: (await store.load()).settings.rules,
       sessions,
       listOf: (id) => lists[id] || 'inbox',
       topOrder: () => -1,
@@ -45,19 +45,19 @@ test('new sessions count as a transition; from-list and default rules respected'
   const fresh = { id: 'claude:new', createdAt: t0 + 10, updatedAt: t0 + 10, status: 'running' };
   const moves = await run([fresh], t0 + 20);
   assert.deepEqual(moves.map((x) => x.toListId), ['doing']);
-  assert.equal(store.load().settings.rules.filter((r) => r.id.startsWith('rule-')).every((r) => !r.enabled), true);
+  assert.equal((await store.load()).settings.rules.filter((r) => r.id.startsWith('rule-')).every((r) => !r.enabled), true);
 });
 
 test('auto moves are recorded and can be undone', async () => {
   const store = new Store(tmp());
   await store.moveCard({ cardId: 'codex:a', toListId: 'doing', order: 5 });
   await store.applyAutoMoves([{ cardId: 'codex:a', toListId: 'review', order: -1, ruleId: 'r1' }]);
-  let c = store.load().cards['codex:a'];
+  let c = (await store.load()).cards['codex:a'];
   assert.equal(c.listId, 'review');
   assert.equal(c.movedBy.ruleId, 'r1');
   assert.deepEqual(c.history.map((h) => h.listId), ['doing', 'review']);
   await store.undoAutoMove({ cardId: 'codex:a' });
-  c = store.load().cards['codex:a'];
+  c = (await store.load()).cards['codex:a'];
   assert.equal(c.listId, 'doing');
   assert.equal(c.order, 5);
   assert.equal(c.movedBy, undefined);
@@ -70,7 +70,7 @@ test('invalid rules are rejected; launch settings keep rules', async () => {
   await assert.rejects(store.setRule({ trigger: 'activity', toListId: 'nope' }), /移動先/);
   await store.setRule({ id: 'x', enabled: true, trigger: 'activity', fromListId: 'any', toListId: 'doing' });
   await store.updateLaunchSettings({ route: 'terminal' });
-  assert.ok(store.load().settings.rules.some((r) => r.id === 'x'));
+  assert.ok((await store.load()).settings.rules.some((r) => r.id === 'x'));
 });
 
 test('Codex section moves fire section:<id> rules, also for long-idle threads', async () => {

@@ -15,28 +15,28 @@ test('directories: create / rename / paths / delete clears assignments', async (
   await assert.rejects(store.createDirectory({ name: 'Web' }), /既にあります/);
   await assert.rejects(store.createDirectory({ name: '  ' }), /カテゴリ名/);
   await store.updateDirectory({ directoryId: web.id, name: 'Frontend', color: 'nope' });
-  let d = store.load().directories[0];
+  let d = (await store.load()).directories[0];
   assert.equal(d.name, 'Frontend');
   assert.equal(d.color, null);
 
   await store.updateCard({ cardId: 'codex:a', directory: web.id });
   await store.updateCard({ cardId: 'codex:b', directory: 'dir-missing' });
   await store.updateCard({ cardId: 'codex:c', directory: '__none' });
-  let s = store.load();
+  let s = (await store.load());
   assert.equal(s.cards['codex:a'].directoryId, web.id);
   assert.equal(s.cards['codex:b'].directoryId, undefined);
   assert.equal(s.cards['codex:c'].directoryId, '__none');
   await store.updateCard({ cardId: 'codex:a', directory: null });
-  assert.equal(store.load().cards['codex:a'].directoryId, undefined);
+  assert.equal((await store.load()).cards['codex:a'].directoryId, undefined);
 
   await store.updateCard({ cardId: 'codex:a', directory: web.id });
   await store.deleteDirectory({ directoryId: web.id });
-  s = store.load();
+  s = (await store.load());
   assert.equal(s.directories.length, 0);
   assert.equal(s.cards['codex:a'].directoryId, undefined);
 });
 
-test('resolveDirectory: explicit wins, then the longest path prefix; __none opts out', () => {
+test('resolveDirectory: explicit wins, then the longest path prefix; __none opts out', async () => {
   const state = {
     directories: [
       { id: 'd1', name: 'Repo', paths: ['/r'] },
@@ -52,7 +52,7 @@ test('resolveDirectory: explicit wins, then the longest path prefix; __none opts
   assert.equal(resolveDirectory(state, { directoryId: 'gone' }, '/r/web')?.id, 'd2');
 });
 
-test('stats: directory breakdown and filter', () => {
+test('stats: directory breakdown and filter', async () => {
   const now = Date.parse('2026-09-27T00:00:00Z');
   const state = { lists: [], cards: { 'claude:x': { directoryId: 'd1' } }, directories: [{ id: 'd1', name: 'Mine', paths: [] }] };
   const sessions = [

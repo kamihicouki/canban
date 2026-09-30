@@ -13,6 +13,7 @@
 //   hot files                        logs of running / waiting sessions outside the above (Codex rollouts)
 //   focus files                      the logs of the sessions open in detail panes
 import fs from 'node:fs';
+import { database } from './sqlite-client.mjs';
 import path from 'node:path';
 import { stat } from './sources/readonly.mjs';
 
@@ -25,6 +26,9 @@ export const MAX_FOCUS = 8; // detail panes open at once whose logs are followed
 
 export class LiveHub {
   constructor({ dataDir, codexHome, claudeProjects, claudeDesktop, idleMs = LIVE_IDLE_MS, watch = fs.watch } = {}) {
+    this.database = dataDir ? database(dataDir) : null;
+    this.dbRevisions = null;
+    this.dbPolling = false;
     this.roots = { dataDir, codexHome, claudeProjects, claudeDesktop };
     this.idleMs = idleMs;
     this.watchFn = watch;
@@ -61,7 +65,13 @@ export class LiveHub {
     const { dataDir, codexHome, claudeProjects, claudeDesktop } = this.roots;
     if (dataDir) {
       fs.mkdirSync(dataDir, { recursive: true });
-      this.watchPath('data', dataDir, {}, (f) => (f === 'board.json' ? 'store' : f === 'requests.json' ? 'requests' : f === 'presence.json' ? 'presence' : null));
+      this.watchPath('data', dataDir, {}, (f) => {
+        if (f === 'canban.sqlite' || f === 'canban.sqlite-wal') void this.pollStep();
+        return null;
+      });
+      void this.pollStep();
+      this.pollTimer ||= setInterval(() => this.pollStep(),POLL_MS);
+      this.pollTimer.unref?.();
     }
     if (codexHome) this.watchPath('codex', codexHome, {}, (f) => (/^state_\d+\.sqlite(-wal)?$/.test(f) ? 'codex' : f === '.codex-global-state.json' ? 'app' : null));
     if (claudeProjects) this.watchPath('claude', claudeProjects, { recursive: true }, (f) => (f.endsWith('.jsonl') ? 'file' : null));
@@ -146,7 +156,21 @@ export class LiveHub {
     this.pollTimer.unref?.();
   }
 
-  async pollStep() {
+  pollStep() {
+    if (this.polling) return this.polling;
+    this.polling = this.scanChanges().catch(() => {}).finally(() => { this.polling = null; });
+    return this.polling;
+  }
+
+  async scanChanges() {
+    if (this.database && !this.dbPolling) {
+      this.dbPolling = true;
+      try {
+        const next = await Promise.all(['board','requests','presence'].map((kind) => this.database.call('system','revision',[kind + '_change'])));
+        if (this.dbRevisions) for (const [i,kind] of ['store','requests','presence'].entries()) if (next[i] !== this.dbRevisions[i]) this.emit(kind,this.roots.dataDir);
+        this.dbRevisions = next;
+      } catch {} finally { this.dbPolling = false; }
+    }
     for (const [file, e] of this.polled) {
       const st = await stat(file);
       const sig = st ? `${st.mtimeMs}:${st.size}` : '-';
@@ -215,6 +239,10 @@ export class LiveHub {
   // Resolve with the events after `since`, waiting up to `timeoutMs` for the first one.
   async wait(since, { timeoutMs = 20000 } = {}) {
     this.touch();
+    if (this.database && !this.dbRevisions) {
+      await this.pollStep();
+      this.touch();
+    }
     const ready = () => {
       const ev = this.since(since);
       return ev === null || ev.length > 0;

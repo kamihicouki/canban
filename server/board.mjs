@@ -1,3 +1,4 @@
+import { leaderFor } from './leader.mjs';
 // Combines read-only session listings (local + enabled remote hosts) with the
 // Canban store into a board snapshot.
 import { listCodexSessions, codexMessagesFromRecords } from './sources/codex.mjs';
@@ -169,7 +170,7 @@ export function tickSearch(...args) {
 }
 
 async function tickSearchImpl(store) {
-  const state = store.load();
+  const state = (await store.load());
   const { sessions } = await allSessions(state);
   return searchFor(store).step(sessions);
 }
@@ -246,6 +247,11 @@ function aggregateStatus(list) {
 // Evaluate the automatic-move rules against current statuses and apply the moves.
 // A session linked to a task card moves the task card instead.
 export async function runRules(store, state, sessions, now = Date.now()) {
+  return await leaderFor(store.dir).run(() => runRulesOwned(store, state, sessions, now)) || [];
+}
+
+async function runRulesOwned(store, state, sessions, now) {
+  state = await store.load();
   const toTask = linkedToTask(state);
   const baseListOf = listResolver(state);
   const listOf = (id) => baseListOf(toTask.get(id) || id);
@@ -283,11 +289,11 @@ export function tickRules(...args) {
 }
 
 async function tickRulesImpl(store) {
-  let state = store.load();
+  let state = (await store.load());
   const pendingTasks = taskEntries(state).some(([, t]) => t.pending?.length);
   if (!pendingTasks && !state.settings.rules.some((r) => r.enabled)) return [];
   const { sessions } = await allSessions(state);
-  if ((await store.resolvePending(matchPending(state, sessions))).length) state = store.load();
+  if ((await store.resolvePending(matchPending(state, sessions))).length) state = (await store.load());
   return runRules(store, state, sessions);
 }
 
@@ -297,20 +303,20 @@ export function buildBoard(...args) {
 
 async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
   const filters = normalizeFilters(rawFilters);
-  let state = store.load();
+  let state = (await store.load());
   const { sessions, errors, hosts, app } = await allSessions(state, { force });
-  if ((await store.resolvePending(matchPending(state, sessions))).length) state = store.load();
-  if ((await runRules(store, state, sessions)).length) state = store.load();
+  if ((await store.resolvePending(matchPending(state, sessions))).length) state = (await store.load());
+  if ((await runRules(store, state, sessions)).length) state = (await store.load());
   const byId = new Map(sessions.map((x) => [x.id, x]));
   const toTask = linkedToTask(state);
   const hits = filters.fulltext && [...filters.q].length >= 3 ? await fullTextHits(store, filters.q, hosts) : null;
   if (state.settings.seenAllAt == null) {
     await store.markAllSeen(); // first run: nothing is "new" yet
-    state = store.load();
+    state = (await store.load());
   }
   const seenAll = state.settings.seenAllAt || 0;
   const statusCounts = Object.fromEntries(STATUSES.map((k) => [k, 0]));
-  const { requests: allRequests, paused } = requestsFor(store.dir).load();
+  const { requests: allRequests, paused } = (await requestsFor(store.dir).load());
   const reqs = requestSummary(allRequests, paused);
   const labelsById = new Map(state.labels.map((l) => [l.id, l]));
   const listIds = new Set(state.lists.map((l) => l.id));
@@ -459,9 +465,9 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
 }
 
 // Queue, history and the inherited permissions for the detail's "send" section.
-function dispatchView(dir, state, cardId, permission) {
+async function dispatchView(dir, state, cardId, permission) {
   const rs = requestsFor(dir);
-  const { requests, paused } = rs.load();
+  const { requests, paused } = (await rs.load());
   const mine = requests.filter((r) => r.cardId === cardId);
   const view = (r) => ({ ...r, logPath: r.hostId === 'local' ? r.logPath : null });
   return {
@@ -521,7 +527,7 @@ function recentFolders(sessions, limit = 60) {
 }
 
 export async function findSession(store, cardId) {
-  const state = store.load();
+  const state = (await store.load());
   const { sessions, hosts } = await allSessions(state);
   const s = sessions.find((x) => x.id === cardId);
   if (!s) throw new Error(`セッションが見つかりません: ${cardId}`);
@@ -590,6 +596,6 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     messagesError,
     feed,
     git,
-    dispatch: dispatchView(store.dir, state, cardId, permission),
+    dispatch: await dispatchView(store.dir, state, cardId, permission),
   };
 }

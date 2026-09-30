@@ -8,9 +8,12 @@
 // on it (checked under the requests lock); "send now" requires that the session has
 // not changed since the user looked at it; elevated sessions need an explicit ack.
 //
-// Cost: an idle tick only stats requests.json. With work, sessions are resolved one
+// Cost: an idle tick only reads the requests change counter. With work, sessions are resolved one
 // by one from the listing caches (never a full board), and only their log tails are read.
 import fs from 'node:fs';
+import crypto from 'node:crypto';
+import { leaderFor } from './leader.mjs';
+import { executionContext } from './sqlite-client.mjs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, execFile } from 'node:child_process';
@@ -50,7 +53,9 @@ function extraPath() {
 
 export function resolveBin(name) {
   const override = process.env[`CANBAN_${name.toUpperCase()}_BIN`];
-  if (override) return override;
+  if (override) {
+    try { fs.accessSync(override, fs.constants.X_OK); return override; } catch { return null; }
+  }
   for (const dir of [...(process.env.PATH || '').split(path.delimiter), ...extraPath()]) {
     if (!dir) continue;
     const p = path.join(dir, name);
@@ -155,7 +160,7 @@ export async function resolveSession(store, cardId) {
     annotateCodexApp([s], await codexAppState());
     return { session: s, host: null };
   }
-  const host = (await hostsWithState(store.load())).find((h) => h.alias === alias);
+  const host = (await hostsWithState((await store.load()))).find((h) => h.alias === alias);
   if (!host) throw new Error('Codex に登録されていない接続です');
   if (!host.enabled) throw new Error(`${host.label} の読み取りがオフです。「マシン」でオンにしてください`);
   const s = (await pool.sessions([host])).find((x) => x.id === cardId);
@@ -219,6 +224,7 @@ export function tickDispatch(store) {
 export class Dispatcher {
   constructor(store) {
     this.store = store;
+    this.owner = crypto.randomUUID();
     this.requests = new RequestStore(store.dir);
     this.children = new Map(); // request id -> child started by this process
     this.idleMtime = null; // requests.json mtime when last seen with nothing to do
@@ -227,20 +233,20 @@ export class Dispatcher {
     this.ticking = null;
   }
 
-  settings() {
-    return this.store.load().settings.dispatch;
+  async settings() {
+    return (await this.store.load()).settings.dispatch;
   }
 
   // Validate and record a request; "now" starts it immediately or fails with the reason.
   async submit({ cardId, prompt, when = 'queue', origin = 'ui', expectedUpdatedAt = null, allowElevated = false, now = Date.now() }) {
-    const cfg = this.settings();
+    const cfg = (await this.settings());
     if (!cfg.enabled) throw new Error('指示の送信は設定でオフになっています');
     if (origin === 'model' && !cfg.allowModel) throw new Error('モデルからの送信は設定でオフになっています');
     const text = String(prompt ?? '').trim();
     if (!text) throw new Error('プロンプトを入力してください');
     if (text.length > MAX_PROMPT) throw new Error(`プロンプトは ${MAX_PROMPT} 文字までです`);
     if (origin === 'model') {
-      const recent = this.requests.list({ cardId }).filter((r) => r.origin === 'model' && now - r.createdAt < 3600e3).length;
+      const recent = (await this.requests.list({ cardId })).filter((r) => r.origin === 'model' && now - r.createdAt < 3600e3).length;
       if (recent >= cfg.modelPerHour) throw new Error(`このセッションへのモデルからの送信は 1 時間 ${cfg.modelPerHour} 件までです`);
     }
     const { session, host } = await resolveSession(this.store, cardId);
@@ -257,7 +263,7 @@ export class Dispatcher {
       const t = timingProblem(session, insp, now);
       if (t) throw Object.assign(new Error(t), { code: 'busy' });
     }
-    const req = this.requests.create({
+    const req = (await this.requests.create({
       cardId,
       agent: session.agent,
       hostId: host ? host.id : 'local',
@@ -269,11 +275,11 @@ export class Dispatcher {
       origin,
       allowElevated: !!allowElevated || (origin === 'model' && cfg.allowModelElevated),
       expectedUpdatedAt,
-    });
+    }));
     if (when === 'now') {
       const res = await this.tryStart(req, { session, host, insp, permission, force: true });
       if (!res.ok) {
-        this.requests.transition(req.id, ['queued'], { state: 'cancelled', endedAt: Date.now(), error: res.reason });
+        (await this.requests.transition(req.id, ['queued'], { state: 'cancelled', endedAt: Date.now(), error: res.reason }));
         throw Object.assign(new Error(res.reason), { code: 'busy' });
       }
       return res.request;
@@ -285,95 +291,128 @@ export class Dispatcher {
 
   // Claim (under the lock, with concurrency limits) and start one request.
   async tryStart(req, { session, host, insp, permission, force = false }) {
-    const cfg = this.settings();
+    const cfg = (await this.settings());
     const hostId = host ? host.id : 'local';
-    const claim = this.requests.claim(req.id, {
-      force,
-      check: (s) => {
-        const active = s.requests.filter((r) => ACTIVE_STATES.has(r.state));
-        if (hostId === 'local' && active.filter((r) => r.hostId === 'local').length >= cfg.maxLocal) return `同時実行数の上限（${cfg.maxLocal}）に達しています`;
-        if (hostId !== 'local' && active.filter((r) => r.hostId === hostId).length >= cfg.maxPerHost) return `このマシンの同時実行数の上限（${cfg.maxPerHost}）に達しています`;
-        return null;
-      },
-    });
+    const claim = await this.requests.claim(req.id, { force, maxLocal:cfg.maxLocal,maxPerHost:cfg.maxPerHost,owner:this.owner,ownerPid:process.pid });
     if (!claim.ok) return claim;
+    let preflight = true;
     try {
-      const started = host ? await this.startRemote(claim.request, session, host, permission) : this.startLocal(claim.request, session, permission);
+      const fresh = await resolveSession(this.store,req.cardId);
+      const checked = await inspect(fresh.session,fresh.host);
+      const reason = !checked.mtimeMs ? 'セッションの状態を確認できません' : timingProblem(fresh.session,checked) || ((fresh.session.updatedAt || 0) !== (session.updatedAt || 0) || checked.mtimeMs !== insp.mtimeMs ? '確認中にセッションが更新されました' : null);
+      if (reason) {
+        await this.requests.transition(req.id,['starting'],{state:'blocked',endedAt:Date.now(),reasonCode:'session_busy',error:reason,needsUserAction:true},{owner:claim.request.ownerUuid,generation:claim.request.leaseGeneration,release:true});
+        await this.requests.pause(req.cardId,reason);
+        return {ok:false,reason,reasonCode:'session_busy'};
+      }
+      permission = permissionFor(fresh.session,checked.records);
+      if (permission.elevated && !req.allowElevated) throw Object.assign(new Error('権限が変更されました。確認して再送してください'),{code:'pre_spawn'});
+      preflight = false;
+      const started = host ? await this.startRemote(claim.request, fresh.session, fresh.host, permission) : await this.startLocal(claim.request, fresh.session, permission);
       return { ok: true, request: started };
     } catch (e) {
-      this.finish(claim.request.id, { forceState: 'failed', error: e.message });
+      await this.finish(claim.request.id,{forceState:preflight || e.code === 'pre_spawn' ? 'blocked' : 'interrupted',error:e.message,confirmedStopped:preflight || e.code === 'pre_spawn'});
       return { ok: false, reason: e.message };
     }
   }
 
-  startLocal(req, session, permission) {
+  async startLocal(req, session, permission) {
     const h = headlessArgs(session, permission);
     const bin = resolveBin(h.bin);
-    if (!bin) throw new Error(`${h.bin} が見つかりません（PATH か CANBAN_${h.bin.toUpperCase()}_BIN を確認してください）`);
-    fs.mkdirSync(this.requests.runsDir, { recursive: true });
+    if (!bin) throw Object.assign(new Error(`${h.bin} が見つかりません（PATH か CANBAN_${h.bin.toUpperCase()}_BIN を確認してください）`),{code:'pre_spawn'});
     const logPath = this.requests.logPath(req.id);
-    const fd = fs.openSync(logPath, 'a');
-    let child;
+    let fd, child;
     try {
-      child = spawner(bin, h.args, { cwd: session.cwd, env: cleanEnv(), detached: true, stdio: ['pipe', fd, fd] });
+      fs.mkdirSync(this.requests.runsDir, { recursive: true });
+      fd = fs.openSync(logPath, 'a', 0o600);
+      child = spawner(bin, h.args, { cwd: session.cwd, env: cleanEnv(), stdio: ['pipe', fd, fd], detached: true });
+    } catch (error) {
+      throw Object.assign(error, {code:'pre_spawn'});
     } finally {
-      fs.closeSync(fd);
+      if (fd != null) fs.closeSync(fd);
     }
-    child.on('error', (e) => this.finish(req.id, { forceState: 'failed', error: e.message }));
+    child.on('error',(e) => executionContext.run(null, () => this.finish(req.id,{forceState:child.pid && pidAlive(child.pid) ? 'interrupted' : 'failed',error:e.message,confirmedStopped:!child.pid || !pidAlive(child.pid),owner:req.ownerUuid,generation:req.leaseGeneration})).catch(() => {}));
     child.on('exit', (code, signal) => {
       this.children.delete(req.id);
-      this.finish(req.id, { exitCode: code, signal });
+      executionContext.run(null, () => this.finish(req.id,{exitCode:code,signal,owner:req.ownerUuid,generation:req.leaseGeneration})).catch(() => {});
     });
     child.stdin.on?.('error', () => {});
-    child.stdin.end(req.prompt);
+
     child.unref();
     if (child.pid) this.children.set(req.id, child);
-    return this.requests.transition(req.id, ['starting'], { state: 'running', pid: child.pid ?? null, logPath, permission, argv: [h.bin, ...h.args] }) || req;
+    const running = await this.requests.transition(req.id,['starting'],{state:'running',pid:child.pid ?? null,logPath,permission,argv:[h.bin,...h.args]},{owner:req.ownerUuid,generation:req.leaseGeneration});
+    if (!running) { try { child.kill?.('SIGTERM'); } catch {} throw new Error('送信の実行権が失われました'); }
+    child.stdin.end(req.prompt);
+    return running;
   }
 
   async startRemote(req, session, host, permission) {
     const h = headlessArgs(session, permission);
     const res = await pool.dispatch(host, { mode: 'start', id: req.id, binName: h.bin, args: h.args, cwd: session.cwd, prompt: req.prompt });
-    if (!res.ok) throw new Error(res.error || '開始できませんでした');
-    return this.requests.transition(req.id, ['starting'], { state: 'running', remotePid: res.pid, logPath: res.log, permission, argv: [h.bin, ...h.args] }) || req;
+    if (!res.ok || !Number.isInteger(res.pid) || res.pid <= 0) throw new Error(res.error || '接続先の起動結果を確認できません');
+    return (await this.requests.transition(req.id, ['starting'], { state: 'running', remotePid: res.pid, logPath: res.log, permission, argv:[h.bin,...h.args] },{owner:req.ownerUuid,generation:req.leaseGeneration})) || req;
   }
 
   // Settle a run from its log. A failed or interrupted run pauses the session's queue.
-  finish(id, { exitCode = null, signal = null, text = null, forceState = null, error = null } = {}) {
-    const cur = this.requests.get(id);
+  async finish(id, { exitCode = null, signal = null, text = null, forceState = null,error = null,confirmedStopped = true,owner = null,generation = null } = {}) {
+    const cur = (await this.requests.get(id));
     if (!cur || !ACTIVE_STATES.has(cur.state)) return null;
     const parsed = forceState ? { done: true, ok: false, text: '', error } : parseRunLog(cur.agent, text ?? readTail(this.requests.logPath(id)));
-    let state = parsed.done && parsed.ok ? 'succeeded' : 'failed';
+    let state = forceState || (parsed.done && parsed.ok ? 'succeeded' : parsed.done ? 'failed' : 'interrupted');
+    if (owner && (cur.ownerUuid !== owner || cur.leaseGeneration !== generation)) return null;
     if (!forceState && state === 'failed' && (cur.stopRequested || signal === 'SIGINT' || signal === 'SIGTERM')) state = 'interrupted';
     const errMsg = state === 'succeeded' ? null : error || parsed.error || (exitCode != null ? `終了コード ${exitCode}` : '結果を確認できませんでした');
-    const done = this.requests.transition(id, ['starting', 'running'], { state, endedAt: Date.now(), exitCode, resultText: parsed.text || null, error: errMsg });
-    if (done && state !== 'succeeded') this.requests.pause(done.cardId, state === 'interrupted' ? '停止しました' : `失敗しました: ${errMsg}`);
+    const writerConflict = /active writer|thread.store conflict|already.*(?:running|writer)|session.*(?:in use|locked)/i.test(errMsg || '');
+    if (writerConflict) state = 'blocked';
+    const done = (await this.requests.transition(id, ['starting', 'running'], { state, endedAt: Date.now(), exitCode, resultText: parsed.text || null, error:errMsg,reasonCode:writerConflict ? 'external_writer' : state === 'interrupted' ? 'execution_unknown' : null,needsUserAction:state !== 'succeeded' },{owner:cur.ownerUuid,generation:cur.leaseGeneration,release:confirmedStopped}));
+    if (done && state !== 'succeeded') (await this.requests.pause(done.cardId, state === 'interrupted' ? '停止しました' : `失敗しました: ${errMsg}`));
     return done;
   }
 
   // Stop a running request (only runs started by Canban, verified by command line).
   async stop(id) {
-    const r = this.requests.get(id);
+    const r = (await this.requests.get(id));
     if (!r || !ACTIVE_STATES.has(r.state)) throw new Error('実行中の依頼ではありません');
-    this.requests.transition(id, null, { stopRequested: true });
+    (await this.requests.transition(id, null, { stopRequested: true }));
     if (r.hostId !== 'local') {
-      const host = (await hostsWithState(this.store.load())).find((h) => h.id === r.hostId);
+      const host = (await hostsWithState((await this.store.load()))).find((h) => h.id === r.hostId);
       if (!host) throw new Error('接続が見つかりません');
       await pool.dispatch(host, { mode: 'stop', pid: r.remotePid, needle: r.nativeId });
-      return this.requests.get(id);
+      return (await this.requests.get(id));
     }
-    if (!r.pid || !pidAlive(r.pid)) return this.finish(id, { signal: 'SIGINT' });
+    if (!r.pid) return this.finish(id, { forceState:'interrupted',error:'子プロセスを確認できません',confirmedStopped:false });
+    if (!pidAlive(r.pid)) return this.finish(id, { signal: 'SIGINT' });
     const cmd = await new Promise((res) => execFile('ps', ['-o', 'command=', '-p', String(r.pid)], (e, out) => res(e ? '' : out)));
     if (!cmd.includes(r.nativeId)) throw new Error('このプロセスは Canban が起動したものではありません');
     process.kill(-r.pid, 'SIGINT');
     setTimeout(() => {
       if (pidAlive(r.pid)) try { process.kill(-r.pid, 'SIGTERM'); } catch {}
     }, 10e3).unref();
-    return this.requests.get(id);
+    return (await this.requests.get(id));
   }
 
-  resume(cardId) {
-    this.requests.resume(cardId);
+  async resume(cardId) {
+    // An explicit action can release an uncertain terminal request only after
+    // verifying its recorded child has exited. Never clear a lease on timeout.
+    for (const r of await this.requests.list({cardId})) {
+      if (r.state !== 'interrupted' && r.state !== 'blocked') continue;
+      const token = {key:'session:' + JSON.stringify([r.hostId || 'local',r.agent,r.nativeId || r.cardId]),owner:r.ownerUuid,generation:r.leaseGeneration};
+      if (!await this.requests.database.call('system','lease',[token.key])) continue;
+      let stopped = false;
+      if (!r.hostId || r.hostId === 'local') stopped = !!r.pid && !pidAlive(r.pid);
+      else if (r.remotePid) {
+        const host = (await hostsWithState(await this.store.load())).find(h=>h.id===r.hostId);
+        if (host) {
+          try {
+            const result = await pool.dispatch(host,{mode:'poll',runs:[{id:r.id,pid:r.remotePid}]});
+            stopped = result.ok === true && result.runs?.[r.id]?.alive === false;
+          } catch {}
+        }
+      }
+      if (!stopped) throw Object.assign(new Error('子プロセスの終了を確認できません。実行状況を確認してから再操作してください。'),{code:'execution_unknown',needsUserAction:true});
+      await this.requests.releaseStopped(r.id,token);
+    }
+    await this.requests.resume(cardId);
     this.idleMtime = null;
     this.tick().catch(() => {});
   }
@@ -381,26 +420,21 @@ export class Dispatcher {
   // Periodic step (leader) and after changes: settle finished runs, start queue heads.
   tick() {
     if (this.ticking) return this.ticking;
-    this.ticking = perf.timed('tick.dispatch', () => this.tickOnce()).finally(() => (this.ticking = null));
+    this.ticking = leaderFor(this.store.dir).run(() => perf.timed('tick.dispatch', () => this.tickOnce())).finally(() => (this.ticking = null));
     return this.ticking;
   }
 
   async tickOnce(now = Date.now()) {
-    let mtime = null;
-    try {
-      mtime = fs.statSync(this.requests.file).mtimeMs;
-    } catch {
-      return { idle: true };
-    }
+    const mtime = await this.requests.database.call('system','revision',['requests_change']);
     if (mtime === this.idleMtime && !this.children.size) return { idle: true };
-    const { requests, paused } = this.requests.load();
+    const { requests, paused } = (await this.requests.load());
     const active = requests.filter((r) => ACTIVE_STATES.has(r.state));
-    const heads = queueHeads(requests).filter((r) => !paused[r.cardId]);
+    const heads = queueHeads(requests).filter((r) => !paused[r.cardId] && !active.some((run) => run.cardId === r.cardId));
     if (!active.length && !heads.length) {
       this.idleMtime = mtime;
       if (now - this.lastPrune > PRUNE_EVERY_MS) {
         this.lastPrune = now;
-        this.requests.pruneLogs(now);
+        (await this.requests.pruneLogs(now));
       }
       return { idle: true };
     }
@@ -411,26 +445,29 @@ export class Dispatcher {
         const { session, host } = await resolveSession(this.store, head.cardId);
         const problem = staticProblem(session);
         if (problem) {
-          this.requests.transition(head.id, ['queued'], { state: 'failed', endedAt: now, error: problem });
-          this.requests.pause(head.cardId, problem);
+          (await this.requests.transition(head.id, ['queued'], { state: 'failed', endedAt: now, error: problem }));
+          (await this.requests.pause(head.cardId, problem));
           continue;
         }
         const insp = await inspect(session, host);
         const permission = permissionFor(session, insp.records);
         if (permission.elevated && !head.allowElevated) {
-          this.requests.pause(head.cardId, `セッションが制限なし（${permission.label}）になったため停止しました。確認して再開してください`);
+          (await this.requests.pause(head.cardId, `セッションが制限なし（${permission.label}）になったため停止しました。確認して再開してください`));
           continue;
         }
         const wait = timingProblem(session, insp, now);
         if (wait) {
-          if (head.blockedReason !== wait) this.requests.transition(head.id, ['queued'], { blockedReason: wait });
+          await this.requests.transition(head.id,['queued'],{state:'blocked',endedAt:now,error:wait,reasonCode:'session_busy',needsUserAction:true});
+          await this.requests.pause(head.cardId,wait);
           continue;
         }
         const res = await this.tryStart(head, { session, host, insp, permission });
         if (res.ok) started.push(head.id);
-        else if (head.blockedReason !== res.reason) this.requests.transition(head.id, ['queued'], { blockedReason: res.reason });
+        else if (res.reasonCode !== 'capacity') { await this.requests.transition(head.id,['queued'],{state:'blocked',endedAt:now,error:res.reason,needsUserAction:true}); await this.requests.pause(head.cardId,res.reason); }
+        else if (head.blockedReason !== res.reason) (await this.requests.transition(head.id, ['queued'], { blockedReason: res.reason }));
       } catch (e) {
-        if (head.blockedReason !== e.message) this.requests.transition(head.id, ['queued'], { blockedReason: e.message });
+        await this.requests.transition(head.id,['queued'],{state:'blocked',endedAt:now,error:e.message,reasonCode:'inspection_failed',needsUserAction:true});
+        await this.requests.pause(head.cardId,e.message);
       }
     }
     return { idle: false, started };
@@ -442,26 +479,32 @@ export class Dispatcher {
     for (const r of active) {
       if (this.children.has(r.id)) continue; // our own child: its exit handler settles it
       if (r.state === 'starting' && now - (r.startedAt || 0) > START_TIMEOUT_MS && !r.pid && !r.remotePid) {
-        this.finish(r.id, { forceState: 'failed', error: '開始できませんでした' });
+        await this.finish(r.id,{forceState:'interrupted',error:'開始状況を確認できません',confirmedStopped:false});
       } else if (r.hostId === 'local') {
-        if (r.state === 'running' && !pidAlive(r.pid)) this.finish(r.id, {});
+        if (r.state === 'running' && !pidAlive(r.pid)) await this.finish(r.id, {});
       } else if (r.state === 'running' && now - (this.lastPoll.get(r.id) || 0) >= REMOTE_POLL_MS) {
         (remote.get(r.hostId) || remote.set(r.hostId, []).get(r.hostId)).push(r);
       }
     }
     if (!remote.size) return;
-    const hosts = await hostsWithState(this.store.load());
+    const hosts = await hostsWithState((await this.store.load()));
     await Promise.all([...remote].map(async ([hostId, runs]) => {
       const host = hosts.find((h) => h.id === hostId);
-      if (!host) return;
+      if (!host) {
+        for (const r of runs) await this.finish(r.id,{forceState:'interrupted',error:'接続先が見つかりません',confirmedStopped:false});
+        return;
+      }
       for (const r of runs) this.lastPoll.set(r.id, now);
       try {
         const res = await pool.dispatch(host, { mode: 'poll', runs: runs.map((r) => ({ id: r.id, pid: r.remotePid })) });
+        if (!res.ok) throw new Error(res.error || '接続先の実行状況を確認できません');
         for (const r of runs) {
           const st = res.runs?.[r.id];
-          if (st && !st.alive) {
-            this.finish(r.id, { text: st.log });
+          if (st?.alive === false && Number.isInteger(r.remotePid) && r.remotePid > 0) {
+            await this.finish(r.id, { text:st.log });
             this.lastPoll.delete(r.id);
+          } else if (!st || typeof st.alive !== 'boolean' || !r.remotePid) {
+            await this.finish(r.id,{forceState:'interrupted',error:'接続先の実行状況を確認できません',confirmedStopped:false});
           }
         }
       } catch {} // unreachable host: try again at the next poll

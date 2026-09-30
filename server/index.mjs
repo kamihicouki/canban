@@ -7,7 +7,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { Store } from './store.mjs';
-import { Leader } from './leader.mjs';
+import { leaderFor } from './leader.mjs';
 import { perf } from './perf.mjs';
 import { dispatcherFor, tickDispatch, setSpawner, dryRunSpawner } from './dispatch.mjs';
 import { buildBoard, sessionDetail, allSessions, findSession, hostsWithState, effectiveOrder, tickRules, tickSearch } from './board.mjs';
@@ -186,7 +186,7 @@ const TOOLS = [
     },
     _meta: appAndModel,
     handler: async ({ cardId, toList, order, position }) => {
-      const state = store.load();
+      const state = (await store.load());
       const list = resolveList(state.lists, toList);
       if (!list) throw new Error(`リストが見つかりません: ${toList}`);
       const { sessions } = await allSessions(state);
@@ -284,7 +284,7 @@ const TOOLS = [
     description: 'セッションに送った／待機中の依頼と、その状態・結果（エージェントの最終メッセージ先頭）を返す。',
     inputSchema: {
       type: 'object',
-      properties: { cardId: { type: 'string' }, state: { type: 'string', enum: ['queued', 'starting', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted'] }, limit: { type: 'number' } },
+      properties: { cardId: { type: 'string' }, state: { type: 'string', enum: ['queued', 'starting', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted', 'blocked'] }, limit: { type: 'number' } },
       additionalProperties: false,
     },
     annotations: { readOnlyHint: true },
@@ -292,10 +292,10 @@ const TOOLS = [
     handler: async ({ cardId, state, limit }) => {
       const d = dispatcherFor(store);
       await d.tick().catch(() => {});
-      const rows = d.requests.list({ cardId, state }).sort((a, b) => b.createdAt - a.createdAt).slice(0, Math.min(Number(limit) || 20, 100)).map(requestView);
+      const rows = (await d.requests.list({ cardId, state })).sort((a, b) => b.createdAt - a.createdAt).slice(0, Math.min(Number(limit) || 20, 100)).map(requestView);
       return {
         text: rows.map((r) => `${r.id} [${r.state}] ${r.cardId}: ${r.prompt.slice(0, 60)}${r.resultText ? ` → ${r.resultText.slice(0, 120)}` : ''}${r.error ? ` ✗ ${r.error}` : ''}`).join('\n') || '依頼はありません',
-        structured: { requests: rows, paused: d.requests.load().paused },
+        structured: { requests: rows, paused: (await d.requests.load()).paused },
       };
     },
   },
@@ -305,7 +305,7 @@ const TOOLS = [
     description: 'キューで待機中の依頼を取り消す（実行中のものは取り消せない）。',
     inputSchema: { type: 'object', properties: { requestId: { type: 'string' } }, required: ['requestId'], additionalProperties: false },
     _meta: appAndModel,
-    handler: async ({ requestId }) => ({ text: '取り消しました', structured: requestView(dispatcherFor(store).requests.cancel(requestId)) }),
+    handler: async ({ requestId }) => ({ text: '取り消しました', structured: requestView((await dispatcherFor(store).requests.cancel(requestId))) }),
   },
   {
     name: 'canban_dispatch',
@@ -330,7 +330,7 @@ const TOOLS = [
     },
   },
   appTool('canban_stop_request', '実行中の依頼を停止', { requestId: { type: 'string' } }, ['requestId'], (a) => dispatcherFor(store).stop(a.requestId)),
-  appTool('canban_update_request', '待機中の依頼を編集', { requestId: { type: 'string' }, prompt: { type: 'string' }, order: { type: 'number' } }, ['requestId'], (a) => dispatcherFor(store).requests.update(a.requestId, a)),
+  appTool('canban_update_request', '待機中の依頼を編集', { requestId: { type: 'string' }, prompt: { type: 'string' }, order: { type: 'number' } }, ['requestId'], async (a) => (await dispatcherFor(store).requests.update(a.requestId, a))),
   appTool('canban_resume_queue', 'キューを再開', { cardId: { type: 'string' } }, ['cardId'], (a) => dispatcherFor(store).resume(a.cardId)),
   appTool('canban_update_dispatch_settings', '指示の送信の設定を変更', {
     enabled: { type: 'boolean' },
@@ -376,7 +376,7 @@ const TOOLS = [
     annotations: { readOnlyHint: true },
     _meta: appOnly,
     handler: async () => {
-      const p = perf.summary({ leader: leader.isLeader, leaderPid: leader.owner?.() ?? null, client, live: live ? { active: live.active, seq: live.seq, ...live.counters } : null });
+      const p = perf.summary({ leader: leader.isLeader, leaderPid: await leader.owner(), client, live: live ? { active: live.active, seq: live.seq, ...live.counters } : null });
       return { text: `rss ${p.rssMB}MB, loop p99 ${p.loop?.p99 ?? '-'}ms, slow ${p.slow.length}`, structured: p };
     },
   },
@@ -388,7 +388,7 @@ const TOOLS = [
     annotations: { readOnlyHint: true },
     _meta: appAndModel,
     handler: async () => {
-      const hosts = await hostsWithState(store.load());
+      const hosts = await hostsWithState((await store.load()));
       return {
         text: hosts.map((h) => `${h.id} ${h.label} ${h.enabled ? 'on' : 'off'} ${h.status.state}${h.status.error ? ` (${h.status.error})` : ''}`).join('\n') || 'リモート接続は登録されていません',
         structured: { hosts: hosts.map(({ sshArgs, ...h }) => h) },
@@ -396,7 +396,7 @@ const TOOLS = [
     },
   },
   appTool('canban_set_remote_host', 'リモート接続の読み取りを切り替え', { hostId: { type: 'string' }, enabled: { type: 'boolean' } }, ['hostId', 'enabled'], async (a) => {
-    const hosts = await hostsWithState(store.load());
+    const hosts = await hostsWithState((await store.load()));
     if (!hosts.some((h) => h.id === a.hostId)) throw new Error('Codex に登録されていない接続です');
     return store.setRemoteHost(a);
   }),
@@ -412,7 +412,7 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, list: { type: 'string' } }, required: ['title'], additionalProperties: false },
     _meta: appAndModel,
     handler: async ({ title, description, list }) => {
-      const l = list ? resolveList(store.load().lists, list) : null;
+      const l = list ? resolveList((await store.load()).lists, list) : null;
       const res = await store.createTask({ title, description, listId: l?.id });
       return { text: `タスクカード「${res.title}」を作成しました（${res.cardId}）`, structured: res };
     },
@@ -439,7 +439,7 @@ const TOOLS = [
     },
     _meta: appAndModel,
     handler: async ({ taskId, agent, hostId = 'local', cwd = '', prompt, route, terminal, target }) => {
-      const state = store.load();
+      const state = (await store.load());
       const task = state.cards[taskId];
       if (task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
       let host = LOCAL_HOST;
@@ -490,7 +490,7 @@ const TOOLS = [
     annotations: { readOnlyHint: true },
     _meta: appAndModel,
     handler: async (args) => {
-      const state = store.load();
+      const state = (await store.load());
       const { sessions } = await allSessions(state);
       const days = Math.min(Math.max(Number(args.days) || 30, 1), 365);
       const st = computeStats(state, sessions, { ...args, days });
@@ -520,12 +520,17 @@ const TOOLS = [
   appTool('canban_create_directory', 'カテゴリを追加', { name: { type: 'string' }, color: { type: ['string', 'null'] }, paths: { type: 'array', items: { type: 'string' } } }, ['name'], (a) => store.createDirectory(a)),
   appTool('canban_update_directory', 'カテゴリを更新', { directoryId: { type: 'string' }, name: { type: 'string' }, color: { type: ['string', 'null'] }, paths: { type: 'array', items: { type: 'string' } } }, ['directoryId'], (a) => store.updateDirectory(a)),
   appTool('canban_delete_directory', 'カテゴリを削除', { directoryId: { type: 'string' } }, ['directoryId'], (a) => store.deleteDirectory(a)),
+  appTool('canban_get_ui_state', '共有画面状態を取得', {}, [], () => store.getUiState()),
+  appTool('canban_save_ui_state', '共有画面状態を保存', {
+    expectedRevision: { type: 'integer', minimum: 0 },
+    state: { type: 'object' },
+  }, ['expectedRevision', 'state'], ({ expectedRevision, state }) => store.saveUiState({ expectedRevision, state })),
 ];
 
 // Requests as returned to the UI / model (the prompt is kept; log paths only locally).
 function requestView(r) {
   if (!r) return null;
-  const { owner, argv, ...rest } = r;
+  const { owner, ownerUuid, leaseGeneration, argv, ...rest } = r;
   return { ...rest, logPath: r.hostId === 'local' ? r.logPath ?? null : null };
 }
 
@@ -670,25 +675,25 @@ const RULE_TICK_MS = Number(process.env.CANBAN_RULE_TICK_MS) || 60000;
 const DISPATCH_TICK_MS = Number(process.env.CANBAN_DISPATCH_TICK_MS) || 10000;
 const bgMode = process.env.CANBAN_BACKGROUND === '1' ? 'always' : process.env.CANBAN_BACKGROUND === '0' ? 'never' : 'auto';
 const background = [];
-const leader = new Leader(store.dir, {
+const leader = leaderFor(store.dir, {
   mode: bgMode,
   onChange(isLeader) {
     for (const t of background.splice(0)) clearTimeout(t); // clears intervals too
     if (!isLeader) return;
     log('background leader');
     // Rules keep working while the board is closed (the server lives as long as its host app does).
-    background.push(setInterval(() => tickRules(store).catch((e) => log('rules:', e.message)), RULE_TICK_MS));
+    background.push(setInterval(() => leader.run(() => tickRules(store)).catch((e) => log('rules:', e.message)), RULE_TICK_MS));
     // Full-text index: first pass shortly after taking the lead, then incremental steps.
     if (process.env.CANBAN_SEARCH_INDEX !== '0') {
-      const indexStep = () => tickSearch(store).catch((e) => log('search:', e.message));
+      const indexStep = () => leader.run(() => tickSearch(store)).catch((e) => log('search:', e.message));
       background.push(setTimeout(indexStep, 15000), setInterval(indexStep, 60000));
     }
     // Requests: settle finished runs and start queued prompts (idle ticks only stat a file).
-    background.push(setInterval(() => tickDispatch(store).catch((e) => log('dispatch:', e.message)), DISPATCH_TICK_MS));
+    background.push(setInterval(() => leader.run(() => tickDispatch(store)).catch((e) => log('dispatch:', e.message)), DISPATCH_TICK_MS));
     for (const t of background) t.unref();
   },
 });
 perf.startLoopMonitor();
-leader.start();
+await leader.start();
 
 log(`started v${PKG.version}`);

@@ -26,8 +26,8 @@ export const WATCH_MAX_MS = 45000;
 
 export function createWatch(hub, { presence = null } = {}) {
   let sentPresence = null; // what this board was last told about the others
-  const others = () => presence?.others() ?? [];
-  if (presence) hub.onStop = () => presence.leave();
+  const others = async () => presence ? await presence.others() : [];
+  if (presence) hub.onStop = () => presence.leave().catch(() => {});
   // Local sessions from the latest listing: id -> session, log path -> id.
   const byId = new Map();
   const byPath = new Map();
@@ -128,12 +128,12 @@ export function createWatch(hub, { presence = null } = {}) {
     const foci = asked.map((f) => ({ ...f, s: byId.get(f.cardId) })).filter((f) => f.s);
     const focusIds = new Set(foci.map((f) => f.s.id));
     hub.focus(foci.map((f) => f.s.sourcePath));
-    presence?.beat(asked.map((f) => f.cardId));
+    await presence?.beat(asked.map((f) => f.cardId));
     if (since == null) {
       const starting = !hub.active;
       hub.touch();
       if (starting) trackGit(lastBusy, ++gitGen);
-      const p = others();
+      const p = await others();
       sentPresence = JSON.stringify(p);
       return { seq: hub.seq, reload: false, requests: false, patches: [], feed: null, feeds: {}, presence: p };
     }
@@ -154,13 +154,13 @@ export function createWatch(hub, { presence = null } = {}) {
     let got;
     for (;;) {
       got = await hub.wait(from, { timeoutMs: Math.max(0, deadline - Date.now()) });
-      const quiet = got.events?.length && got.events.every((e) => e.kind === 'presence') && JSON.stringify(others()) === sentPresence;
+      const quiet = got.events?.length && got.events.every((e) => e.kind === 'presence') && JSON.stringify(await others()) === sentPresence;
       if (!quiet || Date.now() >= deadline) break;
       from = got.seq;
     }
     const { seq, events } = got;
     return perf.timed('live.watch', async () => {
-      const res = { seq, reload: events === null, requests: events === null, patches: [], feed: null, feeds: {}, limits: null, presence: others() };
+      const res = { seq, reload: events === null, requests: events === null, patches: [], feed: null, feeds: {}, limits: null, presence: await others() };
       sentPresence = JSON.stringify(res.presence);
       const changed = new Set();
       const seenDesktop = new Set();

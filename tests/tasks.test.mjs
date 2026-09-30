@@ -15,18 +15,18 @@ test('task cards: create, link (moving between tasks), unlink, delete', async ()
   const store = new Store(tmp());
   const a = await store.createTask({ title: 'ログイン改善', listId: 'doing' });
   const b = await store.createTask({ title: '別タスク' });
-  assert.equal(store.load().cards[a.cardId].listId, 'doing');
-  assert.equal(store.load().cards[b.cardId].listId, 'inbox');
+  assert.equal((await store.load()).cards[a.cardId].listId, 'doing');
+  assert.equal((await store.load()).cards[b.cardId].listId, 'inbox');
   await store.linkSession({ taskId: a.cardId, sessionId: 'codex:t1' });
   await store.linkSession({ taskId: b.cardId, sessionId: 'codex:t1' });
-  const s = store.load();
+  const s = (await store.load());
   assert.deepEqual(s.cards[a.cardId].links, []);
   assert.deepEqual(s.cards[b.cardId].links, ['codex:t1']);
   assert.equal(linkedToTask(s).get('codex:t1'), b.cardId);
   await assert.rejects(store.linkSession({ taskId: b.cardId, sessionId: a.cardId }), /タスクカード同士/);
   await store.unlinkSession({ taskId: b.cardId, sessionId: 'codex:t1' });
   await store.deleteTask({ cardId: a.cardId });
-  assert.equal(store.load().cards[a.cardId], undefined);
+  assert.equal((await store.load()).cards[a.cardId], undefined);
   await assert.rejects(store.createTask({ title: ' ' }), /カード名/);
 });
 
@@ -44,15 +44,15 @@ test('pending launches are matched by agent, host, time and folder or prompt', a
     S('codex:hit2', { createdAt: startedAt + 9000 }),
     S('codex:hit', { cwd: '/w/else', preview: 'ログイン画面の不具合を直して。詳細は…' }),
   ];
-  const res = matchPending(store.load(), sessions);
+  const res = matchPending((await store.load()), sessions);
   assert.deepEqual(res.map((r) => r.sessionId), ['codex:hit']); // earliest matching
   await store.resolvePending(res);
-  const c = store.load().cards[t.cardId];
+  const c = (await store.load()).cards[t.cardId];
   assert.deepEqual(c.links, ['codex:hit']);
   assert.deepEqual(c.pending, []);
 });
 
-test('new-session links and commands', () => {
+test('new-session links and commands', async () => {
   assert.equal(newSessionLink('codex', { host: LOCAL_HOST, cwd: '/w/app', prompt: '直して' }).url, 'codex://threads/new?prompt=%E7%9B%B4%E3%81%97%E3%81%A6&path=%2Fw%2Fapp');
   assert.equal(newSessionLink('codex', { host: remote, cwd: '/srv', prompt: 'x' }).url, 'codex://threads/new?prompt=x&path=%2Fsrv&hostId=remote-ssh-discovered%3Abox');
   assert.equal(newSessionLink('claude', { host: LOCAL_HOST, cwd: '/w/app', prompt: 'x' }).url, 'claude://code/new?q=x&folder=%2Fw%2Fapp');
@@ -61,7 +61,7 @@ test('new-session links and commands', () => {
   assert.equal(newSessionCommand('codex', { host: remote, cwd: '/srv', prompt: 'x' }), `ssh -t box 'cd /srv 2>/dev/null; codex x'`);
 });
 
-test('CLI-only Claude sessions open via claude://resume', () => {
+test('CLI-only Claude sessions open via claude://resume', async () => {
   const uuid = '98036725-506c-4918-9b7f-5a61924654db';
   const l = desktopLink({ agent: 'claude', nativeId: uuid, cwd: '/w', host: LOCAL_HOST, desktopSessionId: null });
   assert.equal(l.url, `claude://resume?session=${uuid}`);

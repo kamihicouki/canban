@@ -66,7 +66,7 @@ test('list and card operations persist only to the kanban store', async () => {
     const b2 = (await call('canban_get_board', { days: 0 })).structuredContent;
     assert.ok(b2.lists.find((l) => l.id === created.id).cards.some((c) => c.id === card.id));
   }
-  const saved = JSON.parse(fs.readFileSync(path.join(dataDir, 'board.json'), 'utf8'));
+  const saved = await new (await import('../server/store.mjs')).Store(dataDir).load();
   assert.ok(saved.lists.some((l) => l.title === '保留'));
   const bad = await call('canban_move_card', { cardId: 'codex:does-not-exist', toList: 'inbox' });
   assert.equal(bad.isError, true);
@@ -166,4 +166,19 @@ test('Codex pins are shown and filterable; Claude sessions without desktop metad
   const d = (await call('canban_get_session', { cardId: 'claude:c1' })).structuredContent;
   assert.equal(d.session.desktopKnown, true);
   assert.equal(d.session.entrypoint, 'claude-desktop');
+});
+
+test('shared view state tools are app-only and return stale-write conflicts', async () => {
+  const { result } = await rpc('tools/list');
+  const vis = (name) => result.tools.find((tool) => tool.name === name)?._meta?.ui?.visibility?.join();
+  assert.equal(vis('canban_get_ui_state'), 'app');
+  assert.equal(vis('canban_save_ui_state'), 'app');
+
+  const initial = (await call('canban_get_ui_state')).structuredContent.result;
+  assert.deepEqual(initial, { revision: 0, state: null });
+  const state = { view: 'board', filters: { agent: 'codex' } };
+  const saved = await call('canban_save_ui_state', { expectedRevision: 0, state });
+  assert.deepEqual(saved.structuredContent.result, { saved: true, revision: 1, state });
+  const conflict = await call('canban_save_ui_state', { expectedRevision: 0, state: { view: 'analytics' } });
+  assert.deepEqual(conflict.structuredContent.result, { saved: false, conflict: true, revision: 1, state });
 });

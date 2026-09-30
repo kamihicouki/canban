@@ -3,11 +3,11 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { DatabaseSync } from 'node:sqlite';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-dispatch-'));
@@ -112,18 +112,18 @@ async function waitFor(fn, ms = 8000) {
     await new Promise((r) => setTimeout(r, 50));
   }
 }
-const finished = (d, id) => waitFor(() => {
-  const r = d.requests.get(id);
+const finished = (d, id) => waitFor(async () => {
+  const r = (await d.requests.get(id));
   return r && M.FINAL_STATES.has(r.state) ? r : null;
 });
 function freshDispatcher() {
-  fs.rmSync(path.join(dataDir, 'requests.json'), { force: true });
+  if (fs.existsSync(path.join(dataDir,'canban.sqlite'))) { const db=new DatabaseSync(path.join(dataDir,'canban.sqlite')); db.exec("PRAGMA busy_timeout=2000; BEGIN IMMEDIATE; DELETE FROM requests; DELETE FROM queue_pauses; DELETE FROM leases WHERE key LIKE 'session:%'; UPDATE metadata SET value=CAST(value AS INTEGER)+1 WHERE key='requests_change'; COMMIT;"); db.close(); }
   fs.rmSync(agentLog, { force: true });
   return new M.Dispatcher(store);
 }
 
 // ---- permissions -------------------------------------------------------------
-test('codex permissions: turn_context first, then the DB (legacy and managed), else read-only', () => {
+test('codex permissions: turn_context first, then the DB (legacy and managed), else read-only', async () => {
   const p = M.codexPermission([turnContext({ type: 'workspace-write', network_access: true })]);
   assert.deepEqual([p.sandbox, p.network, p.elevated, p.source], ['workspace-write', true, false, 'session']);
   assert.equal(M.codexPermission([turnContext({ type: 'danger-full-access' })]).elevated, true);
@@ -136,7 +136,7 @@ test('codex permissions: turn_context first, then the DB (legacy and managed), e
   assert.deepEqual([fb.sandbox, fb.source], ['read-only', 'fallback']);
 });
 
-test('claude permissions: the latest permissionMode, unknown -> default', () => {
+test('claude permissions: the latest permissionMode, unknown -> default', async () => {
   const rec = (m) => ({ type: 'user', permissionMode: m });
   assert.equal(M.claudePermission([rec('plan'), rec('acceptEdits')]).mode, 'acceptEdits');
   assert.equal(M.claudePermission([rec('bypassPermissions')]).elevated, true);
@@ -145,7 +145,7 @@ test('claude permissions: the latest permissionMode, unknown -> default', () => 
   assert.deepEqual([fb.mode, fb.source], ['default', 'fallback']);
 });
 
-test('headless argv carries the inherited permissions and never the prompt', () => {
+test('headless argv carries the inherited permissions and never the prompt', async () => {
   const c = M.headlessArgs({ agent: 'codex', nativeId: 'abc' }, { sandbox: 'workspace-write', network: false });
   assert.equal(c.bin, 'codex');
   assert.deepEqual(c.args.slice(0, 2), ['exec', 'resume']);
@@ -156,7 +156,7 @@ test('headless argv carries the inherited permissions and never the prompt', () 
   assert.deepEqual(k.args, ['-p', '--resume', 'u1', '--output-format', 'json', '--permission-mode', 'acceptEdits']);
 });
 
-test('run logs: codex events and claude results (is_error wins over subtype)', () => {
+test('run logs: codex events and claude results (is_error wins over subtype)', async () => {
   const codex = [
     { type: 'error', message: 'Reconnecting... 1/5' },
     { type: 'item.completed', item: { type: 'agent_message', text: 'hi' } },
@@ -217,11 +217,11 @@ test('queue: one at a time per session, FIFO, waits while the session is busy', 
   try {
     const a = await d.submit({ cardId: 'claude:cl-ok', prompt: 'first' });
     const b = await d.submit({ cardId: 'claude:cl-ok', prompt: 'second' });
-    await waitFor(() => d.requests.get(a.id).state === 'running');
+    await waitFor(async () => (await d.requests.get(a.id)).state === 'running');
     await d.tick();
-    assert.equal(d.requests.get(b.id).state, 'queued', 'second waits for the first');
+    assert.equal((await d.requests.get(b.id)).state, 'queued', 'second waits for the first');
     await finished(d, a.id);
-    await waitFor(async () => (await d.tick(), d.requests.get(b.id).state !== 'queued'));
+    await waitFor(async () => (await d.tick(), (await d.requests.get(b.id)).state !== 'queued'));
     await finished(d, b.id);
   } finally {
     delete process.env.FAKE_AGENT_SLEEP;
@@ -240,11 +240,11 @@ test('a failed run pauses the queue until resumed', async () => {
   } finally {
     delete process.env.FAKE_AGENT_FAIL;
   }
-  assert.equal(d.requests.get(a.id).error, 'fake failure');
-  assert.match(d.requests.load().paused['codex:th-db'].reason, /失敗/);
+  assert.equal((await d.requests.get(a.id)).error, 'fake failure');
+  assert.match((await d.requests.load()).paused['codex:th-db'].reason, /失敗/);
   const b = await d.submit({ cardId: 'codex:th-db', prompt: 'next' });
   await d.tick();
-  assert.equal(d.requests.get(b.id).state, 'queued');
+  assert.equal((await d.requests.get(b.id)).state, 'queued');
   d.resume('codex:th-db');
   assert.equal((await finished(d, b.id)).state, 'succeeded');
   // DB fallback (no turn_context in the rollout): managed policy with a write entry.
@@ -254,7 +254,7 @@ test('a failed run pauses the queue until resumed', async () => {
 test('two dispatchers on one data dir start a queued prompt exactly once', async () => {
   const d1 = freshDispatcher();
   const d2 = new M.Dispatcher(store);
-  const r = d1.requests.create({ cardId: 'codex:th-ok', agent: 'codex', hostId: 'local', nativeId: 'th-ok', cwd: ws, prompt: 'once', when: 'queue', origin: 'ui' });
+  const r = (await d1.requests.create({ cardId: 'codex:th-ok', agent: 'codex', hostId: 'local', nativeId: 'th-ok', cwd: ws, prompt: 'once', when: 'queue', origin: 'ui' }));
   await Promise.all([d1.tick(), d2.tick(), d1.tick(), d2.tick()]);
   await finished(d1, r.id);
   assert.equal(runs().length, 1);
@@ -264,10 +264,10 @@ test('the request lock holds across processes (no lost updates)', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-lock-'));
   const script = `import { RequestStore } from ${JSON.stringify(path.join(here, '..', 'server', 'requests.mjs'))};
     const rs = new RequestStore(${JSON.stringify(dir)});
-    for (let i = 0; i < 40; i++) rs.create({ cardId: 'c' + process.pid, prompt: 'p' });`;
+    for (let i = 0; i < 40; i++) (await rs.create({ cardId: 'c' + process.pid, prompt: 'p' }));`;
   const runOne = () => new Promise((res, rej) => spawn(process.execPath, ['--no-warnings', '--input-type=module', '-e', script], { stdio: 'inherit' }).on('exit', (c) => (c ? rej(new Error(`exit ${c}`)) : res())));
   await Promise.all([runOne(), runOne(), runOne()]);
-  assert.equal(new M.RequestStore(dir).load().requests.length, 120);
+  assert.equal((await new M.RequestStore(dir).load()).requests.length, 120);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -280,8 +280,8 @@ test('stop interrupts a running turn and pauses the queue', async () => {
     await d.stop(r.id);
     const done = await finished(d, r.id);
     assert.equal(done.state, 'interrupted');
-    assert.ok(d.requests.load().paused['codex:th-ok']);
-    d.requests.resume('codex:th-ok');
+    assert.ok((await d.requests.load()).paused['codex:th-ok']);
+    (await d.requests.resume('codex:th-ok'));
   } finally {
     delete process.env.FAKE_AGENT_SLEEP;
   }
@@ -289,12 +289,12 @@ test('stop interrupts a running turn and pauses the queue', async () => {
 
 test('runs that ended while nobody watched are settled from their log', async () => {
   const d = freshDispatcher();
-  const r = d.requests.create({ cardId: 'codex:th-ok', agent: 'codex', hostId: 'local', nativeId: 'th-ok', cwd: ws, prompt: 'x', when: 'queue', origin: 'ui' });
-  d.requests.transition(r.id, null, { state: 'running', pid: 999999, startedAt: Date.now() });
+  const r = (await d.requests.create({ cardId: 'codex:th-ok', agent: 'codex', hostId: 'local', nativeId: 'th-ok', cwd: ws, prompt: 'x', when: 'queue', origin: 'ui' }));
+  (await d.requests.transition(r.id, null, { state: 'running', pid: 999999, startedAt: Date.now() }));
   fs.mkdirSync(d.requests.runsDir, { recursive: true });
   fs.writeFileSync(d.requests.logPath(r.id), line({ type: 'item.completed', item: { type: 'agent_message', text: 'finished elsewhere' } }) + line({ type: 'turn.completed' }));
   await d.tick();
-  const done = d.requests.get(r.id);
+  const done = (await d.requests.get(r.id));
   assert.deepEqual([done.state, done.resultText], ['succeeded', 'finished elsewhere']);
 });
 
@@ -317,17 +317,17 @@ test('threads with a follow-up queued in the Codex app are not sent to', async (
   await assert.rejects(d.submit({ cardId: 'codex:th-fu', prompt: 'x', when: 'now' }), /フォローアップが 1 件待機中/);
   const r = await d.submit({ cardId: 'codex:th-fu', prompt: 'later' });
   await d.tick();
-  const cur = d.requests.get(r.id);
-  assert.equal(cur.state, 'queued');
-  assert.match(cur.blockedReason, /Codex アプリにフォローアップ/);
+  const cur = (await d.requests.get(r.id));
+  assert.equal(cur.state, 'blocked');
+  assert.match(cur.error, /Codex アプリにフォローアップ/);
+  assert.equal(cur.needsUserAction, true);
   assert.equal(runs().length, 0);
-  d.requests.cancel(r.id);
 });
 
 // ---- cost ----------------------------------------------------------------------
 test('an idle tick reads no sessions', async () => {
   const d = freshDispatcher();
-  d.requests.create({ cardId: 'codex:th-ok', prompt: 'x', state: 'cancelled', endedAt: Date.now() });
+  (await d.requests.create({ cardId: 'codex:th-ok', prompt: 'x', state: 'cancelled', endedAt: Date.now() }));
   const before = JSON.stringify(M.perf.summary().ops);
   const count = (name) => M.perf.summary().ops[name]?.count || 0;
   const [all, insp] = [count('sessions.all'), count('dispatch.inspect')];
@@ -354,4 +354,79 @@ test('codex listing is incremental: unchanged DB is not queried, changes are rea
   assert.equal(c.delta, base.delta + 1);
   assert.ok(sessions.some((s) => s.nativeId === 'th-new'));
   assert.equal(sessions.find((s) => s.nativeId === 'th-db').archived, true);
+});
+
+test('external active writer blocks and pauses queue without retry',async()=>{
+  const d=freshDispatcher(); process.env.FAKE_AGENT_WRITER='1';
+  try {
+    const r=await d.submit({cardId:'codex:th-ok',prompt:'writer test',when:'now'});
+    const done=await finished(d,r.id);assert.equal(done.state,'blocked');assert.equal(done.reasonCode,'external_writer');
+    assert.ok((await d.requests.load()).paused[r.cardId]);
+    await d.tick();await d.tick();assert.equal(runs().length,1);
+  } finally { delete process.env.FAKE_AGENT_WRITER; }
+});
+
+test('stop without recorded child never releases uncertain lease',async()=>{
+  const d=freshDispatcher();
+  const r=await d.requests.create({cardId:'codex:th-ok',agent:'codex',nativeId:'th-ok',hostId:'local'});
+  await d.requests.claim(r.id,{owner:'unknown',ownerPid:2147483647});
+  assert.equal((await d.stop(r.id)).state,'interrupted');
+  await assert.rejects(d.resume(r.cardId),e=>e.code==='execution_unknown');
+  assert.equal(runs().length,0);
+});
+
+test('explicit queue resume releases interrupted lease only for confirmed exited child',async()=>{
+  const d=freshDispatcher();
+  const r=await d.requests.create({cardId:'codex:th-ok',agent:'codex',nativeId:'th-ok',hostId:'local'});
+  const c=(await d.requests.claim(r.id,{owner:'dead',ownerPid:2147483647})).request;
+  await d.requests.transition(r.id,['starting'],{state:'interrupted',pid:2147483647},{owner:c.ownerUuid,generation:c.leaseGeneration});
+  await d.requests.pause(r.cardId,'unknown');await d.resume(r.cardId);
+  const lease=await d.requests.database.call('system','lease',['session:["local","codex","th-ok"]']);
+  assert.equal(lease,null);assert.equal(runs().length,0);
+});
+
+test('mock remote response loss after launch never resends',async()=>{
+  const d=freshDispatcher();const {session}=await M.resolveSession(store,'codex:th-ok');const insp=await M.inspect(session,null);
+  const r=await d.requests.create({cardId:session.id,agent:'codex',nativeId:session.nativeId,hostId:'local',prompt:'mock remote'});
+  let launches=0;d.startRemote=async()=>{launches++;throw new Error('remote disconnected after launch');};
+  const result=await d.tryStart(r,{session,host:{id:'mock'},insp,permission:M.permissionFor(session,insp.records)});
+  assert.equal(result.ok,false);assert.equal((await d.requests.get(r.id)).state,'interrupted');
+  await d.tick();await d.tick();assert.equal(launches,1);
+  await assert.rejects(d.resume(r.cardId),e=>e.code==='execution_unknown');
+});
+
+test('mock pre-spawn failure releases claim without delivering prompt',async()=>{
+  const d=freshDispatcher();const {session}=await M.resolveSession(store,'codex:th-ok');const insp=await M.inspect(session,null);
+  const r=await d.requests.create({cardId:session.id,agent:'codex',nativeId:session.nativeId,hostId:'local',prompt:'not sent'});
+  const original=process.env.CANBAN_CODEX_BIN;process.env.CANBAN_CODEX_BIN=path.join(root,'missing-bin');
+  try {
+    const result=await d.tryStart(r,{session,host:null,insp,permission:M.permissionFor(session,insp.records)});
+    assert.equal(result.ok,false);assert.equal((await d.requests.get(r.id)).state,'blocked');
+    assert.equal(await d.requests.database.call('system','lease',['session:["local","codex","th-ok"]']),null);
+    assert.equal(runs().length,0);
+  } finally {process.env.CANBAN_CODEX_BIN=original;}
+});
+
+test('owner killed after mock CLI launch leaves child ownership and prevents second send',async()=>{
+  const d=freshDispatcher();
+  const script=`
+    import {Store} from ${JSON.stringify(path.join(here,'../server/store.mjs'))};
+    import {Dispatcher} from ${JSON.stringify(path.join(here,'../server/dispatch.mjs'))};
+    const d=new Dispatcher(new Store(${JSON.stringify(dataDir)}));
+    const r=await d.submit({cardId:'codex:th-ok',prompt:'crash test',when:'now'});
+    console.log(JSON.stringify(r));setInterval(()=>{},1000);
+  `;
+  const child=spawn(process.execPath,['--no-warnings','--input-type=module','-e',script],{env:{...process.env,FAKE_AGENT_SLEEP:'30'},stdio:['ignore','pipe','pipe']});
+  let run;
+  try {
+    run=await new Promise((resolve,reject)=>{child.stdout.once('data',b=>resolve(JSON.parse(String(b))));child.once('error',reject);child.once('exit',code=>reject(new Error('owner exited '+code)));});
+    const exited=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGKILL');await exited;
+    const r=await d.requests.get(run.id);assert.equal(r.state,'running');assert.ok(r.pid);
+    await d.reconcile([r]);assert.equal((await d.requests.get(run.id)).state,'running');
+    const another=await d.requests.create({cardId:r.cardId,agent:r.agent,hostId:r.hostId,nativeId:r.nativeId,prompt:'must not send'});
+    assert.equal((await d.requests.claim(another.id,{owner:'observer'})).ok,false);
+    assert.equal(runs().length,0);
+  } finally {
+    child.kill('SIGKILL');if(run?.pid)try{process.kill(-run.pid,'SIGKILL');}catch{}
+  }
 });

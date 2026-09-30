@@ -16,7 +16,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'canban-a-'));
 const DAY = 86400e3;
 
-test('stats: daily activity, breakdowns, dwell and cycle time', () => {
+test('stats: daily activity, breakdowns, dwell and cycle time', async () => {
   const now = new Date(2026, 8, 26, 12).getTime();
   const S = (id, agent, daysAgo, project, tokens, extra = {}) => ({ id, agent, createdAt: now - daysAgo * DAY, updatedAt: now - daysAgo * DAY, project, tokens, host: { local: true }, ...extra });
   const sessions = [
@@ -42,9 +42,9 @@ test('stats: daily activity, breakdowns, dwell and cycle time', () => {
 test('saved views', async () => {
   const store = new Store(tmp());
   const v = await store.saveView({ name: 'レビュー待ち', filters: { status: 'waiting', swimlane: 'project', bogus: 1 } });
-  assert.deepEqual(store.load().settings.views, [{ id: v.id, name: 'レビュー待ち', filters: { status: 'waiting', swimlane: 'project' } }]);
+  assert.deepEqual((await store.load()).settings.views, [{ id: v.id, name: 'レビュー待ち', filters: { status: 'waiting', swimlane: 'project' } }]);
   await store.deleteView({ viewId: v.id });
-  assert.deepEqual(store.load().settings.views, []);
+  assert.deepEqual((await store.load()).settings.views, []);
   await assert.rejects(store.saveView({ name: ' ', filters: {} }), /ビュー名/);
 });
 
