@@ -3,7 +3,7 @@
 // Desktop app metadata: ~/Library/Application Support/Claude/claude-code-sessions/*/*/local_*.json
 // Summary normalization and message extraction are shared with the remote collector.
 import path from 'node:path';
-import { exists, listDir, listSubdirs, readJson, readJsonLines, readTailJsonLines, stat } from './readonly.mjs';
+import { exists, listDir, listSubdirs, readJson, readJsonLines, readTailJsonLines, stat, realpath } from './readonly.mjs';
 import { projectName, clip, cleanPrompt, firstLine, LOCAL_HOST, sessionKey } from './util.mjs';
 import { defaultClaudeHome, claudeDesktopSessionsDir, claudeDesktopFolders, claudeHomes, refreshAccounts, sessionAccount } from '../accounts.mjs';
 
@@ -200,9 +200,13 @@ export async function listClaudeSessions({ home = null, desktopDir = claudeDeskt
     const homes = home ? [{ id: 'default', dir: home, default: true }] : await claudeHomes();
     const desktop = await loadDesktopMeta(desktopDir);
     const byId = new Map();
+    const scanned = new Set(); // runner folders link projects/ to a shared one: read each real folder once
     for (const h of homes) {
       const projectsDir = path.join(h.dir, 'projects');
       if (!exists(projectsDir)) continue;
+      const real = (await realpath(projectsDir)) || projectsDir;
+      if (scanned.has(real)) continue;
+      scanned.add(real);
       for (const p of await listDir(projectsDir)) {
         if (!p.isDirectory()) continue;
         for (const f of await listDir(path.join(projectsDir, p.name))) {

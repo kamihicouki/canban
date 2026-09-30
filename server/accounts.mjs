@@ -23,6 +23,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { exists, listDir, listSubdirs, readJson, realpath, stat } from './sources/readonly.mjs';
 import { ACCOUNT_COLORS } from './accounts-settings.mjs';
+import { listRunnerHomes, readTapUsage } from './runner.mjs';
 
 const DISCOVER_TTL_MS = 60e3;
 const MAX_HOMES = 12;
@@ -141,11 +142,23 @@ function slug(dir, taken) {
   return id;
 }
 
+// Folders made by Canban's account runner (server/runner.mjs) under the data dir.
+const dataDir = () => process.env.CANBAN_DATA_DIR || path.join(os.homedir(), '.canban'); // = store.mjs dataDir()
+function runnerHomes(agent) {
+  return listRunnerHomes(dataDir()).filter((h) => h.agent === agent);
+}
+
 function buildHomes(agent, def, extra, found) {
   const norm = (p) => path.resolve(String(p).replace(/^~(?=\/|$)/, os.homedir()));
   const seen = new Set([norm(def)]);
   const taken = new Set();
   const homes = [{ id: 'default', agent, dir: def, default: true, source: 'default' }];
+  for (const h of runnerHomes(agent)) {
+    if (seen.has(norm(h.dir)) || homes.length >= MAX_HOMES) continue;
+    seen.add(norm(h.dir));
+    taken.add(h.id);
+    homes.push({ id: h.id, agent, dir: h.dir, default: false, source: 'runner', name: h.name, shareProjects: h.shareProjects });
+  }
   for (const [list, source] of [[extra, 'settings'], [found, 'discovered']]) {
     for (const p of list) {
       const dir = norm(p);
@@ -357,13 +370,29 @@ function claudeLimits(accountKeyOf) {
   return out;
 }
 
-// Usage per account: Codex rate limits from the logs, Claude plan usage from the desktop app.
+// Claude usage from the statusline tap of runner folders (interactive sessions only).
+function tapLimits(fresh) {
+  const out = [];
+  for (const t of readTapUsage(dataDir())) {
+    const key = homeAccount('claude', t.homeId);
+    if (!key) continue;
+    const win = (w, minutes) => (w ? fresh({ usedPercent: w.used_percentage, windowMinutes: minutes, resetsAt: w.resets_at ? w.resets_at * 1000 : null }) : null);
+    out.push({ key, agent: 'claude', at: t.at, primary: win(t.fiveHour, 300), secondary: win(t.sevenDay, 10080), plan: null, source: 'statusline' });
+  }
+  return out;
+}
+
+// Usage per account: Codex rate limits from the logs, Claude plan usage from the desktop
+// app and from the runner's statusline tap; the newest record per account wins.
 export function accountLimits(codexLimits = new Map(), now = Date.now()) {
   const fresh = (w) => (w && w.resetsAt && w.resetsAt <= now ? { ...w, usedPercent: 0, stale: true } : w);
   const out = [];
   for (const [key, l] of codexLimits) if (key) out.push({ ...l, key, agent: 'codex', primary: fresh(l.primary), secondary: fresh(l.secondary), source: 'log' });
   out.push(...claudeLimits((org) => registry.orgToAccount.get(org)));
-  return out;
+  out.push(...tapLimits(fresh));
+  const newest = new Map();
+  for (const l of out) if (!newest.has(l.key) || (l.at || 0) > (newest.get(l.key).at || 0)) newest.set(l.key, l);
+  return [...newest.values()];
 }
 
 // Accounts with their usage for the board / model. `codexLimits` maps account keys to
@@ -375,7 +404,7 @@ function defaultShort(label) {
   return c.toUpperCase();
 }
 
-export function accountsView({ labels = {}, marks = {}, hidden = [], sessions = [], codexLimits = new Map(), now = Date.now() } = {}) {
+export function accountsView({ labels = {}, marks = {}, hidden = [], runner = null, sessions = [], codexLimits = new Map(), now = Date.now() } = {}) {
   const counts = new Map();
   for (const s of sessions) {
     const k = s.account || `__none:${s.agent}`;
@@ -408,10 +437,11 @@ export function accountsView({ labels = {}, marks = {}, hidden = [], sessions = 
   return {
     accounts,
     unknown: { codex: counts.get('__none:codex') || 0, claude: counts.get('__none:claude') || 0 },
-    homes: [...registry.homes.codex, ...registry.homes.claude].map((h) => ({ id: h.id, agent: h.agent, dir: h.dir, default: h.default, source: h.source, missing: !!h.missing, account: h.account })),
+    homes: [...registry.homes.codex, ...registry.homes.claude].map((h) => ({ id: h.id, agent: h.agent, dir: h.dir, default: h.default, source: h.source, missing: !!h.missing, account: h.account, name: h.name || null, shareProjects: !!h.shareProjects })),
     desktopActive: registry.desktopActive,
     discover: config.discover,
     colors: ACCOUNT_COLORS,
+    runner,
   };
 }
 

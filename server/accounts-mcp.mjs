@@ -5,6 +5,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { configureAccounts, codexHomes, claudeHomes, claudeDesktopRoots, claudeDesktopSessionsDir, refreshAccounts, accountsView, accountLabel, desktopAccountMismatch } from './accounts.mjs';
 import { limitsByAccount } from './signals.mjs';
+import { createHome, removeHome, loginCommand, listRunnerHomes } from './runner.mjs';
+import { runInTerminal, installedTerminals } from './launcher.mjs';
+import { dataDir } from './store.mjs';
+import { defaultClaudeHome, defaultCodexHome } from './accounts.mjs';
 
 export const accountFilterProp = { type: 'string', description: "アカウントで絞り込み（canban_get_usage の key。例 'claude:<uuid>' / 'codex:<id>'）。'__none' でアカウント不明" };
 
@@ -40,7 +44,8 @@ export function extraWatchRoots(store) {
     const [codex, claude, desktop] = await Promise.all([codexHomes(), claudeHomes(), claudeDesktopRoots()]);
     return {
       codexHomes: codex.filter((h) => !h.default).map((h) => h.dir),
-      claudeProjects: claude.filter((h) => !h.default).map((h) => path.join(h.dir, 'projects')),
+      // Runner folders usually link projects/ to the default one: watch each real folder once.
+      claudeProjects: [...new Set(claude.filter((h) => !h.default).map((h) => realOr(path.join(h.dir, 'projects'))))].filter((d) => d !== realOr(path.join(claude.find((h) => h.default)?.dir || '', 'projects'))),
       // Profiles often link their session folder to a shared one: watch each real folder once.
       claudeDesktop: [...new Set(desktop.map((r) => realOr(r.sessionsDir)))].filter((d) => d !== realOr(claudeDesktopSessionsDir())),
     };
@@ -82,6 +87,7 @@ export function accountTools({ store, allSessions, appTool, meta, getLive = () =
       claudeHomes: { type: 'array', items: { type: 'string' } },
       codexHomes: { type: 'array', items: { type: 'string' } },
       discover: { type: 'boolean' },
+      runner: { type: 'object', properties: { enabled: { type: 'boolean' }, shareProjects: { type: 'boolean' }, shareConfig: { type: 'boolean' }, limitAt: { type: 'number' } } },
     }, [], async (a) => {
       const res = await store.updateAccountSettings(a);
       if (configureAccounts(res)) {
@@ -89,6 +95,51 @@ export function accountTools({ store, allSessions, appTool, meta, getLive = () =
         const live = getLive();
         if (live?.active) live.watchExtra();
       }
+      return res;
+    }),
+    ...runnerTools({ store, appTool, getLive }),
+  ];
+}
+
+// ---- account runner (Canban-made account folders, server/runner.mjs) ----------------
+async function afterHomesChanged(getLive) {
+  await refreshAccounts({ force: true });
+  const live = getLive();
+  if (live?.active) live.watchExtra();
+}
+
+// Log in with the agent's own CLI in the user's terminal (Canban never sees the token).
+async function openLogin(store, home) {
+  const { launch } = (await store.load()).settings;
+  const command = loginCommand(home);
+  if (!installedTerminals().some((t) => t.id === launch.terminal)) return { command, opened: false };
+  await runInTerminal({ terminal: launch.terminal, target: 'new-window', command });
+  return { command, opened: true };
+}
+
+function runnerHome(homeId) {
+  const h = listRunnerHomes(dataDir()).find((x) => x.id === homeId);
+  if (!h) throw new Error('Canban が作ったアカウントのフォルダではありません');
+  return h;
+}
+
+function runnerTools({ store, appTool, getLive }) {
+  return [
+    appTool('canban_account_create', 'アカウントを追加', {
+      agent: { type: 'string', enum: ['claude', 'codex'] },
+      name: { type: 'string', description: 'フォルダ名にも使う名前（英数字）' },
+      login: { type: 'boolean', description: '作ったあとターミナルでログインを開く（既定 true）' },
+    }, ['agent', 'name'], async ({ agent, name, login = true }) => {
+      const { runner } = (await store.load()).settings.accounts;
+      if (!runner.enabled) throw new Error('アカウントの追加は設定でオフになっています（👤 → アカウントの追加をオン）');
+      const home = createHome({ dataDir: dataDir(), agent, name, sourceHome: agent === 'codex' ? defaultCodexHome() : defaultClaudeHome(), shareProjects: runner.shareProjects, shareConfig: runner.shareConfig });
+      await afterHomesChanged(getLive);
+      return { home, login: login ? await openLogin(store, home) : { command: loginCommand(home), opened: false } };
+    }),
+    appTool('canban_account_login', 'アカウントにログイン', { homeId: { type: 'string' } }, ['homeId'], async ({ homeId }) => openLogin(store, runnerHome(homeId))),
+    appTool('canban_account_remove', 'アカウントのフォルダを外す', { homeId: { type: 'string' } }, ['homeId'], async ({ homeId }) => {
+      const res = removeHome({ dataDir: dataDir(), id: runnerHome(homeId).id });
+      await afterHomesChanged(getLive);
       return res;
     }),
   ];
