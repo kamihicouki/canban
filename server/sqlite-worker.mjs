@@ -37,7 +37,7 @@ parentPort.on('message', (message) => {
       if (!object || typeof object[method] !== 'function' || ['constructor','mutate'].includes(method)) throw new Error('Unknown database operation');
       const value = await retry(() => object[method](...args));
       parentPort.postMessage({ id,value });
-    } catch (error) { parentPort.postMessage({ id,error: { message: error.message,code: error.code } }); }
+    } catch (error) { parentPort.postMessage({ id,error: { message: error.message,code: error.code,busyElapsedMs: error.busyElapsedMs } }); }
     finally { setFence(null); }
   });
 });

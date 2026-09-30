@@ -74,14 +74,15 @@ test('write contention stops within two seconds without blocking main thread',as
   const dir=tmp(),store=new Store(dir);await store.load();
   const blocker=new DatabaseSync(path.join(dir,'canban.sqlite'));blocker.exec('BEGIN IMMEDIATE');
   let ticks=0;const timer=setInterval(()=>ticks++,10),start=performance.now();
-  let elapsed;
+  let elapsed, busyElapsedMs;
   try {
-    await assert.rejects(store.createList({title:'blocked'}),e=>e.code==='db_busy');
+    await assert.rejects(store.createList({title:'blocked'}),e=>{busyElapsedMs=e.busyElapsedMs;return e.code==='db_busy';});
     elapsed=performance.now()-start;
   }
   finally {clearInterval(timer);blocker.exec('ROLLBACK');blocker.close();}
   // Releasing and closing the fixture lock is not part of the rejected write.
-  assert.ok(elapsed<2100,`busy rejection took ${elapsed}ms`);assert.ok(ticks>50);
+  assert.ok(Number.isFinite(busyElapsedMs));
+  assert.ok(elapsed<2100,`busy rejection took ${elapsed}ms (worker retry: ${busyElapsedMs}ms)`);assert.ok(ticks>50);
   assert.equal((await store.load()).lists.length,4);await store.close();
 });
 
