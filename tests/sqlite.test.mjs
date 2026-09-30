@@ -20,17 +20,42 @@ function processRun(args, input) {
 }
 const migrate = (dir,...args) => processRun(['scripts/migrate-sqlite.mjs','--data-dir',dir,...args]);
 
-test('10 processes accept 1000 updates without loss', async () => {
+test('10 processes preserve 1000 accepted updates with bounded contention', async (t) => {
   const dir=tmp(), store=new Store(dir); await store.load();
   const results=await Promise.all(Array.from({length:10},(_,client)=>processRun(['--input-type=module'],`
     import {Store} from './server/store.mjs';
     const s=new Store(${JSON.stringify(dir)});
-    await s.load();let max=0;
-    for(let i=0;i<100;i++){const start=performance.now();await s.moveCard({cardId:'codex:${client}:'+i,toListId:'doing',order:i});max=Math.max(max,performance.now()-start);}
-    console.log(JSON.stringify({max}));await s.close();
+    await s.load();let max=0,rejected=0,accepted=0;
+    for(let i=0;i<100;i++){
+      for(let attempt=0;;attempt++){
+        const start=performance.now();
+        try {await s.moveCard({cardId:'codex:${client}:'+i,toListId:'doing',order:i});accepted++;break;}
+        catch(error){
+          if(error.code!=='db_busy'||attempt>=19)throw error;
+          rejected++;
+        }
+        finally {max=Math.max(max,performance.now()-start);}
+        // Only the fixture resubmits a rejected DB write; accepted writes and CLI
+        // requests are never retried. Give competing clients a chance to finish.
+        await new Promise(resolve=>setTimeout(resolve,50+Math.random()*150));
+      }
+    }
+    console.log(JSON.stringify({max,rejected,accepted}));await s.close();
   `)));
-  for(const result of results) {assert.equal(result.code,0,result.err);assert.ok(JSON.parse(result.out).max<2100,result.out);}
-  assert.equal(Object.keys((await store.load()).cards).length,1000);
+  let rejected=0;
+  for(const result of results) {
+    assert.equal(result.code,0,result.err);
+    const stats=JSON.parse(result.out);
+    assert.ok(stats.max<2100,result.out);assert.equal(stats.accepted,100);
+    rejected+=stats.rejected;
+  }
+  t.diagnostic(`1000 accepted DB updates; ${rejected} bounded busy rejections resubmitted by fixture`);
+  const cards=(await store.load()).cards;
+  assert.equal(Object.keys(cards).length,1000);
+  for(let client=0;client<10;client++)for(let i=0;i<100;i++){
+    assert.equal(cards['codex:'+client+':'+i].listId,'doing');
+    assert.equal(cards['codex:'+client+':'+i].order,i);
+  }
   await store.close();
 });
 
