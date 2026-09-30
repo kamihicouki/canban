@@ -119,3 +119,25 @@ test('account editors register dynamic draft fields and keep them after save fai
   await nodes.find(n=>n.attrs.text==='保存').attrs.onclick();
   assert.equal(mounts,1);assert.equal(nodes.find(n=>n.attrs['aria-label']==='表示名').value,'途中の名前');
 });
+
+function workspaceHarness(extra={}) {
+  const src=fs.readFileSync(new URL('../ui/workspace.js',import.meta.url),'utf8').replace('workspace.init();','');
+  return vm.runInNewContext(`${src}\nworkspace;`,{store:{get:(_key,fallback)=>fallback},workspacePage:model.workspacePage,state:{view:'board'},dashOpen:false,...extra});
+}
+test('task autosave advances only the submitted draft baseline', async()=>{
+  const w=workspaceHarness(), input={value:'保存する値',defaultValue:''};
+  let release;
+  const saving=w.saveField(input,()=>new Promise(resolve=>{release=resolve;}));
+  input.value='保存待ち中に追加した入力';release();await saving;
+  assert.equal(w.draftValues.get(input),'保存する値');assert.equal(input.defaultValue,'保存する値');
+  assert.notEqual(input.value,w.draftValues.get(input));
+  await w.saveField(input,async()=>{throw new Error('db_busy');});
+  assert.equal(w.draftValues.get(input),'保存する値');
+});
+test('filtered-out shared tasks retain their identifier and restore after filters change',()=>{
+  let found=false,opened=0;
+  const w=workspaceHarness({findCard:()=>found,sharedUi:{},openTaskModal:()=>{opened++;}});
+  w.pendingTask='task:mock';w.page='home';w.navigate=(page)=>{w.page=page;};
+  w.restoreTask();assert.equal(w.pendingTask,'task:mock');assert.equal(opened,0);
+  found=true;w.restoreTask();assert.equal(w.pendingTask,null);assert.equal(opened,1);assert.equal(w.page,'home');
+});

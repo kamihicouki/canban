@@ -105,7 +105,7 @@ const workspace = {
     $('#logo').textContent = this.page === 'analytics' ? '分析' : 'ホーム';
     for (const b of this.links.children) {
       if (b.dataset.page) b.setAttribute('aria-current', b.dataset.page === this.page ? 'page' : 'false');
-      const count = b.querySelector('.nav-count'); if (count) count.textContent = panes.length + (this.activeTask ? 1 : 0);
+      const count = b.querySelector('.nav-count'); if (count) count.textContent = panes.length + (this.activeTask || this.pendingTask ? 1 : 0);
     }
     const utility = this.utilityPage();
     this.toolbar.hidden = !utility;
@@ -125,8 +125,8 @@ const workspace = {
   },
   restoreTask() {
     const id = this.pendingTask;
-    this.pendingTask = null;
     if (typeof id === 'string' && id.startsWith('task:') && findCard(id)) {
+      this.pendingTask = null;
       const wasApplying = sharedUi.applying;
       const page = this.page;
       sharedUi.applying = true;
@@ -136,11 +136,21 @@ const workspace = {
       } finally { sharedUi.applying = wasApplying; }
     }
   },
+  async saveField(el, save) {
+    const value = el.value;
+    try {
+      await save(value);
+      this.draftValues.set(el, value);
+      if ('defaultValue' in el) el.defaultValue = value;
+      return true;
+    } catch { return false; }
+  },
   hasDrafts(root = document) {
     return !!root.querySelector('[data-unsaved-form="true"]') || [...root.querySelectorAll('input,textarea,select')].some(el => this.draftValues.has(el) && this.draftValues.get(el) !== el.value);
   },
   render(board) {
     if (!this.initialized) return;
+    this.restoreTask();
     this.renderLimitChip(board.limits); this.syncShell();
     if (!this.utilityPage()) return;
     const key = this.page === 'settings' ? `settings:${this.settingsTab}` : this.page;
@@ -159,7 +169,7 @@ const workspace = {
     else if (this.page === 'directories') this.renderDirectories(entry, board);
     else if (this.page === 'usage') this.renderUsage(entry, board);
     else if (this.page === 'cards') body.append(h('h2', { text: '開いているカードはありません' }),
-      h('p', { text: 'サイドバーのホームからカードを選ぶと、ここに表示されます。' }));
+      h('p', { text: this.pendingTask ? '開いていたタスクカードは現在の絞り込み対象外です。ホームで絞り込みを解除すると復元します。' : 'サイドバーのホームからカードを選ぶと、ここに表示されます。' }));
     this.trackDrafts(entry.el);
     bridge.reportSize();
   },

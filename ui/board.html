@@ -2059,6 +2059,7 @@ document.addEventListener('dragend', () => {
 function closeTaskOverlay() {
   document.querySelectorAll('.overlay').forEach((o) => { o.hidden = true; });
   workspace.activeTask = null;
+  workspace.pendingTask = null;
   store.set('activeTask', null);
   state.modalOpen = false;
 }
@@ -2101,7 +2102,7 @@ function closePane(id) {
 }
 async function openCard(cardId, init = null) {
   if (cardId.startsWith('task:')) return openTaskModal(cardId);
-  closeTaskOverlay();
+  if (!init) closeTaskOverlay();
   for (const l of state.board?.lists || []) for (const c of l.cards) if (c.id === cardId && c.unread) { c.unread = false; render(); }
   closePopover();
   let p = panes.find((x) => x.id === cardId);
@@ -3182,19 +3183,11 @@ function openTaskModal(cardId) {
   overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
   const title = h('input', { class: 'title-input', value: card.title, maxlength: 300, 'aria-label': 'タイトル' });
-  title.onchange = () => title.value.trim() && act('canban_update_task', { cardId, title: title.value });
+  title.onchange = () => title.value.trim() && workspace.saveField(title, value => act('canban_update_task', { cardId, title: value }));
   const desc = h('textarea', { class: 'note', placeholder: '説明（新しいセッションへの依頼文にも使われます）', 'aria-label': '説明' });
   desc.value = card.description;
   desc.defaultValue = card.description;
-  desc.onblur = async () => {
-    if (desc.value === desc.defaultValue) return;
-    const value = desc.value;
-    try {
-      await act('canban_update_task', { cardId, description: value }, { okMsg: '保存しました' });
-      desc.defaultValue = value;
-      workspace.draftValues.set(desc, value);
-    } catch {}
-  };
+  desc.onblur = () => desc.value !== desc.defaultValue && workspace.saveField(desc, value => act('canban_update_task', { cardId, description: value }, { okMsg: '保存しました' }));
 
   const listSel = pickerButton({ title: 'リスト', value: list.id, stack: false, className: 'btn picker-btn',
     items: () => b.lists.map((l) => ({ value: l.id, label: l.title, color: l.color, hint: l.count })),
@@ -3241,10 +3234,10 @@ function openTaskModal(cardId) {
   const prio = h('select', { class: 'text-input', 'aria-label': '優先度' },
     h('option', { value: '', text: '未設定' }), h('option', { value: 'high', text: '高' }), h('option', { value: 'medium', text: '中' }), h('option', { value: 'low', text: '低' }));
   prio.value = card.priority || '';
-  prio.onchange = () => act('canban_update_card', { cardId, priority: prio.value || null });
+  prio.onchange = () => workspace.saveField(prio, value => act('canban_update_card', { cardId, priority: value || null }));
   const due = h('input', { class: 'text-input', type: 'date', 'aria-label': '期限' });
   due.value = card.due ? card.due.slice(0, 10) : '';
-  due.onchange = () => act('canban_update_card', { cardId, due: due.value || null });
+  due.onchange = () => workspace.saveField(due, value => act('canban_update_card', { cardId, due: value || null }));
   const labelState = { labels: [...card.labels] };
 
   const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${T.taskCard}の詳細` },
@@ -3281,6 +3274,7 @@ function openTaskModal(cardId) {
   overlay.append(modal);
   document.body.append(overlay);
   workspace.activeTask = cardId;
+  workspace.pendingTask = null;
   store.set('activeTask', cardId);
   workspace.trackDrafts(overlay);
   workspace.navigate('cards', { reload: false });
@@ -4095,7 +4089,7 @@ async function restorePanes() {
 
 function sharedUiSnapshot() {
   return {
-    filters: { ...state.filters }, sidebar: state.sideOpen, view: state.view, workspacePage: workspace.page, navCollapsed: workspace.collapsed, activeTask: workspace.activeTask || null, labelsExpanded: state.labelsExpanded,
+    filters: { ...state.filters }, sidebar: state.sideOpen, view: state.view, workspacePage: workspace.page, navCollapsed: workspace.collapsed, activeTask: workspace.activeTask || workspace.pendingTask || null, labelsExpanded: state.labelsExpanded,
     paneGlobal: { ...paneGlobal }, paneLayout: structuredClone(paneLayout), panes: store.get('panes', []),
     dashOpen, paneCollect, orbPos: { ...orbPos }, paneBarOpen, collapsedLanes: [...collapsedLanes],
   };
