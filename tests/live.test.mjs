@@ -16,6 +16,37 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const line = (o) => `${JSON.stringify(o)}\n`;
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'canban-live-'));
 
+test('removed account roots release directory watchers and fallback polling', async () => {
+  const dir = tmp(); const extraDir = path.join(dir,'extra'); fs.mkdirSync(extraDir);
+  fs.writeFileSync(path.join(extraDir,'state_5.sqlite'),'fixture');
+  for (const fallback of [false,true]) {
+    let roots = {codexHomes:[extraDir]}, closed = 0;
+    const hub = new LiveHub({extraRoots:async()=>roots, watch:()=>{
+      if (fallback) throw new Error('ENOSYS');
+      return {on(){},close(){closed++;}};
+    }});
+    hub.active = true;
+    try {
+      await hub.watchExtra();
+      assert.ok(fallback ? hub.polled.has(extraDir) : hub.watchers.has(`codex:${extraDir}`));
+      roots = {codexHomes:[]}; await hub.watchExtra();
+      assert.equal(hub.watchers.size,0); assert.equal(hub.polled.size,0);
+      if (!fallback) assert.equal(closed,1);
+    } finally {hub.stop();}
+  }
+  fs.rmSync(dir,{recursive:true,force:true});
+});
+
+test('a late account-root discovery cannot restore obsolete watchers', async () => {
+  const dir = tmp(); let resolveOld;
+  const hub = new LiveHub({extraRoots:()=>new Promise(r=>{resolveOld=r;}),watch:()=>({on(){},close(){}})});
+  hub.active=true;
+  const old = hub.watchExtra();
+  hub.extraRoots=async()=>({codexHomes:[]}); await hub.watchExtra();
+  resolveOld({codexHomes:[dir]}); await old;
+  assert.equal(hub.watchers.size,0); hub.stop(); fs.rmSync(dir,{recursive:true,force:true});
+});
+
 const claudeRecs = [
   { type: 'user', timestamp: 't0', message: { content: 'テストを直して' } },
   { type: 'assistant', timestamp: 't1', message: { content: [{ type: 'thinking', thinking: '原因を考える' }, { type: 'text', text: '見てみます' }, { type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'npm test', description: 'テスト実行' } }] } },

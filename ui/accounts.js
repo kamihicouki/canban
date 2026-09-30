@@ -15,6 +15,8 @@ function applyAccountLimits(list) {
   if (!list || !state.board?.accounts) return;
   for (const l of list) { const a = state.board.accounts.accounts.find((x) => x.key === l.key); if (a) a.limits = l; }
   renderUsage(state.board.accounts);
+  workspace.renderLimitChip(state.board.limits);
+  if (workspace.page === 'usage') workspace.render(state.board);
 }
 function accountKv(s) {
   return [...(s.host ? [] : kv('アカウント', s.accountLabel || '不明（記録なし）')), ...(s.homeDir ? kv('設定フォルダ', s.homeDir) : [])];
@@ -42,25 +44,27 @@ function windowName(w) { return !w.windowMinutes ? '' : w.windowMinutes >= 1440 
 function usageWindows(l) { return l ? [l.primary, l.secondary].filter(Boolean) : []; }
 function usageTitle(a) {
   const l = a.limits;
-  const ws = usageWindows(l);
+  const ws = usageWindows(l).map(w => usageWindow(w, l.at)).filter(Boolean);
   return [`${a.agent === 'codex' ? 'Codex' : 'Claude'}: ${a.label}${a.plan ? `（${a.plan}）` : ''}`,
-    ...ws.map((w) => `${windowName(w)}: ${Math.round(w.usedPercent)}% 使用${w.resetsAt ? ` · ${fmtReset(w.resetsAt)}` : ''}`),
-    l ? `${fmtDate(l.at)} 時点（${l.source === 'desktop' ? 'Claude デスクトップの記録' : 'セッションのログ'}）` : '使用量の記録はまだありません'].join('\n');
+    ...ws.map(w => `${w.label}: ${w.stale ? '要更新' : `${w.used}% 使用・残り ${w.remaining}%`}${w.resetsAt ? ` · ${fmtReset(w.resetsAt)}` : ''}`),
+    l ? `${fmtDate(l.at)} 時点（${l.source === 'desktop' ? 'Claude Desktopの記録' : 'セッションログ'}）` : '未取得'].join('\n');
 }
 function usageBars(l, cls = 'lm') {
-  return usageWindows(l).map((w) => h('span', { class: cls }, h('span', { text: windowName(w) }),
-    h('span', { class: 'bar' }, h('i', { class: heat(w.usedPercent), style: { width: `${Math.min(100, w.usedPercent)}%` } })),
-    h('span', { text: `${Math.round(w.usedPercent)}%` })));
+  return usageWindows(l).map(w => usageWindow(w, l.at)).filter(Boolean).map(w =>
+    h('span', { class: cls }, h('span', { text: w.label }),
+      w.stale ? h('span', { text: '要更新' }) : h('span', {}, h('span', { class: 'bar' },
+        h('i', { class: heat(w.used), style: { width: `${w.used}%` } })), h('span', { text: `${w.used}% 使用` }))));
 }
 function shortWho(label) { return String(label || '').replace(/@.*$/, ''); }
 function ringFor(a) {
   const l = a.limits || {};
-  const five = [l.primary, l.secondary].find((w) => w && w.windowMinutes && w.windowMinutes < 1440) || null;
-  const week = [l.primary, l.secondary].find((w) => w && w.windowMinutes >= 1440) || null;
-  const col = (w) => (w ? `var(--c-${heat(w.usedPercent) === 'hot' ? 'red' : heat(w.usedPercent) === 'warn' ? 'orange' : 'green'})` : 'transparent');
-  const old = a.limits && a.limits.source === 'desktop' && Date.now() - (a.limits.at || 0) > OLD_USAGE_MS;
+  const windows = usageWindows(l).map(w => usageWindow(w, l.at)).filter(Boolean);
+  const five = windows.find(w => w.label === '5時間枠' && !w.stale);
+  const week = windows.find(w => w.label === '週間枠' && !w.stale);
+  const col = w => w ? `var(--c-${heat(w.used) === 'hot' ? 'red' : heat(w.used) === 'warn' ? 'orange' : 'green'})` : 'transparent';
+  const old = windows.some(w => w.stale);
   return h('span', { class: `ring2${five ? '' : ' no-a'}${week ? '' : ' no-b'}${old ? ' stale' : ''}${a.limits ? '' : ' none'}`, title: usageTitle(a),
-    style: { '--a': five ? Math.min(100, five.usedPercent) : 0, '--b': week ? Math.min(100, week.usedPercent) : 0, '--ca': col(five), '--cb': col(week) } },
+    style: { '--a': five ? Math.min(100, five.used) : 0, '--b': week ? Math.min(100, week.used) : 0, '--ca': col(five), '--cb': col(week) } },
     h('b', { class: 'ini', style: { background: colorVar(a.color) }, text: a.short }),
     h('i', { class: `agm ${a.agent}` }));
 }
@@ -89,7 +93,7 @@ function acctChip(card) {
 function accountsMenu(anchor) {
   const v = state.board?.accounts;
   if (!v) return;
-  const pick = (key) => { state.filters.account = state.filters.account === key ? '' : key; saveFilters(); closePopover(); load(); };
+  const pick = (key) => { workspace.navigate('home', { reload: false }); state.filters.account = state.filters.account === key ? '' : key; saveFilters(); closePopover(); load(); };
   const signedText = (a) => a.signedIn.map((x) => (x === 'desktop' ? 'デスクトップ' : x.startsWith('desktop:') ? `デスクトップ（${x.slice(8)}）` : `CLI${x === 'cli:default' ? '' : `（${x.slice(4)}）`}`)).join('・');
   // Name, initial and color: how the account reads in the header rings and on cards.
   const edit = (a, row) => {
@@ -97,18 +101,19 @@ function accountsMenu(anchor) {
     const name = h('input', { class: 'text-input', value: a.customLabel || '', placeholder: a.email || a.name || a.label, maxlength: 60, 'aria-label': '表示名' });
     const short = h('input', { class: 'text-input', value: a.short, maxlength: 2, style: { width: '44px', textAlign: 'center' }, 'aria-label': 'リングの頭文字（2 文字まで）', title: 'リングの頭文字（2 文字まで）' });
     const sw = h('div', { class: 'acct-swatches', role: 'group', 'aria-label': '色' }, ...v.colors.map((c) => h('button', { 'aria-pressed': String(c === color), 'aria-label': COLOR_NAMES?.[c] || c, title: COLOR_NAMES?.[c] || c, style: { background: colorVar(c) },
-      onclick: (e) => { color = c; sw.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget))); } })));
+      onclick: (e) => { color = c; row.dataset.unsavedForm = 'true'; sw.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget))); } })));
     const save = async () => {
       try {
         await act('canban_update_accounts', { label: { key: a.key, name: name.value.trim() } }, { reload: false });
         await act('canban_update_accounts', { mark: { key: a.key, short: short.value.trim(), color } }, { okMsg: '保存しました' });
-      } catch {}
+      } catch { return; }
       accountsMenu(anchor);
     };
     for (const i of [name, short]) i.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) save(); if (e.key === 'Escape') accountsMenu(anchor); };
     row.replaceChildren(h('div', { class: 'grow', style: { display: 'grid', gap: '6px', padding: '4px 0' } },
       h('div', { class: 'row' }, name, short),
       h('div', { class: 'row' }, sw, h('span', { class: 'spacer' }), h('button', { class: 'btn', text: '取消', onclick: () => accountsMenu(anchor) }), h('button', { class: 'btn-primary', text: '保存', onclick: save }))));
+    workspace.trackDrafts(row);
     name.focus();
   };
   const toggleHeader = (a, on) => act('canban_update_accounts', { visible: { key: a.key, on } }).then(() => accountsMenu(anchor)).catch(() => {});

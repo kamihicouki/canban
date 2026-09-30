@@ -72,6 +72,8 @@ body[data-page="settings"] .page-panel > .seg { display: flex; flex-wrap: wrap; 
 .pane-layer.stack .pane-canvas { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
 .pane-layer.stack .pane { position: relative; inset: auto; width: 100%; max-width: 100%; max-height: none; flex: none; }
 .pane-layer.stack .pane:not(.is-note) { min-height: 320px; }
+.pane-layer.stack .pane-b { display: block; overflow-y: auto; }
+.pane-layer.stack .pcol { overflow: visible; height: auto; }
 .pane-layer.stack .pane-stage { overflow: auto; }
 .pane-layer.stack .pane.is-note { height: auto !important; }
 .pane-layer .pane-h { flex: none; }

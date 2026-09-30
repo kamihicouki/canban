@@ -33,6 +33,8 @@ export class LiveHub {
     this.roots = { dataDir, codexHome, claudeProjects, claudeDesktop };
     this.extraRoots = extraRoots; // async () => ({ codexHomes: [], claudeProjects: [], claudeDesktop: [] })
     this.claudeDirs = []; // watched Claude projects folders beyond the default
+    this.extraKeys = new Set();
+    this.extraGeneration = 0;
     this.idleMs = idleMs;
     this.watchFn = watch;
     this.seq = 0;
@@ -88,13 +90,24 @@ export class LiveHub {
   // Other config folders: watched like the default ones, keyed by path.
   async watchExtra() {
     if (!this.extraRoots) return;
+    const generation = ++this.extraGeneration;
     let extra;
     try {
       extra = await this.extraRoots();
     } catch {
       return;
     }
-    if (!this.active) return;
+    if (!this.active || generation !== this.extraGeneration) return;
+    const next = new Set([
+      ...(extra.codexHomes || []).map(d => `codex:${d}`),
+      ...(extra.claudeProjects || []).map(d => `claude:${d}`),
+      ...(extra.claudeDesktop || []).map(d => `desktop:${d}`),
+    ]);
+    for (const key of this.extraKeys) if (!next.has(key)) {
+      this.watchers.get(key)?.close(); this.watchers.delete(key);
+      for (const [file, entry] of this.polled) if (entry.owner === key) this.polled.delete(file);
+    }
+    this.extraKeys = next;
     for (const dir of extra.codexHomes || []) this.watchPath(`codex:${dir}`, dir, {}, (f) => (/^state_\d+\.sqlite(-wal)?$/.test(f) ? 'codex' : null));
     for (const dir of extra.claudeProjects || []) this.watchPath(`claude:${dir}`, dir, { recursive: true }, (f) => (f.endsWith('.jsonl') ? 'file' : null));
     for (const dir of extra.claudeDesktop || []) this.watchPath(`desktop:${dir}`, dir, { recursive: true }, (f) => (/^local_.*\.json$/.test(f) || f === 'archived-sessions.idx' ? 'desktop' : null));
@@ -103,6 +116,8 @@ export class LiveHub {
 
   stop() {
     this.active = false;
+    this.extraGeneration++;
+    this.extraKeys.clear();
     this.onStop?.();
     for (const w of this.watchers.values()) w.close();
     this.watchers.clear();
@@ -162,15 +177,15 @@ export class LiveHub {
     } catch {}
     for (const n of names) {
       const kind = classify(n);
-      if (kind && kind !== 'file') this.poll(path.join(dir, n), kind);
+      if (kind && kind !== 'file') this.poll(path.join(dir, n), kind, key);
     }
     if (key.startsWith('git:')) return; // HEAD and index are polled above
-    this.poll(dir, key === 'claude' ? 'rescan' : key === 'desktop' ? 'desktop' : 'store'); // new files show up as a directory change
+    this.poll(dir, key.startsWith('claude') ? 'rescan' : key.startsWith('desktop') ? 'desktop' : 'store', key); // new files show up as a directory change
   }
 
-  poll(file, kind) {
+  poll(file, kind, owner = null) {
     if (this.polled.has(file)) return;
-    this.polled.set(file, { kind, sig: null });
+    this.polled.set(file, { kind, sig: null, owner });
     this.counters.polled++;
     this.pollTimer ||= setInterval(() => this.pollStep(), POLL_MS);
     this.pollTimer.unref?.();

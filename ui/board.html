@@ -861,7 +861,7 @@ const bridge = (() => {
 const PAGE = 40;
 const COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
 const COLOR_NAMES = { gray: 'グレー', blue: '青', green: '緑', yellow: '黄', orange: 'オレンジ', red: '赤', purple: '紫', pink: 'ピンク', sky: '水色', lime: 'ライム' };
-const SHARED_UI_KEYS = ['filters', 'sidebar', 'view', 'workspacePage', 'navCollapsed', 'labelsExpanded', 'paneGlobal', 'paneLayout', 'panes', 'dashOpen', 'paneCollect', 'orbPos', 'paneBarOpen', 'collapsedLanes'];
+const SHARED_UI_KEYS = ['filters', 'sidebar', 'view', 'workspacePage', 'navCollapsed', 'activeTask', 'labelsExpanded', 'paneGlobal', 'paneLayout', 'panes', 'dashOpen', 'paneCollect', 'orbPos', 'paneBarOpen', 'collapsedLanes'];
 const sharedUi = { revision: null, ready: false, dirty: false, blocked: false, applying: false, inflight: false, generation: 0, timer: null, checkTimer: null };
 const store = {
   get(k, d) { try { const v = localStorage.getItem(`sk:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -2059,6 +2059,7 @@ document.addEventListener('dragend', () => {
 function closeTaskOverlay() {
   document.querySelectorAll('.overlay').forEach((o) => { o.hidden = true; });
   workspace.activeTask = null;
+  store.set('activeTask', null);
   state.modalOpen = false;
 }
 function closeModal() { // the overlay dialogs (task cards)
@@ -3166,6 +3167,7 @@ function openTaskModal(cardId) {
   const cached = $$('.overlay').find(o => o.dataset.taskId === cardId);
   if (cached && workspace.hasDrafts(cached)) {
     workspace.activeTask = cardId; cached.hidden = false;
+    store.set('activeTask', cardId);
     workspace.navigate('cards', { reload: false });
     return;
   }
@@ -3279,6 +3281,7 @@ function openTaskModal(cardId) {
   overlay.append(modal);
   document.body.append(overlay);
   workspace.activeTask = cardId;
+  store.set('activeTask', cardId);
   workspace.trackDrafts(overlay);
   workspace.navigate('cards', { reload: false });
   title.focus();
@@ -4092,7 +4095,7 @@ async function restorePanes() {
 
 function sharedUiSnapshot() {
   return {
-    filters: { ...state.filters }, sidebar: state.sideOpen, view: state.view, workspacePage: workspace.page, navCollapsed: workspace.collapsed, labelsExpanded: state.labelsExpanded,
+    filters: { ...state.filters }, sidebar: state.sideOpen, view: state.view, workspacePage: workspace.page, navCollapsed: workspace.collapsed, activeTask: workspace.activeTask || null, labelsExpanded: state.labelsExpanded,
     paneGlobal: { ...paneGlobal }, paneLayout: structuredClone(paneLayout), panes: store.get('panes', []),
     dashOpen, paneCollect, orbPos: { ...orbPos }, paneBarOpen, collapsedLanes: [...collapsedLanes],
   };
@@ -4109,6 +4112,8 @@ function adoptSharedUi(record) {
     if (value.filters && typeof value.filters === 'object' && !Array.isArray(value.filters)) state.filters = { ...DEFAULT_FILTERS, ...value.filters };
     if (typeof value.sidebar === 'boolean') state.sideOpen = value.sidebar;
     if (typeof value.navCollapsed === 'boolean') workspace.setCollapsed(value.navCollapsed, false);
+    workspace.pendingTask = value.activeTask || null;
+    workspace.activeTask = null;
     if (value.view === 'board' || value.view === 'analytics') {
       state.view = value.view;
       syncViewButton();
@@ -4158,6 +4163,7 @@ async function applySharedUi(record, { redraw = true } = {}) {
   if (redraw) {
     await load();
     await restorePanes();
+    workspace.restoreTask();
     setDash(dashOpen, { quiet: true });
     paintPaneBar();
     layoutPanes();
@@ -4250,7 +4256,7 @@ function hasUnsavedPaneInput() {
 
 let lastSharedUiCheck = 0;
 async function checkSharedUiOnReturn() {
-  if (!sharedUi.ready || !idle() || document.visibilityState !== 'visible' || sharedUi.blocked || sharedUi.inflight) return;
+  if (!sharedUi.ready || !idle({ allowTask: true }) || document.visibilityState !== 'visible' || sharedUi.blocked || sharedUi.inflight) return;
   // Rebuilding panes must preserve prompts and card notes still being edited.
   if (hasUnsavedPaneInput()) return;
   if (Date.now() - lastSharedUiCheck < 800) return;
@@ -4279,7 +4285,7 @@ function scheduleSharedUiCheck() {
   sharedUi.checkTimer = setTimeout(checkSharedUiOnReturn, 150);
 }
 
-function idle() { return !state.drag && !state.modalOpen && !document.querySelector('.popover, .list-title-input, .composer'); }
+function idle({ allowTask = false } = {}) { return !state.drag && (!state.modalOpen || allowTask && !!workspace.activeTask) && !document.querySelector('.popover, .list-title-input, .composer'); }
 let lastPoll = 0;
 setInterval(() => {
   // With the live watch on, this is only a safety net (remote hosts, missed events).
@@ -4304,7 +4310,8 @@ window.addEventListener('resize', () => bridge.reportSize());
   await load();
   live.on = true;
   liveLoop();
-  restorePanes();
+  await restorePanes();
+  workspace.restoreTask();
   setDash(dashOpen, { quiet: true });
 })();
 })();

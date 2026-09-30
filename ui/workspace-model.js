@@ -52,7 +52,7 @@ function paneGeometry(items, kind, W, H, gap = 12) {
     for (const current of rows) {
       const noteOnly = current.every(x => x.note);
       const intrinsic = Math.max(...current.map(x => x.h));
-      const rh = noteOnly ? Math.min(intrinsic, available) : rows.length === 1 ? available : cap >= 320 ? cap : Math.max(320, available);
+      const rh = noteOnly ? Math.min(intrinsic, available) : rows.length === 1 ? available : Math.max(320, cap);
       placeRow(current, y, rh); y += rh + gap;
     }
     height = Math.max(H, y);

@@ -28,7 +28,7 @@ test('grid rows distribute height and scroll if minimum readable height cannot f
   assert.equal(fit.rects[0].h,407); assert.equal(fit.rects[1].h,407);
   assert.equal(fit.height,850);
   const scroll = model.paneGeometry(items,'grid',1000,500);
-  assert.ok(scroll.height>500); assert.ok(scroll.rects.every(r=>r.h>=320));
+  assert.ok(scroll.height>500); assert.ok(scroll.rects.every(r=>r.h===320));
 });
 test('column layout gives each card viewport height and row layout can scroll horizontally', () => {
   const items=[0,1].map(index=>({index,w:700,h:500,note:false}));
@@ -95,5 +95,27 @@ test('account rings show unknown when the recorded window has expired', () => {
   });
   const result = vm.runInContext(`${ring}\nringFor({agent:'claude',label:'確認',short:'確',color:'blue',limits:{at:${now},primary:{usedPercent:90,windowMinutes:300,resetsAt:${now-1}}}});`,context);
   assert.match(result.attrs.class,/no-a/);
-  assert.match(result.attrs.class,/old/);
+  assert.match(result.attrs.class,/stale/);
+});
+
+test('account editors register dynamic draft fields and keep them after save failure', async () => {
+  const src = fs.readFileSync(new URL('../ui/accounts.js', import.meta.url), 'utf8');
+  const menu = src.slice(src.indexOf('function accountsMenu('), src.indexOf("$('#accountsBtn').addEventListener"));
+  let mounts=0,body,tracked;
+  const nodes=[];
+  const h=(tag,attrs={},...children)=>{
+    const node={tag,attrs,children:children.flat().filter(v=>v!=null),value:attrs.value||'',dataset:{},focus(){},
+      append(...values){this.children.push(...values);}, replaceChildren(...values){this.children=values;},
+      querySelectorAll(){return[];}};nodes.push(node);return node;
+  };
+  const account={key:'claude:mock',label:'確認',agent:'claude',short:'確',color:'blue',signedIn:[],count:1};
+  const context=vm.createContext({h,state:{filters:{},board:{accounts:{accounts:[account],colors:['blue'],unknown:{codex:0,claude:0},homes:[],discover:false}}},
+    workspace:{trackDrafts:root=>{tracked=root;}},ringFor:()=>h('span'),usageTitle:()=>'',usageWindows:()=>[],colorVar:()=>'',COLOR_NAMES:{},
+    popover:(_anchor,_title,content)=>{mounts++;body=content;},act:async()=>{throw new Error('db_busy');}});
+  vm.runInContext(`${menu}\naccountsMenu({});`,context);
+  nodes.find(n=>n.attrs['aria-label']==='確認 の名前・頭文字・色を変更').attrs.onclick();
+  assert.ok(tracked); assert.equal(mounts,1);
+  nodes.find(n=>n.attrs['aria-label']==='表示名').value='途中の名前';
+  await nodes.find(n=>n.attrs.text==='保存').attrs.onclick();
+  assert.equal(mounts,1);assert.equal(nodes.find(n=>n.attrs['aria-label']==='表示名').value,'途中の名前');
 });

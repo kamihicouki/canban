@@ -4,6 +4,7 @@ const workspace = {
   page: workspacePage(store.get('workspacePage', null), state.view === 'analytics' ? 'analytics' : dashOpen && store.get('panes', []).length ? 'cards' : 'home'),
   collapsed: store.get('navCollapsed', false) === true,
   switching: false, initialized: false, entries: new Map(), draftValues: new WeakMap(), settingsTab: 'launch',
+  pendingTask: store.get('activeTask', null),
   init() {
     this.nav = h('nav', { class: 'app-nav', 'aria-label': 'Canbanの画面' },
       h('div', { class: 'nav-brand', text: 'Canban' }));
@@ -101,9 +102,10 @@ const workspace = {
   },
   syncShell() {
     document.body.dataset.page = this.page;
+    $('#logo').textContent = this.page === 'analytics' ? '分析' : 'ホーム';
     for (const b of this.links.children) {
       if (b.dataset.page) b.setAttribute('aria-current', b.dataset.page === this.page ? 'page' : 'false');
-      const count = b.querySelector('.nav-count'); if (count) count.textContent = panes.length;
+      const count = b.querySelector('.nav-count'); if (count) count.textContent = panes.length + (this.activeTask ? 1 : 0);
     }
     const utility = this.utilityPage();
     this.toolbar.hidden = !utility;
@@ -121,8 +123,21 @@ const workspace = {
       if (!this.draftValues.has(el)) this.draftValues.set(el, el.value);
     }
   },
+  restoreTask() {
+    const id = this.pendingTask;
+    this.pendingTask = null;
+    if (typeof id === 'string' && id.startsWith('task:') && findCard(id)) {
+      const wasApplying = sharedUi.applying;
+      const page = this.page;
+      sharedUi.applying = true;
+      try {
+        openTaskModal(id);
+        if (page !== 'cards') this.navigate(page, { save: false, reload: false });
+      } finally { sharedUi.applying = wasApplying; }
+    }
+  },
   hasDrafts(root = document) {
-    return [...root.querySelectorAll('input,textarea,select')].some(el => this.draftValues.has(el) && this.draftValues.get(el) !== el.value);
+    return !!root.querySelector('[data-unsaved-form="true"]') || [...root.querySelectorAll('input,textarea,select')].some(el => this.draftValues.has(el) && this.draftValues.get(el) !== el.value);
   },
   render(board) {
     if (!this.initialized) return;
