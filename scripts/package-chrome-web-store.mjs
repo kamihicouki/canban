@@ -21,7 +21,7 @@ try {
   run(process.execPath, [buildScript, '--outdir', temp], root);
   const manifest = JSON.parse(fs.readFileSync(path.join(temp, 'manifest.json'), 'utf8'));
   if (manifest.manifest_version !== 3 || !/^\d+(\.\d+){0,3}$/.test(manifest.version) || manifest.version.split('.').some(n => +n > 65535) || manifest.version.split('.').every(n => +n === 0)) throw new Error('Invalid Chrome manifest version');
-  if (JSON.stringify(manifest.permissions) !== '["nativeMessaging"]' || manifest.host_permissions?.length || manifest.content_scripts?.length) throw new Error('Permissions changed: update and review CHROMEWEBSTORE.md before packaging');
+  if (JSON.stringify(manifest.permissions) !== '["nativeMessaging"]' || manifest.host_permissions?.length || manifest.optional_permissions?.length || manifest.optional_host_permissions?.length || manifest.content_scripts?.length) throw new Error('Permissions changed: update and review CHROMEWEBSTORE.md before packaging');
   manifest.homepage_url = 'https://github.com/kamihicouki/canban';
   manifest.icons = {};
   fs.mkdirSync(path.join(temp, 'icons'));

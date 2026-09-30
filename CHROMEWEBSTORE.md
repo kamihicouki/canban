@@ -70,7 +70,9 @@ Publisher ID: `97689f5d-07e8-4c7c-85d6-465f31dc56d4`
 
 管理画面: https://chrome.google.com/webstore/devconsole/97689f5d-07e8-4c7c-85d6-465f31dc56d4/kmnkdbmckholannmfhjfmceofmjdbndh/edit
 
-2026-09-30 に 0.14.0 の ZIP をアップロードし、新規ドラフトを作成済み。審査申請・公開は未実施。
+2026-09-30 に 0.14.0 の ZIP をアップロードし、新規ドラフトを作成済み。説明・ホームページ・サポート URL は下書き保存済み。カテゴリ・言語・画像・プライバシー申告は未完了。審査申請・公開は未実施。
+
+検証: 本体のローカル未コミット変更を専用 worktree にコピーした状態で144テスト成功。公開 PR はその本体変更を含まない。ZIP の SHA-256 は `170a71343f1d846763795b59eb320729c4ca727fe14b2c8da30deecc0cea7cf0`。ストア版の実動作は未検証。
 
 ## 初回登録と継続デプロイ
 
@@ -82,7 +84,7 @@ node scripts/package-chrome-web-store.mjs
 
 成果物: `dist/canban-web-store.zip` と SHA-256。ZIP のルートに manifest.json を配置。ローカル連携ソフトは ZIP に含めない。
 
-GitHub Actions の `chrome-web-store` Environment に以下を設定する。値を文書やチャットに貼らない。
+GitHub Actions の `chrome-web-store` Environment は作成済みで、Publisher ID とストア用拡張 ID を Variables に登録済み。OAuth secrets は未作成・未登録。以下を設定する。値を文書やチャットに貼らない。
 
 | 種別 | 名前 | 内容 |
 |---|---|---|
@@ -96,7 +98,7 @@ Google 側の設定: https://developer.chrome.com/docs/webstore/using-api
 
 公式 API 定義: https://chromewebstore.googleapis.com/$discovery/rest?version=v2
 
-認証の作成・同意はアカウント所有者が行う。GitHub の secret 登録には `gh secret set NAME --env chrome-web-store` の対話入力を使う。コマンド引数やログへ値を露出させない。
+認証の作成・同意はアカウント所有者が行う。公式の順序は、Google Cloud で Chrome Web Store API を有効化 → OAuth 同意画面を設定 → Web application の OAuth client を作成（redirect URI: `https://developers.google.com/oauthplayground`）→ OAuth Playground の「Use your own OAuth credentials」に自分の client を設定 → `https://www.googleapis.com/auth/chromewebstore` をストア管理アカウントで認可 → authorization code を交換して refresh token を取得、となる。External / Testing 状態で発行する refresh token は通常7日で失効するため、運用用の OAuth 設定と Google の要件を確認してから認可する。GitHub の secret 登録には `gh secret set NAME --env chrome-web-store` の対話入力を使う。コマンド引数やログへ値を露出させない。
 
 PR / main 更新時はテストと ZIP 作成のみ。`chrome-v<package.json の version>` タグを push すると審査申請し、承認後に公開する。手動実行は main のみ、`upload`（アップロードのみ）か `publish`（審査申請）を選択できる。拡張本体の変更が main に統合されるまでは、このワークフローを有効化しない。
 
