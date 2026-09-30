@@ -367,7 +367,15 @@ export function accountLimits(codexLimits = new Map(), now = Date.now()) {
 
 // Accounts with their usage for the board / model. `codexLimits` maps account keys to
 // the newest rate-limit snapshot seen in the logs.
-export function accountsView({ labels = {}, sessions = [], codexLimits = new Map(), now = Date.now() } = {}) {
+// Header marks: an initial and a color per account. Unset colors are dealt out in a
+// stable order (agent, then key) so the same account keeps its color.
+const MARK_COLORS = ['blue', 'purple', 'pink', 'sky', 'lime', 'yellow', 'gray'];
+function defaultShort(label) {
+  const c = [...String(label || '').replace(/^[^\p{L}\p{N}]+/u, '')][0] || '?';
+  return c.toUpperCase();
+}
+
+export function accountsView({ labels = {}, marks = {}, hidden = [], sessions = [], codexLimits = new Map(), now = Date.now() } = {}) {
   const counts = new Map();
   for (const s of sessions) {
     const k = s.account || `__none:${s.agent}`;
@@ -390,6 +398,13 @@ export function accountsView({ labels = {}, sessions = [], codexLimits = new Map
     limits: limits.get(a.key) || null,
   }));
   accounts.sort((x, y) => (x.agent === y.agent ? y.count - x.count : x.agent === 'codex' ? -1 : 1));
+  const taken = new Set(accounts.map((a) => marks[a.key]?.color).filter(Boolean));
+  const free = MARK_COLORS.filter((c) => !taken.has(c));
+  [...accounts].sort((x, y) => (x.agent + x.key < y.agent + y.key ? -1 : 1)).forEach((a, i) => {
+    a.short = marks[a.key]?.short || defaultShort(a.label);
+    a.color = marks[a.key]?.color || free[i % Math.max(free.length, 1)] || MARK_COLORS[i % MARK_COLORS.length];
+    a.inHeader = !hidden.includes(a.key);
+  });
   return {
     accounts,
     unknown: { codex: counts.get('__none:codex') || 0, claude: counts.get('__none:claude') || 0 },

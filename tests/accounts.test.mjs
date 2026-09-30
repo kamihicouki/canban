@@ -157,3 +157,39 @@ test('removing a config folder drops its sessions', async () => {
   const all = await everything();
   assert.equal(by(all, 's3'), undefined);
 });
+
+test('header marks: initials and colors tell accounts apart; hidden accounts leave the header', async () => {
+  const all = await everything();
+  const v = accountsView({ marks: { 'claude:acct-b': { short: 'W', color: 'pink' } }, hidden: ['codex:cx-1'], sessions: all });
+  const acct = (k) => v.accounts.find((a) => a.key === k);
+  assert.equal(acct('claude:acct-b').short, 'W');
+  assert.equal(acct('claude:acct-b').color, 'pink');
+  assert.equal(acct('claude:acct-c').short, 'C'); // from c@example.com
+  const colors = v.accounts.map((a) => a.color);
+  assert.equal(new Set(colors).size, colors.length); // every account its own color
+  assert.ok(!colors.some((c) => ['green', 'orange', 'red'].includes(c))); // those mean "how full"
+  assert.equal(acct('codex:cx-1').inHeader, false);
+  assert.equal(acct('claude:acct-a').inHeader, true);
+});
+
+test('account marks and header visibility are stored and validated', async () => {
+  const { Store } = await import('../server/store.mjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-acct-store-'));
+  try {
+    const store = new Store(dir);
+    await store.updateAccountSettings({ mark: { key: 'claude:acct-a', short: 'Main', color: 'purple' } });
+    await store.updateAccountSettings({ mark: { key: 'claude:acct-b', color: 'red' } }); // not an account color
+    await store.updateAccountSettings({ visible: { key: 'codex:cx-1', on: false } });
+    let a = store.load().settings.accounts;
+    assert.deepEqual(a.marks, { 'claude:acct-a': { short: 'Ma', color: 'purple' } });
+    assert.deepEqual(a.hidden, ['codex:cx-1']);
+    await store.updateAccountSettings({ visible: { key: 'codex:cx-1', on: true } });
+    await store.updateAccountSettings({ mark: { key: 'claude:acct-a', short: '' } });
+    a = store.load().settings.accounts;
+    assert.deepEqual(a.hidden, []);
+    assert.deepEqual(a.marks, { 'claude:acct-a': { color: 'purple' } });
+    await assert.rejects(async () => store.updateAccountSettings({ visible: { key: '../x', on: false } }), /アカウントが不正/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

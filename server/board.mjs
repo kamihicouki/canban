@@ -463,7 +463,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
     terminals: installedTerminals(),
     statusCounts,
     limits: currentLimits(),
-    accounts: accountsView({ labels: state.settings.accounts.labels, sessions: visible, codexLimits: limitsByAccount() }),
+    accounts: accountsView({ ...state.settings.accounts, sessions: visible, codexLimits: limitsByAccount() }),
     search: searchFor(store).progress,
     git: { available: prs.status.available, reason: prs.status.reason, github: prs.status.github, gitlab: prs.status.gitlab },
     folders: recentFolders(sessions),

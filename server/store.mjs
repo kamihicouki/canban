@@ -55,10 +55,13 @@ export function defaultSettings() {
 }
 
 export function defaultAccounts() {
-  return { labels: {}, claudeHomes: [], codexHomes: [], discover: true };
+  // marks: { key: { short, color } } tell accounts apart in the header; hidden: keys left out of it.
+  return { labels: {}, marks: {}, hidden: [], claudeHomes: [], codexHomes: [], discover: true };
 }
 
 const ACCOUNT_KEY = /^(codex|claude):[A-Za-z0-9._@:-]{1,128}$/;
+// Account colors avoid green / orange / red, which the usage rings use for how full they are.
+export const ACCOUNT_COLORS = ['blue', 'purple', 'pink', 'sky', 'lime', 'yellow', 'gray'];
 function normalizeHomes(list) {
   if (!Array.isArray(list)) return [];
   return [...new Set(list.map((p) => String(p || '').trim().replace(/\/+$/, '')).filter((p) => p.startsWith('/') || p.startsWith('~/')))].slice(0, 10);
@@ -69,7 +72,15 @@ function normalizeAccounts(x) {
     const name = String(v ?? '').trim().slice(0, 60);
     if (ACCOUNT_KEY.test(k) && name) labels[k] = name;
   }
-  return { labels, claudeHomes: normalizeHomes(x?.claudeHomes), codexHomes: normalizeHomes(x?.codexHomes), discover: x?.discover !== false };
+  const marks = {};
+  for (const [k, v] of Object.entries(x?.marks && typeof x.marks === 'object' ? x.marks : {})) {
+    if (!ACCOUNT_KEY.test(k) || !v || typeof v !== 'object') continue;
+    const short = [...String(v.short ?? '').trim()].slice(0, 2).join('');
+    const color = ACCOUNT_COLORS.includes(v.color) ? v.color : null;
+    if (short || color) marks[k] = { ...(short ? { short } : {}), ...(color ? { color } : {}) };
+  }
+  const hidden = [...new Set((Array.isArray(x?.hidden) ? x.hidden : []).filter((k) => typeof k === 'string' && ACCOUNT_KEY.test(k)))].slice(0, 50);
+  return { labels, marks, hidden, claudeHomes: normalizeHomes(x?.claudeHomes), codexHomes: normalizeHomes(x?.codexHomes), discover: x?.discover !== false };
 }
 
 export function defaultDispatch() {
@@ -610,13 +621,25 @@ export class Store {
     });
   }
 
-  // patch: { label: { key, name } } renames an account ('' clears it); homes / discover replace.
-  updateAccountSettings({ label, claudeHomes, codexHomes, discover } = {}) {
+  // patch: { label: { key, name } } renames an account ('' clears it); mark: { key, short, color }
+  // ('' / null clears); visible: { key, on } shows or hides it in the header; homes / discover replace.
+  updateAccountSettings({ label, mark, visible, claudeHomes, codexHomes, discover } = {}) {
     return this.mutate((s) => {
       const a = { ...s.settings.accounts, labels: { ...s.settings.accounts.labels } };
       if (label && typeof label.key === 'string') {
         if (!ACCOUNT_KEY.test(label.key)) throw new Error('アカウントが不正です');
         a.labels[label.key] = label.name;
+      }
+      if (mark && typeof mark.key === 'string') {
+        if (!ACCOUNT_KEY.test(mark.key)) throw new Error('アカウントが不正です');
+        const cur = { ...(s.settings.accounts.marks[mark.key] || {}) };
+        if (mark.short !== undefined) cur.short = mark.short;
+        if (mark.color !== undefined) cur.color = mark.color;
+        a.marks = { ...s.settings.accounts.marks, [mark.key]: cur };
+      }
+      if (visible && typeof visible.key === 'string') {
+        if (!ACCOUNT_KEY.test(visible.key)) throw new Error('アカウントが不正です');
+        a.hidden = visible.on ? a.hidden.filter((k) => k !== visible.key) : [...a.hidden, visible.key];
       }
       if (claudeHomes !== undefined) a.claudeHomes = claudeHomes;
       if (codexHomes !== undefined) a.codexHomes = codexHomes;

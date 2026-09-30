@@ -9,6 +9,9 @@
 - **Claude desktop profiles.** Other app data folders beside `Application Support/Claude` (`Claude-*`, `Claude-Profiles/*`) are read as well. Folders shared between accounts through symlinks are read once and belong to their real location; a session visible to the signed-in account through a link is not flagged.
 - **Usage per account.** The header shows 5-hour / weekly usage for every account that has a record: Codex rate limits from the logs (now kept per account) and Claude plan usage from each desktop profile's `plan-usage-history.json` (older than an hour: dimmed). New model-visible tool `canban_get_usage`.
 - Account files are read only for the account id, e-mail, plan and usage; tokens are never read into anything Canban returns.
+- **One-row header.** The header no longer wraps. When it does not fit, button labels go first (icons stay), then items move into a new ⋯ menu from the lowest priority up (本文 → 自動化 → ビュー → ラベル → マシン → 分析 → 表示 → 期間 → 📁 → AI Apps → 実行状態). The run-state chips are dots with counts; the session totals moved to the Canban title's tooltip.
+- **Usage rings.** Usage is one double ring per account on the 👤 button: outer = 5-hour window, inner = weekly, green / orange / red by how full; the center carries the account's initial on its own color and a corner mark says Codex or Claude. In the 👤 menu each account can be left out of the header (checkbox) and given a name, a 1–2 character initial and a color (✎). Card chips use the same initial and color.
+- Fix: `h()` now sets CSS custom properties given in `style`.
 
 ## 0.13.0 — 2026-09-29
 - Card details are now **panes** instead of one modal: open several cards at once, like pinned sticky notes (up to 8).

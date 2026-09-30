@@ -438,7 +438,7 @@ const TOOLS = [
     handler: async () => {
       const state = store.load();
       const { sessions } = await allSessions(state);
-      const v = accountsView({ labels: state.settings.accounts.labels, sessions: sessions.filter((s) => !s.subagent), codexLimits: limitsByAccount() });
+      const v = accountsView({ ...state.settings.accounts, sessions: sessions.filter((s) => !s.subagent), codexLimits: limitsByAccount() });
       const win = (w) => (w ? `${w.windowMinutes >= 1440 ? '週' : `${Math.round(w.windowMinutes / 60)}h`} ${Math.round(w.usedPercent)}%` : null);
       const lines = v.accounts.map((a) => {
         const l = a.limits;
@@ -452,6 +452,8 @@ const TOOLS = [
   },
   appTool('canban_update_accounts', 'アカウントと設定フォルダを変更', {
     label: { type: 'object', properties: { key: { type: 'string' }, name: { type: 'string' } } },
+    mark: { type: 'object', properties: { key: { type: 'string' }, short: { type: 'string' }, color: { type: ['string', 'null'] } } },
+    visible: { type: 'object', properties: { key: { type: 'string' }, on: { type: 'boolean' } } },
     claudeHomes: { type: 'array', items: { type: 'string' } },
     codexHomes: { type: 'array', items: { type: 'string' } },
     discover: { type: 'boolean' },

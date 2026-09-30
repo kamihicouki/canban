@@ -77,12 +77,47 @@ button { cursor: pointer; border: 0; background: none; }
 
 /* ---------- header ---------- */
 .topbar {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow: hidden; white-space: nowrap;
   padding: 10px 12px; background: var(--header-bg); color: var(--header-fg);
   backdrop-filter: blur(6px);
 }
 .topbar h1 { font-size: 18px; margin: 0 8px 0 4px; font-weight: 700; white-space: nowrap; }
-.topbar .spacer { flex: 1; }
+.topbar .spacer { flex: 1 1 0; min-width: 4px; }
+.topbar > * { flex: none; }
+.topbar .hsearch { flex: 0 1 220px; min-width: 90px; }
+.topbar .hbtn { display: inline-flex; align-items: center; gap: 5px; }
+.topbar.compact .hbtn[data-pri] .lbl { display: none; }
+.topbar [data-pri].folded { display: none !important; }
+.more-menu .menu-item { display: flex; align-items: center; gap: 8px; }
+.more-menu .more-row { display: flex; gap: 4px; padding: 2px 6px 6px; flex-wrap: wrap; }
+.more-menu .more-row button { padding: 3px 8px; border-radius: 4px; background: var(--btn-subtle); font-size: 12px; }
+.more-menu .more-row button[aria-pressed="true"] { background: var(--c-blue); color: #fff; }
+/* usage rings: outer = 5-hour window, inner = weekly; the center carries the account's
+   initial on its own color, the corner mark says Codex / Claude */
+.acct-btn { gap: 6px; padding: 0 8px; }
+.acct-btn .rings { display: inline-flex; gap: 5px; }
+.acct-btn .rings:empty { display: none; }
+.acct-lbl { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.acct-lbl:empty { display: none; }
+.ring2 { --a: 0; --b: 0; --ca: var(--c-green); --cb: var(--c-green); position: relative; width: 28px; height: 28px; flex: none; display: inline-block; }
+.ring2::before, .ring2::after { content: ""; position: absolute; border-radius: 50%; }
+.ring2::before { inset: 0; background: conic-gradient(var(--ca) calc(var(--a) * 1%), var(--ring-track, rgba(255,255,255,.22)) 0);
+  -webkit-mask: radial-gradient(circle, transparent 10.5px, #000 11px); mask: radial-gradient(circle, transparent 10.5px, #000 11px); }
+.ring2::after { inset: 4px; background: conic-gradient(var(--cb) calc(var(--b) * 1%), var(--ring-track, rgba(255,255,255,.22)) 0);
+  -webkit-mask: radial-gradient(circle, transparent 6.5px, #000 7px); mask: radial-gradient(circle, transparent 6.5px, #000 7px); }
+.ring2.no-a::before, .ring2.no-b::after { background: var(--ring-track, rgba(255,255,255,.22)); opacity: .5; }
+.acct-row { --ring-track: var(--btn-subtle-hover); }
+.acct-row .ring2 .agm { border-color: var(--modal-bg, #fff); }
+.ring2 .ini { position: absolute; inset: 8px; border-radius: 50%; display: grid; place-items: center; font-size: 9px; font-weight: 700; line-height: 1; color: #fff; }
+.ring2 .agm { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 3px; border: 1.5px solid #2c4f8f; }
+.agm.codex, .acct-dot.codex { background: #10a37f; }
+.agm.claude, .acct-dot.claude { background: #d97757; }
+.ring2.stale { opacity: .5; }
+.ring2.none { opacity: .7; }
+.acct-dot { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; font-size: 9px; font-weight: 700; color: #fff; flex: none; }
+.swatches { display: flex; gap: 4px; }
+.swatches button { width: 18px; height: 18px; border-radius: 50%; border: 2px solid transparent; padding: 0; }
+.swatches button[aria-pressed="true"] { border-color: var(--list-fg); }
 .hbtn, .hselect, .hsearch {
   height: 32px; border-radius: 4px; background: rgba(255,255,255,0.2); color: #fff; border: 0; padding: 0 10px;
 }
@@ -309,7 +344,10 @@ button.limits:hover { background: rgba(255,255,255,0.3); }
 .card.unread { box-shadow: inset 3px 0 0 var(--accent), var(--card-shadow); }
 .new-pill { background: var(--accent); color: #fff; font-weight: 600; }
 .status-bar { display: inline-flex; gap: 4px; }
-.status-chip { display: inline-flex; align-items: center; height: 28px; padding: 0 8px; border-radius: 14px; background: rgba(255,255,255,0.2); color: #fff; font-size: 12px; }
+.status-bar { gap: 0; background: rgba(255,255,255,0.2); border-radius: 14px; padding: 0 4px; }
+.status-bar:empty { display: none; }
+.status-chip { display: inline-flex; align-items: center; height: 28px; padding: 0 5px; border-radius: 14px; background: none; color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; }
+.status-chip .sdot { margin-right: 4px; }
 .status-chip[aria-pressed="true"] { background: #fff; color: #172b4d; }
 .rule-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; }
 .toast-btn { margin-left: 8px; color: #fff; text-decoration: underline; font-weight: 600; }
@@ -661,36 +699,35 @@ body.orb-dragging .orb-zone { opacity: 1; }
 <body>
 <header class="topbar">
   <button id="sideBtn" class="hbtn" title="サイドバー（b）" aria-label="サイドバー" aria-pressed="true">☰</button>
-  <h1>Canban</h1>
-  <input id="q" class="hsearch" type="search" placeholder="検索（/）・⌘K でコマンド" aria-label="検索" aria-keyshortcuts="/" />
-  <label class="ft-toggle" title="会話の本文も検索する（3 文字以上）"><input id="fulltext" type="checkbox" /> 本文</label>
-  <div class="seg" role="group" aria-label="AI Apps">
+  <h1 id="logo">Canban</h1>
+  <input id="q" class="hsearch" type="search" placeholder="検索（/）・⌘K" aria-label="検索" aria-keyshortcuts="/" />
+  <label class="ft-toggle" data-pri="0" title="会話の本文も検索する（3 文字以上）"><input id="fulltext" type="checkbox" /> 本文</label>
+  <div class="seg" data-pri="9" role="group" aria-label="AI Apps">
     <button data-agent="all" aria-pressed="true">すべて</button>
     <button data-agent="codex" aria-pressed="false">Codex</button>
     <button data-agent="claude" aria-pressed="false">Claude</button>
   </div>
-  <button id="projectBtn" class="hbtn" aria-haspopup="listbox" title="カテゴリ・プロジェクトで絞り込み（p）">📁 すべて ▾</button>
-  <select id="days" class="hselect" aria-label="期間">
+  <button id="projectBtn" class="hbtn" data-pri="8" aria-haspopup="listbox" title="カテゴリ・プロジェクトで絞り込み（p）">📁 すべて ▾</button>
+  <select id="days" class="hselect" data-pri="7" aria-label="期間">
     <option value="7">7日以内</option>
     <option value="30" selected>30日以内</option>
     <option value="90">90日以内</option>
     <option value="0">全期間</option>
   </select>
-  <button id="optBtn" class="hbtn" aria-haspopup="true">表示 ▾</button>
-  <button id="rulesBtn" class="hbtn" title="自動化（カードの自動移動）">⚡ 自動化</button>
-  <button id="viewsBtn" class="hbtn" aria-haspopup="true" title="保存したビュー（1〜9 キーで切り替え）">ビュー ▾</button>
-  <button id="analyticsBtn" class="hbtn" aria-pressed="false" title="ボード / 分析 の切り替え">📊 分析</button>
-  <button id="labelsBtn" class="hbtn">ラベル</button>
-  <button id="hostsBtn" class="hbtn" aria-haspopup="true">マシン ▾</button>
-  <button id="accountsBtn" class="hbtn" aria-haspopup="true" title="アカウント・使用量・設定フォルダ">アカウント ▾</button>
-  <button id="settingsBtn" class="hbtn" title="再開と指示の送信の設定" aria-label="再開と指示の送信の設定">⚙ 設定</button>
+  <button id="optBtn" class="hbtn" data-pri="6" aria-haspopup="true" title="表示"><span class="ic">👁</span><span class="lbl">表示 ▾</span></button>
+  <button id="rulesBtn" class="hbtn" data-pri="1" title="自動化（カードの自動移動）"><span class="ic">⚡</span><span class="lbl">自動化</span></button>
+  <button id="viewsBtn" class="hbtn" data-pri="2" aria-haspopup="true" title="保存したビュー（1〜9 キーで切り替え）"><span class="ic">▦</span><span class="lbl">ビュー ▾</span></button>
+  <button id="analyticsBtn" class="hbtn" data-pri="5" aria-pressed="false" title="ボード / 分析 の切り替え"><span class="ic">📊</span><span class="lbl">分析</span></button>
+  <button id="labelsBtn" class="hbtn" data-pri="3" title="ラベル"><span class="ic">🏷</span><span class="lbl">ラベル</span></button>
+  <button id="hostsBtn" class="hbtn" data-pri="4" aria-haspopup="true" title="マシン"><span class="ic">🖥</span><span class="lbl">マシン ▾</span></button>
   <span class="spacer"></span>
   <span id="presenceBar" class="limits presence" hidden></span>
-  <button id="limitsBar" class="limits" hidden title="アカウントごとの使用量（クリックで一覧）"></button>
-  <span id="statusBar" class="status-bar" role="group" aria-label="実行状態"></span>
+  <span id="statusBar" class="status-bar" data-pri="10" role="group" aria-label="実行状態"></span>
   <button id="seenBtn" class="hbtn" title="新着をすべて既読にする" hidden>✓ 既読</button>
-  <button id="perfBtn" class="hbtn" title="Canban 自身の処理が予算を超えました（クリックで詳細）" hidden>⚠ 遅い処理</button>
-  <span id="stat" class="stat"></span>
+  <button id="perfBtn" class="hbtn" title="Canban 自身の処理が予算を超えました（クリックで詳細）" hidden>⚠</button>
+  <button id="accountsBtn" class="hbtn acct-btn" aria-haspopup="true" title="アカウント・使用量・設定フォルダ"><span id="acctRings" class="rings"></span><span class="ic">👤</span><span class="lbl acct-lbl"></span><span class="caret">▾</span></button>
+  <button id="moreBtn" class="hbtn" aria-haspopup="true" title="その他" aria-label="その他" hidden>⋯</button>
+  <button id="settingsBtn" class="hbtn" title="再開と指示の送信の設定" aria-label="再開と指示の送信の設定">⚙</button>
   <button id="refresh" class="hbtn" title="再読み込み" aria-label="再読み込み">⟳</button>
 </header>
 <div id="errbar" class="errbar" hidden></div>
@@ -705,7 +742,7 @@ body.orb-dragging .orb-zone { opacity: 1; }
 const T = { category: 'カテゴリ', automation: '自動化', taskCard: 'タスクカード', aiApps: 'AI Apps', folder: 'フォルダ' };
 {
   const set = (sel, attr, v) => { const el = document.querySelector(sel); if (el) (attr === 'text' ? (el.textContent = v) : el.setAttribute(attr, v)); };
-  set('#rulesBtn', 'text', `⚡ ${T.automation}`);
+  set('#rulesBtn .lbl', 'text', T.automation);
   set('#rulesBtn', 'title', `${T.automation}（カードの自動移動）`);
   set('#projectBtn', 'title', `${T.category}・プロジェクトで絞り込み（p）`);
   set('#sidebar', 'aria-label', `レーン・${T.category}・プロジェクト`);
@@ -836,7 +873,7 @@ function h(tag, attrs = {}, ...kids) {
     else if (k === 'text') el.textContent = v;
     else if (k === 'html') el.innerHTML = v; // trusted markup only (icons)
     else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
-    else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
+    else if (k === 'style' && typeof v === 'object') for (const [sk, sv] of Object.entries(v)) sk.startsWith('--') ? el.style.setProperty(sk, sv) : (el.style[sk] = sv);
     else el.setAttribute(k, v === true ? '' : v);
   }
   for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
@@ -922,16 +959,17 @@ function render() {
   $('#days').value = String(state.filters.days);
   const activeHost = b.hosts.find((x) => (x.local ? 'local' : x.id) === state.filters.host);
   const remoteOn = b.hosts.filter((x) => !x.local && x.enabled).length;
-  $('#hostsBtn').textContent = `${activeHost ? activeHost.label : 'マシン'}${remoteOn ? `（+${remoteOn}）` : ''} ▾`;
+  $('#hostsBtn .lbl').textContent = `${activeHost ? activeHost.label : 'マシン'}${remoteOn ? `（+${remoteOn}）` : ''} ▾`;
   $('#hostsBtn').setAttribute('aria-pressed', String(!!activeHost));
   const activeAcct = state.filters.account === '__none' ? { label: 'アカウント不明' } : (b.accounts?.accounts || []).find((a) => a.key === state.filters.account);
-  $('#accountsBtn').textContent = `${activeAcct ? `👤 ${activeAcct.label}` : 'アカウント'} ▾`;
+  $('#accountsBtn .acct-lbl').textContent = activeAcct ? activeAcct.label : '';
   $('#accountsBtn').setAttribute('aria-pressed', String(!!activeAcct));
-  $('#stat').textContent = `表示 ${b.totals.shown} / Codex ${b.totals.codex}・Claude ${b.totals.claude}`;
+  $('#logo').title = `表示 ${b.totals.shown} / Codex ${b.totals.codex}・Claude ${b.totals.claude}`;
   renderStatusBar(b);
   renderUsage(b.accounts);
   $('#seenBtn').hidden = !b.lists.some((l) => l.cards.some((c) => c.unread));
   $('#perfBtn').hidden = !b.perf?.slow?.length;
+  fitHeader();
   announceAutoMoves(b);
   const eb = $('#errbar');
   eb.hidden = !b.errors.length;
@@ -3261,9 +3299,10 @@ function prPill(pr) {
 function renderStatusBar(b) {
   const bar = $('#statusBar');
   bar.replaceChildren(...['running', 'waiting', 'completed', 'aborted'].filter((k) => b.statusCounts[k] || state.filters.status === k).map((k) =>
-    h('button', { class: 'status-chip', 'aria-pressed': String(state.filters.status === k), title: `${STATUS_LABELS[k]}だけを表示`,
+    h('button', { class: 'status-chip', 'aria-pressed': String(state.filters.status === k), title: `${STATUS_LABELS[k]} ${b.statusCounts[k]}（クリックでこれだけを表示）`,
       onclick: () => { state.filters.status = state.filters.status === k ? '' : k; saveFilters(); state.shown = {}; load(); } },
-      h('span', { class: `sdot s-${k}` }), `${STATUS_LABELS[k]} ${b.statusCounts[k]}`)));
+      h('span', { class: `sdot s-${k}` }), String(b.statusCounts[k]))));
+  bar.title = ['running', 'waiting', 'completed', 'aborted'].map((k) => `${STATUS_LABELS[k]} ${b.statusCounts[k] || 0}`).join('・');
 }
 // ---- live signals (context, plan, edited files, rate limits) ----
 const WAIT_TEXT = { question: '❓ 質問への回答待ち', plan: '📋 計画の承認待ち' };
@@ -3360,16 +3399,25 @@ function usageBars(l, cls = 'lm') {
     h('span', { text: `${Math.round(w.usedPercent)}%` })));
 }
 function shortWho(label) { return String(label || '').replace(/@.*$/, ''); }
+function ringFor(a) {
+  const l = a.limits || {};
+  const five = [l.primary, l.secondary].find((w) => w && w.windowMinutes && w.windowMinutes < 1440) || null;
+  const week = [l.primary, l.secondary].find((w) => w && w.windowMinutes >= 1440) || null;
+  const col = (w) => (w ? `var(--c-${heat(w.usedPercent) === 'hot' ? 'red' : heat(w.usedPercent) === 'warn' ? 'orange' : 'green'})` : 'transparent');
+  const old = a.limits && a.limits.source === 'desktop' && Date.now() - (a.limits.at || 0) > OLD_USAGE_MS;
+  return h('span', { class: `ring2${five ? '' : ' no-a'}${week ? '' : ' no-b'}${old ? ' stale' : ''}${a.limits ? '' : ' none'}`, title: usageTitle(a),
+    style: { '--a': five ? Math.min(100, five.usedPercent) : 0, '--b': week ? Math.min(100, week.usedPercent) : 0, '--ca': col(five), '--cb': col(week) } },
+    h('b', { class: 'ini', style: { background: colorVar(a.color) }, text: a.short }),
+    h('i', { class: `agm ${a.agent}` }));
+}
+// The 👤 button carries one ring per account shown in the header (settings in its menu).
 function renderUsage(v) {
-  const bar = $('#limitsBar');
-  if (!bar) return;
-  const list = (v?.accounts || []).filter((a) => usageWindows(a.limits).length);
-  bar.hidden = !list.length;
-  if (!list.length) return bar.replaceChildren();
-  bar.title = `${list.map(usageTitle).join('\n\n')}\n\nクリックでアカウント一覧`;
-  bar.replaceChildren(...list.map((a) => h('span', { class: `acct${Date.now() - (a.limits.at || 0) > OLD_USAGE_MS && a.limits.source === 'desktop' ? ' old' : ''}` },
-    h('span', { class: 'who', text: `${a.agent === 'codex' ? 'Codex' : 'Claude'}${list.filter((x) => x.agent === a.agent).length > 1 ? `·${shortWho(a.label)}` : ''}` }),
-    ...usageBars(a.limits))));
+  const box = $('#acctRings');
+  if (!box) return;
+  const list = (v?.accounts || []).filter((a) => a.inHeader && (a.limits || a.count));
+  box.replaceChildren(...list.map(ringFor));
+  $('#accountsBtn').title = list.length ? `${list.map(usageTitle).join('\n\n')}\n\nクリックでアカウント一覧・表示の設定` : 'アカウント・使用量・設定フォルダ';
+  fitHeader();
 }
 function accountLabel(key) {
   return (state.board?.accounts?.accounts || []).find((a) => a.key === key)?.label || String(key || '').split(':').slice(1).join(':').slice(0, 8);
@@ -3377,8 +3425,10 @@ function accountLabel(key) {
 // Only worth a chip when there is more than one account.
 function acctChip(card) {
   if (!card.account || (state.board?.accounts?.accounts || []).length < 2) return null;
+  const a = state.board.accounts.accounts.find((x) => x.key === card.account);
   const label = accountLabel(card.account);
-  return h('span', { class: 'acct-chip', title: `アカウント: ${label}${card.home ? `（設定フォルダ: ${card.home}）` : ''}`, text: `👤 ${shortWho(label)}` });
+  return h('span', { class: 'acct-chip', title: `アカウント: ${label}${card.home ? `（設定フォルダ: ${card.home}）` : ''}` },
+    a ? h('span', { class: 'acct-dot', style: { background: colorVar(a.color), width: '13px', height: '13px', fontSize: '8px', marginRight: '3px' }, text: a.short }) : null, shortWho(label));
 }
 function hasLive(b) { return (b.statusCounts?.running || 0) + (b.statusCounts?.waiting || 0) > 0; }
 
@@ -3581,28 +3631,91 @@ function hostsMenu(anchor) {
   popover(anchor, 'マシン', body, { width: 360 });
 }
 
+// ---- header: one row ----
+// When the header does not fit, labels go first (icons stay), then the items with
+// data-pri move into ⋯ from the lowest priority up.
+let fitting = false;
+function fitHeader() {
+  const bar = $('.topbar');
+  if (!bar || fitting) return;
+  fitting = true;
+  const items = [...bar.querySelectorAll('[data-pri]')].sort((x, y) => x.dataset.pri - y.dataset.pri);
+  items.forEach((el) => el.classList.remove('folded'));
+  bar.classList.remove('compact');
+  const more = $('#moreBtn');
+  more.hidden = true;
+  const over = () => bar.scrollWidth > bar.clientWidth + 1;
+  if (over()) { bar.classList.add('compact'); more.hidden = false; }
+  let n = 0;
+  for (const el of items) {
+    if (!over()) break;
+    el.classList.add('folded');
+    n++;
+  }
+  more.hidden = !n;
+  fitting = false;
+}
+function moreMenu(anchor) {
+  const folded = [...document.querySelectorAll('.topbar [data-pri].folded')].sort((x, y) => y.dataset.pri - x.dataset.pri);
+  const go = (fn) => () => { closePopover(); fn(); };
+  const rows = folded.map((el) => {
+    if (el.id === 'days') return h('div', {}, h('div', { class: 'field-label', text: '期間' }), h('div', { class: 'more-row' },
+      ...[...el.options].map((o) => h('button', { 'aria-pressed': String(o.value === el.value), text: o.textContent, onclick: go(() => { el.value = o.value; el.dispatchEvent(new Event('change')); }) }))));
+    if (el.classList.contains('seg')) return h('div', {}, h('div', { class: 'field-label', text: T.aiApps }), h('div', { class: 'more-row' },
+      ...[...el.querySelectorAll('button')].map((b) => h('button', { 'aria-pressed': b.getAttribute('aria-pressed'), text: b.textContent, onclick: go(() => b.click()) }))));
+    if (el.id === 'statusBar') return h('div', {}, h('div', { class: 'field-label', text: '実行状態' }), h('div', { class: 'more-row' },
+      ...[...el.querySelectorAll('button')].map((b) => h('button', { 'aria-pressed': b.getAttribute('aria-pressed'), text: b.title.replace(/（.*$/, ''), onclick: go(() => b.click()) }))));
+    if (el.classList.contains('ft-toggle')) {
+      const cb = $('#fulltext');
+      return h('button', { class: 'menu-item', onclick: go(() => { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }) }, `${cb.checked ? '☑' : '☐'} 本文も検索`);
+    }
+    const ic = el.querySelector('.ic')?.textContent || '';
+    const label = el.querySelector('.lbl')?.textContent.replace(/\s*▾$/, '') || el.textContent.replace(/\s*▾$/, '');
+    // Menus opened from here anchor to ⋯ (the folded button has no place on screen).
+    return h('button', { class: 'menu-item', onclick: () => { closePopover(); HEADER_OPEN[el.id]?.(anchor); } }, h('span', { text: ic }), label.replace(ic, '').trim());
+  });
+  popover(anchor, 'その他', h('div', { class: 'more-menu' }, ...rows), { width: 260 });
+}
+
 function accountsMenu(anchor) {
   const v = state.board?.accounts;
   if (!v) return;
   const pick = (key) => { state.filters.account = state.filters.account === key ? '' : key; saveFilters(); closePopover(); load(); };
   const signedText = (a) => a.signedIn.map((x) => (x === 'desktop' ? 'デスクトップ' : x.startsWith('desktop:') ? `デスクトップ（${x.slice(8)}）` : `CLI${x === 'cli:default' ? '' : `（${x.slice(4)}）`}`)).join('・');
-  const rename = (a, row) => {
-    const input = h('input', { class: 'text-input', value: a.customLabel || '', placeholder: a.email || a.name || a.label, maxlength: 60 });
-    const save = () => act('canban_update_accounts', { label: { key: a.key, name: input.value.trim() } }, { okMsg: '名前を保存しました' }).then(() => accountsMenu(anchor)).catch(() => {});
-    input.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) save(); if (e.key === 'Escape') accountsMenu(anchor); };
-    row.replaceChildren(input, h('button', { class: 'btn-primary', text: '保存', onclick: save }));
-    input.focus();
+  const MARK_COLORS = ['blue', 'purple', 'pink', 'sky', 'lime', 'yellow', 'gray'];
+  // Name, initial and color: how the account reads in the header rings and on cards.
+  const edit = (a, row) => {
+    let color = a.color;
+    const name = h('input', { class: 'text-input', value: a.customLabel || '', placeholder: a.email || a.name || a.label, maxlength: 60, 'aria-label': '表示名' });
+    const short = h('input', { class: 'text-input', value: a.short, maxlength: 2, style: { width: '44px', textAlign: 'center' }, 'aria-label': 'リングの頭文字（2 文字まで）', title: 'リングの頭文字（2 文字まで）' });
+    const sw = h('div', { class: 'swatches', role: 'group', 'aria-label': '色' }, ...MARK_COLORS.map((c) => h('button', { 'aria-pressed': String(c === color), 'aria-label': COLOR_NAMES?.[c] || c, title: COLOR_NAMES?.[c] || c, style: { background: colorVar(c) },
+      onclick: (e) => { color = c; sw.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget))); } })));
+    const save = async () => {
+      try {
+        await act('canban_update_accounts', { label: { key: a.key, name: name.value.trim() } }, { reload: false });
+        await act('canban_update_accounts', { mark: { key: a.key, short: short.value.trim(), color } }, { okMsg: '保存しました' });
+      } catch {}
+      accountsMenu(anchor);
+    };
+    for (const i of [name, short]) i.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) save(); if (e.key === 'Escape') accountsMenu(anchor); };
+    row.replaceChildren(h('div', { class: 'grow', style: { display: 'grid', gap: '6px', padding: '4px 0' } },
+      h('div', { class: 'row' }, name, short),
+      h('div', { class: 'row' }, sw, h('span', { class: 'spacer' }), h('button', { class: 'btn', text: '取消', onclick: () => accountsMenu(anchor) }), h('button', { class: 'btn-primary', text: '保存', onclick: save }))));
+    name.focus();
   };
+  const toggleHeader = (a, on) => act('canban_update_accounts', { visible: { key: a.key, on } }).then(() => accountsMenu(anchor)).catch(() => {});
   const rows = v.accounts.map((a) => {
     const sel = state.filters.account === a.key;
     const sub = [a.label !== a.email && a.email ? a.email : null, a.plan, `${a.count} 件`, a.signedIn.length ? `サインイン中: ${signedText(a)}` : null].filter(Boolean).join('・');
     const row = h('div', { class: 'acct-row', 'data-key': `${a.label} ${a.email || ''} ${a.agent}` });
     row.append(
+      h('input', { type: 'checkbox', checked: a.inHeader, title: 'ヘッダのリングに出す', 'aria-label': `${a.label} をヘッダに出す`, onchange: (e) => toggleHeader(a, e.target.checked) }),
+      ringFor(a),
       h('button', { class: `menu-item${sel ? ' active' : ''}`, title: `${usageTitle(a)}\n\nクリックでこのアカウントだけを表示`, onclick: () => pick(a.key) },
         h('div', {}, h('span', { class: `badge ${a.agent}`, text: a.agent === 'codex' ? 'Codex' : 'Claude' }), ' ', a.label),
         h('div', { class: 'muted', text: sub }),
         usageWindows(a.limits).length ? h('div', { class: 'acct-usage' }, ...usageBars(a.limits), h('span', { text: relTime(a.limits.at) })) : null),
-      h('button', { class: 'icon-btn', title: '表示名を変更', 'aria-label': `${a.label} の表示名を変更`, text: '✎', onclick: () => rename(a, row) }));
+      h('button', { class: 'icon-btn', title: '名前・頭文字・色を変更', 'aria-label': `${a.label} の名前・頭文字・色を変更`, text: '✎', onclick: () => edit(a, row) }));
     return row;
   });
   const unknown = v.unknown.codex + v.unknown.claude;
@@ -3633,7 +3746,7 @@ function accountsMenu(anchor) {
     h('div', { class: 'row' }, agentSel, dirInput, h('button', { class: 'btn-primary', text: '追加', onclick: addHome })),
     h('label', { class: 'row muted' }, h('input', { type: 'checkbox', checked: v.discover, onchange: (e) => act('canban_update_accounts', { discover: e.target.checked }).then(() => accountsMenu(anchor)) }),
       '~/.claude-*・~/.codex-*・Claude デスクトップのプロファイルを自動で探す'),
-    h('p', { class: 'muted', text: 'すべてのアカウントのセッションを 1 つのボードに表示します。アプリでアカウントを切り替えても消えません。名前をクリックするとそのアカウントだけを表示します。別のフォルダのセッションは、再開・送信のときにそのフォルダ（CLAUDE_CONFIG_DIR / CODEX_HOME）で動かします。使用量は Codex はセッションのログ、Claude は Claude デスクトップの記録から読みます。' }));
+    h('p', { class: 'muted', text: 'すべてのアカウントのセッションを 1 つのボードに表示します。アプリでアカウントを切り替えても消えません。名前をクリックするとそのアカウントだけを表示します。チェックを外したアカウントはヘッダのリングに出しません（リングは外側が 5 時間枠、内側が週枠、中央が頭文字、角の印が Codex／Claude）。別のフォルダのセッションは、再開・送信のときにそのフォルダ（CLAUDE_CONFIG_DIR / CODEX_HOME）で動かします。使用量は Codex はセッションのログ、Claude は Claude デスクトップの記録から読みます。' }));
   popover(anchor, 'アカウント', body, { width: 440 });
 }
 
@@ -3960,14 +4073,20 @@ $('#optBtn').addEventListener('click', (e) => optionsMenu(e.currentTarget));
 $('#labelsBtn').addEventListener('click', (e) => labelsManager(e.currentTarget));
 $('#hostsBtn').addEventListener('click', (e) => hostsMenu(e.currentTarget));
 $('#accountsBtn').addEventListener('click', (e) => accountsMenu(e.currentTarget));
-$('#limitsBar').addEventListener('click', () => accountsMenu($('#accountsBtn')));
+const HEADER_OPEN = {
+  projectBtn: (a) => scopePicker(a), optBtn: (a) => optionsMenu(a), rulesBtn: (a) => rulesMenu(a), viewsBtn: (a) => viewsMenu(a),
+  analyticsBtn: () => toggleAnalytics(), labelsBtn: (a) => labelsManager(a), hostsBtn: (a) => hostsMenu(a),
+};
+$('#moreBtn').addEventListener('click', (e) => moreMenu(e.currentTarget));
+if (typeof ResizeObserver === 'function') new ResizeObserver(() => fitHeader()).observe($('.topbar'));
 $('#rulesBtn').addEventListener('click', (e) => rulesMenu(e.currentTarget));
 $('#viewsBtn').addEventListener('click', (e) => viewsMenu(e.currentTarget));
 $('#fulltext').checked = !!state.filters.fulltext;
 $('#fulltext').addEventListener('change', (e) => { state.filters.fulltext = e.target.checked; saveFilters(); if (state.filters.q) load(); });
 function syncViewButton() {
   $('#analyticsBtn').setAttribute('aria-pressed', String(state.view === 'analytics'));
-  $('#analyticsBtn').textContent = state.view === 'analytics' ? '▦ ボード' : '📊 分析';
+  $('#analyticsBtn .ic').textContent = state.view === 'analytics' ? '▦' : '📊';
+  $('#analyticsBtn .lbl').textContent = state.view === 'analytics' ? 'ボード' : '分析';
 }
 syncViewButton();
 function toggleAnalytics() {
