@@ -17,6 +17,7 @@ import { annotateStatus, STATUSES } from './status.mjs';
 import { currentLimits, cardSignals, limitsByAccount } from './signals.mjs';
 import { configureAccounts, accountsView, accountLabel } from './accounts.mjs';
 import { matchesAccount, withAccountNote } from './accounts-mcp.mjs';
+import { effectiveTaskContext } from './task-context.mjs';
 
 import { peekGit, refreshGit } from './gitlive.mjs';
 import { RuleEngine } from './rules.mjs';
@@ -100,6 +101,7 @@ function matches(session, card, f, labelsById, hits, dir) {
   if (f.folder && session.folder !== f.folder) return false;
   if (f.section && (f.section === '__none' ? session.codexSection : session.codexSection?.id !== f.section)) return false;
   if (!matchesDirectory(f, dir)) return false;
+  if (f.label && (f.label === '__none' ? card?.labels?.length : !card?.labels?.includes(f.label))) return false;
   if (f.status && (session.status || 'idle') !== f.status) return false;
   if (!f.includeArchived && session.archived) return false;
   if (!f.includeSubagents && session.subagent) return false;
@@ -119,21 +121,25 @@ function matches(session, card, f, labelsById, hits, dir) {
   return true;
 }
 
-function matchesTask(t, links, status, f, labelsById, dir) {
+export function matchesTask(t, links, status, f, labelsById, dir) {
   if (!f.includeHidden && t.hidden) return false;
   if (!matchesDirectory(f, dir)) return false;
+  if (f.label && (f.label === '__none' ? t.labels?.length : !t.labels?.includes(f.label))) return false;
   if (f.status && status !== f.status) return false;
   const anyLink = (pred) => links.some(pred);
   if (f.pinnedOnly && !anyLink((s) => s.pinnedInAgent)) return false;
-  if (f.folder && !anyLink((s) => s.folder === f.folder)) return false;
-  if (f.section && !anyLink((s) => (f.section === '__none' ? !s.codexSection : s.codexSection?.id === f.section))) return false;
-  if (f.agent && f.agent !== 'all' && !(anyLink((s) => s.agent === f.agent) || t.target?.agent === f.agent)) return false;
-  if (f.host && !(anyLink((s) => (s.host?.id || 'local') === f.host) || (t.target?.hostId || 'local') === f.host)) return false;
-  if (f.account && !anyLink((s) => matchesAccount(f.account, s))) return false;
-  if (f.project && !anyLink((s) => s.project === f.project)) return false;
+  const context = t.context || {};
+  const match = (key, legacy) => !f[key] || (key === 'agent' && f[key] === 'all') ||
+    (Object.hasOwn(context, key) ? (f[key] === '__none' ? !context[key] : context[key] === f[key]) : legacy());
+  if (!match('folder', () => anyLink(s => s.folder === f.folder))) return false;
+  if (!match('section', () => anyLink(s => f.section === '__none' ? !s.codexSection : s.codexSection?.id === f.section))) return false;
+  if (!match('agent', () => anyLink(s => s.agent === f.agent) || t.target?.agent === f.agent || t.context?.account?.split(':')[0] === f.agent)) return false;
+  if (!match('host', () => anyLink(s => (s.host?.id || 'local') === f.host) || (t.target?.hostId || 'local') === f.host)) return false;
+  if (!match('account', () => anyLink(s => matchesAccount(f.account, s)))) return false;
+  if (!match('project', () => anyLink(s => s.project === f.project))) return false;
   if (f.q) {
     const q = f.q.toLowerCase();
-    const hay = [t.title, t.description, t.note, dir?.name, ...(t.labels || []).map((id) => labelsById.get(id)?.name || ''), ...links.map((s) => s.title)]
+    const hay = [t.title, t.description, t.note, dir?.name, ...Object.values(effectiveTaskContext(t, links)), ...(t.labels || []).map((id) => labelsById.get(id)?.name || ''), ...links.map((s) => s.title)]
       .filter(Boolean).join('\n').toLowerCase();
     if (!hay.includes(q)) return false;
   }
@@ -150,6 +156,7 @@ export function normalizeFilters(f = {}) {
     folder: typeof f.folder === 'string' && f.folder ? f.folder : null,
     section: typeof f.section === 'string' && f.section ? f.section : null,
     directory: typeof f.directory === 'string' && f.directory ? f.directory : null,
+    label: typeof f.label === 'string' && f.label ? f.label : null,
     status: STATUSES.includes(f.status) ? f.status : null,
     q: typeof f.q === 'string' ? f.q.trim() : '',
     includeArchived: !!f.includeArchived,
@@ -407,6 +414,13 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
     const status = aggregateStatus(links.map((x) => x.status || 'idle'));
     const updatedAt = Math.max(t.createdAt || 0, ...links.map((x) => x.updatedAt || 0));
     const dir = resolveDirectory(state, t, t.target?.cwd || links.find((x) => x.cwd)?.cwd);
+    const context = effectiveTaskContext(t, links);
+    if (!t.hidden && t.context?.project) projects.set(context.project, (projects.get(context.project) || 0) + 1);
+    if (!t.hidden && t.context?.folder) folders.set(context.folder, (folders.get(context.folder) || 0) + 1);
+    if (!t.hidden && t.context?.section) {
+      const section = sections.get(context.section) || { id: context.section, name: context.section, count: 0 };
+      sections.set(context.section, { ...section, count: section.count + 1 });
+    }
     if (!t.hidden) dirCounts.set(dir?.id || '__none', (dirCounts.get(dir?.id || '__none') || 0) + 1);
     if (!matchesTask(t, links, status, filters, labelsById, dir)) continue;
     const listId = t.listId && listIds.has(t.listId) ? t.listId : state.defaultListId;
@@ -416,10 +430,17 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       title: t.title,
       description: t.description || '',
       directory: dirView(dir),
-      project: links.find((x) => x.project)?.project || null,
+      context: t.context || {},
+      directoryId: t.directoryId || null,
+      project: context.project,
+      folder: context.folder,
+      agent: context.agent,
+      host: context.host && context.host !== 'local' ? { id: context.host, label: hosts.find(h => h.id === context.host)?.label || context.host } : null,
+      account: context.account,
+      codexSection: context.section ? { id: context.section, name: sections.get(context.section)?.name || context.section } : null,
       target: t.target || null,
-      links: links.map((x) => ({ id: x.id, agent: x.agent, title: x.title, status: x.status || 'idle', subagent: !!x.subagent, host: x.host?.local === false ? { label: x.host.label } : null, updatedAt: x.updatedAt })),
-      linkedSessionIds: [...(t.links || [])],
+    links: links.map((x) => ({ id: x.id, agent: x.agent, account: x.account || null, title: x.title, status: x.status || 'idle', subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, updatedAt: x.updatedAt })),
+    linkedSessionIds: [...(t.links || [])],
       missingLinks: (t.links || []).length - links.length,
       pending: (t.pending || []).map((p) => ({ agent: p.agent, startedAt: p.startedAt, expired: now - p.startedAt > PENDING_MS })),
       createdAt: t.createdAt,

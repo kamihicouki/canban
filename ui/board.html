@@ -85,6 +85,7 @@ button { cursor: pointer; border: 0; background: none; }
 .topbar .spacer { flex: 1 1 0; min-width: 4px; }
 /* @include header.css */
 /* @include accounts.css */
+/* @include task-quick-add.css */
 .hbtn, .hselect, .hsearch {
   height: 32px; border-radius: 4px; background: rgba(255,255,255,0.2); color: #fff; border: 0; padding: 0 10px;
 }
@@ -647,6 +648,7 @@ body.orb-dragging .orb-zone { opacity: 1; }
 <header class="topbar">
   <button id="sideBtn" class="hbtn" title="サイドバー（b）" aria-label="サイドバー" aria-pressed="true">☰</button>
   <h1 id="logo">Canban</h1>
+  <button id="quickTaskBtn" class="hbtn quick-task-trigger" type="button" title="タスクを追加（c）">＋ タスク</button>
   <input id="q" class="hsearch" type="search" placeholder="検索（/）・⌘K" aria-label="検索" aria-keyshortcuts="/" />
   <label class="ft-toggle" data-pri="0" title="会話の本文も検索する（3 文字以上）"><input id="fulltext" type="checkbox" /> 本文</label>
   <div class="seg" data-pri="9" role="group" aria-label="AI Apps">
@@ -884,7 +886,7 @@ const store = {
   },
   cache(k, v) { try { localStorage.setItem(`sk:${k}`, JSON.stringify(v)); } catch {} },
 };
-const DEFAULT_FILTERS = { agent: 'all', host: '', account: '', status: '', project: '', directory: '', q: '', days: 30, includeArchived: false, includeSubagents: false, includeHidden: false, groupBranch: false, fulltext: false, swimlane: '', laneHeight: 'normal' };
+const DEFAULT_FILTERS = { agent: 'all', host: '', account: '', status: '', project: '', directory: '', label: '', q: '', days: 30, includeArchived: false, includeSubagents: false, includeHidden: false, groupBranch: false, fulltext: false, swimlane: '', laneHeight: 'normal' };
 const LANE_HEIGHTS = { compact: ['コンパクト', '240px'], normal: ['標準', '420px'], full: ['すべて', 'none'] };
 const state = {
   board: null,
@@ -957,6 +959,8 @@ async function act(name, args, { reload = true, okMsg } = {}) {
 // ======================================================================
 let loadSeq = 0;
 function migrateLegacyScope(board) {
+  if (store.get('taskAttributeFilters', false)) return false;
+  store.set('taskAttributeFilters', true);
   const f = state.filters;
   if (!f.project && !f.folder && f.swimlane !== 'project') return false;
   if (f.project && !f.directory) f.directory = board.directories.find(d => d.name === f.project)?.id || '';
@@ -965,8 +969,8 @@ function migrateLegacyScope(board) {
   saveFilters();
   return true;
 }
-async function load({ refresh = false } = {}) {
-  if (state.view === 'analytics') return loadAnalytics();
+async function load({ refresh = false, throwOnError = false } = {}) {
+  if (state.view === 'analytics') return loadAnalytics({ throwOnError });
   const seq = ++loadSeq;
   const f = state.filters;
   const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, includeHidden: f.includeHidden, pinnedOnly: !!f.pinnedOnly, groupBranch: !!f.groupBranch, fulltext: !!f.fulltext, refresh };
@@ -974,6 +978,7 @@ async function load({ refresh = false } = {}) {
   if (f.folder) args.folder = f.folder;
   if (f.section) args.section = f.section;
   if (f.directory) args.directory = f.directory;
+  if (f.label) args.label = f.label;
   if (f.host) args.host = f.host;
   if (f.account) args.account = f.account;
   if (f.status) args.status = f.status;
@@ -987,6 +992,7 @@ async function load({ refresh = false } = {}) {
   } catch (e) {
     if (seq !== loadSeq) return;
     $('#board').replaceChildren(h('div', { class: 'loading', text: `読み込みに失敗しました: ${e.message}` }));
+    if (throwOnError) throw e;
   }
 }
 
@@ -1003,7 +1009,7 @@ function render() {
   // header
   document.querySelectorAll('.seg button[data-agent]').forEach((btn) => btn.setAttribute('aria-pressed', String(btn.dataset.agent === state.filters.agent)));
   $('#projectBtn').textContent = `${scopeLabel(b)} ▾`;
-  $('#projectBtn').setAttribute('aria-pressed', String(!!(state.filters.project || state.filters.directory)));
+  $('#projectBtn').setAttribute('aria-pressed', String(!!(state.filters.project || state.filters.directory || state.filters.folder || state.filters.section || state.filters.label)));
   $('#days').value = String(state.filters.days);
   const activeHost = b.hosts.find((x) => (x.local ? 'local' : x.id) === state.filters.host);
   const remoteOn = b.hosts.filter((x) => !x.local && x.enabled).length;
@@ -1025,9 +1031,10 @@ function render() {
 
   const boardEl = $('#board');
   const scroll = boardEl.scrollLeft;
-  const listScroll = {};
+  const listScroll = new Map();
+  const listScrollKey = (l) => JSON.stringify([l.closest('.lane')?.dataset.lane || '', l.dataset.listId]);
   const scrollTop = boardEl.scrollTop;
-  boardEl.querySelectorAll('.list').forEach((l) => (listScroll[l.dataset.listId] = $('.cards', l)?.scrollTop || 0));
+  boardEl.querySelectorAll('.list').forEach((l) => listScroll.set(listScrollKey(l), $('.cards', l)?.scrollTop || 0));
 
   const focused = document.activeElement;
   const focusedCard = boardEl.contains(focused) ? focused.closest('.card')?.dataset.cardId : null;
@@ -1036,13 +1043,13 @@ function render() {
   boardEl.classList.toggle('with-lanes', !!state.filters.swimlane);
   boardEl.style.setProperty('--lane-max-h', (LANE_HEIGHTS[state.filters.laneHeight] || LANE_HEIGHTS.normal)[1]);
   state.lanes = state.filters.swimlane ? buildLanes(b, state.filters.swimlane) : [];
-  if (state.soloLane && !state.lanes.some((l) => l.name === state.soloLane)) state.soloLane = null;
+  if (state.soloLane && !state.lanes.some((l) => l.key === state.soloLane)) state.soloLane = null;
   if (state.filters.swimlane) {
     if (state.soloLane) {
-      frag.append(h('div', { class: 'solo-bar' }, `「${state.soloLane}」だけを表示中`,
+      frag.append(h('div', { class: 'solo-bar' }, `「${state.lanes.find(l => l.key === state.soloLane)?.name}」だけを表示中`,
         h('button', { class: 'lane-solo', text: '◀ 全レーンに戻る', onclick: () => setSolo(null) })));
     }
-    for (const lane of state.lanes) if (!state.soloLane || lane.name === state.soloLane) frag.append(renderLane(lane));
+    for (const lane of state.lanes) if (!state.soloLane || lane.key === state.soloLane) frag.append(renderLane(lane));
   } else {
     for (const list of b.lists) frag.append(renderList(list));
     frag.append(renderAddList());
@@ -1054,11 +1061,11 @@ function render() {
   else if (focusedCard) $(`.card[data-card-id="${CSS.escape(focusedCard)}"]`, boardEl)?.focus({ preventScroll: true });
   boardEl.scrollLeft = scroll;
   boardEl.scrollTop = scrollTop;
-  boardEl.querySelectorAll('.list').forEach((l) => { const c = $('.cards', l); if (c) c.scrollTop = listScroll[l.dataset.listId] || 0; });
+  boardEl.querySelectorAll('.list').forEach((l) => { const c = $('.cards', l); if (c) c.scrollTop = listScroll.get(listScrollKey(l)) || 0; });
   bridge.reportSize();
 }
 
-function renderList(list, { inLane = false } = {}) {
+function renderList(list, { inLane = false, lane = null } = {}) {
   const over = list.wipLimit && list.count > list.wipLimit;
   const el = h('section', { class: `list${over ? ' over-wip' : ''}`, 'data-list-id': list.id, 'aria-label': list.title });
   const head = h('div', { class: 'list-head' },
@@ -1067,6 +1074,7 @@ function renderList(list, { inLane = false } = {}) {
       onclick: (e) => editListTitle(e.currentTarget, list),
       onkeydown: (e) => { if (e.key === 'Enter') editListTitle(e.currentTarget, list); } }),
     h('span', { class: `count${over ? ' over' : ''}`, text: list.wipLimit ? `${list.count} / ${list.wipLimit}` : String(list.count) }),
+    h('button', { class: 'icon-btn quick-task-trigger', type: 'button', 'aria-label': `${list.title}にタスクを追加`, text: '＋', onclick: () => taskQuickAdd.open({ listId: list.id, lane }) }),
     h('button', { class: 'icon-btn', 'aria-label': `${list.title} のメニュー`, text: '⋯', onclick: (e) => listMenu(e.currentTarget, list) }),
   );
   head.addEventListener('pointerdown', (e) => startListDrag(e, list, el));
@@ -1081,39 +1089,14 @@ function renderList(list, { inLane = false } = {}) {
     el.append(h('button', { class: 'more-btn', text: `さらに表示（残り ${list.cards.length - n} 件）`,
       onclick: () => { state.shown[list.id] = n + PAGE * 2; render(); } }));
   }
-  if (!inLane) el.append(renderAddCard(list));
+  el.append(renderAddCard(list, { lane }));
   return el;
 }
 
-// Trello-style "+ Add a card" at the bottom of every list (creates a task card).
-// An open composer survives re-renders (same element), so typing isn't interrupted.
-function renderAddCard(list) {
-  if (state.addCard?.listId === list.id) return state.addCard.wrap;
-  const wrap = h('div', { class: 'add-card' });
-  const open = () => {
-    const input = h('textarea', { class: 'text-input', rows: 2, placeholder: `${T.taskCard}のタイトルを入力…（Enter で追加）`, maxlength: 300 });
-    const close = () => { state.addCard = null; render(); };
-    const submit = async () => {
-      const title = input.value.trim();
-      if (!title) return input.focus();
-      input.value = '';
-      input.focus();
-      await act('canban_create_task', { title, list: list.id }).catch(() => {});
-      const c = $(`.list[data-list-id="${CSS.escape(list.id)}"] .cards`);
-      if (c) c.scrollTop = c.scrollHeight;
-    };
-    input.onkeydown = (e) => {
-      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); }
-      if (e.key === 'Escape') close();
-    };
-    wrap.replaceChildren(h('div', { class: 'composer card-composer' }, input,
-      h('div', { class: 'row' }, h('button', { class: 'btn-primary', text: 'カードを追加', onclick: submit }),
-        h('button', { class: 'icon-btn', 'aria-label': '閉じる', text: '✕', onclick: close }))));
-    state.addCard = { listId: list.id, wrap, input };
-    input.focus();
-  };
-  wrap.append(h('button', { class: 'add-card-btn', text: '＋ カードを追加', onclick: open }));
-  return wrap;
+// All column buttons open the same retained task dialog, including swimlanes.
+function renderAddCard(list, { lane = null } = {}) {
+  return h('div', { class: 'add-card' }, h('button', { class: 'add-card-btn', type: 'button',
+    text: '＋ タスクを追加', onclick: () => taskQuickAdd.open({ listId: list.id, lane }) }));
 }
 
 function renderCard(card, list) {
@@ -2879,56 +2862,86 @@ async function liveLoop() {
 // ======================================================================
 // Swimlanes, snippets, saved views
 // ======================================================================
-const LANE_MODES = { '': 'なし', directory: `${T.category}`, section: 'Codex セクション', host: 'マシン', account: 'アカウント', agent: 'AI Apps', label: 'ラベル' };
+const LANE_MODES = { '': 'なし', directory: `${T.category}`, project: 'プロジェクト', section: 'Codex セクション', host: 'マシン', account: 'アカウント', agent: 'AI Apps', label: 'ラベル' };
 const NO_DIR = 'カテゴリ無し';
 function laneKey(card, mode) {
   if (mode === 'directory') return card.directory ? card.directory.name : NO_DIR;
   if (mode === 'section') {
-    const sec = card.kind === 'task' ? null : card.codexSection;
+    const sec = card.codexSection;
     return sec ? `§ ${sec.name}` : '（セクションなし）';
   }
-  if (mode === 'agent') return card.kind === 'task' ? `${T.taskCard}` : card.agent === 'codex' ? 'Codex' : 'Claude Code';
-  if (mode === 'host') return card.kind === 'task' ? (card.links[0]?.host?.label || 'このマシン') : card.host?.label || 'このマシン';
+  if (mode === 'agent') return card.agent ? card.agent === 'codex' ? 'Codex' : 'Claude Code' : `${T.taskCard}`;
+  if (mode === 'host') return card.host?.label || 'このマシン';
   if (mode === 'account') return accountLaneKey(card);
   if (mode === 'label') {
     const l = state.board.labels.find((x) => card.labels.includes(x.id));
     return l ? l.name : 'ラベルなし';
   }
-  return card.directory?.name || NO_DIR;
+  return card.project || '（プロジェクトなし）';
+}
+function laneIdForCard(card, mode, board = state.board) {
+  const labelId = board.labels.find(label => card.labels.includes(label.id))?.id;
+  return JSON.stringify([mode, taskLaneCreation(card, mode, labelId)]);
 }
 function buildLanes(b, mode) {
   const lanes = new Map();
-  const lane = (k) => {
-    if (!lanes.has(k)) lanes.set(k, { name: k, count: 0, unread: 0, running: 0, waiting: 0, color: null, dirId: null, empty: false });
-    return lanes.get(k);
+  const lane = (creation, name) => {
+    const key = JSON.stringify([mode, creation]);
+    if (!lanes.has(key)) lanes.set(key, { key, creation, name, count: 0, unread: 0, running: 0, waiting: 0, color: null, dirId: null });
+    return lanes.get(key);
   };
-  for (const l of b.lists) for (const c of l.cards) {
-    const ln = lane(laneKey(c, mode));
+  for (const list of b.lists) for (const card of list.cards) {
+    const labelId = b.labels.find(label => card.labels.includes(label.id))?.id;
+    const ln = lane(taskLaneCreation(card, mode, labelId), laneKey(card, mode));
     ln.count++;
-    if (c.unread) ln.unread++;
-    if (c.status === 'running') ln.running++;
-    if (c.status === 'waiting') ln.waiting++;
+    if (card.unread) ln.unread++;
+    if (card.status === 'running') ln.running++;
+    if (card.status === 'waiting') ln.waiting++;
   }
   if (mode === 'directory') {
-    // every directory gets a lane (empty ones are drop targets), plus the "none" lane
-    for (const d of b.directories) Object.assign(lane(d.name), { color: d.color, dirId: d.id });
-    if (lanes.has(NO_DIR)) lanes.get(NO_DIR).dirId = '__none';
+    for (const d of b.directories) Object.assign(lane({ directory: d.id }, d.name), { color: d.color, dirId: d.id });
+    lane({ directory: '__none' }, NO_DIR).dirId = '__none';
   }
-  if (mode === 'label') for (const l of b.labels) if (lanes.has(l.name)) lanes.get(l.name).color = l.color;
-  const last = (n) => /^（.*なし）$/.test(n);
-  return [...lanes.values()].sort((a, c) => last(a.name) - last(c.name) || c.count - a.count).map((lane) => ({
-    ...lane,
-    lists: b.lists.map((l) => {
-      const cards = l.cards.filter((c) => laneKey(c, mode) === lane.name);
-      return { ...l, cards, count: cards.length };
+  if (mode === 'label') {
+    for (const label of b.labels) lane({ labels: [label.id] }, label.name).color = label.color;
+    lane({ labels: [] }, 'ラベルなし');
+  }
+  if (mode === 'project') {
+    for (const project of b.projects) lane({ context: { project: project.name } }, project.name);
+    lane({ context: { project: null } }, '（プロジェクトなし）');
+  }
+  if (mode === 'section') {
+    for (const section of b.codexSections || []) lane({ context: { section: section.id } }, `§ ${section.name}`);
+    lane({ context: { section: null } }, '（セクションなし）');
+  }
+  if (mode === 'agent') {
+    lane({ context: { agent: 'codex' } }, 'Codex');
+    lane({ context: { agent: 'claude' } }, 'Claude Code');
+    lane({ context: { agent: null } }, T.taskCard);
+  }
+  if (mode === 'host') {
+    lane({ context: { host: 'local' } }, 'このマシン');
+    for (const host of b.hosts || []) lane({ context: { host: host.local ? 'local' : host.id } }, host.local ? 'このマシン' : host.label);
+  }
+  if (mode === 'account') {
+    for (const account of b.accounts?.accounts || []) lane({ context: { account: account.key } }, `${account.key.startsWith('codex:') ? 'Codex' : 'Claude'} · ${account.label}`);
+    lane({ context: { account: null } }, 'アカウント不明');
+    for (const host of b.hosts || []) if (!host.local) lane({ context: { account: null, host: host.id } }, `⌂ ${host.label}`);
+  }
+  const last = name => /^（.*なし）$/.test(name);
+  return [...lanes.values()].sort((a, c) => last(a.name) - last(c.name) || c.count - a.count).map(ln => ({
+    ...ln, lists: b.lists.map(list => {
+      const cards = list.cards.filter(card => laneIdForCard(card, mode, b) === ln.key);
+      return { ...list, cards, count: cards.length };
     }),
   }));
 }
 const collapsedLanes = new Set(store.get('collapsedLanes', []));
 function renderLane(lane) {
-  const collapsed = collapsedLanes.has(lane.name);
+  const collapsed = collapsedLanes.has(lane.key) || collapsedLanes.has(lane.name);
   const toggle = () => {
-    collapsed ? collapsedLanes.delete(lane.name) : collapsedLanes.add(lane.name);
+    collapsedLanes.delete(lane.name);
+    collapsed ? collapsedLanes.delete(lane.key) : collapsedLanes.add(lane.key);
     store.set('collapsedLanes', [...collapsedLanes]);
     render();
   };
@@ -2936,7 +2949,7 @@ function renderLane(lane) {
   // collapsed lanes still show what is inside: cards per list
   const chips = collapsed ? lane.lists.filter((l) => l.count).map((l) =>
     h('span', { class: 'lane-chip' }, h('span', { class: 'stripe', style: { background: colorVar(l.color) } }), `${l.title} ${l.count}`)) : [];
-  return h('section', { class: `lane${collapsed ? ' collapsed' : ''}`, 'aria-label': lane.name, 'data-lane': lane.name, 'data-dir-id': lane.dirId || null },
+  return h('section', { class: `lane${collapsed ? ' collapsed' : ''}`, 'aria-label': lane.name, 'data-lane': lane.key, 'data-dir-id': lane.dirId || null },
     h('div', { class: 'lane-head' },
       h('button', { class: 'lane-toggle', 'aria-expanded': String(!collapsed), title: '開く／たたむ（[ ] で前後のレーンへ）', onclick: toggle },
         h('span', { text: collapsed ? '▸' : '▾' }),
@@ -2945,12 +2958,13 @@ function renderLane(lane) {
         live ? h('span', { class: `sdot s-${live}`, title: STATUS_LABELS[live] }) : null,
         lane.unread ? h('span', { class: 'side-new', text: `新着 ${lane.unread}` }) : null),
       ...chips,
-      h('button', { class: 'lane-solo', title: 'このレーンだけを表示', text: state.soloLane === lane.name ? '◀ 全レーン' : '◎ これだけ', onclick: () => setSolo(state.soloLane === lane.name ? null : lane.name) })),
-    collapsed ? null : h('div', { class: 'lane-lists' }, lane.lists.map((l) => renderList(l, { inLane: true }))));
+      h('button', { class: 'quick-task-trigger', type: 'button', text: '＋ タスク', 'aria-label': `${lane.name}にタスクを追加`, onclick: () => taskQuickAdd.open({ lane }) }),
+      h('button', { class: 'lane-solo', title: 'このレーンだけを表示', text: state.soloLane === lane.key ? '◀ 全レーン' : '◎ これだけ', onclick: () => setSolo(state.soloLane === lane.key ? null : lane.key) })),
+    collapsed ? null : h('div', { class: 'lane-lists' }, lane.lists.map((l) => renderList(l, { inLane: true, lane }))));
 }
 function setSolo(name) {
   state.soloLane = name;
-  if (name) collapsedLanes.delete(name);
+  if (name) { collapsedLanes.delete(name); collapsedLanes.delete(state.lanes.find(l => l.key === name)?.name); }
   render();
   $('#board').scrollTop = 0;
 }
@@ -2965,7 +2979,7 @@ function jumpToLane(name) {
 }
 // The lane at the top of the viewport, then step to the previous / next one.
 function stepLane(dir) {
-  const names = state.lanes.map((l) => l.name);
+  const names = state.lanes.map((l) => l.key);
   if (!names.length) return toast('スイムレーンが有効ではありません（表示 ▾ から選べます）');
   const top = $('#board').getBoundingClientRect().top;
   const els = [...document.querySelectorAll('#board .lane')];
@@ -2980,7 +2994,7 @@ function stepLane(dir) {
 }
 function setAllLanes(collapse) {
   collapsedLanes.clear();
-  if (collapse) state.lanes.forEach((l) => collapsedLanes.add(l.name));
+  if (collapse) state.lanes.forEach((l) => collapsedLanes.add(l.key));
   store.set('collapsedLanes', [...collapsedLanes]);
   render();
 }
@@ -2992,7 +3006,7 @@ function scopeLabel(b) {
   const f = state.filters;
   const dir = f.directory === '__none' ? 'カテゴリ無し' : b?.directories.find((d) => d.id === f.directory)?.name;
   const sec = f.section === '__none' ? 'セクションなし' : b?.codexSections?.find((x) => x.id === f.section)?.name;
-  const parts = [dir && `📂 ${dir}`, f.folder && `🗂 ${f.folder}`, sec && `§ ${sec}`].filter(Boolean);
+  const parts = [dir && `📂 ${dir}`, f.project && `📁 ${f.project}`, f.folder && `🗂 ${f.folder}`, sec && `§ ${sec}`, f.label && `ラベル: ${f.label === '__none' ? 'なし' : b?.labels.find(l => l.id === f.label)?.name || f.label}`].filter(Boolean);
   return parts.length ? parts.join(' · ') : '📁 すべて';
 }
 function setScope(patch) {
@@ -3007,15 +3021,20 @@ function scopePicker(anchor) {
   const b = state.board;
   const f = state.filters;
   picker(anchor, {
-    title: `${T.category}で絞り込み`, width: 340,
-    selected: [f.directory ? `d:${f.directory}` : null, f.section ? `s:${f.section}` : null, !f.directory && !f.project && !f.folder && !f.section ? '' : null].filter((x) => x != null),
+    title: `${T.category}・プロジェクトで絞り込み`, width: 340,
+    selected: [f.directory ? `d:${f.directory}` : null, f.project ? `p:${f.project}` : null, f.folder ? `f:${f.folder}` : null, f.section ? `s:${f.section}` : null, f.label ? `l:${f.label}` : null, !f.label && !f.directory && !f.project && !f.folder && !f.section ? '' : null].filter((x) => x != null),
     items: [
       { value: '', label: 'すべて（絞り込みを解除）' },
       ...directoryItems(false).map((it) => ({ ...it, value: `d:${it.value}`, group: `${T.category}` })),
+      ...b.projects.map((p) => ({ value: `p:${p.name}`, label: p.name, hint: p.count, group: 'プロジェクト（Codex のプロジェクト、なければフォルダ名）' })),
+      ...(b.folders || []).map((x) => ({ value: `f:${x.name}`, label: x.name, hint: x.count, group: `${T.folder}（Codex のプロジェクトに入っているもの）` })),
+      { value: 'l:__none', label: 'ラベルなし', group: 'ラベル' },
+      ...b.labels.map(l => ({ value: `l:${l.id}`, label: l.name, color: l.color, group: 'ラベル' })),
       ...(b.codexSections || []).map((x) => ({ value: `s:${x.id}`, label: `§ ${x.name}`, hint: x.count, group: 'Codex セクション' })),
     ],
     onPick: (v) => {
-      if (!v) return setScope({ directory: '', project: '', folder: '', section: '' });
+      if (!v) return setScope({ directory: '', project: '', folder: '', section: '', label: '' });
+      if (v.startsWith('l:')) return setScope({ label: f.label === v.slice(2) ? '' : v.slice(2) });
       if (v.startsWith('s:')) return setScope({ section: f.section === v.slice(2) ? '' : v.slice(2) });
       if (v.startsWith('d:')) setScope({ directory: f.directory === v.slice(2) ? '' : v.slice(2), project: '', folder: '' });
       else if (v.startsWith('f:')) setScope({ folder: f.folder === v.slice(2) ? '' : v.slice(2) });
@@ -3054,8 +3073,8 @@ function renderSidebar(b) {
   if (f.swimlane) {
     const rows = state.lanes.filter((l) => hit(l.name)).map((lane) => {
       const live = lane.running ? 'running' : lane.waiting ? 'waiting' : null;
-      return h('button', { class: `side-row${state.soloLane === lane.name ? ' active' : ''}`, 'data-lane': lane.name, title: 'クリック: そこへ移動 / ⌥クリック: このレーンだけ表示',
-        onclick: (e) => (e.altKey ? setSolo(state.soloLane === lane.name ? null : lane.name) : jumpToLane(lane.name)) },
+      return h('button', { class: `side-row${state.soloLane === lane.key ? ' active' : ''}`, 'data-lane': lane.key, title: 'クリック: そこへ移動 / ⌥クリック: このレーンだけ表示',
+        onclick: (e) => (e.altKey ? setSolo(state.soloLane === lane.key ? null : lane.key) : jumpToLane(lane.key)) },
         h('span', { class: 'dot', style: { background: lane.color ? colorVar(lane.color) : 'rgba(255,255,255,0.35)' } }),
         h('span', { class: 'grow ellipsis', text: lane.name }),
         live ? h('span', { class: `sdot s-${live}`, title: STATUS_LABELS[live] }) : null,
@@ -3167,7 +3186,7 @@ function fmtDur(ms) {
   const h = ms / 3600e3;
   return h < 1 ? `${Math.round(ms / 60e3)} 分` : h < 48 ? `${h.toFixed(1)} 時間` : `${(h / 24).toFixed(1)} 日`;
 }
-async function loadAnalytics() {
+async function loadAnalytics({ throwOnError = false } = {}) {
   const seq = ++loadSeq;
   try {
     if (!state.board) state.board = await bridge.callTool('canban_get_board', { days: 30 }); // header menus need it
@@ -3175,6 +3194,7 @@ async function loadAnalytics() {
     migrateLegacyScope(state.board);
     const f = state.filters;
     const args = { days: state.analyticsDays || 30, agent: f.agent };
+    for (const key of ['project', 'folder', 'section', 'label']) if (f[key]) args[key] = f[key];
     if (f.host) args.host = f.host;
     if (f.account) args.account = f.account;
     if (f.directory) args.directory = f.directory;
@@ -3182,6 +3202,7 @@ async function loadAnalytics() {
     if (seq === loadSeq && state.view === 'analytics') renderAnalytics(st);
   } catch (e) {
     $('#board').replaceChildren(h('div', { class: 'loading', text: `分析を読み込めませんでした: ${e.message}` }));
+    if (throwOnError) throw e;
   }
 }
 function svgEl(tag, attrs = {}) {
@@ -3355,7 +3376,7 @@ async function openTaskModal(cardId, init = null) {
   memo.onblur = () => memo.value !== memo.defaultValue && workspace.saveField(memo, value => act('canban_update_card', { cardId, note: value }, { okMsg: 'メモを保存しました' }));
 
   // --- start a new session
-  const t = card.target || {};
+  const t = { ...card.target, ...(card.context?.agent ? { agent: card.context.agent } : {}), ...(card.context?.host ? { hostId: card.context.host } : {}) };
   const agentSel = h('select', { class: 'text-input', 'aria-label': 'AI App' }, h('option', { value: 'codex', text: 'Codex' }), h('option', { value: 'claude', text: 'Claude Code' }));
   agentSel.value = t.agent || 'codex';
   const hostSel = pickerButton({ title: 'マシン', value: t.hostId || 'local', stack: false,
@@ -3415,7 +3436,8 @@ async function openTaskModal(cardId, init = null) {
         h('button', { class: 'btn-primary', title: shortcutHelp(), text: `▶ 開始（${routeLabel(b.settings.launch.route, { desktop: true })}）`, onclick: e => start(optsFromEvent(e)) }),
         h('button', { class: 'btn', text: 'デスクトップで', onclick: () => start({ route: 'desktop' }) }),
         h('button', { class: 'btn', text: 'ターミナルで', onclick: () => start({ route: 'terminal' }) }))], hint: '開始したセッションは、AI App・マシン・フォルダ・依頼文が一致すると自動でこのカードに紐付きます。' },
-    add: { nodes: [h('button', { class: 'side-btn', text: '🏷 ラベル', onclick: e => labelPicker(e.currentTarget, cardId, labelState, () => {}) }),
+    add: { nodes: [taskQuickAdd.summary(card),
+      h('button', { class: 'side-btn', text: '所属を変更', onclick: () => taskQuickAdd.edit(card, list) }), h('button', { class: 'side-btn', text: '🏷 ラベル', onclick: e => labelPicker(e.currentTarget, cardId, labelState, () => {}) }),
       h('button', { class: 'side-btn', text: `📂 カテゴリ: ${card.directory?.name || 'カテゴリ無し'}`, onclick: e => directoryPicker(e.currentTarget, card, { cwd: cwd.value.trim() || null, after: () => openTaskModal(cardId) }) })] },
     prio: { nodes: [prio, due] },
     other: { nodes: [h('button', { class: 'side-btn', text: card.hidden ? '👁 ボードに再表示' : '🙈 ボードから隠す', onclick: async () => { await act('canban_update_card', { cardId, hidden: !card.hidden }); closePane(cardId); } }),
@@ -3431,7 +3453,7 @@ async function openTaskModal(cardId, init = null) {
   p.status = card.status;
   p.el.setAttribute('aria-label', `タスクカード詳細: ${card.title}`);
   p.el.replaceChildren(h('div', { class: 'pane-h' }, top,
-    h('div', { class: 'sub row' }, h('span', { class: 'badge task-badge', text: T.taskCard }),
+    h('div', { class: 'sub row' }, taskQuickAdd.button(), h('span', { class: 'badge task-badge', text: T.taskCard }),
       h('span', { class: 'row pane-status', style: { gap: '0' } }, h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]), 'リスト:', listSel), h('div', { class: 'note-line' })),
     h('div', { class: 'pane-b' }, cols.main, columnSplit(), cols.side),
     taskDash?.active?.id === cardId ? h('div', { class: 'task-parent-actions' },
@@ -4086,6 +4108,11 @@ function focusSearch() {
 document.querySelectorAll('.seg button').forEach((btn) => btn.addEventListener('click', () => {
   state.filters.agent = btn.dataset.agent; saveFilters(); state.shown = {}; load();
 }));
+// @include task-quick-add-model.js
+// @include task-quick-add.js
+
+$('#quickTaskBtn').addEventListener('click', () => taskQuickAdd.open());
+
 // @include header.js
 // @include accounts.js
 $('#projectBtn').addEventListener('click', (e) => scopePicker(e.currentTarget));
@@ -4119,28 +4146,17 @@ function focusedListId() {
   const a = document.activeElement;
   return a?.closest?.('.list')?.dataset.listId || state.board?.defaultListId;
 }
-// c: add a card — in the focused list's composer, or (swimlanes) a quick popover.
 function quickAdd() {
-  const listId = focusedListId();
-  const btn = !state.filters.swimlane && $(`.list[data-list-id="${CSS.escape(listId)}"] .add-card-btn`);
-  if (btn) { btn.scrollIntoView({ block: 'nearest', inline: 'nearest' }); return btn.click(); }
-  const list = state.board.lists.find((l) => l.id === listId);
-  const input = h('input', { class: 'text-input', placeholder: `${T.taskCard}のタイトル（Enter で追加）`, maxlength: 300 });
-  const lane = state.filters.swimlane === 'directory' ? document.activeElement?.closest?.('.lane')?.dataset.dirId : null;
-  input.onkeydown = async (e) => {
-    if (e.key !== 'Enter' || e.isComposing || !input.value.trim()) return;
-    const r = await act('canban_create_task', { title: input.value.trim(), list: listId }, { reload: !lane || lane === '__none' }).catch(() => null);
-    if (lane && lane !== '__none' && r?.cardId) await act('canban_update_card', { cardId: r.cardId, directory: lane }).catch(() => {});
-    input.value = '';
-  };
-  popover($('#q'), `「${list?.title ?? ''}」にカードを追加`, h('div', {}, input, h('p', { class: 'muted', text: 'Esc で閉じる' })), { width: 360 });
-  input.focus();
+  const focused = document.activeElement;
+  const laneName = focused?.closest?.('.lane')?.dataset.lane;
+  const listId = focused?.closest?.('.list')?.dataset.listId;
+  return taskQuickAdd.open({ listId, lane: state.lanes.find(l => l.key === laneName) });
 }
 const SHORTCUTS = [
   ['全体', [
     ['/', '検索にフォーカス（Esc でクリア、↓ / Enter で最初のカードへ）'], ['⌘K / Ctrl+K', `コマンドパレット（カード・ビュー・${T.category}・操作を検索して実行）`],
-    ['p', `${T.category}で絞り込み`], ['b', 'サイドバーの開閉'], ['[ / ]', '前 / 次のスイムレーンへ'],
-    ['c', 'カードを追加'], ['1〜9', '保存したビューに切り替え'], ['a', 'ボード / 分析'], ['r', '再読み込み'], ['?', 'この一覧'],
+    ['p', `${T.category}・プロジェクトで絞り込み`], ['b', 'サイドバーの開閉'], ['[ / ]', '前 / 次のスイムレーンへ'],
+    ['c', 'タスクを追加'], ['1〜9', '保存したビューに切り替え'], ['a', 'ボード / 分析'], ['r', '再読み込み'], ['?', 'この一覧'],
   ]],
   ['カードを選択中', [
     ['Enter', '詳細を開く'], ['l', 'ラベル'], ['g', `${T.category}`], ['m', 'リストへ移動'], ['h', '隠す / 再表示'],
@@ -4164,7 +4180,7 @@ function commandPalette() {
     { label: '再読み込み', run: () => load({ refresh: true }), hint: 'r' },
     { label: 'すべて既読にする', run: () => act('canban_mark_all_seen', {}, { okMsg: 'すべて既読にしました' }) },
     { label: state.sideOpen ? 'サイドバーを閉じる' : 'サイドバーを開く', run: () => toggleSidebar(), hint: 'b' },
-    { label: 'カードを追加', run: quickAdd, hint: 'c' },
+    { label: 'タスクを追加', run: () => taskQuickAdd.open(), hint: 'c' },
     { label: '絞り込みをすべて解除', run: () => { $('#q').value = ''; setScope({ directory: '', project: '', q: '', status: '', host: '' }); } },
     ...Object.entries(LANE_MODES).map(([v, t]) => ({ label: `スイムレーン: ${t}`, run: () => { f.swimlane = v; state.soloLane = null; saveFilters(); render(); } })),
     ...Object.entries(LANE_HEIGHTS).map(([v, [t]]) => ({ label: `レーンの高さ: ${t}`, run: () => { f.laneHeight = v; saveFilters(); render(); } })),
@@ -4175,9 +4191,10 @@ function commandPalette() {
   const add = (group, badge, label, fn, extra = {}) => { const value = `${items.length}`; run.set(value, fn); items.push({ value, label, group, badge, ...extra }); };
   actions.forEach((a) => add('操作', '操作', a.label, a.run, { hint: a.hint }));
   (b.settings.views || []).forEach((v, i) => add('ビュー', 'ビュー', v.name, () => applyView(v), { hint: i < 9 ? i + 1 : '' }));
-  state.lanes.forEach((l) => add('レーン', 'レーン', l.name, () => jumpToLane(l.name), { hint: l.count, color: l.color }));
+  state.lanes.forEach((l) => add('レーン', 'レーン', l.name, () => jumpToLane(l.key), { hint: l.count, color: l.color }));
   b.directories.forEach((d) => add(`${T.category}`, '📂', d.name, () => setScope({ directory: d.id }), { hint: d.count, color: d.color }));
-  b.labels.forEach((l) => add('ラベルで検索', '🏷', l.name, () => { $('#q').value = l.name; applySearch(); }, { color: l.color }));
+  b.projects.forEach((p) => add('プロジェクト', '📁', p.name, () => setScope({ project: p.name }), { hint: p.count }));
+  b.labels.forEach((l) => add('ラベルで絞り込み', '🏷', l.name, () => setScope({ label: l.id }), { color: l.color }));
   for (const l of b.lists) for (const c of l.cards) {
     add('カード', l.title, c.title, () => {
       openCard(c.id);
@@ -4195,13 +4212,14 @@ document.addEventListener('keydown', (e) => {
     if (!state.modalOpen) commandPalette();
     return;
   }
+  if (e.key === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.isComposing && !typingIn(e.target) && !taskQuickAdd.dialog?.open && !document.querySelector('.popover')) { e.preventDefault(); quickAdd(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing || state.modalOpen || typingIn(e.target) || e.target.closest?.('#paneLayer') || document.querySelector('.popover')) return;
   const onCard = e.target.classList?.contains('card');
   const k = e.key;
   const run = {
     '/': focusSearch, '?': showShortcuts, b: () => toggleSidebar(), '[': () => stepLane(-1), ']': () => stepLane(1),
     r: () => load({ refresh: true }).then(() => toast('最新の状態に更新しました')), a: toggleAnalytics,
-    c: () => state.view === 'board' && quickAdd(), p: () => scopePicker($('#projectBtn')),
+    c: quickAdd, p: () => scopePicker($('#projectBtn')),
   }[k];
   if (run) { e.preventDefault(); return run(); }
   // 1–9: switch saved views
