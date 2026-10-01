@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Store, resolveDirectory } from '../server/store.mjs';
+import { normalizeClaudeSummary } from '../server/sources/claude.mjs';
 import { computeStats } from '../server/stats.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'sk-dir-'));
@@ -60,7 +61,45 @@ test('stats: directory breakdown and filter', async () => {
     { id: 'codex:y', agent: 'codex', cwd: '/b', createdAt: now - 1000, tokens: 7 },
   ];
   const st = computeStats(state, sessions, { days: 7, now });
-  assert.deepEqual(st.directories.map((r) => [r.name, r.sessions]).sort(), [['Mine', 1], ['（なし）', 1]]);
+  assert.deepEqual(st.directories.map((r) => [r.name, r.sessions]).sort(), [['Mine', 1], ['カテゴリ無し', 1]]);
   assert.equal(computeStats(state, sessions, { days: 7, now, directory: 'd1' }).totals.sessions, 1);
   assert.equal(computeStats(state, sessions, { days: 7, now, directory: '__none' }).totals.tokens, 7);
+});
+
+test('source categories persist, keep manual names, and respect explicit category-less overrides', async () => {
+  const root = tmp(), store = new Store(root);
+  try {
+    const sources = [
+      {id:'codex:1',agent:'codex',cwd:'/r/web',codexProject:{id:'p1',name:'Product'}},
+      {id:'codex:2',agent:'codex',cwd:'/r/web',project:'web',codexProject:null},
+      {id:'claude:1',agent:'claude',cwd:'/r/api',claudeGroup:{id:'g1',name:'Team'}},
+      {id:'claude:2',agent:'claude',cwd:'/r/api'},
+    ];
+    await store.createDirectory({name:'Legacy',paths:['/r']});
+    assert.equal(await store.syncSessionCategories(sources),true);
+    assert.equal(await store.syncSessionCategories(sources),false);
+    let state = await store.load();
+    const resolve = (session, card = null) => resolveDirectory(state,card,session.cwd,session);
+    assert.equal(resolve(sources[0]).name,'Product');
+    assert.equal(resolve(sources[1]),null); // Codex folder/path does not substitute for project.
+    assert.equal(resolve(sources[2]).name,'Team'); assert.equal(resolve(sources[3]).name,'api');
+    const id = resolve(sources[0]).id;
+    await store.updateDirectory({directoryId:id,name:'Renamed'});
+    await store.syncSessionCategories(sources);
+    state = await store.load(); assert.equal(resolve(sources[0]).name,'Renamed');
+    await store.updateCard({cardId:sources[0].id,directory:'__none'});
+    state = await store.load(); assert.equal(resolve(sources[0],state.cards[sources[0].id]),null);
+    await store.updateCard({cardId:sources[1].id,directory:id});
+    state = await store.load(); assert.equal(resolve(sources[1],state.cards[sources[1].id]).id,id);
+    assert.equal(state.directories.length,4); assert.ok(state.directories.find(d=>d.id===id).sourceKeys.length);
+    await store.deleteDirectory({directoryId:id});
+    assert.equal(await store.syncSessionCategories(sources),false, 'deleted source category does not immediately reappear');
+    state = await store.load(); assert.equal(resolve(sources[0]),null);
+  } finally { await store.close(); fs.rmSync(root,{recursive:true,force:true}); }
+});
+test('Claude group metadata is normalized while absent groups use the cwd category', () => {
+  const summary = {sessionId:'test',cwd:'/r/api',turns:1,prompts:['hello']};
+  assert.deepEqual(normalizeClaudeSummary(summary,{group:{id:'g1',name:'Team'}}).claudeGroup,{id:'g1',name:'Team'});
+  assert.equal(normalizeClaudeSummary(summary,{groupName:'Team',groupId:'g1'}).claudeGroup.name,'Team');
+  assert.equal(normalizeClaudeSummary(summary,{chromeTabGroupId:'tabs'}).claudeGroup,null);
 });

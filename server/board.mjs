@@ -313,6 +313,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
   const filters = normalizeFilters(rawFilters);
   let state = (await store.load());
   const { sessions, errors, hosts, app } = await allSessions(state, { force });
+  if (await store.syncSessionCategories(sessions)) state = await store.load();
   if ((await store.resolvePending(matchPending(state, sessions))).length) state = (await store.load());
   if ((await runRules(store, state, sessions)).length) state = (await store.load());
   const byId = new Map(sessions.map((x) => [x.id, x]));
@@ -345,8 +346,8 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
     if (s.codexSection) sections.set(s.codexSection.id, { ...s.codexSection, count: (sections.get(s.codexSection.id)?.count || 0) + 1 });
     if (visibleKind) visible.push(s);
     if (visibleKind) hostCounts.set(s.host?.id || 'local', (hostCounts.get(s.host?.id || 'local') || 0) + 1);
-    const dir = resolveDirectory(state, card, s.cwd);
-    if (dir && visibleKind && !toTask.has(s.id)) dirCounts.set(dir.id, (dirCounts.get(dir.id) || 0) + 1);
+    const dir = resolveDirectory(state, card, s.cwd, s);
+    if (visibleKind && !toTask.has(s.id)) dirCounts.set(dir?.id || '__none', (dirCounts.get(dir?.id || '__none') || 0) + 1);
     if (toTask.has(s.id)) continue; // shown inside its task card
     if (!matches(s, card, filters, labelsById, hits, dir)) continue;
     const listId = card?.listId && listIds.has(card.listId) ? card.listId : state.defaultListId;
@@ -406,7 +407,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
     const status = aggregateStatus(links.map((x) => x.status || 'idle'));
     const updatedAt = Math.max(t.createdAt || 0, ...links.map((x) => x.updatedAt || 0));
     const dir = resolveDirectory(state, t, t.target?.cwd || links.find((x) => x.cwd)?.cwd);
-    if (dir && !t.hidden) dirCounts.set(dir.id, (dirCounts.get(dir.id) || 0) + 1);
+    if (!t.hidden) dirCounts.set(dir?.id || '__none', (dirCounts.get(dir?.id || '__none') || 0) + 1);
     if (!matchesTask(t, links, status, filters, labelsById, dir)) continue;
     const listId = t.listId && listIds.has(t.listId) ? t.listId : state.defaultListId;
     buckets.get(listId).push({
@@ -448,6 +449,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
     lists,
     labels: state.labels,
     directories: state.directories.map((d) => ({ ...d, count: dirCounts.get(d.id) || 0 })),
+    uncategorizedCount: dirCounts.get('__none') || 0,
     defaultListId: state.defaultListId,
     projects: [...projects.entries()].sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count })),
     codexSections: [...sections.values()].sort((a, b) => b.count - a.count),
@@ -540,8 +542,9 @@ function recentFolders(sessions, limit = 60) {
 }
 
 export async function findSession(store, cardId) {
-  const state = (await store.load());
+  let state = (await store.load());
   const { sessions, hosts } = await allSessions(state);
+  if (await store.syncSessionCategories(sessions)) state = await store.load();
   const s = sessions.find((x) => x.id === cardId);
   if (!s) throw new Error(`セッションが見つかりません: ${cardId}`);
   return { session: s, state, host: s.host?.local === false ? hosts.find((h) => h.id === s.host.id) : null };
@@ -593,7 +596,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     session: { ...rest, host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: accountLabel(s.account, labels) },
     card: {
       listId, labels: card.labels || [], note: card.note || '', priority: card.priority || null, due: card.due || null, hidden: !!card.hidden,
-      directory: dirView(resolveDirectory(state, card, s.cwd)), directoryId: card.directoryId || null,
+      directory: dirView(resolveDirectory(state, card, s.cwd, s)), directoryId: card.directoryId || null,
     },
     list: state.lists.find((l) => l.id === listId),
     task: taskId ? { id: taskId, title: state.cards[taskId].title } : null,

@@ -40,7 +40,7 @@ export function computeStats(state, sessions, { days = 30, agent = 'all', host =
       (!account || (account === '__none' ? !s.account : s.account === account)) &&
       (!project || s.project === project),
   );
-  const dirOf = (s) => resolveDirectory(state, state.cards[s.id], s.cwd);
+  const dirOf = (s) => resolveDirectory(state, state.cards[s.id], s.cwd, s);
   const dirPick = directory ? pick.filter((s) => (directory === '__none' ? !dirOf(s) : dirOf(s)?.id === directory)) : pick;
   const inRange = dirPick.filter((s) => (s.createdAt || s.updatedAt || 0) >= since);
 
@@ -88,7 +88,7 @@ export function computeStats(state, sessions, { days = 30, agent = 'all', host =
     },
     daily,
     projects: breakdown(inRange, (s) => s.project, 12),
-    directories: breakdown(inRange, (s) => dirOf(s)?.name, 12),
+    directories: breakdown(inRange, (s) => dirOf(s)?.name || 'カテゴリ無し', 12),
     hosts: breakdown(inRange, (s) => (s.host?.local === false ? s.host.label : 'このマシン'), 12),
     agents: breakdown(inRange, (s) => (s.agent === 'codex' ? 'Codex' : 'Claude Code'), 5),
     accounts: breakdown(inRange, (s) => (s.account ? `${s.agent === 'codex' ? 'Codex' : 'Claude'} · ${accountLabel(s.account, state.settings.accounts?.labels)}` : null), 12),
