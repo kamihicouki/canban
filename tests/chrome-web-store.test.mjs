@@ -77,3 +77,28 @@ test('publish blocks warnings and reads back review state without claiming publi
 test('inconclusive readback fails instead of reporting success', async t => {
   await assert.rejects(publishChromeWebStore({ env: { ...fixture(t), CWS_MODE: 'publish' }, fetchImpl: mock([{ access_token: 'ACCESS' }, {}, { uploadState: 'SUCCEEDED' }, { state: 'PENDING_REVIEW' }, {}], []), log() {} }), /readback was inconclusive/);
 });
+test('a published version cannot be uploaded again or downgraded', async t => {
+  for (const version of ['0.16.0', '0.15.0', '0.16.0.0']) {
+    const requests = [];
+    await assert.rejects(publishChromeWebStore({ env: { ...fixture(t), CWS_PACKAGE_VERSION: version, CWS_MODE: 'publish' }, fetchImpl: mock([{ access_token: 'ACCESS' }, { publishedItemRevisionStatus: { state: 'PUBLISHED', distributionChannels: [{ crxVersion: '0.16.0' }] } }], requests), log() {} }), /newer than/);
+    assert.equal(requests.length, 2);
+  }
+});
+test('submission receipt confirms the verified package version', async t => {
+  const requests = [];
+  const result = await publishChromeWebStore({ env: { ...fixture(t), CWS_PACKAGE_VERSION: '0.16.0', CWS_MODE: 'publish' }, fetchImpl: mock([{ access_token: 'ACCESS' }, { publishedItemRevisionStatus: { state: 'PUBLISHED', distributionChannels: [{ crxVersion: '0.15.0' }] } }, { uploadState: 'SUCCEEDED', crxVersion: '0.16.0' }, { state: 'PENDING_REVIEW' }, { submittedItemRevisionStatus: { state: 'PENDING_REVIEW', distributionChannels: [{ crxVersion: '0.16.0' }] } }], requests), log() {} });
+  assert.equal(result.state, 'PENDING_REVIEW');
+  assert.equal(result.version, '0.16.0');
+});
+test('a readback for another version does not prove successful submission', async t => {
+  await assert.rejects(publishChromeWebStore({ env: { ...fixture(t), CWS_PACKAGE_VERSION: '0.16.0', CWS_MODE: 'publish' }, fetchImpl: mock([{ access_token: 'ACCESS' }, {}, { uploadState: 'SUCCEEDED', crxVersion: '0.16.0' }, { state: 'PENDING_REVIEW' }, { submittedItemRevisionStatus: { state: 'PENDING_REVIEW', distributionChannels: [{ crxVersion: '0.15.0' }] } }], []), log() {} }), /readback was inconclusive/);
+});
+test('immediate publication confirms the package even if the submitted revision is cleared', async t => {
+  const result = await publishChromeWebStore({ env: { ...fixture(t), CWS_PACKAGE_VERSION: '0.16.0', CWS_MODE: 'publish' }, fetchImpl: mock([{ access_token: 'ACCESS' }, {}, { uploadState: 'SUCCEEDED', crxVersion: '0.16.0' }, { state: 'PENDING_REVIEW' }, { publishedItemRevisionStatus: { state: 'PUBLISHED', distributionChannels: [{ crxVersion: '0.16.0' }] } }], []), log() {} });
+  assert.equal(result.state, 'PUBLISHED');
+});
+test('upload version mismatch stops before publishing', async t => {
+  const requests = [];
+  await assert.rejects(publishChromeWebStore({ env: { ...fixture(t), CWS_PACKAGE_VERSION: '0.16.0', CWS_MODE: 'publish' }, fetchImpl: mock([{ access_token: 'ACCESS' }, {}, { uploadState: 'SUCCEEDED', crxVersion: '0.15.0' }], requests), log() {} }), /Uploaded version does not match/);
+  assert.ok(requests.every(request => !request.url.endsWith(':publish')));
+});

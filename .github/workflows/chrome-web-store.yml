@@ -1,16 +1,8 @@
 name: Chrome Web Store
 on:
   pull_request:
-    paths:
-      - 'chrome/**'
-      - 'ui/**'
-      - 'scripts/*chrome*'
-      - 'tests/*chrome*'
-      - 'package.json'
-      - '.github/workflows/chrome-web-store.yml'
   push:
-    branches: [main]
-    tags: ['chrome-v*']
+    branches: [main, production]
   workflow_dispatch:
     inputs:
       mode:
@@ -24,14 +16,34 @@ concurrency:
   group: chrome-web-store-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  release-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require same-repository main for production PRs
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" && "$BASE_REF" == "production" ]]; then
+            if [[ "$HEAD_REF" != "main" || "$HEAD_REPOSITORY" != "$REPOSITORY" ]]; then
+              echo 'production accepts release PRs from this repository main only.' >&2
+              exit 1
+            fi
+          fi
+  validate:
+    needs: release-source
+    uses: ./.github/workflows/test.yml
   package:
+    needs: validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm test
       - run: node scripts/package-chrome-web-store.mjs
       - uses: actions/upload-artifact@v4
         with:
@@ -41,8 +53,8 @@ jobs:
             dist/canban-web-store.zip.sha256
           if-no-files-found: error
   deploy:
-    needs: package
-    if: startsWith(github.ref, 'refs/tags/chrome-v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    needs: [release-source, validate, package]
+    if: github.ref == 'refs/heads/production' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     environment: chrome-web-store
     concurrency:
@@ -58,14 +70,11 @@ jobs:
           name: canban-chrome-web-store
           path: dist
       - name: Verify release version and checksum
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-          IS_TAG: ${{ github.ref_type == 'tag' }}
         run: |
           cd dist
           sha256sum -c canban-web-store.zip.sha256
           unzip -p canban-web-store.zip manifest.json > manifest.json
-          node --input-type=module -e 'import fs from "node:fs"; const version = JSON.parse(fs.readFileSync("manifest.json")).version; if (process.env.IS_TAG === "true" && process.env.RELEASE_TAG !== `chrome-v${version}`) throw new Error("Tag must match manifest version");'
+          node --input-type=module -e 'import fs from "node:fs"; const version = JSON.parse(fs.readFileSync("manifest.json")).version; const expected = JSON.parse(fs.readFileSync("../package.json")).version; if (version !== expected) throw new Error("ZIP version must match package.json"); fs.appendFileSync(process.env.GITHUB_ENV, `CWS_PACKAGE_VERSION=${version}\nCWS_PACKAGE_SHA256=${fs.readFileSync("canban-web-store.zip.sha256", "utf8").split(/\s+/)[0]}\n`);'
       - name: Upload / submit to Chrome Web Store
         env:
           CWS_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
@@ -75,4 +84,11 @@ jobs:
           CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
           CWS_PACKAGE_PATH: dist/canban-web-store.zip
           CWS_MODE: ${{ inputs.mode || 'publish' }}
+          CWS_REPORT_PATH: dist/canban-web-store-submission.json
         run: node scripts/publish-chrome-web-store.mjs
+      - name: Save submission receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: canban-chrome-web-store-submission
+          path: dist/canban-web-store-submission.json
+          if-no-files-found: error

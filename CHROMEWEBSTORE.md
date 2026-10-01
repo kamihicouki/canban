@@ -102,7 +102,13 @@ Google 側の設定: https://developer.chrome.com/docs/webstore/using-api
 
 認証の作成・同意はアカウント所有者が行う。公式の順序は、Google Cloud で Chrome Web Store API を有効化 → OAuth 同意画面を設定 → Web application の OAuth client を作成（redirect URI: `https://developers.google.com/oauthplayground`）→ OAuth Playground の「Use your own OAuth credentials」に自分の client を設定 → `https://www.googleapis.com/auth/chromewebstore` をストア管理アカウントで認可 → authorization code を交換して refresh token を取得、となる。External / Testing 状態で発行する refresh token は通常7日で失効するため、運用用の OAuth 設定と Google の要件を確認してから認可する。GitHub の secret 登録には `gh secret set NAME --env chrome-web-store` の対話入力を使う。コマンド引数やログへ値を露出させない。
 
-PR / main 更新時はテストと ZIP 作成のみで、ストアは自動更新されない。`chrome-v<package.json の version>` タグを push すると審査申請し、承認後に公開する。手動実行は main のみ、`upload`（アップロードのみ）か `publish`（審査申請）を選択できる。API による実行には OAuth Secrets が必要。2026-10-02 の readback では未登録であるため、今回の更新は Dashboard から申請する。公開連絡先メールは本人確認済み、0.15.0 の一般公開を確認済み。
+GitLab Flow で `main` を開発用、`production` をリリース用として運用する。PR / main 更新時は4構成のテストと ZIP 作成までで、ストアは更新しない。同じリポジトリの **main → production の PR** を必須チェック成功後にマージすると、production のコミットでテスト・ZIP検証を再実行し、ストアへアップロード・審査申請する。タグの push は公開処理を開始しない。
+
+手動実行は production のみ公開でき、`upload`（アップロードのみ）か `publish`（審査申請）を選択できる。main やタグから手動実行しても公開ジョブは実行しない。GitHub Environment `chrome-web-store` の利用元も production のみに制限する。OAuth が未登録の場合は認証前に失敗し、申請成功とは扱わない。
+
+アップロードには公開済みより新しいバージョンが必要。既存の審査待ちや staged の申請は保持し、先に Developer Dashboard で解決する。失敗時に自動再申請はしない。申請結果が不明な場合も先に状態を確認し、アップロードや申請を繰り返さない。
+
+公開ジョブは ZIP のチェックサムと package.json のバージョンを検証し、`CWS_PACKAGE_VERSION` と `CWS_PACKAGE_SHA256` を渡す。API の読み戻しでは、申請状態に加えて同じバージョンが受理されたことを確認する。Actions の `canban-chrome-web-store-submission` 成果物には、状態・バージョン・production コミット・ZIP の SHA-256・実行 URL を保存する。OAuth の値は含めない。
 
 同じストア項目へのデプロイを直列化する。既存の審査中・公開待ち申請がある場合、警告・ポリシー措置がある場合、アップロードが失敗した場合は停止する。申請後は API で状態を再取得する。`PENDING_REVIEW` は審査待ちであり、公開済みではない。
 
@@ -113,7 +119,7 @@ PR / main 更新時はテストと ZIP 作成のみで、ストアは自動更�
 Node.js 22.13 以降、macOS または Linux、Codex / Claude Code のローカルセッションが必要。Windows のローカル連携は未対応。
 
 ```sh
-git clone https://github.com/kamihicouki/canban.git
+git clone --branch production https://github.com/kamihicouki/canban.git
 cd canban
 npm run install:chrome-native-host -- --extension-id kmnkdbmckholannmfhjfmceofmjdbndh
 ```
