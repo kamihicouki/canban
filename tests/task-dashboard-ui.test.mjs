@@ -49,7 +49,7 @@ function harness() {
   const context = vm.createContext({panes,paneGlobal:settings,paneLayout:{...defaults,ratio:.6,heights:{conv:200}},
     eff:(p,key)=>p[key]||settings[key],nextFree:()=>({x:40,y:30}),PANE_LAYOUT_DEF:defaults,PANE_HEIGHTS:{conv:200},PANE_MAX:8,structuredClone,clearTimeout,setTimeout,clearInterval,
     workspace:{hasDrafts:el=>!!el.draft,navigate(){}},store:{set:(key,value)=>writes.push([key,plain(value)])},
-    live:{feeds:new Map()},paneCanvas:{append(){}},paneLayer:{dataset:{}},
+    $:()=>null,live:{feeds:new Map()},paneCanvas:{append(){}},paneLayer:{dataset:{}},
     normalizePaneLayout:(value)=>structuredClone(value||defaults),sharedUiRecord:r=>r,
     bridge:{callTool:async(name,args)=>{
       const record=records.get(args.taskId);if(!record)throw new Error('取得失敗');
@@ -122,4 +122,12 @@ test('bulk note changes retain the selected preset; explicit space changes switc
   const context=vm.createContext({panes,eff:(p,key)=>p[key]||'fixed',taskDash:{custom:()=>custom++},liftIfNeeded(){},refreshPane(){},layoutPanes(){},savePanes(){},paintPaneBar(){}});
   vm.runInContext(`${src}\nbulk(p=>{p.note=true;});`,context);assert.equal(custom,0);assert.ok(panes.every(p=>p.note));
   vm.runInContext(`bulk(p=>{p.space='free';});`,context);assert.equal(custom,1);
+});
+
+test('parent metadata follows linked session status without rebuilding draft inputs',async()=>{
+  const {ctrl,panes}=harness();await ctrl.open('task:a');
+  const parent=panes.find(p=>p.id==='task:a');parent.el.draft='目的の編集中';
+  ctrl.reconcile({lists:[{cards:[{id:'task:a',title:'調査',status:'waiting',links:[{id:'codex:a',status:'waiting'}],linkedSessionIds:['codex:a']}]}]});
+  assert.equal(parent.status,'waiting');assert.equal(parent.taskCard.title,'調査');assert.equal(parent.el.draft,'目的の編集中');
+  await ctrl.leave();
 });

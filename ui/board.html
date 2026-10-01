@@ -3421,7 +3421,7 @@ async function openTaskModal(cardId, init = null) {
   p.el.setAttribute('aria-label', `タスクカード詳細: ${card.title}`);
   p.el.replaceChildren(h('div', { class: 'pane-h' }, top,
     h('div', { class: 'sub row' }, h('span', { class: 'badge task-badge', text: T.taskCard }),
-      h('span', { class: 'row', style: { gap: '0' } }, h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]), 'リスト:', listSel), h('div', { class: 'note-line' })),
+      h('span', { class: 'row pane-status', style: { gap: '0' } }, h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]), 'リスト:', listSel), h('div', { class: 'note-line' })),
     h('div', { class: 'pane-b' }, cols.main, columnSplit(), cols.side));
   applyPaneLayoutTo(p.el); bindPaneDrag(top, p); paintPaneButtons(p); applyPaneAttrs(p); layoutPanes();
   workspace.trackDrafts(p.el);

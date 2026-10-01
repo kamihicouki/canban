@@ -188,6 +188,12 @@ taskDash = {
     if (!card) return; // Filtered / unavailable is not an unlink operation.
     const links = card.linkedSessionIds || card.links.map(s => s.id);
     ctx.sessions = card.links;
+    const parent = panes.find(p => p.id === ctx.id);
+    if (parent) {
+      parent.taskCard = card; parent.status = card.status;
+      const status = $('.pane-status', parent.el);
+      if (status) status.replaceChildren(h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]);
+    }
     const changed = JSON.stringify(links) !== JSON.stringify(ctx.links);
     if (changed) this.run(async () => {
       if (this.active !== ctx) return;
@@ -196,7 +202,7 @@ taskDash = {
       this.changing = true; this.detach(ctx); this.changing = false;
       await this.show(); this.changed();
     });
-    else { const parent = panes.find(p => p.id === ctx.id); if (parent) { parent.taskCard = card; parent.status = card.status; this.paintRelated(parent); } this.paint(); }
+    else { if (parent) this.paintRelated(parent); this.paint(); }
   },
   paintRelated(parent) {
     const ctx = this.active; if (!ctx) return;
