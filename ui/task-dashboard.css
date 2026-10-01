@@ -37,7 +37,8 @@
   .pane-layer[data-task-preset] .pane-bar { display: grid; grid-template-columns: 28px minmax(0,1fr) 18px auto 32px 32px; gap: 6px; }
   .pane-layer[data-task-preset] .pb-context { display: contents; }
   .pane-layer[data-task-preset] .pb-sp { display: none; }
-  .task-home { grid-column: 1; grid-row: 1; }
+  .task-home { display: none !important; }
+  .pane-layer[data-task-preset] .pane-bar > .quick-task-trigger { grid-column: 1; grid-row: 1; }
   .task-dashboard-title { grid-column: 2; grid-row: 1; max-inline-size: none; }
   .task-save-status { grid-column: 3; grid-row: 1; }
   .pane-layer[data-task-preset] .pb-settings-toggle { grid-column: 4; grid-row: 1; }
@@ -49,7 +50,10 @@
   .pane-layer[data-task-preset] .pane-bar > .nav-mobile { grid-column: 1; grid-row: 1; }
 }
 @media (max-width: 719px) {
-  .task-home { display: none !important; }
+  .pane-layer[data-task-preset] .pane-bar > .quick-task-trigger { grid-column: 3; }
+  .task-save-status { display: none; }
   .pane-bar .task-presets button { padding-inline: 7px; }
   .task-save-notice { margin-inline: 8px; }
+  .pane-layer[data-task-preset] .pane .ph-top { flex-wrap: nowrap; }
+  .pane-layer[data-task-preset] .pane .ph-top h2,.pane-layer[data-task-preset] .pane .title-input { flex-basis: auto; }
 }

@@ -68,6 +68,8 @@ body[data-page="settings"] .page-panel > .seg { display: flex; flex-wrap: wrap; 
 .pane-bar { margin: 0; border-radius: 0; min-height: 54px; flex: none; gap: 8px; background: var(--header-bg); }
 .pb-context { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .pane-bar .hbtn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; }
+.pane-bar > .quick-task-trigger,.pane-h .quick-task-trigger { width: 28px; min-width: 28px; padding: 0; font-size: 0; }
+.pane-bar > .quick-task-trigger::before,.pane-h .quick-task-trigger::before { content: '＋'; font-size: 16px; }
 .pane-settings-popover { max-height: calc(100dvh - 24px); overflow: auto; }
 .pane-settings { display: flex; flex-direction: column; gap: 16px; }
 .pane-settings .pb-group { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
