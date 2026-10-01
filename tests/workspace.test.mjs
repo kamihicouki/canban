@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import { boardHtml } from '../server/ui.mjs';
 
 const source = fs.readFileSync(new URL('../ui/workspace-model.js', import.meta.url), 'utf8');
-const model = new vm.Script(source + '\n({workspacePage, usageWindow, paneGeometry})').runInNewContext();
+const model = new vm.Script(source + '\n({workspacePage, usageWindow, paneGeometry, normalizePaneLayout, paneBatch})').runInNewContext();
 const plain = value => JSON.parse(JSON.stringify(value));
 
 test('workspace routes preserve old home and analytics fallbacks', () => {
@@ -122,8 +122,52 @@ test('account editors register dynamic draft fields and keep them after save fai
 
 function workspaceHarness(extra={}) {
   const src=fs.readFileSync(new URL('../ui/workspace.js',import.meta.url),'utf8').replace('workspace.init();','');
-  return vm.runInNewContext(`${src}\nworkspace;`,{store:{get:(_key,fallback)=>fallback},workspacePage:model.workspacePage,state:{view:'board'},dashOpen:false,...extra});
+  return vm.runInNewContext(`${src}\nworkspace;`,{store:{get:(_key,fallback)=>fallback,set:()=>{}},workspacePage:model.workspacePage,state:{view:'board'},dashOpen:false,...extra});
 }
+
+test('shared layout restores cross-column moves, repairs duplicates and migrates old heights', () => {
+  const defaults = { main: ['conv','send'], side: ['resume','memo'] };
+  const result = plain(model.normalizePaneLayout({main:['resume','conv','conv','unknown'],side:['send'],ratio: .6,heights:{conv:180,memo:10000},collapsed:['conv','unknown','conv']},defaults,{conv:300,send:260,resume:290,memo:150}));
+  assert.deepEqual(result.main,['resume','conv']);
+  assert.deepEqual(result.side,['send','memo']);
+  assert.equal(result.ratio,.6); assert.equal(result.heights.conv,180); assert.equal(result.heights.memo,900);
+  assert.deepEqual(result.collapsed,['conv']);
+  const old = model.normalizePaneLayout(defaults,defaults,{conv:300});
+  assert.equal(old.ratio,2/3); assert.equal(old.heights.conv,300);
+});
+test('a batch mixes task/session cards, deduplicates open cards and rejects an oversized batch atomically', () => {
+  assert.deepEqual(plain(model.paneBatch(['task:1','codex:1','task:1'],['codex:1'],8)),{ids:['task:1','codex:1'],additions:['task:1'],fits:true});
+  const rejected = model.paneBatch(['task:1','claude:2'],['codex:1'],2);
+  assert.equal(rejected.fits,false); assert.equal(rejected.additions.length,2);
+});
+test('restoring a session retains its pane on a transient read failure and removes a genuinely missing session', async () => {
+  const html = boardHtml();
+  const source = html.slice(html.indexOf('async function openCard('), html.indexOf('function updateNoteLine('));
+  const panes = []; let error = new Error('db_busy'), closed = 0;
+  const context = vm.createContext({ panes, PANE_MAX: 8, state: {board:{lists:[]}},
+    closePopover: () => {}, bridge: {callTool: async () => {throw error;}},
+    newPane: id => {const p={id,el:{replaceChildren(...nodes){this.nodes=nodes;}}};panes.push(p);return p;},
+    closePane: () => {closed++;panes.splice(0);}, h: (tag,attrs) => ({tag,attrs}), toast: () => {},
+  });
+  await vm.runInContext(`${source}\nopenCard('codex:mock',{});`,context);
+  assert.equal(panes.length,1); assert.equal(closed,0);
+  assert.ok(panes[0].el.nodes.some(n => n.attrs.text === '再読み込み'));
+  panes.splice(0); error = new Error('セッションが見つかりません: codex:mock');
+  await vm.runInContext(`openCard('codex:mock',{});`,context);
+  assert.equal(panes.length,0); assert.equal(closed,1);
+});
+test('restoration saves surviving session/task panes after a missing card without transiently leaving the dashboard', async () => {
+  const html = boardHtml();
+  const source = html.slice(html.indexOf('async function restorePanes('), html.indexOf('function sharedUiSnapshot('));
+  const panes = []; let remembered, folded = 0;
+  const context = vm.createContext({ store: {get:()=>[{id:'codex:gone'},{id:'task:survives'}]}, panes, restoringPanes:false,
+    PANE_MAX:8, PANE_SPACES:[], PANE_MODES:[], PANE_SIZES:[], oneOf:(_v,_list,fallback)=>fallback,
+    openCard:async id=>{assert.equal(context.restoringPanes,true);if(id==='task:survives')panes.push({id});},
+    savePanes:()=>{remembered=panes.map(p=>p.id);}, workspace:{page:'cards'}, setDash:()=>{folded++;},
+  });
+  await vm.runInContext(`${source}\nrestorePanes();`,context);
+  assert.deepEqual(remembered,['task:survives']); assert.equal(folded,0); assert.equal(context.restoringPanes,false);
+});
 test('task autosave advances only the submitted draft baseline', async()=>{
   const w=workspaceHarness(), input={value:'保存する値',defaultValue:''};
   let release;
@@ -134,10 +178,11 @@ test('task autosave advances only the submitted draft baseline', async()=>{
   await w.saveField(input,async()=>{throw new Error('db_busy');});
   assert.equal(w.draftValues.get(input),'保存する値');
 });
-test('filtered-out shared tasks retain their identifier and restore after filters change',()=>{
-  let found=false,opened=0;
-  const w=workspaceHarness({findCard:()=>found,sharedUi:{},openTaskModal:()=>{opened++;}});
-  w.pendingTask='task:mock';w.page='home';w.navigate=(page)=>{w.page=page;};
-  w.restoreTask();assert.equal(w.pendingTask,'task:mock');assert.equal(opened,0);
-  found=true;w.restoreTask();assert.equal(w.pendingTask,null);assert.equal(opened,1);assert.equal(w.page,'home');
+test('legacy task modals migrate to panes independently of home filters', async () => {
+  let opened = 0, saved = 0;
+  const w = workspaceHarness({ openTaskModal: async () => { opened++; }, savePanes: () => { saved++; } });
+  w.pendingTask = 'task:mock'; w.page = 'home';
+  await w.restoreTask();
+  assert.equal(w.pendingTask, null); assert.equal(opened, 1); assert.equal(saved, 1); assert.equal(w.page, 'home');
+  await w.restoreTask(); assert.equal(opened, 1);
 });

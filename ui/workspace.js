@@ -34,7 +34,7 @@ const workspace = {
     this.content.querySelector('.topbar').prepend(this.mobileButton());
     this.content.querySelector('#logo').textContent = 'ホーム';
     this.content.querySelector('#sideBtn').setAttribute('aria-label', '絞り込みパネル');
-    this.content.querySelector('#sideBtn').title = 'カテゴリ・プロジェクトの絞り込み（b）';
+    this.content.querySelector('#sideBtn').title = 'カテゴリの絞り込み（b）';
     for (const id of ['rulesBtn','viewsBtn','analyticsBtn','labelsBtn','hostsBtn','settingsBtn']) {
       const el = this.content.querySelector(`#${id}`); el.hidden = true; el.removeAttribute('data-pri');
     }
@@ -47,6 +47,7 @@ const workspace = {
       if (document.body.classList.contains('nav-open') && !this.nav.contains(e.target) && !e.target.closest('.nav-mobile')) this.closeMobile();
     });
     this.setCollapsed(this.collapsed, false);
+    buildSelectionBar();
     this.initialized = true;
     this.navigate(this.page, { save: false, reload: false });
     setInterval(() => {
@@ -78,7 +79,8 @@ const workspace = {
   },
   utilityPage() { return !['home', 'analytics'].includes(this.page) && !(this.page === 'cards' && (panes.length || this.activeTask)); },
   navigate(value, { save = true, reload = true } = {}) {
-    const next = workspacePage(value);
+    const requested = workspacePage(value);
+    const next = requested === 'cards' && !panes.length && !store.get('panes', []).length && !this.pendingTask ? 'home' : requested;
     this.switching = true;
     try {
       this.page = next; state.view = next === 'analytics' ? 'analytics' : 'board';
@@ -123,18 +125,13 @@ const workspace = {
       if (!this.draftValues.has(el)) this.draftValues.set(el, el.value);
     }
   },
-  restoreTask() {
+  async restoreTask() {
     const id = this.pendingTask;
-    if (typeof id === 'string' && id.startsWith('task:') && findCard(id)) {
-      this.pendingTask = null;
-      const wasApplying = sharedUi.applying;
-      const page = this.page;
-      sharedUi.applying = true;
-      try {
-        openTaskModal(id);
-        if (page !== 'cards') this.navigate(page, { save: false, reload: false });
-      } finally { sharedUi.applying = wasApplying; }
-    }
+    if (typeof id !== 'string' || !id.startsWith('task:')) return;
+    this.pendingTask = null;
+    store.set('activeTask', null);
+    await openTaskModal(id, { space: null, mode: null, size: null, note: false, free: null });
+    savePanes();
   },
   async saveField(el, save) {
     const value = el.value;
@@ -150,7 +147,6 @@ const workspace = {
   },
   render(board) {
     if (!this.initialized) return;
-    this.restoreTask();
     this.renderLimitChip(board.limits); this.syncShell();
     if (!this.utilityPage()) return;
     const key = this.page === 'settings' ? `settings:${this.settingsTab}` : this.page;
@@ -168,8 +164,6 @@ const workspace = {
     else if (this.page === 'settings') this.renderSettings(entry, anchor, body);
     else if (this.page === 'directories') this.renderDirectories(entry, board);
     else if (this.page === 'usage') this.renderUsage(entry, board);
-    else if (this.page === 'cards') body.append(h('h2', { text: '開いているカードはありません' }),
-      h('p', { text: this.pendingTask ? '開いていたタスクカードは現在の絞り込み対象外です。ホームで絞り込みを解除すると復元します。' : 'サイドバーのホームからカードを選ぶと、ここに表示されます。' }));
     this.trackDrafts(entry.el);
     bridge.reportSize();
   },
@@ -197,6 +191,7 @@ const workspace = {
       h('button', { class: 'menu-item grow', text: d.name, onclick: () => {
         this.selectedDirectory = d.id; this.renderDirectories(entry, state.board);
       } }), h('span', { class: 'count', text: d.count ?? '' })));
+    listing.append(h('button', { class: 'menu-item', text: `カテゴリ無し (${board.uncategorizedCount || 0})`, title: '分類を持たないカードの特殊カテゴリです', onclick: () => { this.navigate('home', { reload: false }); setScope({ directory: '__none' }); } }));
     const name = h('input', { class: 'text-input', placeholder: '新しいカテゴリ', 'aria-label': '新しいカテゴリ' });
     const create = () => name.value.trim() && act('canban_create_directory', { name: name.value.trim(), color: 'blue' }, { okMsg: 'カテゴリを追加しました' })
       .then(() => { name.value = ''; this.render(state.board); }).catch(() => {});
@@ -209,13 +204,7 @@ const workspace = {
       editing.append(a, mount); directoryMenu(a, selected.id);
     } else editing.append(h('p', { text: 'カテゴリを追加してカードを整理できます。' }));
     grid.append(listing, editing); entry.el.append(grid);
-    if (board.codexProjects?.length) listing.append(h('button', { class: 'btn', text: 'Codexのプロジェクトから取り込む', onclick: e => importCodexProject(e.currentTarget) }));
-    const projects = h('div', { class: 'page-panel' }, h('h2', { text: 'プロジェクト' }),
-      h('p', { class: 'page-help', text: 'セッションから取得したプロジェクトです。選ぶとホームを絞り込みます。' }));
-    projects.append(...board.projects.map(p => h('button', { class: 'menu-item', text: p.name, onclick: () => {
-      this.navigate('home', { reload: false }); setScope({ project: p.name });
-    } })));
-    entry.el.append(projects); this.trackDrafts(entry.el);
+    this.trackDrafts(entry.el);
   },
   usageAccounts(board) {
     if (board?.accounts) return board.accounts.accounts;

@@ -41,6 +41,7 @@ export function defaultSettings() {
     seenAllAt: null,
     // Saved views: named filter / swimlane presets.
     views: [],
+    ignoredCategorySources: [],
     // Sending prompts to sessions (headless turns through the agents' CLIs).
     dispatch: defaultDispatch(),
     // Accounts: display names, and the agents' extra config folders (see accounts.mjs).
@@ -103,6 +104,7 @@ function normalizeSettings(s) {
     rules: Array.isArray(s?.rules) ? s.rules.map(normalizeRule).filter(Boolean) : d.rules,
     seenAllAt: typeof s?.seenAllAt === 'number' ? s.seenAllAt : null,
     views: Array.isArray(s?.views) ? s.views.map(normalizeView).filter(Boolean).slice(0, 20) : [],
+    ignoredCategorySources: Array.isArray(s?.ignoredCategorySources) ? [...new Set(s.ignoredCategorySources.filter(k => typeof k === 'string'))] : [],
     dispatch: normalizeDispatch(s?.dispatch),
     accounts: normalizeAccounts(s?.accounts),
   };
@@ -116,16 +118,32 @@ function normalizePaths(paths) {
 }
 function normalizeDirectory(d) {
   if (!d || typeof d.id !== 'string' || !String(d.name || '').trim()) return null;
-  return { id: d.id, name: String(d.name).trim().slice(0, 80), color: LIST_COLORS.includes(d.color) ? d.color : null, paths: normalizePaths(d.paths) };
+  return { id: d.id, name: String(d.name).trim().slice(0, 80), color: LIST_COLORS.includes(d.color) ? d.color : null, paths: normalizePaths(d.paths),
+    ...(Array.isArray(d.sourceKeys) ? { sourceKeys: [...new Set(d.sourceKeys.filter(k => typeof k === 'string'))] } : {}) };
 }
 
-// Explicit assignment wins ('__none' opts out); otherwise the longest matching path prefix.
-export function resolveDirectory(state, card, cwd) {
+// Agent-owned grouping becomes a Canban category; Codex has no cwd fallback.
+export function sessionCategory(session) {
+  if (!session || !['codex', 'claude'].includes(session.agent)) return null;
+  const host = session.host?.id || 'local';
+  const group = session.agent === 'codex' ? session.codexProject : session.claudeGroup;
+  const name = String(group?.name || (session.agent === 'claude' ? session.cwd?.replace(/\/+$/, '').split('/').pop() || session.cwd || '' : '')).trim().slice(0, 80);
+  if (!name) return null;
+  return { name, key: JSON.stringify([session.agent, host, group ? 'group' : 'cwd', group ? group.id || group.name : session.cwd]) };
+}
+
+// Explicit assignment wins ('__none' opts out), then the agent's grouping.
+// Task cards and callers without source metadata retain the legacy path rules.
+export function resolveDirectory(state, card, cwd, session = null) {
   const id = card?.directoryId;
   if (id === '__none') return null;
   if (id) {
     const d = (state.directories || []).find((x) => x.id === id);
     if (d) return d;
+  }
+  if (session && ['codex', 'claude'].includes(session.agent)) {
+    const source = sessionCategory(session);
+    return source ? (state.directories || []).find(d => d.sourceKeys?.includes(source.key)) || null : null;
   }
   if (!cwd) return null;
   const clean = String(cwd).replace(/\/+$/, '');
@@ -599,6 +617,23 @@ export class Store {
   }
 
   // ---- directories -------------------------------------------------------
+  syncSessionCategories(sessions) {
+    const current = this.load();
+    const ignored = new Set(current.settings.ignoredCategorySources);
+    const sources = new Map(sessions.map(sessionCategory).filter(source => source && !ignored.has(source.key)).map(source => [source.key, source]));
+    // No write/revision churn when the categories are already present.
+    if ([...sources.keys()].every(key => current.directories.some(d => d.sourceKeys?.includes(key)))) return false;
+    return this.mutate(s => {
+      for (const source of sources.values()) {
+        if (s.settings.ignoredCategorySources.includes(source.key)) continue;
+        if (s.directories.some(d => d.sourceKeys?.includes(source.key))) continue;
+        let dir = s.directories.find(d => d.name === source.name);
+        if (!dir) { dir = { id: newId('dir'), name: source.name, color: null, paths: [] }; s.directories.push(dir); }
+        dir.sourceKeys = [...(dir.sourceKeys || []), source.key];
+      }
+      return true;
+    });
+  }
   async createDirectory({ name, color = null, paths = [] }) {
     name = String(name || '').trim();
     if (!name) throw new Error('カテゴリ名を入力してください');
@@ -623,6 +658,8 @@ export class Store {
 
   deleteDirectory({ directoryId }) {
     return this.mutate((s) => {
+      const deleted = s.directories.find(d => d.id === directoryId);
+      s.settings.ignoredCategorySources = [...new Set([...s.settings.ignoredCategorySources, ...(deleted?.sourceKeys || [])])];
       s.directories = s.directories.filter((d) => d.id !== directoryId);
       for (const c of Object.values(s.cards)) if (c.directoryId === directoryId) delete c.directoryId;
       return { deleted: directoryId };
