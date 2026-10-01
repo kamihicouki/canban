@@ -20,3 +20,6 @@ function taskVisiblePanes(taskId, links, saved, preset, activeSessionId, page = 
 function taskRequestText(title, description, note) {
   return [title, description, note].map(s => String(s || '').trim()).filter(Boolean).join('\n\n');
 }
+function taskPaneLayoutDefaults() {
+  return { main: ['conv', 'memo', 'related', 'send'], heights: { conv: 110, memo: 120, related: 110 } };
+}

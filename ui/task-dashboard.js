@@ -79,7 +79,7 @@ taskDash = {
     let ctx = this.contexts.get(id);
     if (!ctx) {
       ctx = { id, cache: new Map(), feeds: new Map(), generation: 0, dirty: false, blocked: false, revision: record.revision,
-        state: record.state || { version: 1, preset: 'A', activeSessionId: null, panes: [], paneGlobal: { space: 'fixed', arrange: 'grid', mode: 'preview', size: 'L' }, paneLayout: normalizePaneLayout({ main: ['conv', 'memo', 'related', 'send'] }, PANE_LAYOUT_DEF, PANE_HEIGHTS) } };
+        state: record.state || { version: 1, preset: 'A', activeSessionId: null, panes: [], paneGlobal: { space: 'fixed', arrange: 'grid', mode: 'preview', size: 'L' }, paneLayout: normalizePaneLayout(taskPaneLayoutDefaults(), PANE_LAYOUT_DEF, PANE_HEIGHTS) } };
       this.contexts.set(id, ctx);
     } else if (record.revision !== ctx.revision) {
       if (ctx.dirty) { ctx.blocked = true; ctx.status = '別の画面で更新されました'; }
@@ -204,20 +204,53 @@ taskDash = {
     });
     else { if (parent) this.paintRelated(parent); this.paint(); }
   },
+  relationMenu(anchor, id) {
+    const ctx = this.active; if (!ctx) return;
+    const session = ctx.sessions.find(s => s.id === id);
+    const shown = panes.some(p => p.id === id);
+    popover(anchor, session?.title || '関連する会話', h('div', {},
+      h('button', { class: 'menu-item', text: shown ? '表示から閉じる（紐付けを維持）' : '会話を表示する', onclick: () => {
+        closePopover(); shown ? this.close(id) : this.select(id);
+      } }),
+      h('button', { class: 'menu-item danger-text', text: 'タスクとの紐付けを解除', onclick: async () => {
+        await act('canban_unlink_session', { taskId: ctx.id, sessionId: id }, { okMsg: 'タスクとの紐付けを解除しました' }); closePopover();
+      } })), { width: 340 });
+  },
   paintRelated(parent) {
     const ctx = this.active; if (!ctx) return;
     const slot = $('.psec[data-sec="related"] .psec-b', parent.el); if (!slot) return;
     const links = this.primaryLinks(ctx);
-    const heading = $('.psec[data-sec="related"] h3', parent.el); if (heading) heading.textContent = `関連する通常セッション（${links.length}）`;
+    const heading = $('.psec[data-sec="related"] h3', parent.el); if (heading) heading.textContent = `関連する会話 ${links.length}`;
+    const header = $('.psec[data-sec="related"] .psec-h', parent.el);
+    if (header && !$('.task-link', header)) {
+      const link = h('button', { class: 'icon-btn task-link', text: '＋', title: 'セッションを紐付ける', 'aria-label': 'セッションを紐付ける', onclick: e => this.linkMenu(e.currentTarget) });
+      $('.sp', header)?.before(link);
+    }
+    const signature = JSON.stringify([links.map(id => [id, ctx.sessions.find(s => s.id === id), ctx.state.panes.find(p => p.id === id)?.hidden]), parent.taskCard?.pending]);
+    if (slot.dataset.signature === signature) return;
+    slot.dataset.signature = signature;
     slot.replaceChildren(...(links.length ? links.map(id => {
-      const s = ctx.sessions.find(s => s.id === id);
-      return h('div', { class: 'sub-row' }, h('span', { class: `sdot s-${s?.status || 'idle'}` }),
-        h('button', { class: 'link-btn ellipsis grow', text: s?.title || `未取得: ${id}`, onclick: () => this.select(id) }),
-        h('button', { class: 'link-btn', text: 'タスクから外す', onclick: async () => {
-          await act('canban_unlink_session', { taskId: ctx.id, sessionId: id }, { okMsg: 'タスクとの関連を解除しました' });
-        } }));
-    }) : [h('p', { class: 'muted', text: '通常のセッションはまだ紐付いていません。' })]));
+      const s = ctx.sessions.find(s => s.id === id), hidden = ctx.state.panes.find(p => p.id === id)?.hidden;
+      return h('div', { class: 'sub-row task-related-row', 'data-session-id': id },
+        s ? h('span', { class: `badge ${s.agent}`, text: s.agent === 'codex' ? 'Codex' : 'Claude' }) : null,
+        h('span', { class: `sdot s-${s?.status || 'idle'}` }),
+        h('button', { class: 'link-btn ellipsis grow', text: s?.title || `未取得: ${id}`, title: hidden ? '表示から閉じています。クリックすると再表示します' : STATUS_LABELS[s?.status] || '会話を表示', onclick: () => this.select(id) }),
+        h('button', { class: 'icon-btn', text: '…', 'aria-label': `${s?.title || id}の紐付け操作`, onclick: e => this.relationMenu(e.currentTarget, id) }));
+    }) : [h('button', { class: 'btn task-empty-link', text: 'セッションを紐付ける', onclick: e => this.linkMenu(e.currentTarget) })]));
     for (const pending of parent.taskCard?.pending || []) slot.append(h('p', { class: 'muted', text: `${pending.expired ? '見つかりません' : '開始待ち'}: ${pending.agent === 'codex' ? 'Codex' : 'Claude'}` }));
+  },
+  sessionMenu(anchor) {
+    const ctx = this.active; if (!ctx) return;
+    const rows = this.primaryLinks(ctx).map(id => {
+      const s = ctx.sessions.find(s => s.id === id), hidden = ctx.state.panes.find(p => p.id === id)?.hidden;
+      return h('button', { class: 'menu-item task-session-row', onclick: () => { closePopover(); this.select(id); } },
+        h('span', { class: `badge ${s?.agent || 'codex'}`, text: s?.agent === 'claude' ? 'Claude' : 'Codex' }),
+        h('span', { class: 'grow' }, h('span', { text: s?.title || `未取得: ${id}` }), h('small', { class: 'muted', text: hidden ? '表示から閉じています' : STATUS_LABELS[s?.status] || '未取得' })),
+        ctx.state.activeSessionId === id && !hidden ? h('span', { text: '✓' }) : null);
+    });
+    const p = popover(anchor, '関連する会話', h('div', {}, ...rows,
+      h('button', { class: 'menu-item task-link-action', text: '＋ セッションを紐付ける', onclick: e => this.linkMenu(e.currentTarget) })), { width: 360 });
+    $('button', p)?.focus({ preventScroll: true });
   },
   async linkMenu(anchor) {
     const ctx = this.active; if (!ctx) return;
@@ -247,37 +280,47 @@ taskDash = {
     toast('説明・メモを取り込みました。内容と実行状態を確認してから送信してください');
   },
   paintStatus() {
-    const ctx = this.active, slot = $('.task-save-status', paneLayer); if (!slot || !ctx) return;
-    slot.textContent = ctx.blocked ? ctx.status : ctx.inflight ? '保存中…' : ctx.dirty ? ctx.status?.startsWith('保存できません') ? ctx.status : '変更を保存中…' : '保存済み';
-    const reload = $('.task-reload', paneLayer); if (reload) reload.hidden = !ctx.blocked;
-    const retry = $('.task-save-retry', paneLayer); if (retry) retry.hidden = !ctx.dirty || ctx.blocked || !ctx.status?.startsWith('保存できません');
+    const ctx = this.active, slot = $('.task-save-status', paneBar); if (!slot || !ctx) return;
+    const error = ctx.blocked || (ctx.dirty && ctx.status?.startsWith('保存できません'));
+    const label = ctx.blocked ? ctx.status : ctx.inflight || ctx.dirty && !error ? '変更を保存中…' : error ? ctx.status : '保存済み';
+    slot.textContent = error ? '!' : ctx.inflight || ctx.dirty ? '◌' : '✓';
+    slot.title = label; slot.setAttribute('aria-label', label); slot.dataset.error = String(!!error);
+    const notice = $('.task-save-notice', paneLayer);
+    if (notice) {
+      notice.hidden = !error;
+      $('.task-save-message', notice).textContent = error ? label : '';
+      $('.task-reload', notice).hidden = !ctx.blocked;
+      $('.task-save-retry', notice).hidden = !!ctx.blocked || !error;
+    }
   },
   paint() {
-    this.bar?.remove(); this.bar = null;
-    const ctx = this.active; if (!ctx) return;
+    const ctx = this.active, slot = $('.pb-context', paneBar);
+    if (!ctx) { slot.hidden = true; slot.replaceChildren(); this.barSignature = null; this.notice?.remove(); this.notice = null; return; }
+    slot.hidden = false;
     const parent = ctx.cache.get(ctx.id);
     const title = parent?.taskCard?.title || findCard(ctx.id)?.card.title || 'タスク';
+    const signature = JSON.stringify([ctx.id, title, ctx.state.preset, ctx.state.activeSessionId, ctx.page, ctx.view?.pages,
+      this.primaryLinks(ctx).map(id => [id, ctx.sessions.find(s => s.id === id)?.title, ctx.state.panes.find(p => p.id === id)?.hidden])]);
+    if (this.barSignature === signature && slot.childElementCount) { this.paintStatus(); return; }
+    this.barSignature = signature;
     const modes = h('div', { class: 'seg task-presets', role: 'group', 'aria-label': 'タスクの表示方式' },
-      [['A', 'A 左右'], ['B', 'B 上下'], ['C', 'C 並列'], ['free', '自由配置']].map(([value, label]) => h('button', { text: label, 'aria-pressed': String(ctx.state.preset === value), onclick: () => this.preset(value) })));
-    const select = h('select', { class: 'task-session-select text-input', 'aria-label': '関連する通常セッション', onchange: e => this.select(e.target.value) },
-      h('option', { value: '', text: '会話を選ぶ', disabled: true }), this.primaryLinks(ctx).map(id => {
-        const s = ctx.sessions.find(s => s.id === id), pref = ctx.state.panes.find(p => p.id === id);
-        return h('option', { value: id, text: `${s?.title || `未取得: ${id}`}${pref?.hidden ? '（表示から閉じています）' : ''}` });
-      }));
-    select.value = ctx.state.activeSessionId || '';
-    const page = ctx.view?.pages > 1 && ['C', 'free'].includes(ctx.state.preset) ? h('span', { class: 'task-pages row' },
-      h('button', { class: 'btn', text: '前へ', disabled: ctx.page === 0, onclick: () => this.run(async () => { ctx.page--; await this.show(); this.changed(); }) }),
-      `${ctx.page + 1} / ${ctx.view.pages}`,
-      h('button', { class: 'btn', text: '次へ', disabled: ctx.page + 1 >= ctx.view.pages, onclick: () => this.run(async () => { ctx.page++; await this.show(); this.changed(); }) })) : null;
-    this.bar = h('div', { class: 'task-dashboard-bar', role: 'region', 'aria-label': 'タスクのダッシュボード' },
-      h('strong', { class: 'task-dashboard-title', text: title }), h('span', { class: 'task-parent-label', text: 'タスクの作業画面' }), modes, select, page,
-      h('button', { class: 'btn', text: '＋ セッションを紐付ける', onclick: e => this.linkMenu(e.currentTarget) }),
-      h('button', { class: 'btn', text: '説明・メモから追加依頼', onclick: () => this.prepareRequest() }),
-      h('span', { class: 'task-save-status', role: 'status' }),
-      h('button', { class: 'btn task-reload', text: '保存された配置を読み込む', hidden: true, onclick: () => this.run(() => this.reload()) }),
-      h('button', { class: 'btn task-save-retry', text: '保存を再試行', hidden: true, onclick: () => this.flush() }),
-      h('button', { class: 'btn', text: '一般ダッシュボードへ', onclick: () => this.leave() }));
-    paneBar.after(this.bar); this.paintStatus();
+      [['A', 'A 左右'], ['B', 'B 上下'], ['C', 'C 並列'], ['free', '自由']].map(([value, label]) => h('button', { type: 'button', text: label, 'aria-pressed': String(ctx.state.preset === value), onclick: () => this.preset(value) })));
+    const current = ctx.sessions.find(s => s.id === ctx.state.activeSessionId);
+    const select = h('button', { class: 'hbtn task-session-select', title: '関連する会話を選ぶ', 'aria-label': '関連する会話を選ぶ', onclick: e => this.sessionMenu(e.currentTarget) },
+      h('span', { class: 'ellipsis', text: current?.title || (ctx.state.activeSessionId ? `未取得: ${ctx.state.activeSessionId}` : '会話を選ぶ') }), h('span', { html: picon('chev', 14) }));
+    const page = ctx.view?.pages > 1 && ['C', 'free'].includes(ctx.state.preset) ? h('span', { class: 'task-pages' },
+      h('button', { class: 'hbtn', text: '‹', 'aria-label': '前の会話ページ', disabled: ctx.page === 0, onclick: () => this.run(async () => { ctx.page--; await this.show(); this.changed(); }) }),
+      h('span', { text: `${ctx.page + 1} / ${ctx.view.pages}`, 'aria-label': '会話のページ' }),
+      h('button', { class: 'hbtn', text: '›', 'aria-label': '次の会話ページ', disabled: ctx.page + 1 >= ctx.view.pages, onclick: () => this.run(async () => { ctx.page++; await this.show(); this.changed(); }) })) : null;
+    slot.replaceChildren(h('button', { class: 'hbtn task-home', title: '一般ダッシュボードへ戻る', 'aria-label': '一般ダッシュボードへ', html: picon('view', 16), onclick: () => this.leave() }),
+      h('strong', { class: 'task-dashboard-title', text: title, title }), h('span', { class: 'task-save-status', role: 'status' }), modes, select, ...(page ? [page] : []));
+    if (!this.notice?.isConnected) {
+      this.notice = h('div', { class: 'task-save-notice', hidden: true, role: 'status' }, h('span', { class: 'task-save-message' }),
+        h('button', { class: 'btn task-reload', text: '最新の配置を読み込む', hidden: true, onclick: () => this.run(() => this.reload()) }),
+        h('button', { class: 'btn task-save-retry', text: '保存を再試行', hidden: true, onclick: () => this.flush() }));
+      paneBar.after(this.notice);
+    }
+    this.paintStatus();
   },
   layout(stack) {
     const ctx = this.active;
@@ -298,7 +341,7 @@ taskDash = {
       const width = panes.length === 1 ? W - gap * 2 : Math.max(320, Math.floor((W - gap * 3) * .38));
       ordered.forEach((p, i) => put(p, i ? width + gap * 2 : gap, gap, i ? W - width - gap * 3 : width, H - gap * 2));
     } else {
-      const columns = Math.max(1, Math.min(3, panes.length, Math.floor((W - gap) / 340)));
+      const columns = Math.max(1, Math.min(4, panes.length, Math.floor((W - gap) / 240)));
       const width = (W - gap * (columns + 1)) / columns, height = Math.max(400, H - gap * 2);
       ordered.forEach((p, i) => put(p, gap + (i % columns) * (width + gap), gap + Math.floor(i / columns) * (height + gap), width, height));
       bottom = Math.max(H, Math.ceil(panes.length / columns) * (height + gap) + gap);

@@ -131,3 +131,21 @@ test('parent metadata follows linked session status without rebuilding draft inp
   assert.equal(parent.status,'waiting');assert.equal(parent.taskCard.title,'調査');assert.equal(parent.el.draft,'目的の編集中');
   await ctrl.leave();
 });
+
+test('parallel task layout fits a parent and three conversations in the desktop canvas',async()=>{
+  const {ctrl,panes,records,context}=harness();
+  records.get('task:a').links=['codex:a','codex:b','codex:c'];
+  await ctrl.open('task:a');await ctrl.preset('C');
+  context.paneStage={clientWidth:1096,clientHeight:666,classList:{toggle(){}}};
+  context.paneCanvas.style={};context.PANE_GAP=12;
+  context.setXY=(el,x,y)=>Object.assign(el.style,{left:x,top:y});
+  for(const p of panes)p.el.classList.remove=()=>{};
+  assert.equal(ctrl.layout(false),true);
+  assert.equal(panes.length,4);
+  assert.equal(new Set(panes.map(p=>p.el.style.top)).size,1);
+  for(const p of panes){
+    assert.ok(parseFloat(p.el.style.width)>=240);
+    assert.ok(p.el.style.left+parseFloat(p.el.style.width)<=1096);
+  }
+  await ctrl.leave();
+});

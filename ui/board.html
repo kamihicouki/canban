@@ -1174,6 +1174,7 @@ function paintSelection() {
   if (!selectionBar) return;
   const allowed = new Set(visibleCardIds());
   for (const id of selectedCards) if (!allowed.has(id)) selectedCards.delete(id);
+  selectionBar.hidden = !selectedCards.size && !batchOpening;
   selectionBar.querySelector('.selection-count').textContent = `${selectedCards.size} 枚選択`;
   const open = selectionBar.querySelector('.selection-open');
   open.disabled = !selectedCards.size || batchOpening;
@@ -1394,7 +1395,7 @@ function closePopover(p = null) {
   const all = [...document.querySelectorAll('.popover')];
   const gone = p ? all.slice(all.indexOf(p)) : all;
   if (!gone.length || (p && !p.isConnected)) return;
-  gone.forEach((x) => x.remove());
+  gone.forEach((x) => { x.remove(); x.onClose?.(); });
   if (!document.activeElement || document.activeElement === document.body) refocus(gone[0].returnFocus);
 }
 function popover(anchor, title, body, { width, stack = false } = {}) {
@@ -1404,8 +1405,8 @@ function popover(anchor, title, body, { width, stack = false } = {}) {
     return anchor._pagePanel;
   }
   const returnFocus = stack ? document.activeElement : document.querySelector('.popover')?.returnFocus || document.activeElement;
-  if (!stack) closePopover();
   const r = anchor.getBoundingClientRect();
+  if (!stack) closePopover();
   const p = h('div', { class: 'popover', role: 'dialog', 'aria-label': title, style: width ? { width: `${width}px` } : null },
     h('h3', { text: title }),
     h('button', { class: 'icon-btn close', 'aria-label': '閉じる', text: '✕', onclick: () => closePopover(p) }),
@@ -1552,6 +1553,7 @@ function optionsMenu(anchor) {
   const opt = (key, label) => h('label', { class: 'menu-item row' },
     h('input', { type: 'checkbox', checked: f[key], onchange: (e) => { f[key] = e.target.checked; saveFilters(); load(); } }), label);
   popover(anchor, '表示オプション', h('div', {},
+    h('button', { class: 'menu-item', text: '絞り込み内のカードをすべて選択', onclick: () => { visibleCardIds().forEach(id => selectedCards.add(id)); paintSelection(); closePopover(); } }),
     opt('includeArchived', 'アーカイブ済みセッションを表示'),
     opt('includeSubagents', 'サブエージェント／レビュー用スレッドを表示'),
     opt('pinnedOnly', 'Codex アプリでピン留めしたものだけ（📌）'),
@@ -1661,7 +1663,7 @@ const paneStage = h('div', { class: 'pane-stage' });
 const paneCanvas = h('div', { class: 'pane-canvas' });
 paneStage.append(paneCanvas);
 paneLayer.append(h('div', { class: 'pane-dim' }), paneBar, paneStage);
-paneLayer.addEventListener('click', e => { if (!e.target.closest('.pane, .pane-bar, .task-dashboard-bar, .popover') && !sectionGesture && Date.now() - lastSectionDrag > 300) setDash(false); });
+paneLayer.addEventListener('click', e => { if (!e.target.closest('.pane, .pane-bar, .task-save-notice, .popover') && !sectionGesture && Date.now() - lastSectionDrag > 300) setDash(false); });
 document.body.append(paneLayer);
 const panes = []; // open panes in the order they were opened; the order of the fixed ones is the order of their tiles
 let restoringPanes = false;
@@ -1847,11 +1849,11 @@ function paneButtons(p) {
   const nowLabel = own ? labelOf(PANE_SPACES, own) : `全体設定に従う（${labelOf(PANE_SPACES, space)}）`;
   const nextLabel = next ? labelOf(PANE_SPACES, next) : '全体設定に従う';
   return [
-    pbtn(own ? (own === 'fixed' ? 'lock' : 'free') : 'follow', `空間: ${nowLabel}。押すと ${nextLabel}`, () => setPaneProp(p, 'space', next), 'space-btn'),
+    taskDash?.active ? null : pbtn(own ? (own === 'fixed' ? 'lock' : 'free') : 'follow', `空間: ${nowLabel}。押すと ${nextLabel}`, () => setPaneProp(p, 'space', next), 'space-btn'),
     pbtn('view', 'このカードの表示（モード・サイズ・空間）', (e) => paneViewMenu(p, e.currentTarget)),
-    h('button', { class: 'pane-fold', type: 'button', title: 'カードを付箋に畳む・広げる', onclick: () => { p.note = !p.note; refreshPane(p); layoutPanes(); savePanes(); paintPaneBar(); } }, h('span', { html: picon('note', 14) }), p.note ? '広げる' : '畳む'),
-    h('button', { class: 'pane-close', type: 'button', title: 'このカードを閉じる', 'aria-label': '閉じる', onclick: () => closePane(p.id) }, h('span', { html: picon('close', 14) }), '閉じる'),
-  ];
+    h('button', { class: 'pane-fold', type: 'button', title: p.note ? 'カードを広げる' : 'カードを付箋に畳む', 'aria-label': p.note ? 'カードを広げる' : 'カードを付箋に畳む', onclick: () => { p.note = !p.note; refreshPane(p); layoutPanes(); savePanes(); paintPaneBar(); } }, h('span', { html: picon('note', 14) })),
+    h('button', { class: 'pane-close', type: 'button', title: 'このカードを表示から閉じる', 'aria-label': '閉じる', onclick: () => closePane(p.id) }, h('span', { html: picon('close', 14) })),
+  ].filter(Boolean);
 }
 function paintPaneButtons(p) { const slot = $('.ph-btns', p.el); if (slot) slot.replaceChildren(...paneButtons(p)); }
 
@@ -1859,7 +1861,7 @@ let dashOpen = store.get('dashOpen', true) !== false;
 let paneCollect = store.get('paneCollect', true) !== false;
 let orbPos = (() => { const v = store.get('orbPos', null); return v && ['left', 'right', 'top', 'bottom'].includes(v.edge) && Number.isFinite(v.t) ? { edge: v.edge, t: v.t } : { edge: 'right', t: 1 }; })();
 // ---- the global bar ----
-const barOpen = store.get('paneBarOpen', false);
+let paneSettingsBody, paneSettingsPopover;
 function buildPaneBar() {
   const seg = (key, label, list) => h('div', { class: 'pb-group' }, h('span', { class: 'pb-label', text: label }),
     h('div', { class: 'seg', role: 'group', 'aria-label': label }, ...list.map(([v, t]) => h('button', { type: 'button', 'data-k': key, 'data-v': v, 'aria-pressed': 'false', onclick: () => setGlobal(key, v) }, t))));
@@ -1873,24 +1875,33 @@ function buildPaneBar() {
   const noteG = h('div', { class: 'pb-group' },
     btn('すべて付箋に', () => bulk((p) => { p.note = true; }), 'すべてのカードを付箋にたたむ'),
     btn('すべて広げる', () => bulk((p) => { p.note = false; }), 'すべてのカードを広げる'));
-  const toggle = h('button', { class: 'hbtn', type: 'button', 'aria-expanded': String(paneBarOpen), onclick: () => { paneBarOpen = !paneBarOpen; store.set('paneBarOpen', paneBarOpen); paintPaneBar(); layoutPanes(); } }, '表示設定');
+  const toggle = h('button', { class: 'hbtn pb-settings-toggle', type: 'button', 'aria-expanded': 'false', onclick: e => {
+    if (paneSettingsPopover?.isConnected) { closePopover(paneSettingsPopover); return; }
+    paneSettingsPopover = popover(e.currentTarget, '表示設定', paneSettingsBody, { width: 380 });
+    paneSettingsPopover.classList.add('pane-settings-popover');
+    paneSettingsPopover.onClose = () => { paneBarOpen = false; paintPaneBar(); };
+    paneBarOpen = true; paintPaneBar();
+    $('button', paneSettingsPopover)?.focus({ preventScroll: true });
+  } }, h('span', { html: picon('view', 16) }), '表示設定');
   const collectBtn = h('button', { class: 'hbtn', type: 'button', 'aria-pressed': String(paneCollect), title: '畳んでいるとき、カードを選んでも開かずにダッシュボードへ足すだけにします',
     onclick: (e) => { paneCollect = !paneCollect; store.set('paneCollect', paneCollect); e.currentTarget.setAttribute('aria-pressed', String(paneCollect)); } }, '畳んだまま足す');
   const ratio = h('input', { type: 'range', min: 35, max: 80, value: Math.round(paneLayout.ratio * 100), 'aria-label': '左カラムの幅（全カード共通）', oninput: e => { paneLayout.ratio = Number(e.target.value) / 100; applyPaneLayoutAll(); }, onchange: savePaneLayout });
   const ratioLabel = h('span', { class: 'ratio-label' });
   const widthG = h('div', { class: 'pb-group' }, '列幅', ratio, ratioLabel, btn('2:1', () => { paneLayout.ratio = 2 / 3; savePaneLayout(); applyPaneLayoutAll(); }, '左右を 2/3・1/3 に戻す'));
   const extra = [widthG, ...groups, bulkG, noteG, h('div', { class: 'pb-group' }, collectBtn), btn('レイアウトを初期化', resetPaneLayout, 'すべてのカードの配置・高さ・列幅を初期状態に戻す')];
-  paneBar.append(h('span', { class: 'pb-count' }), toggle, ...extra.map((g) => (g.classList.add('pb-extra'), g)), h('span', { class: 'pb-sp' }),
-    btn('畳む', () => setDash(false), 'ダッシュボードを畳む（D）'), btn('すべて閉じる', () => [...panes].forEach((p) => closePane(p.id)), '開いているカードをすべて閉じる'));
+  paneSettingsBody = h('div', { class: 'pane-settings' }, ...extra.map(g => (g.classList.add('pb-extra'), g)));
+  paneBar.append(h('div', { class: 'pb-context', hidden: true }), h('strong', { class: 'pb-count' }), h('span', { class: 'pb-sp' }), toggle,
+    h('button', { class: 'hbtn pane-fold', type: 'button', 'aria-label': 'ダッシュボードを畳む', title: 'ダッシュボードを畳む（D）', html: picon('note', 18), onclick: () => setDash(false) }),
+    h('button', { class: 'hbtn pane-close', type: 'button', 'aria-label': 'すべて閉じる', title: '開いているカードをすべて閉じる', html: picon('close', 18), onclick: () => [...panes].forEach(p => closePane(p.id)) }));
 }
-let paneBarOpen = barOpen;
+let paneBarOpen = false;
 function paintPaneBar() {
-  const ratio = $('.ratio-label', paneBar); if (ratio) ratio.textContent = `${Math.round(paneLayout.ratio * 100)} : ${100 - Math.round(paneLayout.ratio * 100)}`;
-  const width = $('input[type=range]', paneBar); if (width) width.value = Math.round(paneLayout.ratio * 100);
+  const ratio = $('.ratio-label', paneSettingsBody); if (ratio) ratio.textContent = `${Math.round(paneLayout.ratio * 100)} : ${100 - Math.round(paneLayout.ratio * 100)}`;
+  const width = $('input[type=range]', paneSettingsBody); if (width) width.value = Math.round(paneLayout.ratio * 100);
   $('.pb-count', paneBar).textContent = `カード ${panes.length} 枚`;
-  $('button[aria-expanded]', paneBar).setAttribute('aria-expanded', String(paneBarOpen));
-  $$('.pb-extra', paneBar).forEach((g) => { g.hidden = !paneBarOpen; });
-  $$('button[data-k]', paneBar).forEach((b) => b.setAttribute('aria-pressed', String(paneGlobal[b.dataset.k] === b.dataset.v)));
+  $('.pb-count', paneBar).hidden = !!taskDash?.active;
+  $('.pb-settings-toggle', paneBar).setAttribute('aria-expanded', String(!!paneSettingsPopover?.isConnected));
+  $$('button[data-k]', paneSettingsBody).forEach((b) => b.setAttribute('aria-pressed', String(paneGlobal[b.dataset.k] === b.dataset.v)));
 }
 buildPaneBar();
 new ResizeObserver(() => layoutPanes()).observe(document.body);
@@ -2088,7 +2099,7 @@ function toggleSection(id) {
   i < 0 ? paneLayout.collapsed.push(id) : paneLayout.collapsed.splice(i, 1);
   savePaneLayout(); applyPaneLayoutAll();
 }
-function resetPaneLayout() { paneLayout = normalizePaneLayout(taskDash?.active ? { main: ['conv', 'memo', 'related', 'send'] } : null, PANE_LAYOUT_DEF, PANE_HEIGHTS); savePaneLayout(); applyPaneLayoutAll(); toast('配置・列幅・高さを初期化しました'); }
+function resetPaneLayout() { paneLayout = normalizePaneLayout(taskDash?.active ? taskPaneLayoutDefaults() : null, PANE_LAYOUT_DEF, PANE_HEIGHTS); savePaneLayout(); applyPaneLayoutAll(); toast('配置・列幅・高さを初期化しました'); }
 function setSectionHeight(id, height, save = false) {
   paneLayout.heights[id] = Math.min(900, Math.max(64, Math.round(height)));
   applyPaneLayoutAll();
@@ -3422,7 +3433,9 @@ async function openTaskModal(cardId, init = null) {
   p.el.replaceChildren(h('div', { class: 'pane-h' }, top,
     h('div', { class: 'sub row' }, h('span', { class: 'badge task-badge', text: T.taskCard }),
       h('span', { class: 'row pane-status', style: { gap: '0' } }, h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]), 'リスト:', listSel), h('div', { class: 'note-line' })),
-    h('div', { class: 'pane-b' }, cols.main, columnSplit(), cols.side));
+    h('div', { class: 'pane-b' }, cols.main, columnSplit(), cols.side),
+    taskDash?.active?.id === cardId ? h('div', { class: 'task-parent-actions' },
+      h('button', { class: 'btn task-request', text: '説明・メモから依頼', onclick: () => taskDash.prepareRequest() })) : null);
   applyPaneLayoutTo(p.el); bindPaneDrag(top, p); paintPaneButtons(p); applyPaneAttrs(p); layoutPanes();
   workspace.trackDrafts(p.el);
   if (fresh && !init) title.focus();
