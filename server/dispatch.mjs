@@ -373,8 +373,14 @@ export class Dispatcher {
     const errMsg = state === 'succeeded' ? null : error || parsed.error || (exitCode != null ? `終了コード ${exitCode}` : '結果を確認できませんでした');
     const writerConflict = /active writer|thread.store conflict|already.*(?:running|writer)|session.*(?:in use|locked)/i.test(errMsg || '');
     if (writerConflict) state = 'blocked';
-    const done = (await this.requests.transition(id, ['starting', 'running'], { state, endedAt: Date.now(), exitCode, resultText: parsed.text || null, error:errMsg,reasonCode:writerConflict ? 'external_writer' : state === 'interrupted' ? 'execution_unknown' : null,needsUserAction:state !== 'succeeded' },{owner:cur.ownerUuid,generation:cur.leaseGeneration,release:confirmedStopped}));
-    if (done && state === 'failed' && (await this.retryOnAnotherAccount(done, errMsg))) return done;
+    // A usage limit with onLimit 'switch': decided before the state changes, so the failed
+    // run is recorded together with its retry (nobody sees it as needing the user).
+    const retryTo = state === 'failed' ? await this.retryAccountFor(cur, errMsg) : null;
+    const done = (await this.requests.transition(id, ['starting', 'running'], { state, endedAt: Date.now(), exitCode, resultText: parsed.text || null, error:errMsg,reasonCode:retryTo ? 'usage_limit' : writerConflict ? 'external_writer' : state === 'interrupted' ? 'execution_unknown' : null,needsUserAction:state !== 'succeeded' && !retryTo,...(retryTo ? { retriedAs: retryTo } : {}) },{owner:cur.ownerUuid,generation:cur.leaseGeneration,release:confirmedStopped}));
+    if (done && retryTo) {
+      await this.queueRetry(done, retryTo);
+      return done;
+    }
     if (done && state !== 'succeeded') (await this.requests.pause(done.cardId, state === 'interrupted' ? '停止しました' : `失敗しました: ${errMsg}`));
     return done;
   }
@@ -385,25 +391,25 @@ export class Dispatcher {
     return accountForRun(session, req, { limitAt });
   }
 
-  // A turn stopped by a usage limit, sent with onLimit 'switch': queue it once more as
-  // the account with the most room (the queue keeps going instead of pausing).
-  async retryOnAnotherAccount(done, errMsg) {
-    if (done.hostId !== 'local' || done.onLimit !== 'switch' || done.switchedFrom) return false;
-    let session;
+  // A turn stopped by a usage limit, sent with onLimit 'switch': the account to queue it
+  // once more as (the one with the most room), or null. The queue then keeps going
+  // instead of pausing.
+  async retryAccountFor(req, errMsg) {
+    if (req.hostId !== 'local' || req.onLimit !== 'switch' || req.switchedFrom) return null;
     try {
-      session = (await resolveSession(this.store, done.cardId)).session;
+      const { session } = await resolveSession(this.store, req.cardId);
+      const { limitAt } = (await this.store.load()).settings.accounts.runner;
+      return retryAccount(req, session, errMsg, { limitAt });
     } catch {
-      return false;
+      return null;
     }
-    const { limitAt } = (await this.store.load()).settings.accounts.runner;
-    const to = retryAccount(done, session, errMsg, { limitAt });
-    if (!to) return false;
+  }
+
+  async queueRetry(done, to) {
     const keep = Object.fromEntries(['cardId', 'agent', 'hostId', 'nativeId', 'cwd', 'title', 'prompt', 'origin', 'allowElevated', 'onLimit'].map((k) => [k, done[k]]));
-    await this.requests.transition(done.id, null, { reasonCode: 'usage_limit', needsUserAction: false, retriedAs: to });
     await this.requests.create({ ...keep, when: 'queue', expectedUpdatedAt: null, runAccount: to, switchedFrom: done.id });
     this.idleMtime = null;
     this.tick().catch(() => {});
-    return true;
   }
 
   // Stop a running request (only runs started by Canban, verified by command line).
