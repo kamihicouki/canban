@@ -21,7 +21,7 @@ import { createWatch } from './watch.mjs';
 import { Presence, appLabel } from './presence.mjs';
 import { codexHome } from './sources/codex.mjs';
 import { claudeHome, claudeDesktopSessionsDir } from './sources/claude.mjs';
-import { accountTools, accountFilterProp, accountDesktopNote, extraWatchRoots } from './accounts-mcp.mjs';
+import { accountTools, accountFilterProp, accountDesktopNote, extraWatchRoots, pinSessionAccount, startFolderFor } from './accounts-mcp.mjs';
 import { boardHtml } from './ui.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -276,14 +276,17 @@ const TOOLS = [
         cardId: { type: 'string', description: 'canban_search で調べたセッションの cardId' },
         prompt: { type: 'string' },
         when: { type: 'string', enum: ['now', 'queue'], description: '既定 queue' },
+        account: { type: 'string', description: "このアカウントで送る（canban_set_session_account と同じ。'auto' で一番余裕のあるアカウント）。以後もこのアカウントで動かす" },
+        onLimit: { type: 'string', enum: ['wait', 'switch'], description: "switch: アカウントの使用量が上限に近い／上限で止まったとき、余裕のある別アカウントで続ける（Claude の会話を共有しているアカウントのみ）。既定 wait" },
       },
       required: ['cardId', 'prompt'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     _meta: appAndModel,
-    handler: async ({ cardId, prompt, when = 'queue' }) => {
-      const r = await dispatcherFor(store).submit({ cardId, prompt, when, origin: 'model' });
+    handler: async ({ cardId, prompt, when = 'queue', account, onLimit }) => {
+      if (account) await pinSessionAccount({ store, findSession }, { cardId, account });
+      const r = await dispatcherFor(store).submit({ cardId, prompt, when, onLimit, origin: 'model' });
       return { text: `${r.state === 'queued' ? 'キューに追加しました' : '送信しました'}（${r.id}）`, structured: requestView(r) };
     },
   },
@@ -328,6 +331,7 @@ const TOOLS = [
         when: { type: 'string', enum: ['now', 'queue'] },
         expectedUpdatedAt: { type: ['number', 'null'] },
         allowElevated: { type: 'boolean' },
+        onLimit: { type: 'string', enum: ['wait', 'switch'] },
       },
       required: ['cardId', 'prompt', 'when'],
       additionalProperties: false,
@@ -409,7 +413,7 @@ const TOOLS = [
     if (!hosts.some((h) => h.id === a.hostId)) throw new Error('Codex に登録されていない接続です');
     return store.setRemoteHost(a);
   }),
-  ...accountTools({ store, allSessions, appTool, meta: appAndModel, getLive: () => live }),
+  ...accountTools({ store, allSessions, findSession, appTool, meta: appAndModel, getLive: () => live }),
   appTool('canban_update_settings', '再開方法の既定を変更', {
     route: { type: 'string', enum: ['desktop', 'terminal'] },
     terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
@@ -443,12 +447,13 @@ const TOOLS = [
         route: { type: 'string', enum: ['desktop', 'terminal'] },
         terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
         target: { type: 'string', enum: ['new-window', 'new-tab', 'split', 'current'] },
+        account: { type: 'string', description: "このアカウントで始める（canban_get_usage の key。'auto' で一番余裕のあるアカウント）。ターミナルで始めるときだけ効く" },
       },
       required: ['taskId', 'agent'],
       additionalProperties: false,
     },
     _meta: appAndModel,
-    handler: async ({ taskId, agent, hostId = 'local', cwd = '', prompt, route, terminal, target }) => {
+    handler: async ({ taskId, agent, hostId = 'local', cwd = '', prompt, route, terminal, target, account }) => {
       const state = (await store.load());
       const task = state.cards[taskId];
       if (task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
@@ -464,6 +469,8 @@ const TOOLS = [
       const prefs = state.settings.launch;
       const useRoute = route || prefs.route;
       let detail;
+      // A chosen account runs from its folder (terminal only; the desktop app uses its signed-in account).
+      const folder = host.local !== false && useRoute !== 'desktop' ? startFolderFor(agent, account) : { key: null, homeDir: null };
       if (useRoute === 'desktop') {
         const link = newSessionLink(agent, { host, cwd, prompt: text });
         await openUrl(link.url);
@@ -471,11 +478,11 @@ const TOOLS = [
       } else {
         const term = terminal || prefs.terminal;
         if (!installedTerminals().some((t) => t.id === term)) throw new Error(`${TERMINAL_LABELS[term] || term} が見つかりません。設定でターミナルを選んでください。`);
-        const command = newSessionCommand(agent, { host, cwd, prompt: text });
+        const command = newSessionCommand(agent, { host, cwd, prompt: text, homeDir: folder.homeDir });
         detail = { route: 'terminal', command, ...(await runInTerminal({ terminal: term, target: target || prefs.target, command })) };
       }
       await store.updateTask({ cardId: taskId, target: { agent, hostId: host.local === false ? host.id : 'local', cwd } });
-      await store.addPending({ taskId, pending: { agent, hostId: host.local === false ? host.id : 'local', cwd, prompt: text.slice(0, 200), startedAt: Date.now() } });
+      await store.addPending({ taskId, pending: { agent, hostId: host.local === false ? host.id : 'local', cwd, prompt: text.slice(0, 200), startedAt: Date.now(), account: folder.key } });
       const note = remoteEnabled ? null : `${host.label} の読み取りがオフのため自動では紐付きません。「マシン」でオンにしてください。`;
       return { text: `${agent === 'codex' ? 'Codex' : 'Claude'} でセッションを開始しました`, structured: { ...detail, note } };
     },

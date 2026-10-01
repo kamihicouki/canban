@@ -18,8 +18,54 @@ function applyAccountLimits(list) {
   workspace.renderLimitChip(state.board.limits);
   if (workspace.page === 'usage') workspace.render(state.board);
 }
+// Card detail: which account the session runs as (resume / send / queue), and its folder.
 function accountKv(s) {
-  return [...(s.host ? [] : kv('アカウント', s.accountLabel || '不明（記録なし）')), ...(s.homeDir ? kv('設定フォルダ', s.homeDir) : [])];
+  if (s.host) return [];
+  const choices = s.accountChoices || [];
+  const src = { pin: '（選択）', last: '（前回）' }[s.accountSource] || '';
+  const dd = h('dd', {});
+  if (choices.length > 1 || s.accountSource === 'pin') {
+    const sel = h('select', { class: 'text-input', 'aria-label': 'このセッションを動かすアカウント', title: '再開・指示の送信に使うアカウント' },
+      h('option', { value: '', text: s.accountSource === 'pin' ? '記録どおりに戻す' : `${s.accountLabel || '不明'}（記録どおり）` }),
+      h('option', { value: 'auto', text: '自動（余裕のあるアカウント）' }),
+      ...choices.map((k) => h('option', { value: k, text: accountLabel(k) })));
+    sel.value = s.accountSource === 'pin' ? s.account : '';
+    sel.onchange = () => act('canban_set_session_account', { cardId: s.id, account: sel.value || null }, { okMsg: sel.value ? 'アカウントを選びました（再開・送信はこのアカウントで動きます）' : '記録どおりに戻しました' }).catch(() => {});
+    dd.append(sel);
+  } else dd.append(`${s.accountLabel || '不明（記録なし）'}${src}`);
+  if (s.accountPinProblem) dd.append(h('div', { class: 'muted', text: `⚠ 選んだアカウントでは動かせません: ${s.accountPinProblem}` }));
+  return [h('dt', { text: 'アカウント' }), dd, ...(s.homeDir ? kv('設定フォルダ', s.homeDir) : [])];
+}
+
+// Send box: continue on another account when this one is at its plan limit. Shown when
+// the session can run as more than one account; the choice is remembered per board.
+function limitSwitchToggle(s) {
+  if (s.host || (s.accountChoices || []).length < 2) return null;
+  const input = h('input', { type: 'checkbox', checked: !!store.get('onLimitSwitch', false), onchange: (e) => store.set('onLimitSwitch', e.target.checked) });
+  return { input, el: h('label', { class: 'send-note row', style: { gap: '6px' }, title: `使用量が上限の手前（${state.board?.accounts?.runner?.limitAt ?? 95}%）か、上限で止まったとき、会話を共有している別のアカウントで続けます（1 回まで）` }, input, '上限なら別のアカウントで続ける') };
+}
+// Request rows: which account ran it, and a retry on another account.
+function requestAccountText(r) {
+  const parts = [];
+  if (r.account) parts.push(`👤 ${accountLabel(r.account)}`);
+  if (r.retriedAs) parts.push(`上限 → ${accountLabel(r.retriedAs)} で再送`);
+  return parts.length ? `${parts.join('・')} ` : '';
+}
+
+// Task card start form: which account to start as (terminal route; local machine only).
+function startAccountSelect(agentSel, hostSel) {
+  const sel = h('select', { class: 'text-input', 'aria-label': '始めるアカウント' });
+  const fill = () => {
+    const accts = (state.board?.accounts?.accounts || []).filter((a) => a.agent === agentSel.value && a.homes?.length);
+    sel.replaceChildren(h('option', { value: '', text: 'アカウント: 既定のフォルダ' }), ...(accts.length > 1 ? [h('option', { value: 'auto', text: 'アカウント: 自動（余裕のあるもの）' })] : []),
+      ...accts.map((a) => h('option', { value: a.key, text: `アカウント: ${a.label}` })));
+    sel.hidden = hostSel.value !== 'local' || accts.length < 2;
+    if (sel.hidden) sel.value = '';
+  };
+  agentSel.addEventListener('change', fill);
+  hostSel.addEventListener?.('change', fill);
+  fill();
+  return sel;
 }
 function accountLaneKey(card) {
   if (card.kind === 'task') return `${T.taskCard}`;
@@ -144,8 +190,13 @@ function accountsMenu(anchor) {
   const homeRows = v.homes.map((x) => h('div', { class: 'home-row' },
     h('span', { class: `badge ${x.agent}`, text: x.agent === 'codex' ? 'Codex' : 'Claude' }),
     h('span', { class: 'path', title: x.dir, text: x.dir }),
-    h('span', { class: 'muted', text: `${{ default: '既定', discovered: '自動', settings: '追加' }[x.source]}${x.missing ? '・見つかりません' : ''}${x.account ? `・${accountLabel(x.account)}` : ''}` }),
-    x.source === 'settings' ? h('button', { class: 'icon-btn', title: '外す', 'aria-label': `${x.dir} を外す`, text: '×', onclick: () => saveHomes(x.agent, extra[x.agent].filter((d) => d !== x.dir)) }) : null));
+    h('span', { class: 'muted', text: `${{ default: '既定', discovered: '自動', settings: '追加', runner: 'Canban' }[x.source]}${x.missing ? '・見つかりません' : ''}${x.account ? `・${accountLabel(x.account)}` : x.source === 'runner' ? '・未ログイン' : ''}` }),
+    x.source === 'runner' ? h('button', { class: 'btn', title: 'ターミナルでログインする', text: 'ログイン', onclick: () => runnerLogin(x) }) : null,
+    x.source === 'settings' ? h('button', { class: 'icon-btn', title: '外す', 'aria-label': `${x.dir} を外す`, text: '×', onclick: () => saveHomes(x.agent, extra[x.agent].filter((d) => d !== x.dir)) }) : null,
+    x.source === 'runner' ? h('button', { class: 'icon-btn', title: '外す（フォルダは ~/.canban/accounts/.trash へ移します）', 'aria-label': `${x.id} を外す`, text: '×', onclick: (e) => runnerRemove(e.currentTarget, x) }) : null));
+  const runnerLogin = (x) => act('canban_account_login', { homeId: x.id }, { reload: false })
+    .then((r) => toast(r?.result?.opened ? 'ターミナルでログインを開きました。終わったらボードを再読み込みしてください' : `ターミナルで実行してください: ${r?.result?.command}`)).catch(() => {});
+  const runnerRemove = (btn, x) => { if (confirmInline(btn, `「${x.name || x.id}」のフォルダを外します（~/.canban/accounts/.trash へ移します。ログイン情報はキーチェーンに残ります）。`)) act('canban_account_remove', { homeId: x.id }, { okMsg: '外しました' }).then(() => accountsMenu(anchor)).catch(() => {}); };
   const agentSel = h('select', { class: 'text-input', style: { width: 'auto' } }, h('option', { value: 'claude', text: 'Claude' }), h('option', { value: 'codex', text: 'Codex' }));
   const dirInput = h('input', { class: 'text-input', placeholder: '~/.claude-work（CLAUDE_CONFIG_DIR / CODEX_HOME のフォルダ）' });
   const addHome = () => { const d = dirInput.value.trim(); if (d) saveHomes(agentSel.value, [...extra[agentSel.value], d]); };
@@ -154,6 +205,8 @@ function accountsMenu(anchor) {
     rows.length > 5 ? rowFilter(rows) : null,
     rows.length ? rows : h('p', { class: 'muted', text: 'アカウントが見つかりません。' }),
     h('div', { class: 'sep' }),
+    runnerSection(v, anchor),
+    h('div', { class: 'sep' }),
     h('div', { class: 'field-label', text: '設定フォルダ' }),
     ...homeRows,
     h('div', { class: 'row' }, agentSel, dirInput, h('button', { class: 'btn-primary', text: '追加', onclick: addHome })),
@@ -161,6 +214,33 @@ function accountsMenu(anchor) {
       '~/.claude-*・~/.codex-*・Claude デスクトップのプロファイルを自動で探す'),
     h('p', { class: 'muted', text: 'すべてのアカウントのセッションを 1 つのボードに表示します。アプリでアカウントを切り替えても消えません。名前をクリックするとそのアカウントだけを表示します。チェックを外したアカウントはヘッダのリングに出しません（リングは外側が 5 時間枠、内側が週枠、中央が頭文字、角の印が Codex／Claude）。別のフォルダのセッションは、再開・送信のときにそのフォルダ（CLAUDE_CONFIG_DIR / CODEX_HOME）で動かします。使用量は Codex はセッションのログ、Claude は Claude デスクトップの記録から読みます。' }));
   popover(anchor, 'アカウント', body, { width: 440 });
+}
+
+// Canban-made account folders (server/runner.mjs): several accounts of one agent at once.
+function runnerSection(v, anchor) {
+  const r = v.runner || {};
+  const set = (patch) => act('canban_update_accounts', { runner: patch }).then(() => accountsMenu(anchor)).catch(() => {});
+  if (!r.enabled) {
+    return h('div', {}, h('div', { class: 'field-label', text: 'アカウントを追加' }),
+      h('label', { class: 'row' }, h('input', { type: 'checkbox', onchange: (e) => set({ enabled: e.target.checked }) }), 'Canban でアカウントを追加して同時に使う'),
+      h('p', { class: 'muted', text: 'オンにすると、アカウントごとに ~/.canban/accounts/ にフォルダを作り、セッションごとに使うアカウントを分けられます。ログインは公式の CLI をターミナルで開きます。~/.claude・~/.codex や他のアプリのファイルは書き換えません。' }));
+  }
+  const agent = h('select', { class: 'text-input', style: { width: 'auto' }, 'aria-label': 'AI App' }, h('option', { value: 'claude', text: 'Claude' }), h('option', { value: 'codex', text: 'Codex' }));
+  const name = h('input', { class: 'text-input', placeholder: '名前（英数字。例: work）', maxlength: 32, 'aria-label': 'アカウントの名前' });
+  const create = () => {
+    if (!name.value.trim()) return name.focus();
+    act('canban_account_create', { agent: agent.value, name: name.value.trim() }, { reload: false }).then((res) => {
+      const l = res?.result?.login;
+      toast(l?.opened ? 'フォルダを作り、ターミナルでログインを開きました。終わったらボードを再読み込みしてください' : `フォルダを作りました。ターミナルでログインしてください: ${l?.command}`);
+      load().then(() => accountsMenu(anchor)); // the new folder is in the next board
+    }).catch(() => {});
+  };
+  name.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) create(); };
+  return h('div', {}, h('div', { class: 'field-label', text: 'アカウントを追加' }),
+    h('div', { class: 'row' }, agent, name, h('button', { class: 'btn-primary', text: '追加してログイン', onclick: create })),
+    h('label', { class: 'row muted' }, h('input', { type: 'checkbox', checked: r.shareProjects, onchange: (e) => set({ shareProjects: e.target.checked }) }), '会話を既定のフォルダと共有する（Claude。別のアカウントで続けられます）'),
+    h('label', { class: 'row muted' }, h('input', { type: 'checkbox', checked: r.shareConfig, onchange: (e) => set({ shareConfig: e.target.checked }) }), '設定（CLAUDE.md・skills・AGENTS.md など）を共有する'),
+    h('label', { class: 'row muted' }, h('input', { type: 'checkbox', checked: true, onchange: (e) => { if (!e.target.checked) set({ enabled: false }); } }), 'Canban でアカウントを追加する（オフにしても作ったフォルダは残ります）'));
 }
 
 $('#accountsBtn').addEventListener('click', (e) => accountsMenu(e.currentTarget));

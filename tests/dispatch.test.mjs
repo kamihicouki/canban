@@ -430,3 +430,39 @@ test('owner killed after mock CLI launch leaves child ownership and prevents sec
     child.kill('SIGKILL');if(run?.pid)try{process.kill(-run.pid,'SIGKILL');}catch{}
   }
 });
+
+// ---- accounts ------------------------------------------------------------------
+test('a turn stopped by a usage limit continues once as another account that shares the conversation', async () => {
+  const { createHome } = await import('../server/runner.mjs');
+  const accounts = await import('../server/accounts.mjs');
+  fs.writeFileSync(path.join(claudeHome, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: 'acct-main', emailAddress: 'm@example.com' } }));
+  const spare = createHome({ dataDir, agent: 'claude', name: 'spare', sourceHome: claudeHome });
+  fs.writeFileSync(path.join(spare.dir, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: 'acct-spare', emailAddress: 's@example.com' } }));
+  await accounts.refreshAccounts({ force: true });
+  const d = freshDispatcher();
+  process.env.FAKE_AGENT_LIMIT_DEFAULT = '1';
+  try {
+    const a = await d.submit({ cardId: 'claude:cl-ok', prompt: 'keep going', when: 'now', onLimit: 'switch' });
+    const first = await finished(d, a.id);
+    assert.equal(first.state, 'failed');
+    assert.equal(first.account, 'claude:acct-main');
+    assert.equal(first.reasonCode, 'usage_limit');
+    assert.equal(first.retriedAs, 'claude:acct-spare');
+    const retry = await waitFor(async () => (await d.requests.list({ cardId: 'claude:cl-ok' })).find((r) => r.switchedFrom === a.id));
+    const done = await waitFor(async () => {
+      await d.tick();
+      const r = await d.requests.get(retry.id);
+      return r && M.FINAL_STATES.has(r.state) ? r : null;
+    }, 15000);
+    assert.equal(done.state, 'succeeded');
+    assert.equal(done.account, 'claude:acct-spare');
+    const [r1, r2] = runs().slice(-2);
+    assert.equal(r1.configDir, null); // the default folder's account hit the limit
+    assert.equal(r2.configDir, spare.dir); // the same conversation, continued as the spare account
+    assert.deepEqual(r2.argv.slice(0, 3), ['-p', '--resume', 'cl-ok']);
+    assert.equal((await store.load()).cards['claude:cl-ok'].lastAccount, 'claude:acct-spare');
+    assert.equal((await d.requests.load()).paused['claude:cl-ok'], undefined); // the queue did not pause
+  } finally {
+    delete process.env.FAKE_AGENT_LIMIT_DEFAULT;
+  }
+});

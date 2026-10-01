@@ -27,7 +27,8 @@ import { listClaudeSessions } from './sources/claude.mjs';
 import { codexAppState, annotateCodexApp } from './sources/codex-app.mjs';
 import { pool, hostsWithState } from './board.mjs';
 import { perf } from './perf.mjs';
-import { homeEnv, configureAccounts } from './accounts.mjs';
+import { homeEnv, configureAccounts, runningAccount } from './accounts.mjs';
+import { applyCardAccounts, accountForRun, retryAccount } from './accounts-mcp.mjs';
 
 export const QUIET_MS = Number(process.env.CANBAN_DISPATCH_QUIET_MS) || 20e3;
 const INSPECT_BYTES = 256 * 1024;
@@ -156,9 +157,11 @@ export async function resolveSession(store, cardId) {
   if (!m) throw new Error(String(cardId).startsWith('task:') ? 'タスクカードには送れません。紐付いたセッションに送ってください' : `セッションが見つかりません: ${cardId}`);
   const [, agent, alias, nativeId] = m;
   if (!alias) {
-    configureAccounts((await store.load()).settings.accounts); // sessions from the extra config folders too
-    const s = agent === 'codex' ? await findCodexSession(nativeId) : (await listClaudeSessions()).sessions.find((x) => x.nativeId === nativeId);
-    if (!s) throw new Error(`セッションが見つかりません: ${cardId}`);
+    const state = await store.load();
+    configureAccounts(state.settings.accounts); // sessions from the extra config folders too
+    const found = agent === 'codex' ? await findCodexSession(nativeId) : (await listClaudeSessions()).sessions.find((x) => x.nativeId === nativeId);
+    if (!found) throw new Error(`セッションが見つかりません: ${cardId}`);
+    const [s] = applyCardAccounts([found], state); // runs as the pinned / last-used account
     annotateCodexApp([s], await codexAppState());
     return { session: s, host: null };
   }
@@ -240,7 +243,7 @@ export class Dispatcher {
   }
 
   // Validate and record a request; "now" starts it immediately or fails with the reason.
-  async submit({ cardId, prompt, when = 'queue', origin = 'ui', expectedUpdatedAt = null, allowElevated = false, now = Date.now() }) {
+  async submit({ cardId, prompt, when = 'queue', origin = 'ui', expectedUpdatedAt = null, allowElevated = false, onLimit = 'wait', now = Date.now() }) {
     const cfg = (await this.settings());
     if (!cfg.enabled) throw new Error('指示の送信は設定でオフになっています');
     if (origin === 'model' && !cfg.allowModel) throw new Error('モデルからの送信は設定でオフになっています');
@@ -277,6 +280,7 @@ export class Dispatcher {
       origin,
       allowElevated: !!allowElevated || (origin === 'model' && cfg.allowModelElevated),
       expectedUpdatedAt,
+      onLimit: onLimit === 'switch' ? 'switch' : 'wait', // at a plan limit: continue on another account
     }));
     if (when === 'now') {
       const res = await this.tryStart(req, { session, host, insp, permission, force: true });
@@ -309,6 +313,7 @@ export class Dispatcher {
       }
       permission = permissionFor(fresh.session,checked.records);
       if (permission.elevated && !req.allowElevated) throw Object.assign(new Error('権限が変更されました。確認して再送してください'),{code:'pre_spawn'});
+      if (!host) fresh.session = (await this.accountForRun(req, fresh.session)).session; // onLimit 'switch' / a retry's account
       preflight = false;
       const started = host ? await this.startRemote(claim.request, fresh.session, fresh.host, permission) : await this.startLocal(claim.request, fresh.session, permission);
       return { ok: true, request: started };
@@ -342,7 +347,9 @@ export class Dispatcher {
 
     child.unref();
     if (child.pid) this.children.set(req.id, child);
-    const running = await this.requests.transition(req.id,['starting'],{state:'running',pid:child.pid ?? null,logPath,permission,argv:[h.bin,...h.args]},{owner:req.ownerUuid,generation:req.leaseGeneration});
+    const running = await this.requests.transition(req.id,['starting'],{state:'running',pid:child.pid ?? null,logPath,permission,argv:[h.bin,...h.args],account:runningAccount(session)},{owner:req.ownerUuid,generation:req.leaseGeneration});
+    // The account this session last ran as (it keeps running as that one unless pinned).
+    if (running?.account) await this.store.updateCardAccount({ cardId: req.cardId, last: running.account }).catch(() => {});
     if (!running) { try { child.kill?.('SIGTERM'); } catch {} throw new Error('送信の実行権が失われました'); }
     child.stdin.end(req.prompt);
     return running;
@@ -366,9 +373,43 @@ export class Dispatcher {
     const errMsg = state === 'succeeded' ? null : error || parsed.error || (exitCode != null ? `終了コード ${exitCode}` : '結果を確認できませんでした');
     const writerConflict = /active writer|thread.store conflict|already.*(?:running|writer)|session.*(?:in use|locked)/i.test(errMsg || '');
     if (writerConflict) state = 'blocked';
-    const done = (await this.requests.transition(id, ['starting', 'running'], { state, endedAt: Date.now(), exitCode, resultText: parsed.text || null, error:errMsg,reasonCode:writerConflict ? 'external_writer' : state === 'interrupted' ? 'execution_unknown' : null,needsUserAction:state !== 'succeeded' },{owner:cur.ownerUuid,generation:cur.leaseGeneration,release:confirmedStopped}));
+    // A usage limit with onLimit 'switch': decided before the state changes, so the failed
+    // run is recorded together with its retry (nobody sees it as needing the user).
+    const retryTo = state === 'failed' ? await this.retryAccountFor(cur, errMsg) : null;
+    const done = (await this.requests.transition(id, ['starting', 'running'], { state, endedAt: Date.now(), exitCode, resultText: parsed.text || null, error:errMsg,reasonCode:retryTo ? 'usage_limit' : writerConflict ? 'external_writer' : state === 'interrupted' ? 'execution_unknown' : null,needsUserAction:state !== 'succeeded' && !retryTo,...(retryTo ? { retriedAs: retryTo } : {}) },{owner:cur.ownerUuid,generation:cur.leaseGeneration,release:confirmedStopped}));
+    if (done && retryTo) {
+      await this.queueRetry(done, retryTo);
+      return done;
+    }
     if (done && state !== 'succeeded') (await this.requests.pause(done.cardId, state === 'interrupted' ? '停止しました' : `失敗しました: ${errMsg}`));
     return done;
+  }
+
+  // ---- plan limits and accounts (server/accounts-mcp.mjs) ----
+  async accountForRun(req, session) {
+    const { limitAt } = (await this.store.load()).settings.accounts.runner;
+    return accountForRun(session, req, { limitAt });
+  }
+
+  // A turn stopped by a usage limit, sent with onLimit 'switch': the account to queue it
+  // once more as (the one with the most room), or null. The queue then keeps going
+  // instead of pausing.
+  async retryAccountFor(req, errMsg) {
+    if (req.hostId !== 'local' || req.onLimit !== 'switch' || req.switchedFrom) return null;
+    try {
+      const { session } = await resolveSession(this.store, req.cardId);
+      const { limitAt } = (await this.store.load()).settings.accounts.runner;
+      return retryAccount(req, session, errMsg, { limitAt });
+    } catch {
+      return null;
+    }
+  }
+
+  async queueRetry(done, to) {
+    const keep = Object.fromEntries(['cardId', 'agent', 'hostId', 'nativeId', 'cwd', 'title', 'prompt', 'origin', 'allowElevated', 'onLimit'].map((k) => [k, done[k]]));
+    await this.requests.create({ ...keep, when: 'queue', expectedUpdatedAt: null, runAccount: to, switchedFrom: done.id });
+    this.idleMtime = null;
+    this.tick().catch(() => {});
   }
 
   // Stop a running request (only runs started by Canban, verified by command line).
