@@ -163,7 +163,7 @@ test('restoring a session retains its pane on a transient read failure and remov
   const html = boardHtml();
   const source = html.slice(html.indexOf('async function openCard('), html.indexOf('function updateNoteLine('));
   const panes = []; let error = new Error('db_busy'), closed = 0;
-  const context = vm.createContext({ panes, PANE_MAX: 8, state: {board:{lists:[]}},
+  const context = vm.createContext({ panes, PANE_MAX: 8, taskDash: null, batchOpening: false, state: {board:{lists:[]}},
     closePopover: () => {}, bridge: {callTool: async () => {throw error;}},
     newPane: id => {const p={id,el:{replaceChildren(...nodes){this.nodes=nodes;}}};panes.push(p);return p;},
     closePane: () => {closed++;panes.splice(0);}, h: (tag,attrs) => ({tag,attrs}), toast: () => {},
@@ -199,7 +199,7 @@ test('task autosave advances only the submitted draft baseline', async()=>{
 });
 test('legacy task modals migrate to panes independently of home filters', async () => {
   let opened = 0, saved = 0;
-  const w = workspaceHarness({ openTaskModal: async () => { opened++; }, savePanes: () => { saved++; } });
+  const w = workspaceHarness({ taskDash: { open: async (_id, opts) => { assert.equal(opts.reveal, false); opened++; } }, savePanes: () => { saved++; } });
   w.pendingTask = 'task:mock'; w.page = 'home';
   await w.restoreTask();
   assert.equal(w.pendingTask, null); assert.equal(opened, 1); assert.equal(saved, 1); assert.equal(w.page, 'home');

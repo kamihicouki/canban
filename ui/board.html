@@ -640,6 +640,7 @@ body.orb-dragging .orb-zone { opacity: 1; }
   .modal-grid { grid-template-columns: 1fr; }
 }
 /* @include workspace.css */
+/* @include task-dashboard.css */
 </style>
 </head>
 <body>
@@ -858,6 +859,8 @@ const bridge = (() => {
 // State
 // ======================================================================
 // @include workspace-model.js
+// @include task-dashboard-model.js
+let taskDash = null;
 const PAGE = 40;
 const COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
 const COLOR_NAMES = { gray: 'グレー', blue: '青', green: '緑', yellow: '黄', orange: 'オレンジ', red: '赤', purple: '紫', pink: 'ピンク', sky: '水色', lime: 'ライム' };
@@ -980,6 +983,7 @@ async function load({ refresh = false } = {}) {
     state.board = board;
     if (migrateLegacyScope(board)) return load();
     render();
+    taskDash?.reconcile(board);
   } catch (e) {
     if (seq !== loadSeq) return;
     $('#board').replaceChildren(h('div', { class: 'loading', text: `読み込みに失敗しました: ${e.message}` }));
@@ -1191,6 +1195,7 @@ function buildSelectionBar() {
   $('.shell').before(selectionBar); paintSelection();
 }
 async function openSelectedCards() {
+  if (taskDash?.active) await taskDash.leave();
   const batch = paneBatch([...selectedCards], panes.map(p => p.id), PANE_MAX);
   if (!batch.ids.length || batchOpening) return;
   if (!batch.fits) { toast(`最大 ${PANE_MAX} 枚まで開けます。開いている ${panes.length} 枚に ${batch.additions.length} 枚を追加するには、選択を減らすかカードを閉じてください`, true); return; }
@@ -1604,7 +1609,7 @@ const paneGlobal = (() => {
   const s = store.get('paneGlobal', {}) || {};
   return { space: oneOf(s.space, PANE_SPACES, PANE_DEF.space), arrange: oneOf(s.arrange, PANE_ARRANGES, PANE_DEF.arrange), mode: oneOf(s.mode, PANE_MODES, PANE_DEF.mode), size: oneOf(s.size, PANE_SIZES, PANE_DEF.size) };
 })();
-const saveGlobal = () => store.set('paneGlobal', paneGlobal);
+const saveGlobal = () => taskDash?.active ? taskDash.changed() : store.set('paneGlobal', paneGlobal);
 const PANE_SECS = {
   conv: ['main', '会話'], progress: ['main', '進捗'], send: ['main', '指示を送る'], labels: ['main', 'ラベル'], memo: ['main', 'メモ'], detail: ['main', '詳細'],
   pr: ['main', 'プルリクエスト'], related: ['main', '関連'], first: ['main', '最初の依頼'],
@@ -1614,7 +1619,7 @@ const secTitle = (id) => (id === 'task' ? T.taskCard : PANE_SECS[id][1]);
 const PANE_LAYOUT_DEF = { main: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'main'), side: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'side'), collapsed: [] };
 const PANE_HEIGHTS = { conv: 180, progress: 64, send: 180, labels: 84, memo: 150, detail: 320, pr: 180, related: 180, first: 150, resume: 290, task: 110, add: 130, prio: 130, other: 190 };
 let paneLayout = normalizePaneLayout(store.get('paneLayout', null), PANE_LAYOUT_DEF, PANE_HEIGHTS);
-const savePaneLayout = () => store.set('paneLayout', paneLayout);
+const savePaneLayout = () => taskDash?.active ? taskDash.changed() : store.set('paneLayout', paneLayout);
 
 const PIC = {
   grip: '<g fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></g>',
@@ -1656,7 +1661,7 @@ const paneStage = h('div', { class: 'pane-stage' });
 const paneCanvas = h('div', { class: 'pane-canvas' });
 paneStage.append(paneCanvas);
 paneLayer.append(h('div', { class: 'pane-dim' }), paneBar, paneStage);
-paneLayer.addEventListener('click', e => { if (!e.target.closest('.pane, .pane-bar, .popover') && !sectionGesture && Date.now() - lastSectionDrag > 300) setDash(false); });
+paneLayer.addEventListener('click', e => { if (!e.target.closest('.pane, .pane-bar, .task-dashboard-bar, .popover') && !sectionGesture && Date.now() - lastSectionDrag > 300) setDash(false); });
 document.body.append(paneLayer);
 const panes = []; // open panes in the order they were opened; the order of the fixed ones is the order of their tiles
 let restoringPanes = false;
@@ -1665,6 +1670,7 @@ let paneZ = 10;
 const front = (p) => { if (p.el.classList.contains('floating')) p.el.style.zIndex = ++paneZ; };
 
 function savePanes() {
+  if (taskDash?.active) { taskDash.changed(); return; }
   const value = panes.map((p) => ({ id: p.id, space: p.space, mode: p.mode, size: p.size, note: p.note, free: p.free }));
   if (JSON.stringify(store.get('panes', [])) !== JSON.stringify(value)) store.set('panes', value);
 }
@@ -1706,6 +1712,7 @@ function doPaneLayout() {
   if (!panes.length) return;
   panes.forEach(applyPaneAttrs);
   const stack = paneMetrics();
+  if (taskDash?.layout(stack)) return;
   if (stack) {
     for (const p of panes) { p.el.style.left = p.el.style.top = ''; p.el.style.height = p.note ? '' : `${Math.max(0, paneStage.clientHeight - PANE_GAP * 2)}px`; }
     paneCanvas.style.width = paneCanvas.style.height = '';
@@ -1800,6 +1807,7 @@ function liftIfNeeded(p, was) {
   if (was === 'fixed' && eff(p, 'space') === 'free' && !p.free) { const c = curXY(p.el); p.free = { x: c.x + 24, y: c.y + 24 }; }
 }
 function setPaneProp(p, key, val) {
+  if (key === 'space') taskDash?.custom();
   const was = eff(p, 'space');
   p[key] = val || null;
   if (key === 'space') liftIfNeeded(p, was);
@@ -1808,12 +1816,18 @@ function setPaneProp(p, key, val) {
 }
 function refreshPane(p) { applyPaneAttrs(p); paintPaneButtons(p); updateNoteLine(p); if (eff(p, 'space') === 'free') front(p); }
 function setGlobal(key, val) {
+  if (key === 'space' || key === 'arrange') taskDash?.custom();
   const was = new Map(panes.map((p) => [p, eff(p, 'space')]));
   paneGlobal[key] = val; saveGlobal();
   for (const p of panes) { if (key === 'space') liftIfNeeded(p, was.get(p)); refreshPane(p); }
   layoutPanes(); savePanes(); paintPaneBar();
 }
-function bulk(fn) { panes.forEach((p) => { const was = eff(p, 'space'); fn(p); liftIfNeeded(p, was); refreshPane(p); }); layoutPanes(); savePanes(); paintPaneBar(); }
+function bulk(fn) {
+  let spaceChanged = false;
+  panes.forEach((p) => { const was = eff(p, 'space'), own = p.space; fn(p); spaceChanged ||= own !== p.space; liftIfNeeded(p, was); refreshPane(p); });
+  if (spaceChanged) taskDash?.custom();
+  layoutPanes(); savePanes(); paintPaneBar();
+}
 const pseg = (attrs, options, isOn, onPick) => {
   const w = h('div', { class: 'p-seg', role: 'group', ...attrs });
   for (const [v, t] of options) w.append(h('button', { type: 'button', 'data-v': v ?? '', 'aria-pressed': String(isOn(v)), onclick: () => { onPick(v); $$('button', w).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === (v ?? '')))); } }, t));
@@ -2074,7 +2088,7 @@ function toggleSection(id) {
   i < 0 ? paneLayout.collapsed.push(id) : paneLayout.collapsed.splice(i, 1);
   savePaneLayout(); applyPaneLayoutAll();
 }
-function resetPaneLayout() { paneLayout = normalizePaneLayout(null, PANE_LAYOUT_DEF, PANE_HEIGHTS); savePaneLayout(); applyPaneLayoutAll(); toast('配置・列幅・高さを初期化しました'); }
+function resetPaneLayout() { paneLayout = normalizePaneLayout(taskDash?.active ? { main: ['conv', 'memo', 'related', 'send'] } : null, PANE_LAYOUT_DEF, PANE_HEIGHTS); savePaneLayout(); applyPaneLayoutAll(); toast('配置・列幅・高さを初期化しました'); }
 function setSectionHeight(id, height, save = false) {
   paneLayout.heights[id] = Math.min(900, Math.max(64, Math.round(height)));
   applyPaneLayoutAll();
@@ -2156,9 +2170,11 @@ function columnSplit() {
 // ---- opening, closing ----
 function closeTaskOverlay() {
   document.querySelectorAll('.overlay').forEach((o) => { o.hidden = true; });
-  workspace.activeTask = null;
-  workspace.pendingTask = null;
-  store.set('activeTask', null);
+  if (!taskDash?.active) {
+    workspace.activeTask = null;
+    workspace.pendingTask = null;
+    store.set('activeTask', null);
+  }
   state.modalOpen = false;
 }
 function closeModal() { // the overlay dialogs (task cards)
@@ -2188,6 +2204,7 @@ function newPane(id, init) {
 }
 const paintPaneButtonsLater = (p) => queueMicrotask(() => paintPaneButtons(p));
 function closePane(id) {
+  if (taskDash?.close(id)) return;
   const i = panes.findIndex((p) => p.id === id);
   if (i < 0) return;
   const [p] = panes.splice(i, 1);
@@ -2200,6 +2217,10 @@ function closePane(id) {
   if (!restoringPanes && !panes.length && workspace.page === 'cards') { setDash(false); workspace.navigate('home', { reload: false }); }
 }
 async function openCard(cardId, init = null) {
+  if (!init && !batchOpening && taskDash?.active && !cardId.startsWith('task:')) {
+    if (taskDash.primaryLinks(taskDash.active).includes(cardId)) { if (!panes.some(p => p.id === cardId)) return taskDash.select(cardId); }
+    else await taskDash.leave();
+  }
   if (cardId.startsWith('task:')) return openTaskModal(cardId, init);
   if (!init) closeTaskOverlay();
   for (const l of state.board?.lists || []) for (const c of l.cards) if (c.id === cardId && c.unread) { c.unread = false; render(); }
@@ -2215,7 +2236,7 @@ async function openCard(cardId, init = null) {
   try {
     d = await bridge.callTool('canban_get_session', { cardId, messages: 14 });
   } catch (e) {
-    if (init && e.message.startsWith('セッションが見つかりません:')) return closePane(cardId);
+    if (init && !taskDash?.active && e.message.startsWith('セッションが見つかりません:')) return closePane(cardId);
     if (p.d) return toast(e.message, true);
     p.el.replaceChildren(h('p', { class: 'muted pane-loading', text: `読み込みに失敗しました: ${e.message}` }),
       h('button', { class: 'btn', text: '再読み込み', onclick: () => openCard(cardId) }),
@@ -2223,7 +2244,7 @@ async function openCard(cardId, init = null) {
     return;
   }
   if (!panes.includes(p)) return;
-  renderPane(p, d);
+  renderPaneKeepingDrafts(p, d);
   if (fresh && !init && dashOpen && !batchOpening) p.el.focus({ preventScroll: true });
 }
 
@@ -2239,6 +2260,29 @@ function paintViewers(p) {
   const v = live.viewers.get(p.id);
   slot.hidden = !v;
   slot.textContent = v ? `👁 ${v.join('・')}でも開いています` : '';
+}
+
+function renderPaneKeepingDrafts(p, d) {
+  const el = p.el;
+  if (el.querySelector('.req-row textarea')) {
+    // Keep the request editor while rebuilding a reset conversation cursor.
+    p.d = d;
+    const conversation = $('.psec[data-sec="conv"] .psec-b', el);
+    if (conversation && d.feed) conversation.replaceChildren(renderFeed(d, p));
+    return;
+  }
+  const drafts = [...el.querySelectorAll('input,textarea,select')].filter(input => {
+    const baseline = workspace.draftValues.get(input);
+    return (baseline !== undefined && baseline !== input.value) || input.matches('.send-box textarea') && !!input.value.trim()
+      || input.matches('textarea.note') && input.value !== input.defaultValue;
+  }).map(input => ({ label: input.getAttribute('aria-label'), value: input.value }));
+  renderPane(p, d);
+  for (const draft of drafts) {
+    if (!draft.label) continue;
+    const input = [...el.querySelectorAll('input,textarea,select')].find(input => input.getAttribute('aria-label') === draft.label);
+    if (input) input.value = draft.value;
+    else if (draft.label === '送るプロンプト') keepDisabledPrompt($('.send-section', el), draft.value);
+  }
 }
 
 function renderPane(p, d) {
@@ -2368,6 +2412,7 @@ function renderPane(p, d) {
   const cols = { main: h('div', { class: 'pcol', 'data-col': 'main' }), side: h('div', { class: 'pcol', 'data-col': 'side' }) };
   for (const id of Object.keys(PANE_SECS)) {
     const sc = secs[id];
+    if (!sc) continue;
     cols[PANE_SECS[id][0]].append(sectionEl(id, sc?.nodes || [h('span', { class: 'muted', text: 'なし' })], { extra: sc?.extra, title: sc?.title ?? secTitle(id), hint: id === 'conv' ? '会話内容は読み取り専用です。下端をドラッグすると、すべてのカードで高さが揃います。' : id === 'memo' ? 'メモは Canban に保存します。セッションの内容は書き換えません。' : null }));
   }
   const scroll = ['main', 'side'].map((c) => $(`.pcol[data-col="${c}"]`, el)?.scrollTop ?? 0);
@@ -2396,6 +2441,7 @@ function renderPane(p, d) {
   paintViewers(p);
   if (d.feed) scrollFeedToEnd(live.feeds.get(s.id));
   if (!live.on) watchRequests(el, d);
+  workspace.trackDrafts(el);
   layoutPanes();
 }
 
@@ -2411,6 +2457,20 @@ function requestPill(r) {
   return h('span', { class: 'pill', title: 'セッションが空いたら順に送ります', text: `📨 ${r.queued}` });
 }
 
+function keepDisabledPrompt(box, value) {
+  if (!box) return;
+  const input = h('textarea', { 'aria-label': '送るプロンプト', readonly: true });
+  workspace.draftValues.set(input, ''); input.value = value; box.append(input);
+}
+function replaceDispatch(old, d) {
+  if (old.querySelector('.req-row textarea')) return;
+  const draft = old.querySelector('textarea[aria-label="送るプロンプト"]')?.value || '';
+  const next = renderDispatch(d), input = next.querySelector('.send-box textarea');
+  if (input) { workspace.trackDrafts(next); input.value = draft; }
+  // If sending has been disabled, retain the draft next to the reason.
+  else if (draft) keepDisabledPrompt(next, draft);
+  old.replaceWith(next);
+}
 function renderDispatch(d) {
   const s = d.session;
   const D = d.dispatch;
@@ -2517,7 +2577,7 @@ function watchRequests(modal, d) {
   clearInterval(modal._reqTimer);
   if (!d.dispatch.active.length && !d.dispatch.queue.length) return;
   modal._reqTimer = setInterval(async () => {
-    if (!document.body.contains(modal) || modal.querySelector('.send-box textarea:focus, .req-row textarea')) {
+    if (!document.body.contains(modal) || workspace.hasDrafts(modal) || modal.querySelector('.send-box textarea:focus, .req-row textarea')) {
       if (!document.body.contains(modal)) clearInterval(modal._reqTimer);
       return;
     }
@@ -2700,7 +2760,7 @@ async function refreshDispatch(f) {
   try {
     const d = await bridge.callTool('canban_get_session', { cardId: f.cardId, messages: 1 });
     const old = el.querySelector('.send-section');
-    if (old && live.feeds.get(f.cardId) === f) old.replaceWith(renderDispatch(d));
+    if (old && live.feeds.get(f.cardId) === f) replaceDispatch(old, d);
   } catch {}
 }
 
@@ -3241,6 +3301,7 @@ function findCard(cardId) {
 }
 
 async function openTaskModal(cardId, init = null) {
+  if (!init && !batchOpening && taskDash) return taskDash.open(cardId);
   closePopover();
   let p = panes.find(x => x.id === cardId);
   if (p && workspace.hasDrafts(p.el)) { if (!init) setDash(true, { quiet: true }); return; }
@@ -3278,6 +3339,10 @@ async function openTaskModal(cardId, init = null) {
     items: () => b.lists.map((l) => ({ value: l.id, label: l.title, color: l.color, hint: l.count })),
     onChange: (v) => act('canban_move_card', { cardId, toList: v, position: 'top' }, { okMsg: 'カードを移動しました' }) });
 
+  const memo = h('textarea', { class: 'note', 'aria-label': 'メモ', placeholder: 'タスクのメモ' });
+  memo.value = memo.defaultValue = card.note || '';
+  memo.onblur = () => memo.value !== memo.defaultValue && workspace.saveField(memo, value => act('canban_update_card', { cardId, note: value }, { okMsg: 'メモを保存しました' }));
+
   // --- start a new session
   const t = card.target || {};
   const agentSel = h('select', { class: 'text-input', 'aria-label': 'AI App' }, h('option', { value: 'codex', text: 'Codex' }), h('option', { value: 'claude', text: 'Claude Code' }));
@@ -3290,13 +3355,14 @@ async function openTaskModal(cardId, init = null) {
   const fillFolders = () => dl.replaceChildren(...b.folders.filter((f) => f.hostId === hostSel.value).map((f) => h('option', { value: f.cwd, label: f.project || '' })));
   fillFolders();
   const prompt = h('textarea', { class: 'note', 'aria-label': '依頼文' });
-  prompt.value = [card.title, card.description].filter(Boolean).join('\n\n');
+  prompt.value = taskRequestText(card.title, card.description, card.note);
   prompt.defaultValue = prompt.value;
   const start = async (opts = {}) => {
     try {
       const r = await bridge.callTool('canban_start_session', { taskId: cardId, agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim(), prompt: prompt.value, ...opts });
       toast(r.note || `${agentSel.value === 'codex' ? 'Codex' : 'Claude'} で開始しました。セッションが現れると自動で紐付きます`, !!r.note);
-      closePane(cardId);
+      if (!taskDash?.active) closePane(cardId);
+      else { prompt.value = ''; workspace.draftValues.set(prompt, ''); }
       load();
     } catch (e) {
       toast(e.message, true);
@@ -3327,8 +3393,13 @@ async function openTaskModal(cardId, init = null) {
 
   const secs = {
     conv: { title: '説明', nodes: [desc], hint: '説明は Canban に保存します。新しいセッションの依頼文にも使います。' },
+    memo: { title: 'メモ', nodes: [memo] },
     related: { title: `紐付いたセッション（${card.links.length}）`, nodes: [...(linkRows.length ? linkRows : [h('p', { class: 'muted', text: 'なし' })]), ...pendingRows], hint: 'ホームのセッションをこのカードへドラッグして紐付けることもできます。' },
-    send: { title: '新しいセッションを開始', nodes: [h('div', { class: 'start-grid' }, agentSel, hostSel, cwd, dl), prompt,
+    send: { title: '新しいセッションを開始', nodes: [h('div', { class: 'start-grid' }, agentSel, hostSel, cwd, dl),
+      h('button', { class: 'btn', text: '説明・メモを依頼文に取り込む', onclick: () => {
+        if (prompt.value !== prompt.defaultValue && prompt.value.trim()) return toast('入力中の依頼文があります。先に内容を確認してください', true);
+        prompt.value = taskRequestText(title.value, desc.value, memo.value);
+      } }), prompt,
       h('div', { class: 'row', style: { marginTop: '8px', flexWrap: 'wrap' } },
         h('button', { class: 'btn-primary', title: shortcutHelp(), text: `▶ 開始（${routeLabel(b.settings.launch.route, { desktop: true })}）`, onclick: e => start(optsFromEvent(e)) }),
         h('button', { class: 'btn', text: 'デスクトップで', onclick: () => start({ route: 'desktop' }) }),
@@ -3342,6 +3413,7 @@ async function openTaskModal(cardId, init = null) {
   const cols = { main: h('div', { class: 'pcol', 'data-col': 'main' }), side: h('div', { class: 'pcol', 'data-col': 'side' }) };
   for (const id of Object.keys(PANE_SECS)) {
     const sc = secs[id];
+    if (!sc) continue;
     cols[PANE_SECS[id][0]].append(sectionEl(id, sc?.nodes || [h('span', { class: 'muted', text: 'なし' })], { title: sc?.title ?? secTitle(id), hint: sc?.hint }));
   }
   const top = h('div', { class: 'ph-top' }, title, h('span', { class: 'ph-btns' }));
@@ -4139,6 +4211,7 @@ $('#board').addEventListener('wheel', (e) => {
 // ======================================================================
 // @include workspace-icons.js
 // @include workspace.js
+// @include task-dashboard.js
 
 // Theme & lifecycle
 // ======================================================================
@@ -4170,7 +4243,7 @@ async function restorePanes() {
 function sharedUiSnapshot() {
   return {
     filters: { ...state.filters }, sidebar: state.sideOpen, view: state.view, workspacePage: workspace.page, navCollapsed: workspace.collapsed, activeTask: workspace.activeTask || workspace.pendingTask || null, labelsExpanded: state.labelsExpanded,
-    paneGlobal: { ...paneGlobal }, paneLayout: structuredClone(paneLayout), panes: store.get('panes', []),
+    paneGlobal: taskDash?.active ? store.get('paneGlobal', PANE_DEF) : { ...paneGlobal }, paneLayout: taskDash?.active ? store.get('paneLayout', PANE_LAYOUT_DEF) : structuredClone(paneLayout), panes: store.get('panes', []),
     dashOpen, paneCollect, orbPos: { ...orbPos }, paneBarOpen, collapsedLanes: [...collapsedLanes],
   };
 }
@@ -4226,6 +4299,7 @@ async function applySharedUi(record, { redraw = true } = {}) {
     toast('入力途中の内容を保持しています。保存または入力を消してから共有状態を読み込んでください。', true);
     return;
   }
+  if (typeof taskDash !== 'undefined' && taskDash?.active) await taskDash.leave(false);
   const wasApplying = sharedUi.applying;
   sharedUi.applying = true;
   try { if (panes.length) for (const pane of [...panes]) closePane(pane.id); }
@@ -4322,6 +4396,7 @@ async function initializeSharedUi() {
 }
 
 function hasUnsavedPaneInput() {
+  if (taskDash?.hasDrafts()) return true;
   return workspace.hasDrafts() || [...document.querySelectorAll('.send-box textarea')].some((input) => input.value.trim())
     || [...document.querySelectorAll('textarea.note')].some((input) => input.value !== input.defaultValue);
 }

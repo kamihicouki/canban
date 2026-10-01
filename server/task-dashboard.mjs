@@ -14,7 +14,7 @@ export function normalizeTaskDashboard(value, taskId, links = []) {
     seen.add(p.id);
     const free = p.free && Number.isFinite(p.free.x) && Number.isFinite(p.free.y)
       ? { x: finite(p.free.x, 0, 100000, 0), y: finite(p.free.y, 0, 100000, 0) } : null;
-    panes.push({ id: p.id, space: choose(p.space, ['fixed', 'free']), mode: choose(p.mode, ['text', 'preview', 'digest']), size: choose(p.size, ['S', 'M', 'L']), note: p.note === true, free });
+    panes.push({ id: p.id, space: choose(p.space, ['fixed', 'free']), mode: choose(p.mode, ['text', 'preview', 'digest']), size: choose(p.size, ['S', 'M', 'L']), note: p.note === true, hidden: p.id !== taskId && p.hidden === true, free });
   }
   const g = value.paneGlobal || {};
   const l = value.paneLayout || {};

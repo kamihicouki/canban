@@ -6,9 +6,11 @@ import path from 'node:path';
 import { Store } from '../server/store.mjs';
 
 const snapshot = (id, preset = 'A') => ({ preset, activeSessionId: id, paneGlobal: { arrange: 'row' }, paneLayout: { main: ['conv', 'send'], side: ['memo'], ratio: .6, heights: { conv: 300 } }, panes: [{ id, space: 'free', size: 'M', free: { x: 120, y: 80 } }] });
+const dataDirs = new WeakMap();
 async function setup(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-task-dashboards-'));
   const store = new Store(dir);
+  dataDirs.set(store, dir);
   t.after(async () => { await store.close(); fs.rmSync(dir, { recursive: true, force: true }); });
   return store;
 }
@@ -70,4 +72,15 @@ test('task membership and layout preferences are retained for more than eight se
   const read = await store.getTaskDashboard({ taskId: task.cardId });
   assert.equal(read.links.length, 12);
   assert.deepEqual(read.state.panes.map(p => p.id), ids);
+});
+
+test('closing presentation keeps membership, hidden flag and parent semantics across a new Store instance', async t => {
+  const store = await setup(t), task = await store.createTask({ title: '閉じると解除の分離' });
+  await store.linkSession({ taskId: task.cardId, sessionId: 'codex:a' });
+  await store.saveTaskDashboard({ taskId: task.cardId, expectedRevision: 0, state: { panes: [{ id: task.cardId, hidden: true }, { id: 'codex:a', hidden: true }] } });
+  const other = new Store(dataDirs.get(store));
+  const record = await other.getTaskDashboard({ taskId: task.cardId });
+  assert.deepEqual(record.links, ['codex:a']);
+  assert.equal(record.state.panes[0].hidden, false);
+  assert.equal(record.state.panes[1].hidden, true);
 });

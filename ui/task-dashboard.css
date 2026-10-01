@@ -1,0 +1,25 @@
+.task-dashboard-bar { position: relative; pointer-events: auto; margin: 8px 12px 0; padding: 10px 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: var(--modal-bg); border: 1px solid var(--accent); border-radius: 10px; color: var(--list-fg); }
+.task-dashboard-title { max-inline-size: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-parent-label { font-size: 11px; color: var(--accent); }
+.task-session-select { max-inline-size: 280px; min-inline-size: 130px; }
+.task-save-status { margin-inline-start: auto; font-size: 11px; color: var(--list-muted); }
+.task-presets button { white-space: nowrap; color: var(--list-fg); background: var(--btn-subtle); border: 1px solid var(--btn-subtle-hover); padding: 6px 10px; }
+.task-presets button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.task-parent { border-block-start: 4px solid var(--accent); }
+.task-parent .pane-h { background: color-mix(in srgb, var(--accent) 7%, var(--modal-bg)); }
+.pane-layer[data-task-preset] .task-parent .pane-b { display: block; overflow: auto; }
+.pane-layer[data-task-preset] .task-parent .pcol { overflow: visible; }
+.pane-layer[data-task-preset] .task-parent .column-split { display: none; }
+.pane-layer[data-task-preset] .pane { min-inline-size: 0; }
+.pane-layer[data-task-preset="A"] .pane:not(.task-parent) .pane-b,
+.pane-layer[data-task-preset="C"] .pane .pane-b { grid-template-columns: minmax(0, 1fr); overflow: auto; display: block; }
+.pane-layer[data-task-preset="A"] .pane:not(.task-parent) .pcol,
+.pane-layer[data-task-preset="C"] .pane .pcol { overflow: visible; }
+.pane-layer[data-task-preset="A"] .pane:not(.task-parent) .column-split,
+.pane-layer[data-task-preset="C"] .pane .column-split { display: none; }
+@media (max-width: 719px) {
+  .task-dashboard-bar { margin-inline: 8px; gap: 6px; padding: 8px; }
+  .task-session-select { flex: 1; max-inline-size: 100%; }
+  .task-save-status { margin-inline-start: 0; }
+  .task-dashboard-title { max-inline-size: 100%; }
+}

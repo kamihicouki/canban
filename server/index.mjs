@@ -460,7 +460,7 @@ const TOOLS = [
         host = { id: h.id, alias: h.alias, label: h.label, local: false, sshPort: h.sshPort };
         remoteEnabled = h.enabled;
       }
-      const text = String(prompt ?? [task.title, task.description].filter(Boolean).join('\n\n')).slice(0, 8000);
+      const text = String(prompt ?? [task.title, task.description, task.note].filter(Boolean).join('\n\n')).slice(0, 8000);
       const prefs = state.settings.launch;
       const useRoute = route || prefs.route;
       let detail;
@@ -486,7 +486,13 @@ const TOOLS = [
     description: '既存のセッションをタスクカードに紐付ける（紐付いたセッションはタスクカードの中に表示される）。',
     inputSchema: { type: 'object', properties: { taskId: { type: 'string' }, sessionId: { type: 'string' } }, required: ['taskId', 'sessionId'], additionalProperties: false },
     _meta: appAndModel,
-    handler: async (a) => ({ text: '紐付けました', structured: await store.linkSession(a) }),
+    handler: async (a) => {
+      const { sessions } = await allSessions(await store.load());
+      const session = sessions.find(s => s.id === a.sessionId);
+      if (!session) throw new Error('セッションが見つかりません');
+      if (session.subagent) throw new Error('タスクには通常のセッションを紐付けてください。サブエージェントは親セッションから参照できます。');
+      return { text: '紐付けました', structured: await store.linkSession(a) };
+    },
   },
   appTool('canban_unlink_session', 'セッションの紐付けを解除', { taskId: { type: 'string' }, sessionId: { type: 'string' } }, ['taskId', 'sessionId'], (a) => store.unlinkSession(a)),
   appTool('canban_update_task', 'タスクカードを更新', { cardId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' } }, ['cardId'], (a) => store.updateTask(a)),
@@ -499,7 +505,12 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { taskId: { type: 'string' } }, required: ['taskId'], additionalProperties: false },
     annotations: { readOnlyHint: true },
     _meta: appOnly,
-    handler: async (a) => ({ text: 'タスクの画面設定', structured: await store.getTaskDashboard(a) }),
+    handler: async (a) => {
+      const record = await store.getTaskDashboard(a);
+      const { sessions } = await allSessions(await store.load());
+      const members = new Set(record.links);
+      return { text: 'タスクの画面設定', structured: { ...record, sessions: sessions.filter(s => members.has(s.id)).map(s => ({ id: s.id, title: s.title, agent: s.agent, status: s.status || 'idle', subagent: !!s.subagent })) } };
+    },
   },
   appTool('canban_save_task_dashboard', 'タスクの画面設定を保存', {
     taskId: { type: 'string' }, expectedRevision: { type: 'integer', minimum: 0 }, state: { type: 'object' },

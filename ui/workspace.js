@@ -107,7 +107,7 @@ const workspace = {
     $('#logo').textContent = this.page === 'analytics' ? '分析' : 'ホーム';
     for (const b of this.links.children) {
       if (b.dataset.page) b.setAttribute('aria-current', b.dataset.page === this.page ? 'page' : 'false');
-      const count = b.querySelector('.nav-count'); if (count) count.textContent = panes.length + (this.activeTask || this.pendingTask ? 1 : 0);
+      const count = b.querySelector('.nav-count'); if (count) count.textContent = panes.length + (this.pendingTask && !panes.some(p => p.id === this.pendingTask) ? 1 : 0);
     }
     const utility = this.utilityPage();
     this.toolbar.hidden = !utility;
@@ -130,7 +130,7 @@ const workspace = {
     if (typeof id !== 'string' || !id.startsWith('task:')) return;
     this.pendingTask = null;
     store.set('activeTask', null);
-    await openTaskModal(id, { space: null, mode: null, size: null, note: false, free: null });
+    await taskDash.open(id, { reveal: false });
     savePanes();
   },
   async saveField(el, save) {

@@ -201,3 +201,25 @@ test('accounts: usage is visible to the model, account settings only to the boar
   const ids = board.lists.flatMap((l) => l.cards.map((c) => c.id)); // c2, possibly inside a task card
   assert.ok(ids.length && !ids.some((id) => id.startsWith('codex:')));
 });
+
+test('task dashboards are app-only, retain closed linked panes and reject stale revisions and subagents', async () => {
+  const { result } = await rpc('tools/list');
+  for (const name of ['canban_get_task_dashboard','canban_save_task_dashboard']) assert.deepEqual(result.tools.find(t=>t.name===name)._meta.ui.visibility,['app']);
+  const created = await call('canban_create_task',{title:'保存される作業画面',description:'目的'});
+  const taskId = created.structuredContent.cardId;
+  const subagent = await call('canban_link_session',{taskId,sessionId:'codex:t2'});
+  assert.equal(subagent.isError,true);assert.match(subagent.content[0].text,/通常のセッション/);
+  await call('canban_link_session',{taskId,sessionId:'codex:t1'});
+  const initial = (await call('canban_get_task_dashboard',{taskId})).structuredContent;
+  assert.equal(initial.revision,0);assert.equal(initial.state,null);assert.equal(initial.sessions[0].id,'codex:t1');
+  const state={preset:'B',activeSessionId:'codex:t1',panes:[{id:taskId},{id:'codex:t1',hidden:true}],paneLayout:{ratio:.55,heights:{conv:250}}};
+  const saved = (await call('canban_save_task_dashboard',{taskId,expectedRevision:0,state})).structuredContent.result;
+  assert.equal(saved.saved,true);assert.equal(saved.revision,1);
+  const conflict = (await call('canban_save_task_dashboard',{taskId,expectedRevision:0,state:{preset:'C'}})).structuredContent.result;
+  assert.equal(conflict.conflict,true);assert.equal(conflict.state.preset,'B');
+  await call('canban_save_ui_state',{expectedRevision:1,state:{panes:[]}});
+  const restored=(await call('canban_get_task_dashboard',{taskId})).structuredContent;
+  assert.deepEqual(restored.links,['codex:t1']);assert.equal(restored.state.panes[1].hidden,true);
+  await call('canban_unlink_session',{taskId,sessionId:'codex:t1'});
+  assert.deepEqual((await call('canban_get_task_dashboard',{taskId})).structuredContent.state.panes.map(p=>p.id),[taskId]);
+});
