@@ -1,6 +1,6 @@
 # Chrome Web Store — Canban
 
-最終更新: 2026-09-30
+最終更新: 2026-10-02
 
 ## ストア掲載情報
 
@@ -19,7 +19,7 @@
 ```text
 Canban は、Codex / Claude Code のセッションを Chrome からカンバンで整理する拡張です。
 
-セッションを一覧表示し、検索、分類、ラベル、メモで作業を整理できます。会話や実行状態を確認し、複数のセッションを並べて表示できます。Canban を利用している Codex / Claude の画面と、ボードの分類や表示設定を共有できます。
+セッションを一覧表示し、検索、分類、ラベル、メモで作業を整理できます。タスクをすばやく追加し、詳細画面でダッシュボードや進捗を確認できます。会話や実行状態を確認し、複数のセッションを並べて表示できます。Canban を利用している Codex / Claude の画面と、ボードの分類や表示設定を共有できます。
 
 利用には Chrome 拡張に加え、コンピューターへの Canban 連携ソフトの導入が必要です。macOS / Linux と Node.js 22.13 以降に対応します。Chrome 拡張だけをインストールしてもセッションは表示されません。導入手順はサポートサイトをご覧ください。
 
@@ -43,7 +43,7 @@ https://github.com/kamihicouki/canban
 |---|---|---|
 | ストアアイコン | 128×128 PNG | `chrome/icons/icon-128.png` |
 | ツールバーアイコン | 16×16 / 48×48 PNG | `chrome/icons/icon-16.png`, `icon-48.png` |
-| スクリーンショット | 1280×800 または 640×400 | `chrome/store/screenshot-board.png`（1280×800、同一 UI と隔離した MCP 開発ホスト・テストデータで撮影。ストア版インストールの動作証拠ではない） |
+| スクリーンショット | 1280×800 または 640×400 | `chrome/store/screenshot-board.png` / `screenshot-task-add.png`（1280×800、0.16.0 の同一 UI と隔離した MCP 開発ホスト・模擬データで撮影。ストア版インストールの動作証拠ではない） |
 | 宣伝用タイル（任意） | 440×280 | 未作成 |
 
 ## 権限の説明
@@ -102,7 +102,7 @@ Google 側の設定: https://developer.chrome.com/docs/webstore/using-api
 
 認証の作成・同意はアカウント所有者が行う。公式の順序は、Google Cloud で Chrome Web Store API を有効化 → OAuth 同意画面を設定 → Web application の OAuth client を作成（redirect URI: `https://developers.google.com/oauthplayground`）→ OAuth Playground の「Use your own OAuth credentials」に自分の client を設定 → `https://www.googleapis.com/auth/chromewebstore` をストア管理アカウントで認可 → authorization code を交換して refresh token を取得、となる。External / Testing 状態で発行する refresh token は通常7日で失効するため、運用用の OAuth 設定と Google の要件を確認してから認可する。GitHub の secret 登録には `gh secret set NAME --env chrome-web-store` の対話入力を使う。コマンド引数やログへ値を露出させない。
 
-PR / main 更新時はテストと ZIP 作成のみ。`chrome-v<package.json の version>` タグを push すると審査申請し、承認後に公開する。手動実行は main のみ、`upload`（アップロードのみ）か `publish`（審査申請）を選択できる。拡張本体 0.15.0 は main に統合済み。OAuth Secrets と公開連絡先確認が揃ってから初回申請する。
+PR / main 更新時はテストと ZIP 作成のみで、ストアは自動更新されない。`chrome-v<package.json の version>` タグを push すると審査申請し、承認後に公開する。手動実行は main のみ、`upload`（アップロードのみ）か `publish`（審査申請）を選択できる。API による実行には OAuth Secrets が必要。2026-10-02 の readback では未登録であるため、今回の更新は Dashboard から申請する。公開連絡先メールは本人確認済み、0.15.0 の一般公開を確認済み。
 
 同じストア項目へのデプロイを直列化する。既存の審査中・公開待ち申請がある場合、警告・ポリシー措置がある場合、アップロードが失敗した場合は停止する。申請後は API で状態を再取得する。`PENDING_REVIEW` は審査待ちであり、公開済みではない。
 
@@ -122,6 +122,10 @@ Chrome の Canban アイコンからボードを開く。認証用の Canban ア
 
 ## バージョン履歴
 
+2026-10-02: 0.16.0 の公開準備。`origin/main` の `03702abfb06cb402c24883846fc4e93420e6ba11` を基に、公開済み 0.15.0 と重複しないよう package / MCP manifest の番号を更新。タスクのクイック追加、タスク詳細ダッシュボード、ワークスペース表示と属性継承の改善を含む。権限とデータ利用区分は変わらない。main push の4構成テストとパッケージ作成は成功済み。公開版の実機動作確認は別途必要。
+
+2026-10-02: 0.15.0 の一般公開を Dashboard と公開ストアページで確認。パブリッシャー連絡先メール確認・審査申請は完了。公開 URL: https://chromewebstore.google.com/detail/canban/kmnkdbmckholannmfhjfmceofmjdbndh 。
+
 2026-09-30: 0.14.0 のローカル拡張ソースを使った ZIP 作成、ストア用アイコン、プライバシー文書、API v2 デプロイの準備。ストア項目を新規作成し ZIP のアップロードまで実施。審査申請・掲載は未実施。
 
 ## 公開前チェック
@@ -134,7 +138,7 @@ Chrome の Canban アイコンからボードを開く。認証用の Canban ア
 - [x] Developer Dashboard の本人確認・開発者登録確認
 - [x] ストア項目作成、掲載画像・分類・言語、データ種類とテスト手順の保存
 - [x] データ使用の3つの宣言の確定と保存後の再確認
-- [ ] 公開連絡先メールの確認（確認メール送信済み）
+- [x] 公開連絡先メールの本人確認
 - [ ] GitHub Environment の認証設定
 - [ ] 審査申請、承認、公開ストアからの動作確認
 
@@ -164,7 +168,7 @@ PR #10は main `897ee4c69008fecfbb5917ba6b5bac849a66bbc5` へ統合済み。PR h
 
 このmainから作成済みの0.15.0 ZIPのSHA-256は `8f95897b88b2b3282c98722d52ce5098e845139ef69b7dcd7fb2de9f97f6a86c`。ストア下書きへの最新ZIP・画像・mainのプライバシーURLの反映は未実施。2026-09-30 14:00 UTC時点ではMacがロックされ、管理画面の最新状態を確認できていない。GitHub EnvironmentのOAuth Secretsは未登録。OAuthは継続デプロイ用であり、Dashboardからの初回申請は連絡先メール確認などの条件が整えば進められる。審査申請・実際の公開・ストアからの動作確認は未完了。
 
-## クイック追加のUI更新（未公開）
+## クイック追加のUI更新（0.16.0 の申請準備）
 
-- 全画面の「＋ タスク」と、列・レーンからの属性継承を追加。次回の公開前に、ボードとタスク追加フォームのスクリーンショットを更新する。
+- 全画面の「＋ タスク」と、列・レーンからの属性継承を追加。2026-10-02 に隔離した模擬セッションでボードとタスク追加フォームの掲載画像を更新済み。
 - Chromeの権限追加はなく、タスクの所属情報は従来のローカル保存先に保持する。
