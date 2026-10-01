@@ -72,14 +72,18 @@ test('list and card operations persist only to the kanban store', async () => {
   assert.equal(bad.isError, true);
 });
 
-test('directories: create, auto-assign by path, explicit override, filter', async () => {
+test('directories: source categories, explicit assignment and category-less filter', async () => {
   const dir = (await call('canban_create_directory', { name: 'Web', paths: ['/r/web'] })).structuredContent.result;
   let board = (await call('canban_get_board', { days: 0 })).structuredContent;
   const all = board.lists.flatMap((l) => l.cards);
   const inWeb = all.filter((c) => c.cwd === '/r/web');
   assert.ok(inWeb.length, 'fixtures have sessions under /r/web');
-  assert.ok(inWeb.every((c) => c.directory?.id === dir.id));
-  assert.equal(board.directories.find((d) => d.id === dir.id).count, inWeb.length);
+  assert.ok(inWeb.filter(c => c.agent === 'codex').every(c => c.directory === null), 'Codex without a project stays category-less');
+  assert.ok(inWeb.filter(c => c.agent === 'claude').every(c => c.directory?.name === 'web'), 'Claude falls back to its cwd name');
+  assert.equal(board.directories.find(d => d.id === dir.id).count, 0);
+  for (const card of inWeb) await call('canban_update_card', { cardId: card.id, directory: dir.id });
+  board = (await call('canban_get_board', { days: 0 })).structuredContent;
+  assert.equal(board.directories.find(d => d.id === dir.id).count, inWeb.length);
   const res = await call('canban_update_card', { cardId: inWeb[0].id, directory: '__none' });
   assert.ok(!res.isError, res.content?.[0]?.text);
   board = (await call('canban_get_board', { days: 0, directory: dir.id })).structuredContent;

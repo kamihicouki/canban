@@ -112,6 +112,8 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
   const lastActivity = dm?.lastActivityAt ? Number(dm.lastActivityAt) : 0;
   const updatedAt = Math.max(s.updatedAt ?? s.fileMtimeMs ?? 0, lastActivity) || null;
   const cwd = s.cwd || dm?.cwd || null;
+  const group = dm?.group;
+  const groupName = typeof group === 'string' ? group.trim() : typeof group?.name === 'string' ? group.name.trim() : typeof dm?.groupName === 'string' ? dm.groupName.trim() : '';
   return {
     id: sessionKey('claude', host, s.sessionId),
     agent: 'claude',
@@ -121,6 +123,7 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
     title: clip(title, 160),
     cwd,
     project: projectName(cwd),
+    claudeGroup: groupName ? { id: typeof group?.id === 'string' ? group.id : typeof dm?.groupId === 'string' ? dm.groupId : groupName, name: groupName } : null,
     branch: s.branch || null,
     model: dm?.model || s.model || null,
     createdAt: s.createdAt ?? s.fileBirthMs ?? null,

@@ -512,8 +512,9 @@ const TOOLS = [
     annotations: { readOnlyHint: true },
     _meta: appAndModel,
     handler: async (args) => {
-      const state = (await store.load());
+      let state = (await store.load());
       const { sessions } = await allSessions(state);
+      if (await store.syncSessionCategories(sessions)) state = await store.load();
       const days = Math.min(Math.max(Number(args.days) || 30, 1), 365);
       const st = computeStats(state, sessions, { ...args, days });
       return { text: `直近 ${days} 日: ${st.totals.sessions} セッション / ${st.totals.tokens.toLocaleString()} トークン`, structured: st };
