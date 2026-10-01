@@ -43,7 +43,7 @@ https://github.com/kamihicouki/canban
 |---|---|---|
 | ストアアイコン | 128×128 PNG | `chrome/icons/icon-128.png` |
 | ツールバーアイコン | 16×16 / 48×48 PNG | `chrome/icons/icon-16.png`, `icon-48.png` |
-| スクリーンショット | 1280×800 または 640×400 | `chrome/store/screenshot-board.png` / `screenshot-task-add.png`（1280×800、0.16.0 の同一 UI と隔離した MCP 開発ホスト・模擬データで撮影。ストア版インストールの動作証拠ではない） |
+| スクリーンショット | 1280×800 または 640×400 | `chrome/store/screenshot-board-0.16.0.jpg` / `screenshot-task-add.jpg`（1280×800、0.16.0 の同一 UI と隔離した MCP 開発ホスト・模擬データで撮影。ストア版インストールの動作証拠ではない） |
 | 宣伝用タイル（任意） | 440×280 | 未作成 |
 
 ## 権限の説明
@@ -122,7 +122,7 @@ Chrome の Canban アイコンからボードを開く。認証用の Canban ア
 
 ## バージョン履歴
 
-2026-10-02: 0.16.0 の公開準備。`origin/main` の `03702abfb06cb402c24883846fc4e93420e6ba11` を基に、公開済み 0.15.0 と重複しないよう package / MCP manifest の番号を更新。タスクのクイック追加、タスク詳細ダッシュボード、ワークスペース表示と属性継承の改善を含む。権限とデータ利用区分は変わらない。main push の4構成テストとパッケージ作成は成功済み。公開版の実機動作確認は別途必要。
+2026-10-02: 0.16.0 の公開準備。`origin/main` の `03702abfb06cb402c24883846fc4e93420e6ba11` を基に、公開済み 0.15.0 と重複しないよう package / MCP manifest / Codex plugin の番号を更新。タスクのクイック追加、タスク詳細ダッシュボード、ワークスペース表示と属性継承の改善を含む。権限とデータ利用区分は変わらない。変更前のmain push の4構成テストとパッケージ作成は成功済み。公開版の実機動作確認は別途必要。
 
 2026-10-02: 0.15.0 の一般公開を Dashboard と公開ストアページで確認。パブリッシャー連絡先メール確認・審査申請は完了。公開 URL: https://chromewebstore.google.com/detail/canban/kmnkdbmckholannmfhjfmceofmjdbndh 。
 
