@@ -23,6 +23,32 @@ function rpc(method, params) {
 }
 const call = async (name, args = {}) => (await rpc('tools/call', { name, arguments: args })).result;
 
+test('quick tasks persist all inherited attributes through MCP, filtering and saved views', async () => {
+  const directory = (await call('canban_create_directory', { name: 'Quick Task Category' })).structuredContent.result.id;
+  const label = (await call('canban_create_label', { name: 'Quick Task Label' })).structuredContent.result.id;
+  const context = { project: 'task-only-project', folder: 'task-folder', section: 'sec-1', agent: 'codex', host: 'local', account: 'codex:quick-test' };
+  const args = { title: 'Quick Task', list: 'doing', directory, labels: [label], context, clientRequestId: 'mcp-quick-1' };
+  const created = await call('canban_create_task', args);
+  assert.ok(!created.isError, created.content?.[0]?.text);
+  const taskId = created.structuredContent.cardId;
+  assert.equal((await call('canban_create_task', args)).structuredContent.cardId, taskId);
+  const board = (await call('canban_get_board', { ...context, directory, label })).structuredContent;
+  const task = board.lists.flatMap(l => l.cards).find(c => c.id === taskId);
+  assert.ok(task, 'unlinked task remains visible under every inherited filter');
+  assert.deepEqual(task.context, context); assert.equal(task.links.length, 0);
+  assert.equal(task.codexSection.id, 'sec-1'); assert.equal(task.account, 'codex:quick-test');
+  assert.ok(board.projects.some(p => p.name === context.project));
+  const saved = await call('canban_save_view', { name: 'Quick Task View', filters: { label, project: context.project } });
+  assert.ok(!saved.isError, saved.content?.[0]?.text);
+  const withViews = (await call('canban_get_board', { days: 0 })).structuredContent;
+  assert.equal(withViews.settings.views.find(v => v.name === 'Quick Task View').filters.label, label);
+  const edited = await call('canban_update_task', { cardId: taskId, context: { project: null }, directory: '__none', labels: [] });
+  assert.ok(!edited.isError, edited.content?.[0]?.text);
+  const none = (await call('canban_get_board', { directory: '__none', label: '__none' })).structuredContent;
+  assert.ok(none.lists.flatMap(l => l.cards).some(c => c.id === taskId));
+  await call('canban_delete_task', { cardId: taskId });
+});
+
 before(async () => {
   child = spawn('/bin/sh', [path.join(root, 'scripts', 'launch.sh')], { cwd: root, env: { ...process.env, CANBAN_DATA_DIR: dataDir, CANBAN_CODEX_HOME: fx.codexHome, CANBAN_CLAUDE_HOME: fx.claudeHome, CANBAN_CLAUDE_DESKTOP_DIR: fx.desktopDir, CANBAN_LAUNCH_DRYRUN: '1', CANBAN_SEARCH_INDEX: '0', CANBAN_GH: path.join(root, 'tests', 'fake-gh.sh'), CANBAN_GLAB: path.join(root, 'tests', 'fake-glab.sh'), FAKE_GH_DATA: '/dev/null' }, stdio: ['pipe', 'pipe', 'ignore'] });
   readline.createInterface({ input: child.stdout }).on('line', (l) => {

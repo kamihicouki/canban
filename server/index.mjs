@@ -23,6 +23,7 @@ import { codexHome } from './sources/codex.mjs';
 import { claudeHome, claudeDesktopSessionsDir } from './sources/claude.mjs';
 import { accountTools, accountFilterProp, accountDesktopNote, extraWatchRoots } from './accounts-mcp.mjs';
 import { boardHtml } from './ui.mjs';
+import { taskContextSchema } from './task-context.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // The Codex plugin manifest is absent when installed another way (Claude Desktop extension, a bare copy).
@@ -69,6 +70,7 @@ const filterProps = {
   folder: { type: 'string', description: '作業フォルダ名（cwd の末尾）で絞り込み' },
   section: { type: 'string', description: "Codex のセクション ID で絞り込み。'__none' でセクションなし" },
   directory: { type: 'string', description: "Canban のカテゴリ（ユーザーが作る、1 枚に 1 つのまとまり。API 上の名前は directory）の ID で絞り込み。'__none' でカテゴリなし" },
+  label: { type: 'string', description: "ラベル IDで絞り込み。'__none' でラベルなし" },
   status: { type: 'string', enum: ['running', 'waiting', 'completed', 'aborted', 'idle'], description: '実行状態で絞り込み' },
   q: { type: 'string', description: 'タイトル・最初の依頼・メモ・ラベルの部分一致検索' },
   includeArchived: { type: 'boolean' },
@@ -419,11 +421,11 @@ const TOOLS = [
     name: 'canban_create_task',
     title: 'タスクカードを追加',
     description: 'セッションに紐づかないタスクカードを作る（Trello のカードと同じ）。list はリスト ID か名前（省略時は既定のリスト）。',
-    inputSchema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, list: { type: 'string' } }, required: ['title'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, list: { type: 'string' }, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } }, context: taskContextSchema, clientRequestId: { type: 'string', maxLength: 128 } }, required: ['title'], additionalProperties: false },
     _meta: appAndModel,
-    handler: async ({ title, description, list }) => {
+    handler: async ({ title, description, list, directory, labels, context, clientRequestId }) => {
       const l = list ? resolveList((await store.load()).lists, list) : null;
-      const res = await store.createTask({ title, description, listId: l?.id });
+      const res = await store.createTask({ title, description, listId: l?.id || list, directory, labels, context, clientRequestId });
       return { text: `タスクカード「${res.title}」を作成しました（${res.cardId}）`, structured: res };
     },
   },
@@ -489,7 +491,7 @@ const TOOLS = [
     handler: async (a) => ({ text: '紐付けました', structured: await store.linkSession(a) }),
   },
   appTool('canban_unlink_session', 'セッションの紐付けを解除', { taskId: { type: 'string' }, sessionId: { type: 'string' } }, ['taskId', 'sessionId'], (a) => store.unlinkSession(a)),
-  appTool('canban_update_task', 'タスクカードを更新', { cardId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' } }, ['cardId'], (a) => store.updateTask(a)),
+  appTool('canban_update_task', 'タスクカードを更新', { cardId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, context: taskContextSchema, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } } }, ['cardId'], (a) => store.updateTask(a)),
   appTool('canban_delete_task', 'タスクカードを削除', { cardId: { type: 'string' } }, ['cardId'], (a) => store.deleteTask(a)),
   appTool('canban_clear_pending', '開始待ちを取り消す', { taskId: { type: 'string' } }, ['taskId'], (a) => store.clearPending(a)),
   {

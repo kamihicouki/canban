@@ -28,7 +28,7 @@ const workspace = {
     this.title = h('h1');
     this.limit = h('button', { class: 'usage-link', 'aria-label': 'Agent Usageを開く', onclick: () => this.navigate('usage') });
     this.refresh = h('button', { class: 'btn', text: '再読み込み', onclick: () => load({ refresh: true }) });
-    this.toolbar.append(this.mobileButton(), this.title, this.limit, this.refresh);
+    this.toolbar.append(this.mobileButton(), this.title, taskQuickAdd.button(), this.limit, this.refresh);
     this.pages = h('main', { class: 'workspace-pages', hidden: true, 'aria-label': 'ページの内容' });
     this.content.prepend(this.toolbar); this.content.append(this.pages);
     this.content.querySelector('.topbar').prepend(this.mobileButton());
@@ -38,7 +38,7 @@ const workspace = {
     for (const id of ['rulesBtn','viewsBtn','analyticsBtn','labelsBtn','hostsBtn','settingsBtn']) {
       const el = this.content.querySelector(`#${id}`); el.hidden = true; el.removeAttribute('data-pri');
     }
-    paneBar.prepend(this.mobileButton());
+    paneBar.prepend(this.mobileButton(), taskQuickAdd.button());
     document.body.append(this.nav, this.content);
     this.nav.addEventListener('keydown', e => {
       if (e.key === 'Escape' && window.innerWidth < 720) { this.closeMobile(); this.mobileReturn?.focus(); }
