@@ -6,6 +6,7 @@ import { defaultAccounts, normalizeAccounts, applyAccountPatch } from './account
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { normalizeTaskDashboard, taskDashboardRecord } from './task-dashboard.mjs';
 
 export const STORE_VERSION = 1;
 export const LIST_COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
@@ -395,6 +396,21 @@ export class Store {
       if (s.cards[cardId]?.kind !== 'task') throw new Error('タスクカードが見つかりません');
       delete s.cards[cardId];
       return { deleted: cardId };
+    });
+  }
+
+  getTaskDashboard({ taskId }) {
+    return taskDashboardRecord(this.load().cards[taskId], taskId);
+  }
+
+  saveTaskDashboard({ taskId, expectedRevision, state }) {
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw new Error('タスクの画面設定のリビジョンが正しくありません');
+    return this.mutate((s) => {
+      const task = s.cards[taskId];
+      const current = taskDashboardRecord(task, taskId);
+      if (current.revision !== expectedRevision) return { [SKIP_WRITE]: true, value: { ...current, saved: false, conflict: true } };
+      task.dashboard = { revision: current.revision + 1, state: normalizeTaskDashboard(state, taskId, task.links || []) };
+      return { ...taskDashboardRecord(task, taskId), saved: true, conflict: false };
     });
   }
 

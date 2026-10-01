@@ -493,6 +493,18 @@ const TOOLS = [
   appTool('canban_delete_task', 'タスクカードを削除', { cardId: { type: 'string' } }, ['cardId'], (a) => store.deleteTask(a)),
   appTool('canban_clear_pending', '開始待ちを取り消す', { taskId: { type: 'string' } }, ['taskId'], (a) => store.clearPending(a)),
   {
+    name: 'canban_get_task_dashboard',
+    title: 'タスクの画面設定を取得',
+    description: 'タスクごとに保存したカードダッシュボードの配置と、明示的に紐付いたセッションIDを返す。会話や実行状態は含まない。',
+    inputSchema: { type: 'object', properties: { taskId: { type: 'string' } }, required: ['taskId'], additionalProperties: false },
+    annotations: { readOnlyHint: true },
+    _meta: appOnly,
+    handler: async (a) => ({ text: 'タスクの画面設定', structured: await store.getTaskDashboard(a) }),
+  },
+  appTool('canban_save_task_dashboard', 'タスクの画面設定を保存', {
+    taskId: { type: 'string' }, expectedRevision: { type: 'integer', minimum: 0 }, state: { type: 'object' },
+  }, ['taskId', 'expectedRevision', 'state'], (a) => store.saveTaskDashboard(a)),
+  {
     name: 'canban_get_stats',
     title: '分析',
     description: 'セッション数・トークン量の推移、プロジェクト／カテゴリ／マシン別の内訳、リストの滞留時間、完了までのサイクルタイムを返す。',
