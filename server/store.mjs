@@ -6,6 +6,7 @@ import { defaultAccounts, normalizeAccounts, applyAccountPatch } from './account
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { normalizeTaskContext } from './task-context.mjs';
 
 export const STORE_VERSION = 1;
 export const LIST_COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
@@ -68,7 +69,7 @@ function normalizeDispatch(x) {
   };
 }
 
-const VIEW_FILTER_KEYS = ['agent', 'host', 'account', 'status', 'project', 'folder', 'section', 'directory', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'includeHidden', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
+const VIEW_FILTER_KEYS = ['agent', 'host', 'account', 'status', 'project', 'folder', 'section', 'directory', 'label', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'includeHidden', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
 function normalizeView(v) {
   if (!v || typeof v.id !== 'string' || !String(v.name || '').trim()) return null;
   const filters = {};
@@ -227,6 +228,20 @@ function cloneUiState(state) {
 
 const SKIP_WRITE = Symbol('skipWrite');
 
+function taskAttributes(state, { directory, labels, context }) {
+  const attrs = {};
+  if (directory !== undefined && directory !== null && directory !== '') {
+    if (directory !== '__none' && !state.directories.some(d => d.id === directory)) throw new Error('カテゴリが見つかりません');
+    attrs.directoryId = directory;
+  }
+  if (labels !== undefined) {
+    if (!Array.isArray(labels) || labels.some(id => !state.labels.some(l => l.id === id))) throw new Error('ラベルが見つかりません');
+    attrs.labels = [...new Set(labels)];
+  }
+  if (context !== undefined) attrs.context = normalizeTaskContext(context);
+  return attrs;
+}
+
 export class Store {
   constructor(dir = dataDir()) {
     this.dir = dir;
@@ -375,23 +390,32 @@ export class Store {
   }
 
   // ---- task cards (not backed by a session) -------------------------------
-  async createTask({ title, listId, description = '' }) {
+  async createTask({ title, listId, description = '', directory, labels, context, clientRequestId }) {
     title = String(title || '').trim();
     if (!title) throw new Error('カード名を入力してください');
+    if (clientRequestId !== undefined && (typeof clientRequestId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(clientRequestId))) throw new Error('作成リクエストが不正です');
     return this.mutate((s) => {
+      if (clientRequestId) {
+        const existing = Object.entries(s.cards).find(([, c]) => c.kind === 'task' && c.clientRequestId === clientRequestId);
+        if (existing) return { cardId: existing[0], ...existing[1] };
+      }
+      const attrs = taskAttributes(s, { directory, labels, context });
+      if (listId && !s.lists.some(l => l.id === listId)) throw new Error('リストが見つかりません');
       const lid = s.lists.some((l) => l.id === listId) ? listId : s.defaultListId;
       const id = `task:${crypto.randomBytes(6).toString('hex')}`;
-      const card = { kind: 'task', title: title.slice(0, 300), description: String(description).slice(0, 20000), createdAt: Date.now(), links: [], pending: [] };
+      const card = { kind: 'task', title: title.slice(0, 300), description: String(description).slice(0, 20000), createdAt: Date.now(), links: [], pending: [], ...attrs, ...(clientRequestId ? { clientRequestId } : {}) };
       placeCard(card, lid, Date.now()); // positive orders sort after session cards: new tasks go to the bottom
       s.cards[id] = card;
       return { cardId: id, ...card };
     });
   }
 
-  updateTask({ cardId, title, description, target }) {
+  updateTask({ cardId, title, description, target, context, directory, labels }) {
     return this.mutate((s) => {
       const card = s.cards[cardId];
       if (card?.kind !== 'task') throw new Error('タスクカードが見つかりません');
+      Object.assign(card, taskAttributes(s, { directory, labels, context }));
+      if (directory === null || directory === '') delete card.directoryId;
       if (title !== undefined) {
         const t = String(title).trim();
         if (!t) throw new Error('カード名を入力してください');

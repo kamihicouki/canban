@@ -22,7 +22,7 @@ function accountKv(s) {
   return [...(s.host ? [] : kv('アカウント', s.accountLabel || '不明（記録なし）')), ...(s.homeDir ? kv('設定フォルダ', s.homeDir) : [])];
 }
 function accountLaneKey(card) {
-  if (card.kind === 'task') return `${T.taskCard}`;
+  if (card.account) return `${card.agent === 'codex' || card.account.startsWith('codex:') ? 'Codex' : 'Claude'} · ${accountLabel(card.account)}`;
   if (card.host) return `⌂ ${card.host.label}`;
   return card.account ? `${card.agent === 'codex' ? 'Codex' : 'Claude'} · ${accountLabel(card.account)}` : 'アカウント不明';
 }

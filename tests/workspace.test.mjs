@@ -78,6 +78,7 @@ test('restoring analytics migrates a legacy project scope before requesting cate
   const calls = []; let saved = 0, rendered = 0;
   const state = { view: 'analytics', board: null, filters: { project: 'Old Project', folder: '/old', swimlane: 'project', directory: '', agent: 'codex', host: 'local', account: 'a1' } };
   const context = vm.createContext({ state, saveFilters: () => saved++, renderAnalytics: () => rendered++,
+    store: { values: new Map(), get(key, fallback) { return this.values.get(key) ?? fallback; }, set(key, value) { this.values.set(key, value); } },
     bridge: { callTool: async (name, args) => {
       calls.push([name, plain(args)]);
       return name === 'canban_get_board' ? { directories: [{ id: 'd1', name: 'Old Project' }] } : {};
@@ -88,6 +89,13 @@ test('restoring analytics migrates a legacy project scope before requesting cate
   assert.deepEqual(calls[1][1], { days: 30, agent: 'codex', host: 'local', account: 'a1', directory: 'd1' });
   assert.equal(state.filters.project, ''); assert.equal(state.filters.folder, '');
   assert.equal(state.filters.swimlane, 'directory'); assert.equal(saved, 1); assert.equal(rendered, 1);
+  Object.assign(state.filters, { project: 'New Project', folder: 'new-folder', swimlane: 'project', label: 'l1' });
+  await vm.runInContext('load();', context);
+  assert.equal(state.filters.project, 'New Project');
+  assert.equal(state.filters.folder, 'new-folder');
+  assert.equal(state.filters.swimlane, 'project');
+  assert.equal(calls.at(-1)[1].project, 'New Project');
+  assert.equal(calls.at(-1)[1].label, 'l1');
 });
 
 test('explicit shared-state reload keeps edited forms and open panes', async () => {
