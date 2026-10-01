@@ -953,6 +953,15 @@ async function act(name, args, { reload = true, okMsg } = {}) {
 // Loading
 // ======================================================================
 let loadSeq = 0;
+function migrateLegacyScope(board) {
+  const f = state.filters;
+  if (!f.project && !f.folder && f.swimlane !== 'project') return false;
+  if (f.project && !f.directory) f.directory = board.directories.find(d => d.name === f.project)?.id || '';
+  f.project = ''; f.folder = '';
+  if (f.swimlane === 'project') f.swimlane = 'directory';
+  saveFilters();
+  return true;
+}
 async function load({ refresh = false } = {}) {
   if (state.view === 'analytics') return loadAnalytics();
   const seq = ++loadSeq;
@@ -969,14 +978,7 @@ async function load({ refresh = false } = {}) {
     const board = await bridge.callTool('canban_get_board', args);
     if (seq !== loadSeq) return;
     state.board = board;
-    // Migrate the removed project scope of older saved views/shared screens.
-    if (f.project || f.folder || f.swimlane === 'project') {
-      if (f.project && !f.directory) f.directory = board.directories.find(d => d.name === f.project)?.id || '';
-      f.project = ''; f.folder = '';
-      if (f.swimlane === 'project') f.swimlane = 'directory';
-      saveFilters();
-      return load();
-    }
+    if (migrateLegacyScope(board)) return load();
     render();
   } catch (e) {
     if (seq !== loadSeq) return;
@@ -3096,14 +3098,15 @@ function fmtDur(ms) {
 }
 async function loadAnalytics() {
   const seq = ++loadSeq;
-  const f = state.filters;
-  const args = { days: state.analyticsDays || 30, agent: f.agent };
-  if (f.host) args.host = f.host;
-  if (f.account) args.account = f.account;
-  if (f.project) args.project = f.project;
-  if (f.directory) args.directory = f.directory;
   try {
     if (!state.board) state.board = await bridge.callTool('canban_get_board', { days: 30 }); // header menus need it
+    if (seq !== loadSeq || state.view !== 'analytics') return;
+    migrateLegacyScope(state.board);
+    const f = state.filters;
+    const args = { days: state.analyticsDays || 30, agent: f.agent };
+    if (f.host) args.host = f.host;
+    if (f.account) args.account = f.account;
+    if (f.directory) args.directory = f.directory;
     const st = await bridge.callTool('canban_get_stats', args);
     if (seq === loadSeq && state.view === 'analytics') renderAnalytics(st);
   } catch (e) {

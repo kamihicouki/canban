@@ -71,6 +71,25 @@ test('MCP UI includes feature modules and still compiles as one self-contained s
   new vm.Script(html.match(/<script>([\s\S]*?)<\/script>/)[1]);
 });
 
+test('restoring analytics migrates a legacy project scope before requesting category statistics', async () => {
+  const html = boardHtml();
+  const loading = html.slice(html.indexOf('let loadSeq = 0;'), html.indexOf('function saveFilters()'));
+  const analytics = html.slice(html.indexOf('async function loadAnalytics('), html.indexOf('function svgEl('));
+  const calls = []; let saved = 0, rendered = 0;
+  const state = { view: 'analytics', board: null, filters: { project: 'Old Project', folder: '/old', swimlane: 'project', directory: '', agent: 'codex', host: 'local', account: 'a1' } };
+  const context = vm.createContext({ state, saveFilters: () => saved++, renderAnalytics: () => rendered++,
+    bridge: { callTool: async (name, args) => {
+      calls.push([name, plain(args)]);
+      return name === 'canban_get_board' ? { directories: [{ id: 'd1', name: 'Old Project' }] } : {};
+    } },
+  });
+  await vm.runInContext(`${loading}\n${analytics}\nload();`, context);
+  assert.deepEqual(calls.map(([name]) => name), ['canban_get_board', 'canban_get_stats']);
+  assert.deepEqual(calls[1][1], { days: 30, agent: 'codex', host: 'local', account: 'a1', directory: 'd1' });
+  assert.equal(state.filters.project, ''); assert.equal(state.filters.folder, '');
+  assert.equal(state.filters.swimlane, 'directory'); assert.equal(saved, 1); assert.equal(rendered, 1);
+});
+
 test('explicit shared-state reload keeps edited forms and open panes', async () => {
   const html = boardHtml();
   const source = html.slice(html.indexOf('async function applySharedUi('), html.indexOf('async function reloadSharedUi('));
