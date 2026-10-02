@@ -239,7 +239,7 @@ const workspace = {
         const panel = h('section', { class: 'page-panel' }, h('div', { class: 'usage-heading' },
           h('h2', { text: `${agent === 'codex' ? 'Codex' : 'Claude'} · ${a.label}` }),
           h('span', { class: 'page-help', text: a.plan || 'アカウント単位' })),
-          h('p', { class: 'page-help', text: `取得元：${a.limits?.source === 'desktop' ? 'Claude Desktopの記録' : 'セッションログ'} · 最終取得：${fmtDate(a.limits?.at)}` }));
+          h('p', { class: 'page-help', text: `取得元：${a.limits?.source === 'live' ? 'サービスから取得' : a.limits?.source === 'desktop' ? 'Claude Desktopの記録' : 'セッションログ'} · 最終取得：${fmtDate(a.limits?.at)}` }));
         if (!windows.length) panel.append(h('p', { text: '未取得：利用上限を確認できる記録がありません。' }));
         for (const w of windows) panel.append(h('div', { class: 'usage-window' }, h('strong', { text: w.label }),
           w.stale ? h('div', { class: 'usage-stale', text: '要更新 — 残量を確定できません' }) :

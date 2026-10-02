@@ -22,6 +22,7 @@ import { Presence, appLabel } from './presence.mjs';
 import { codexHome } from './sources/codex.mjs';
 import { claudeHome, claudeDesktopSessionsDir } from './sources/claude.mjs';
 import { accountTools, accountFilterProp, accountDesktopNote, extraWatchRoots } from './accounts-mcp.mjs';
+import { accountActions, accountActionTools } from './account-actions.mjs';
 import { boardHtml } from './ui.mjs';
 import { taskContextSchema } from './task-context.mjs';
 
@@ -49,6 +50,7 @@ const store = new Store();
 // Realtime: watches nothing until a board calls canban_watch (see server/live.mjs).
 const live = process.env.CANBAN_LIVE === '0' ? null : new LiveHub({ dataDir: store.dir, codexHome: codexHome(), claudeProjects: path.join(claudeHome(), 'projects'), claudeDesktop: claudeDesktopSessionsDir(), extraRoots: extraWatchRoots(store) });
 const watch = live ? createWatch(live, { presence: new Presence(store.dir, { app: () => appLabel(client) }) }) : null;
+const accountsActions = accountActions({ store, allSessions, getLive: () => live });
 let client = null; // clientInfo from initialize: which host started this server
 const log = (...a) => process.stderr.write(`[canban] ${a.join(' ')}\n`);
 
@@ -412,6 +414,7 @@ const TOOLS = [
     return store.setRemoteHost(a);
   }),
   ...accountTools({ store, allSessions, appTool, meta: appAndModel, getLive: () => live }),
+  ...accountActionTools({ actions: accountsActions, store, appTool }),
   appTool('canban_update_settings', '再開方法の既定を変更', {
     route: { type: 'string', enum: ['desktop', 'terminal'] },
     terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
@@ -732,7 +735,8 @@ const leader = leaderFor(store.dir, {
       background.push(setTimeout(indexStep, 15000), setInterval(indexStep, 60000));
     }
     // Requests: settle finished runs and start queued prompts (idle ticks only stat a file).
-    background.push(setInterval(() => leader.run(() => tickDispatch(store)).catch((e) => log('dispatch:', e.message)), DISPATCH_TICK_MS));
+  background.push(setInterval(() => leader.run(() => tickDispatch(store)).catch((e) => log('dispatch:', e.message)), DISPATCH_TICK_MS));
+  if (process.env.CANBAN_LAUNCH_DRYRUN !== '1') background.push(setInterval(() => leader.run(() => accountsActions.refresh({ automatic: true })).catch(() => log('account usage: update failed')), 30000));
     for (const t of background) t.unref();
   },
 });

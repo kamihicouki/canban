@@ -136,11 +136,12 @@ test('account editors register dynamic draft fields and keep them after save fai
       querySelectorAll(){return[];}};nodes.push(node);return node;
   };
   const account={key:'claude:mock',label:'確認',agent:'claude',short:'確',color:'blue',signedIn:[],count:1};
-  const context=vm.createContext({h,state:{filters:{},board:{accounts:{accounts:[account],colors:['blue'],unknown:{codex:0,claude:0},homes:[],discover:false}}},
+  const context=vm.createContext({h,state:{filters:{},board:{accounts:{accounts:[account],colors:['blue'],unknown:{codex:0,claude:0},homes:[],profiles:[],discover:false}}},
     workspace:{trackDrafts:root=>{tracked=root;}},ringFor:()=>h('span'),usageTitle:()=>'',usageWindows:()=>[],colorVar:()=>'',COLOR_NAMES:{},
+    accountUsageContent:()=>h('div'),accountUpdateText:()=>'',accountScheduleText:()=>'',updateAccountMenuUsage:()=>{},refreshAccountUsage:()=>{},
     popover:(_anchor,_title,content)=>{mounts++;body=content;},act:async()=>{throw new Error('db_busy');}});
   vm.runInContext(`${menu}\naccountsMenu({});`,context);
-  nodes.find(n=>n.attrs['aria-label']==='確認 の名前・頭文字・色を変更').attrs.onclick();
+  nodes.find(n=>n.attrs['aria-label']==='確認 の設定').attrs.onclick();
   assert.ok(tracked); assert.equal(mounts,1);
   nodes.find(n=>n.attrs['aria-label']==='表示名').value='途中の名前';
   await nodes.find(n=>n.attrs.text==='保存').attrs.onclick();

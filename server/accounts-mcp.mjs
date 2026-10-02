@@ -57,7 +57,7 @@ export function accountTools({ store, allSessions, appTool, meta, getLive = () =
       name: 'canban_get_usage',
       title: 'アカウントと使用量',
       description:
-        'Codex / Claude のアカウントごとの使用量（5 時間・週の利用上限の使用率）と、各アカウントのセッション数・サインイン状況・設定フォルダを返す。Codex はセッションのログ、Claude は Claude デスクトップアプリの記録から読む。',
+        'Codex / Claude のアカウントごとの使用量（5 時間・週の利用上限の使用率）と、各アカウントのセッション数・サインイン状況・設定フォルダを返す。公式サービスからの取得値、またはセッションログ・デスクトップの記録と、その取得時刻・更新状態を返す。',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       _meta: meta,
@@ -67,7 +67,7 @@ export function accountTools({ store, allSessions, appTool, meta, getLive = () =
         const v = accountsView({ ...state.settings.accounts, sessions: sessions.filter((s) => !s.subagent), codexLimits: limitsByAccount() });
         const lines = v.accounts.map((a) => {
           const l = a.limits;
-          const usage = l ? [windowText(l.primary), windowText(l.secondary)].filter(Boolean).join(' · ') : '使用量の記録なし';
+          const usage = l ? `${[windowText(l.primary), windowText(l.secondary)].filter(Boolean).join(' · ')} / ${new Date(l.at).toISOString()} 時点${a.usage?.status === 'error' ? '（更新失敗・前回の値）' : ''}` : '使用量の記録なし';
           const signed = a.signedIn.length ? `（サインイン中: ${a.signedIn.map(signedText).join(', ')}）` : '';
           return `${a.agent === 'codex' ? 'Codex' : 'Claude'} ${a.label}${a.plan ? ` [${a.plan}]` : ''}: ${usage} / ${a.count} セッション${signed}`;
         });
@@ -83,7 +83,8 @@ export function accountTools({ store, allSessions, appTool, meta, getLive = () =
       codexHomes: { type: 'array', items: { type: 'string' } },
       discover: { type: 'boolean' },
     }, [], async (a) => {
-      const res = await store.updateAccountSettings(a);
+      const patch = Object.fromEntries(['label', 'mark', 'visible', 'claudeHomes', 'codexHomes', 'discover'].filter((k) => a[k] !== undefined).map((k) => [k, a[k]]));
+      const res = await store.updateAccountSettings(patch);
       if (configureAccounts(res)) {
         await refreshAccounts({ force: true });
         const live = getLive();

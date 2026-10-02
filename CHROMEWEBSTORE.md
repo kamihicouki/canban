@@ -29,7 +29,7 @@ Canban は、Codex / Claude Code のセッションを Chrome からカンバン
 2. インストールした拡張の ID を使って、ローカル連携を登録します。
 3. Chrome の Canban アイコンをクリックしてボードを開きます。
 
-セッションやメモを Canban 開発者のサーバーへ送信しません。閲覧履歴や一般のウェブページを読み取らず、広告や追跡機能もありません。利用者がリモート接続や AI への指示の送信を選んだ場合は、利用者が設定した接続先と通信します。
+セッションやメモを Canban 開発者のサーバーへ送信しません。閲覧履歴や一般のウェブページを読み取らず、広告や追跡機能もありません。使用量の更新時はCodex / Claudeの公式サービスと通信します（既定5分の自動更新は変更・停止可能）。アカウント追加は専用保存先で公式CLIにログインします。利用者がリモート接続や AI への指示の送信を選んだ場合は、利用者が設定した接続先と通信します。
 
 Canban は MIT ライセンスのオープンソースです。ソース、導入手順、問い合わせ先:
 https://github.com/kamihicouki/canban
@@ -52,7 +52,7 @@ https://github.com/kamihicouki/canban
 
 | 権限 | 審査向け説明 |
 |---|---|
-| nativeMessaging | The extension displays and manages the user's local Codex and Claude Code sessions through the Canban companion installed by the user. Native Messaging connects only to `com.kamihicouki.canban` on the same computer. The companion reads session metadata and conversations and stores board organization locally. User-initiated session actions use the installed agent applications. No browsing history or website content is accessed. |
+| nativeMessaging | The extension displays and manages the user's local Codex and Claude Code sessions through the Canban companion installed by the user. Native Messaging connects only to `com.kamihicouki.canban` on the same computer. The companion reads session metadata and conversations and stores board organization locally. User-initiated session actions use the installed agent applications. The companion also retrieves subscription usage from the official providers using locally stored account credentials and opens the official CLI for user-initiated account login. Credentials are not returned to the extension or developer. No browsing history or general website content is accessed. |
 
 host_permissions、content_scripts、tabs、identity、storage 権限なし。リモート配信コードなし。拡張コードはすべて ZIP に同梱し、インラインスクリプトも除外する。
 
@@ -60,7 +60,7 @@ host_permissions、content_scripts、tabs、identity、storage 権限なし。�
 
 開発者へのデータ収集・販売・広告利用なし。ローカル連携プロセスへ渡すデータは、会話・メモ・検索条件・作業フォルダー・実行状態など。指示送信や SSH 接続は利用者が設定した外部サービスを使うため、単に「外部通信は一切ない」とは申告しない。
 
-Google の [User Data FAQ](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq) は、ローカルだけで処理・保存するデータも開示が必要としている。ストアのフォームには Personal communications（会話）/ User activity（セッションの操作・実行状態）/ Website content（表示する会話テキストや生成コード）を選択し、開発者への送信はないことを PRIVACY.md に記載する。閲覧履歴、決済、健康、位置情報を収集する機能はない。
+Google の [User Data FAQ](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq) は、ローカルだけで処理・保存するデータも開示が必要としている。ストアのフォームには Personal communications（会話）/ User activity（セッションの操作・実行状態）/ Website content（表示する会話テキストや生成コード）に加え、Authentication information（連携ソフトが使用量取得・ログインに使うローカル認証情報）の扱いを開示し、開発者への送信はないことを PRIVACY.md に記載する。閲覧履歴、決済、健康、位置情報を収集する機能はない。
 
 販売しない、単一用途以外に使用・転送しない、信用情報・融資の判断に使用しない、の各宣言は実装と整合する。
 
