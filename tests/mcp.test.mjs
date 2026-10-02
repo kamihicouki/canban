@@ -98,6 +98,27 @@ test('list and card operations persist only to the kanban store', async () => {
   assert.equal(bad.isError, true);
 });
 
+test('an archive rule can be replayed over MCP even when disabled and archived cards are filtered out', async () => {
+  const archive = (await call('canban_create_list', { title: 'アーカイブ' })).structuredContent.result;
+  const saved = await call('canban_set_rule', { id: 'archive-replay', enabled: false, trigger: 'archived', fromListId: 'any', toListId: archive.id });
+  assert.ok(!saved.isError, saved.content?.[0]?.text);
+  const hidden = (await call('canban_get_board', { includeArchived: false, days: 0 })).structuredContent;
+  assert.ok(!hidden.lists.flatMap((l) => l.cards).some((c) => c.archived));
+  const res = await call('canban_run_rule', { ruleId: 'archive-replay' });
+  assert.ok(!res.isError, res.content?.[0]?.text);
+  assert.equal(res.structuredContent.result.moved, 2);
+  const board = (await call('canban_get_board', { includeArchived: true, days: 0 })).structuredContent;
+  assert.deepEqual(board.lists.find((l) => l.id === archive.id).cards.map((c) => c.id).sort(), ['claude:c1', 'codex:t3']);
+  assert.equal(board.settings.rules.find((r) => r.id === 'archive-replay').enabled, false);
+  assert.equal((await call('canban_run_rule', { ruleId: 'archive-replay' })).structuredContent.result.moved, 0);
+  for (const cardId of ['claude:c1', 'codex:t3']) {
+    assert.ok(!(await call('canban_undo_move', { cardId })).isError);
+  }
+  assert.equal((await call('canban_run_rule', { ruleId: 'missing' })).isError, true);
+  await call('canban_delete_rule', { ruleId: 'archive-replay' });
+  await call('canban_delete_list', { listId: archive.id });
+});
+
 test('directories: source categories, explicit assignment and category-less filter', async () => {
   const dir = (await call('canban_create_directory', { name: 'Web', paths: ['/r/web'] })).structuredContent.result;
   let board = (await call('canban_get_board', { days: 0 })).structuredContent;

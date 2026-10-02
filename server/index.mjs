@@ -10,7 +10,7 @@ import { Store } from './store.mjs';
 import { leaderFor } from './leader.mjs';
 import { perf } from './perf.mjs';
 import { dispatcherFor, tickDispatch, setSpawner, dryRunSpawner } from './dispatch.mjs';
-import { buildBoard, sessionDetail, allSessions, findSession, hostsWithState, effectiveOrder, tickRules, tickSearch } from './board.mjs';
+import { buildBoard, sessionDetail, allSessions, findSession, hostsWithState, effectiveOrder, runRules, tickRules, tickSearch } from './board.mjs';
 import { RULE_TRIGGERS } from './store.mjs';
 import { computeStats } from './stats.mjs';
 import { desktopLink, resumeCommand, newSessionLink, newSessionCommand } from './agents.mjs';
@@ -543,6 +543,13 @@ const TOOLS = [
     toListId: { type: 'string' },
   }, ['trigger', 'toListId'], (a) => store.setRule(a)),
   appTool('canban_delete_rule', '自動化（カードの自動移動）を削除', { ruleId: { type: 'string' } }, ['ruleId'], (a) => store.deleteRule(a)),
+  appTool('canban_run_rule', '自動化を今すぐ実行', { ruleId: { type: 'string' } }, ['ruleId'], async ({ ruleId }) => {
+    const state = await store.load();
+    if (!state.settings.rules.some((r) => r.id === ruleId)) throw new Error('自動化が見つかりません');
+    const { sessions, errors } = await allSessions(state, { force: true });
+    const moves = await runRules(store, state, sessions, Date.now(), { ruleId });
+    return { ruleId, moved: moves.length, moves, errors };
+  }),
   appTool('canban_undo_move', '自動移動を元に戻す', { cardId: { type: 'string' } }, ['cardId'], (a) => store.undoAutoMove(a)),
   appTool('canban_mark_all_seen', 'すべて既読にする', {}, [], () => store.markAllSeen()),
   appTool('canban_create_list', 'リストを追加', { title: { type: 'string' }, color: { type: 'string' }, afterListId: { type: 'string' } }, ['title'], (a) => store.createList(a)),
