@@ -115,7 +115,12 @@ body:not([data-page="home"]) .selection-bar { display: none; }
 .psec-h h3 { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
 .psec-b { box-sizing: border-box; height: var(--section-height,140px); overflow: auto; padding: 6px 2px; overscroll-behavior: contain; }
 .psec-b > textarea.note { width: 100%; height: 100%; min-height: 48px; resize: none; box-sizing: border-box; }
-.pane .psec-b .feed { height: 100%; max-height: none; min-height: 0; }
+/* The feed owns scrolling; reserve space for its footer inside the section. */
+.pane .psec[data-sec="conv"] .psec-b:has(> .feed-wrap) { overflow: hidden; }
+.pane .psec-b > .feed-wrap { display: flex; flex-direction: column; height: 100%; min-height: 0; margin-bottom: 0; }
+.pane .psec-b .feed { flex: 1; max-height: none; min-height: 0; }
+.pane .psec-b .feed > .fi { flex: none; }
+.pane .psec-b .feed-foot { flex: none; }
 .pane .psec-b .send-section { min-width: 0; }
 .pane .send-box textarea { box-sizing: border-box; width: 100%; }
 .pane .seg-row { flex-wrap: wrap; gap: 4px; }
