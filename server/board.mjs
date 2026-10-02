@@ -20,7 +20,7 @@ import { matchesAccount, withAccountNote } from './accounts-mcp.mjs';
 import { effectiveTaskContext } from './task-context.mjs';
 
 import { peekGit, refreshGit } from './gitlive.mjs';
-import { RuleEngine } from './rules.mjs';
+import { RuleEngine, replayRule } from './rules.mjs';
 import { PrService } from './git.mjs';
 import { SearchIndex } from './search.mjs';
 import { resolveDirectory } from './store.mjs';
@@ -261,22 +261,32 @@ function aggregateStatus(list) {
 
 // Evaluate the automatic-move rules against current statuses and apply the moves.
 // A session linked to a task card moves the task card instead.
-export async function runRules(store, state, sessions, now = Date.now()) {
+export async function runRules(store, state, sessions, now = Date.now(), { ruleId } = {}) {
+  // Explicit user actions work on every client, including a background follower.
+  if (ruleId !== undefined) return runRulesOwned(store, state, sessions, now, ruleId);
   return await leaderFor(store.dir).run(() => runRulesOwned(store, state, sessions, now)) || [];
 }
 
-async function runRulesOwned(store, state, sessions, now) {
+async function runRulesOwned(store, state, sessions, now, ruleId) {
   state = await store.load();
+  const rule = ruleId === undefined ? null : state.settings.rules.find((r) => r.id === ruleId);
+  if (ruleId !== undefined && !rule) throw new Error('自動化が見つかりません');
+  if (rule && !state.lists.some((l) => l.id === rule.toListId)) throw new Error('移動先のリストが見つかりません');
   const toTask = linkedToTask(state);
   const baseListOf = listResolver(state);
   const listOf = (id) => baseListOf(toTask.get(id) || id);
   const tops = new Map();
   for (const s of sessions) {
     const l = listOf(s.id);
-    const o = effectiveOrder(s, state.cards[s.id]);
+    const o = effectiveOrder(s, state.cards[toTask.get(s.id) || s.id]);
     if (!tops.has(l) || o < tops.get(l)) tops.set(l, o);
   }
-  const moves = await engineFor(store).evaluate({
+  for (const [, task] of taskEntries(state)) {
+    const l = task.listId || state.defaultListId;
+    const o = effectiveOrder({ updatedAt: task.createdAt }, task);
+    if (!tops.has(l) || o < tops.get(l)) tops.set(l, o);
+  }
+  const args = {
     rules: state.settings.rules,
     sessions,
     listOf,
@@ -286,7 +296,8 @@ async function runRulesOwned(store, state, sessions, now) {
       return o;
     },
     now,
-  });
+  };
+  const moves = rule ? replayRule({ ...args, rule }) : await engineFor(store).evaluate(args);
   const seen = new Set();
   const mapped = [];
   for (const m of moves) {
@@ -295,7 +306,7 @@ async function runRulesOwned(store, state, sessions, now) {
     seen.add(cardId);
     mapped.push({ ...m, cardId });
   }
-  return store.applyAutoMoves(mapped);
+  return store.applyAutoMoves(mapped, { rule });
 }
 
 // Background evaluation so rules work while the board is closed.

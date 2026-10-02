@@ -296,6 +296,8 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .status-chip .sdot { margin-right: 4px; }
 .status-chip[aria-pressed="true"] { background: #fff; color: #172b4d; }
 .rule-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; }
+.rule-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+.rule-run { white-space: nowrap; }
 .toast-btn { margin-left: 8px; color: #fff; text-decoration: underline; font-weight: 600; }
 .card.task { border-top: 3px solid var(--c-purple); }
 .task-badge { background: var(--c-purple); }
@@ -3491,6 +3493,7 @@ const TRIGGER_LABELS = {
   'status:waiting': '入力待ちになったら',
   'status:completed': '完了したら',
   'status:aborted': '中断したら',
+  archived: 'アーカイブされたら',
   activity: '新しい活動があったら',
   'pr:opened': 'PR / MR が作られたら',
   'pr:merged': 'PR / MR がマージされたら',
@@ -3614,17 +3617,45 @@ function toastAction(msg, label, fn) {
   toastTimer = setTimeout(() => t.remove(), 8000);
 }
 
+const runningRules = new Set();
+async function runRuleNow(ruleId) {
+  if (runningRules.has(ruleId)) return;
+  const updateButtons = (busy) => {
+    for (const button of document.querySelectorAll('[data-run-rule]')) {
+      if (button.dataset.runRule !== ruleId) continue;
+      button.disabled = busy;
+      button.textContent = busy ? '実行中…' : '今すぐ実行';
+      button.setAttribute('aria-busy', String(busy));
+    }
+  };
+  runningRules.add(ruleId);
+  updateButtons(true);
+  try {
+    const { result } = await act('canban_run_rule', { ruleId });
+    toast(`${result.moved} 件のカードを移動しました${result.errors?.length ? '（一部のセッションを取得できませんでした）' : ''}`);
+  } catch {
+    // act already displays the server error and refreshes the board.
+  } finally {
+    runningRules.delete(ruleId);
+    updateButtons(false);
+  }
+}
+
 function rulesMenu(anchor) {
   const b = state.board;
   const listName = (id) => (id === 'any' ? 'どのリストでも' : b.lists.find((l) => l.id === id)?.title ?? '（削除済みリスト）');
   const listSelect = (value, withAny) => pickerButton({ title: withAny ? '移動元のリスト' : '移動先のリスト', value,
     items: () => [withAny ? { value: 'any', label: 'どのリストでも' } : null, ...b.lists.map((l) => ({ value: l.id, label: l.title, color: l.color }))].filter(Boolean) });
   const rows = b.settings.rules.map((r) => h('div', { class: 'rule-row', 'data-key': `${triggerLabel(r.trigger)} ${listName(r.fromListId)} ${listName(r.toListId)}` },
-    h('label', { class: 'row' },
+    h('label', { class: 'row grow' },
       h('input', { type: 'checkbox', checked: r.enabled, 'aria-label': `この${T.automation}を有効にする`,
         onchange: (e) => act('canban_set_rule', { ...r, enabled: e.target.checked }).then(() => rulesMenu(anchor)) }),
       h('span', { text: `${triggerLabel(r.trigger)}、${listName(r.fromListId)} → ${listName(r.toListId)}` })),
-    h('button', { class: 'icon-btn', 'aria-label': `この${T.automation}を削除`, text: '🗑', onclick: () => act('canban_delete_rule', { ruleId: r.id }).then(() => rulesMenu(anchor)) })));
+    h('div', { class: 'rule-actions' },
+      h('button', { class: 'btn rule-run', 'data-run-rule': r.id, disabled: runningRules.has(r.id), 'aria-busy': String(runningRules.has(r.id)),
+        'aria-label': `${triggerLabel(r.trigger)}の自動化を今すぐ実行`, title: '現在の条件に一致するカードに適用します。自動実行が無効でも実行できます。',
+        text: runningRules.has(r.id) ? '実行中…' : '今すぐ実行', onclick: () => runRuleNow(r.id) }),
+      h('button', { class: 'icon-btn', 'aria-label': `この${T.automation}を削除`, text: '🗑', onclick: () => act('canban_delete_rule', { ruleId: r.id }).then(() => rulesMenu(anchor)) }))));
   const trig = pickerButton({ title: 'きっかけ', value: 'status:completed', items: () => [...Object.entries(TRIGGER_LABELS).map(([value, label]) => ({ value, label })),
     ...(b.codexSections || []).map((x) => ({ value: `section:${x.id}`, label: triggerLabel(`section:${x.id}`), group: 'Codex セクション' }))] });
   const from = listSelect('any', true);
@@ -3638,6 +3669,7 @@ function rulesMenu(anchor) {
     h('div', { class: 'row', style: { marginTop: '8px' } }, h('button', { class: 'btn-primary', text: '追加',
       onclick: () => act('canban_set_rule', { enabled: true, trigger: trig.value, fromListId: from.value, toListId: to.value }, { okMsg: `${T.automation}を追加しました` }).then(() => rulesMenu(anchor)) })),
     h('p', { class: 'muted', text: '状態が変わった瞬間にだけ動きます。ボードを閉じていても、Canban を入れた Codex か Claude デスクトップが起動していれば 60 秒ごとに評価されます。自動で動いたカードには ⚡ が付き、直後のお知らせから元に戻せます。' }),
+    h('p', { class: 'muted', text: '「今すぐ実行」は、画面の絞り込みに関係なく、現在の条件と移動元に一致するカードを移動します。無効にしたルールも手動実行できます。「新しい活動があったら」は取得したすべてのセッションが対象です。アーカイブ済みのカードを見るには、表示設定でアーカイブ済みを含めてください。' }),
     b.git && b.git.available === false ? h('p', { class: 'muted', text: `PR / CI の${T.automation}は使えません: ${b.git.reason}` }) : null);
   popover(anchor, `${T.automation}（カードの自動移動）`, body, { width: 400 });
 }
