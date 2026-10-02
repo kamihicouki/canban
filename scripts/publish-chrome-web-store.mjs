@@ -20,7 +20,13 @@ export async function publishChromeWebStore({ env = process.env, fetchImpl = fet
     method: 'POST', signal: AbortSignal.timeout(30_000),
     body: new URLSearchParams({ client_id: env.CWS_CLIENT_ID, client_secret: env.CWS_CLIENT_SECRET, refresh_token: env.CWS_REFRESH_TOKEN, grant_type: 'refresh_token' }),
   });
-  if (!tokenResponse.ok) throw new Error(`OAuth token refresh failed (HTTP ${tokenResponse.status})`);
+  if (!tokenResponse.ok) {
+    let code;
+    try { code = (await tokenResponse.json()).error; } catch {}
+    const knownErrors = ['invalid_request', 'invalid_client', 'invalid_grant', 'unauthorized_client', 'unsupported_grant_type', 'invalid_scope', 'deleted_client'];
+    const detail = knownErrors.includes(code) ? `; ${code}` : '';
+    throw new Error(`OAuth token refresh failed (HTTP ${tokenResponse.status}${detail})`);
+  }
   const { access_token: accessToken } = await tokenResponse.json();
   if (!accessToken) throw new Error('OAuth response has no access token');
   async function api(url, options = {}) {
