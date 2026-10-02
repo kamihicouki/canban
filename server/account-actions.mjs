@@ -11,9 +11,16 @@ import { credentialIdentity, claudeCredentials } from './account-credentials.mjs
 import { resolveBin } from './dispatch.mjs';
 import { shq } from './agents.mjs';
 import { runInTerminal } from './launcher.mjs';
+import { managedLogins, loginPreference } from './login.mjs';
+import { loginTarget } from './login-browsers.mjs';
 
-export function accountActions({ store, allSessions, getLive = () => null, providers = { codex: codexUsage, claude: claudeUsage }, launch = runInTerminal, bin = resolveBin, getClaudeCredentials = claudeCredentials, now = Date.now, dryRun = process.env.CANBAN_LAUNCH_DRYRUN === '1' }) {
+export function accountActions({ store, allSessions, getLive = () => null, providers = { codex: codexUsage, claude: claudeUsage }, launch = runInTerminal, bin = resolveBin, loginManager = null, getClaudeCredentials = claudeCredentials, now = Date.now, dryRun = process.env.CANBAN_LAUNCH_DRYRUN === '1' }) {
   const db = database(store.dir);
+  const logins = loginManager || managedLogins({ resolveCli: bin, onComplete: async (profile) => {
+    const result = await checkLogin({ id: profile.id });
+    if (!result.complete) throw new Error('認証したアカウントを確認できません');
+    return { key: result.key };
+  } });
   const locked = async (key, fn) => {
     const token = await db.call('system', 'acquire', [{ key, owner: crypto.randomUUID(), pid: process.pid }]);
     if (!token) return { busy: true };
@@ -64,8 +71,31 @@ export function accountActions({ store, allSessions, getLive = () => null, provi
     configureAccounts((await store.load()).settings.accounts);
     return { updated, busy };
   };
-  const startLogin = async ({ agent, key, profileId } = {}) => locked('account-profiles', async () => {
+  const loginCommand = (p, executable) => {
+    const removed = ['CODEX_THREAD_ID', 'CLAUDECODE', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CODE_OAUTH_CLIENT_ID', 'CLAUDE_CODE_CUSTOM_OAUTH_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', 'CLAUDE_CODE_ACCOUNT_UUID', 'CLAUDE_CODE_ORGANIZATION_UUID', 'CLAUDE_CODE_USER_EMAIL', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'BROWSER', 'CANBAN_AUTH_SOCKET', 'CANBAN_AUTH_NONCE', 'CANBAN_AUTH_NODE', 'CANBAN_AUTH_HELPER'];
+    const inherited = Object.keys(process.env).filter(k => /^(CLAUDE_(BG|PTY)_|CLAUDE_CODE_|CODEX_SANDBOX|CODEX_MANAGED_)/.test(k));
+    const env = [...new Set([...removed, ...inherited])].map(name => `-u ${shq(name)}`).join(' ');
+    return `cd ${shq(p.dir)} && env ${env} ${p.agent === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR'}=${shq(p.dir)} ${shq(executable)} ${p.agent === 'codex' ? 'login -c '+shq('cli_auth_credentials_store="file"') : 'auth login --claudeai'}`;
+  };
+  const profile = async (id) => {
+    const p = (await store.load()).settings.accounts.profiles.find(p => p.id === id);
+    if (!p?.pending) throw new Error('ログイン待ちの保存先が見つかりません');
+    return p;
+  };
+  const loginBrowsers = async ({ profileId } = {}) => {
+    const p = profileId ? await profile(profileId) : null;
+    return { browsers: logins.catalog(), preference: p ? loginPreference(p) : null,
+      active: p && logins.active(p) ? logins.view(logins.active(p)) : null };
+  };
+  const loginDetails = async ({ profileId }) => {
+    const p = await profile(profileId), executable = bin(p.agent);
+    return { command: executable ? loginCommand(p, executable) : null,
+      login: logins.active(p) ? logins.view(logins.active(p)) : null };
+  };
+  const startLogin = async ({ agent, key, profileId, method = 'terminal', loginOptions } = {}) => locked('account-profiles', async () => {
     if (!['codex', 'claude'].includes(agent)) throw new Error('サービスを選んでください');
+    if (!['terminal', 'browser'].includes(method)) throw new Error('認証方法を選んでください');
+    if (method === 'browser') loginTarget(loginOptions || { mode: 'manual' }, logins.catalog());
     const state = await store.load(), settings = state.settings.accounts;
     if (key && !(await view(state)).accounts.some((a) => a.key === key && a.agent === agent)) throw new Error('アカウントが見つかりません');
     const executable = bin(agent);
@@ -82,12 +112,19 @@ export function accountActions({ store, allSessions, getLive = () => null, provi
       p = { id, agent, dir, pending: true, key: null, expectedKey: key || null, startedAt: now() };
       await store.updateAccountSettings({ profile: p });
     }
-    // The terminal authenticates a fresh provider home. It cannot log out or overwrite the default home.
-    const removed = ['CODEX_THREAD_ID', 'CLAUDECODE', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CODE_OAUTH_CLIENT_ID', 'CLAUDE_CODE_CUSTOM_OAUTH_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', 'CLAUDE_CODE_ACCOUNT_UUID', 'CLAUDE_CODE_ORGANIZATION_UUID', 'CLAUDE_CODE_USER_EMAIL', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'OPENAI_API_KEY', 'CODEX_API_KEY', 'OPENAI_BASE_URL', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR'];
-    const env = removed.map((name) => `-u ${name}`).join(' ');
-    const command = `cd ${shq(p.dir)} && env ${env} ${agent === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR'}=${shq(p.dir)} ${shq(executable)} ${agent === 'codex' ? 'login -c '+shq('cli_auth_credentials_store="file"') : 'auth login --claudeai'}`;
-    await launch({ terminal: state.settings.launch.terminal, target: 'new-window', command });
-    return { profile: p };
+    const command = loginCommand(p, executable);
+    if (method === 'browser') {
+      if (dryRun && !loginManager) return { profile: p, command, login: { state: 'failed', error: 'テストモードでは認証を開始しません' } };
+      const active = logins.active(p);
+      return { profile: p, command, login: active ? logins.view(active) : await logins.start(p, loginOptions || { mode: 'manual' }) };
+    }
+    const active = logins.active(p);
+    if (active) await logins.cancel(active.id);
+    // A failed OS launch still leaves a usable command for any terminal.
+    try {
+      if (!(dryRun && launch === runInTerminal)) await launch({ terminal: state.settings.launch.terminal, target: 'new-window', command });
+      return { profile: p, command, opened: true };
+    } catch { return { profile: p, command, opened: false, error: 'ターミナルを開けませんでした。ログインコマンドをコピーして実行してください' }; }
   });
   const checkLogin = async ({ id }) => locked('account-profiles', async () => {
     const settings = (await store.load()).settings.accounts;
@@ -106,6 +143,8 @@ export function accountActions({ store, allSessions, getLive = () => null, provi
   const cancelLogin = async ({ id }) => locked('account-profiles', async () => {
     const p = (await store.load()).settings.accounts.profiles.find((p) => p.id === id);
     if (!p?.pending) throw new Error('ログイン待ちの保存先が見つかりません');
+    const active = logins.active(p);
+    if (active) await logins.cancel(active.id);
     // The user may still have the terminal open; keep its files intact.
     await store.updateAccountSettings({ removeProfile: id });
     return { cancelled: true };
@@ -144,16 +183,30 @@ export function accountActions({ store, allSessions, getLive = () => null, provi
       return { dir: destination };
     });
   });
-  return { refresh, startLogin, checkLogin, cancelLogin, moveHome };
+  return { refresh, startLogin, checkLogin, cancelLogin, moveHome, loginBrowsers, loginDetails,
+    loginStatus: ({ sessionId }) => logins.status(sessionId),
+    loginOpen: ({ sessionId, loginOptions }) => logins.open(sessionId, loginOptions),
+    loginCancel: ({ sessionId }) => logins.cancel(sessionId),
+    loginCode: ({ sessionId, code }) => logins.submitCode(sessionId, code) };
 }
 
 export function accountActionTools({ actions, store, appTool }) {
+  const session = { sessionId: { type: 'string' } };
+  const loginOptions = { type: 'object', properties: {
+    mode: { type: 'string', enum: ['auto', 'manual'] }, browserId: { type: 'string', enum: ['chrome', 'safari'] }, profileId: { type: 'string' },
+  }, additionalProperties: false };
   return [
     appTool('canban_refresh_account_usage', 'アカウントの使用量を更新', { key: { type: 'string' }, automatic: { type: 'boolean' } }, [], actions.refresh),
     appTool('canban_set_usage_refresh', '使用量の自動更新を設定', { enabled: { type: 'boolean' }, intervalMinutes: { type: 'integer', minimum: 1, maximum: 1440 } }, [], async (refresh) => {
       const settings = await store.updateAccountSettings({ refresh }); configureAccounts(settings); return settings.refresh;
     }),
-    appTool('canban_start_account_login', '専用保存先でアカウントにログイン', { agent: { type: 'string', enum: ['codex', 'claude'] }, key: { type: 'string' }, profileId: { type: 'string' } }, ['agent'], actions.startLogin),
+    appTool('canban_start_account_login', '専用保存先でアカウントにログイン', { agent: { type: 'string', enum: ['codex', 'claude'] }, key: { type: 'string' }, profileId: { type: 'string' }, method: { type: 'string', enum: ['terminal', 'browser'] }, loginOptions }, ['agent'], actions.startLogin),
+    appTool('canban_login_browsers', '認証ブラウザ一覧', { profileId: { type: 'string' } }, [], actions.loginBrowsers),
+    appTool('canban_account_login_details', 'ログイン待ちの認証方法とコマンド', { profileId: { type: 'string' } }, ['profileId'], actions.loginDetails),
+    appTool('canban_account_login_status', '認証状態', session, ['sessionId'], actions.loginStatus),
+    appTool('canban_account_login_open', '認証ブラウザを開く', { ...session, loginOptions }, ['sessionId'], actions.loginOpen),
+    appTool('canban_account_login_cancel', '認証をキャンセル', session, ['sessionId'], actions.loginCancel),
+    appTool('canban_account_login_code', '認証コードを送信', { ...session, code: { type: 'string' } }, ['sessionId', 'code'], actions.loginCode),
     appTool('canban_check_account_login', 'アカウントのログイン完了を確認', { id: { type: 'string' } }, ['id'], actions.checkLogin),
     appTool('canban_cancel_account_login', 'アカウント追加を取り消す', { id: { type: 'string' } }, ['id'], actions.cancelLogin),
     appTool('canban_move_account_home', '追加したアカウントの保存先を変更', { id: { type: 'string' }, dir: { type: 'string' } }, ['id', 'dir'], actions.moveHome),

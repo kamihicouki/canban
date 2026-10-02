@@ -234,13 +234,14 @@ function accountsMenu(anchor) {
     if (loginButton.disabled) return;
     loginButton.disabled = true; loginButton.textContent = '開始中…';
     try {
-      const r = await act('canban_start_account_login', { agent, ...(key ? { key } : {}), ...(profileId ? { profileId } : {}) });
+      const r = await act('canban_start_account_login', { agent, method: 'terminal', ...(key ? { key } : {}), ...(profileId ? { profileId } : {}) });
       if (r.result?.busy) toast('別のアカウント操作が実行中です。少し待ってからお試しください', true);
-      else { toast('ターミナルでログインを完了してください'); accountsMenu(anchor); }
-    } catch {} finally { loginButton.disabled = false; loginButton.textContent = 'ログインして追加'; }
+      else { toast(r.result?.error || 'ターミナルでログインを完了してください', r.result?.opened === false); accountsMenu(anchor); }
+    } catch {} finally { loginButton.disabled = false; loginButton.textContent = 'ターミナルでログイン'; }
   };
   const agentSel = h('select', { class: 'text-input', 'aria-label': '追加するサービス' }, h('option', { value: 'codex', text: 'Codex' }), h('option', { value: 'claude', text: 'Claude' }));
-  const loginButton = h('button', { class: 'btn-primary', text: 'ログインして追加', onclick: () => startLogin(agentSel.value) });
+  const loginButton = h('button', { class: 'btn', text: 'ターミナルでログイン', onclick: () => startLogin(agentSel.value) });
+  const browserButton = h('button', { class: 'btn-primary', text: '任意のブラウザで認証', onclick: (e) => accountLoginDialog(e?.currentTarget || anchor, { agent: agentSel.value }) });
   const pending = v.profiles.filter((p) => p.pending).map((p) => {
     const status = h('span', { class: 'muted', role: 'status', text: 'ターミナルでログインを完了してください' });
     let checking = false, timer = null, complete = false;
@@ -260,10 +261,22 @@ function accountsMenu(anchor) {
       finally { checking = false; if (!complete && status.isConnected) timer = setTimeout(check, 5000); }
     };
     timer = setTimeout(check, 2000);
+    const command = h('textarea', { class: 'text-input login-url', readonly: true, rows: 3, 'aria-label': 'ターミナルのログインコマンド', hidden: true });
+    const copyCommand = h('button', { class: 'btn', text: 'ログインコマンドをコピー', onclick: async () => {
+      try {
+        const r = await bridge.callTool('canban_account_login_details', { profileId: p.id });
+        command.value = r.result?.command || ''; command.hidden = false;
+        if (!command.value) { status.textContent = 'CLIが見つかりません。先にインストールしてください'; return; }
+        try { await navigator.clipboard.writeText(command.value); status.textContent = 'コマンドをコピーしました。任意のターミナルで実行してください'; }
+        catch { command.focus(); command.select(); status.textContent = '選択したコマンドをコピーして実行してください（⌘C / Ctrl+C）'; }
+      } catch { status.textContent = 'コマンドを取得できませんでした。もう一度お試しください'; }
+    } });
     return h('div', { class: 'acct-pending' }, h('strong', { text: `${p.agent === 'codex' ? 'Codex' : 'Claude'} · ログイン待ち` }), status,
       h('div', { class: 'row' }, h('button', { class: 'btn', text: '完了を確認', onclick: check }),
-        h('button', { class: 'btn', text: 'ログインを開く', onclick: () => startLogin(p.agent, p.expectedKey, p.id) }),
-        h('button', { class: 'btn', text: '取消', onclick: () => act('canban_cancel_account_login', { id: p.id }).then(() => accountsMenu(anchor)).catch(() => {}) })));
+        h('button', { class: 'btn', text: 'ターミナルでログイン', onclick: () => startLogin(p.agent, p.expectedKey, p.id) }),
+        h('button', { class: 'btn', text: '任意のブラウザで認証', onclick: (e) => accountLoginDialog(e?.currentTarget || anchor, { home: p, key: p.expectedKey }) }),
+        copyCommand,
+        h('button', { class: 'btn', text: '取消', onclick: () => act('canban_cancel_account_login', { id: p.id }).then(() => accountsMenu(anchor)).catch(() => {}) })), command);
   });
   const refresh = v.refresh || { enabled: true, intervalMinutes: 5 };
   const interval = h('input', { class: 'text-input acct-interval', type: 'number', min: 1, max: 1440, value: refresh.intervalMinutes, 'aria-label': '自動更新の間隔（分）' });
@@ -294,7 +307,7 @@ function accountsMenu(anchor) {
     rows.length ? rows : h('p', { class: 'muted', text: 'アカウントが見つかりません。ログインして追加できます。' }),
     h('section', { class: 'acct-add' }, h('div', { class: 'field-label', text: 'アカウントを追加' }),
       h('p', { class: 'muted', text: '保存先は自動作成されます。追加後にアカウント設定から変更できます。' }),
-      h('div', { class: 'row' }, agentSel, loginButton), ...pending),
+      h('div', { class: 'row acct-login-actions' }, agentSel, loginButton, browserButton), ...pending),
     h('details', { class: 'acct-advanced' }, h('summary', { text: '詳細設定・表示について' }),
       h('p', { class: 'muted', text: '名前をクリックするとカードを絞り込みます。チェックを外すとヘッダのリングから隠します。リングの外側は5時間枠、内側は週間枠です。ログイン状態と使用量の更新状態は別に表示します。取得失敗時は前回の値を残します。デスクトップのみのアカウントは、最新取得のためのCLIログインが必要です。' }),
       h('div', { class: 'field-label', text: '既存の設定フォルダを登録' }), ...homeRows,
@@ -303,6 +316,121 @@ function accountsMenu(anchor) {
   popover(anchor, 'アカウントと使用量', body, { width: 440 });
   updateAccountMenuUsage();
   refreshAccountUsage({ automatic: true });
+}
+
+async function accountLoginDialog(anchor, { home = null, agent = home?.agent, key = null } = {}) {
+  if (document.querySelector('.account-login')) return;
+  closePopover();
+  let closed = false, busy = false, session = null, timer, epoch = 0, refreshed = false;
+  const call = async (tool, args = {}) => (await bridge.callTool(tool, args)).result;
+  const status = h('p', { class: 'login-status', role: 'status', 'aria-live': 'polite', text: 'ブラウザ一覧を読み込んでいます…' });
+  const mode = h('select', { class: 'text-input', 'aria-label': '認証URLの開き方' },
+    h('option', { value: 'auto', text: '自動起動' }), h('option', { value: 'manual', text: '手動起動（URLをコピー）' }));
+  const browser = h('select', { class: 'text-input', 'aria-label': '認証ブラウザ' });
+  const profile = h('select', { class: 'text-input', 'aria-label': 'Chromeプロファイル' });
+  const browserField = h('label', { class: 'login-field' }, 'ブラウザ', browser);
+  const profileField = h('label', { class: 'login-field' }, 'Chromeプロファイル', profile);
+  const choices = h('fieldset', { class: 'login-choices', disabled: true },
+    h('legend', { text: '認証ページの開き方' }), h('label', { class: 'login-field' }, '起動方法', mode), browserField, profileField);
+  const url = h('textarea', { class: 'text-input login-url', readonly: true, rows: 3, spellcheck: false, 'aria-label': '認証URL' });
+  const notice = h('p', { class: 'muted', role: 'status', 'aria-live': 'polite' });
+  const copy = h('button', { class: 'btn', type: 'button', text: '認証URLをコピー', onclick: async () => {
+    if (!url.value) return;
+    try { await navigator.clipboard.writeText(url.value); if (!closed) notice.textContent = '認証URLをコピーしました'; }
+    catch { if (!closed) { url.focus(); url.select(); notice.textContent = '選択したURLをコピーして、任意のブラウザで開いてください（⌘C / Ctrl+C）'; } }
+  } });
+  const reopen = h('button', { class: 'btn', type: 'button', text: '選んだブラウザで開く' });
+  const urlArea = h('div', { class: 'login-url-area', hidden: true }, url, h('div', { class: 'row' }, copy, reopen), notice);
+  const code = h('input', { class: 'text-input', type: 'password', autocomplete: 'off', spellcheck: false, maxlength: 4096, 'aria-label': 'Claude認証コード' });
+  const codeSend = h('button', { class: 'btn', type: 'submit', text: 'コードを送信' });
+  const codeForm = h('form', { class: 'login-code-form' }, h('label', { class: 'login-field' }, 'ブラウザに表示された認証コード', code), codeSend);
+  const codeArea = h('details', { hidden: true }, h('summary', { text: '認証が戻らない場合（Claudeのコード入力）' }), codeForm);
+  const start = h('button', { class: 'btn-primary', type: 'button', text: home ? 'ログインを開始' : '追加してログイン', disabled: true });
+  const cancel = h('button', { class: 'btn', type: 'button', text: '認証をキャンセル', hidden: true });
+  const dialog = h('dialog', { class: 'account-login', 'aria-label': 'アカウントにログイン', onclose: () => {
+    closed = true; epoch++; clearTimeout(timer); url.value = ''; code.value = ''; session = null; dialog.remove();
+    (anchor?.isConnected ? anchor : $('#accountsBtn')).focus();
+  } }, h('h2', { text: 'アカウントにログイン' }),
+    h('p', { class: 'muted', text: `${agent === 'codex' ? 'Codex' : 'Claude'} · アカウントを追加` }), choices, status, urlArea, codeArea,
+    h('div', { class: 'row login-actions' }, start, cancel, h('button', { class: 'btn', type: 'button', text: '閉じる', onclick: () => dialog.close() })),
+    h('p', { class: 'muted', text: '閉じても認証はバックグラウンドで続きます。ログインから認証状態を開き直せます。' }));
+  // Native dialog owns focus and Escape; board shortcuts must not handle its keys.
+  dialog.addEventListener('keydown', (e) => e.stopPropagation());
+  document.body.append(dialog); dialog.showModal();
+  let browsers = [];
+  const active = () => session && !['succeeded', 'failed', 'cancelled'].includes(session.state);
+  const options = () => ({ mode: mode.value, ...(browser.value ? { browserId: browser.value } : {}),
+    ...(browser.value === 'chrome' && profile.value ? { profileId: profile.value } : {}) });
+  const controls = () => {
+    browserField.hidden = mode.value !== 'auto'; profileField.hidden = mode.value !== 'auto' || browser.value !== 'chrome';
+    const selected = browsers.find((b) => b.id === browser.value);
+    const valid = mode.value === 'manual' || (selected && (selected.id !== 'chrome' || selected.profiles.some((p) => p.id === profile.value)));
+    choices.disabled = busy; start.disabled = busy || !!active() || session?.state === 'succeeded' || !valid;
+    cancel.hidden = !active(); cancel.disabled = busy;
+    copy.disabled = busy; reopen.hidden = mode.value !== 'auto'; reopen.disabled = busy || !valid;
+    codeSend.disabled = busy;
+  };
+  const fillProfiles = (id = '') => {
+    const list = browsers.find((b) => b.id === browser.value)?.profiles || [];
+    profile.replaceChildren(h('option', { value: '', text: 'プロファイルを選んでください' }), ...list.map((p) => h('option', { value: p.id, text: p.label })));
+    if (id && !list.some((p) => p.id === id)) profile.append(h('option', { value: id, disabled: true, text: `${id}（見つかりません・再選択してください）` }));
+    profile.value = id;
+  };
+  browser.onchange = () => { fillProfiles(); controls(); }; mode.onchange = profile.onchange = controls;
+  const show = (value) => {
+    if (closed) return;
+    session = value;
+    const message = { starting: '認証を開始しています…', waiting: value.browserOpened ? '選んだブラウザで認証を完了してください' : '認証URLをブラウザで開いてください',
+      verifying: 'ログインしたアカウントを確認しています…', succeeded: `ログインしました: ${value.account?.email || value.account?.label || ''}`, failed: value.error || '認証に失敗しました', cancelled: '認証をキャンセルしました' }[value.state];
+    status.textContent = [message, value.browserError].filter(Boolean).join('\n');
+    if (url.value !== (value.authUrl || '')) url.value = value.authUrl || '';
+    urlArea.hidden = !value.authUrl;
+    codeArea.hidden = agent !== 'claude' || value.state !== 'waiting';
+    if (value.manualCodeRequired) codeArea.open = true;
+    if (!active()) { code.value = ''; codeArea.open = false; }
+    start.textContent = value.state === 'succeeded' ? '追加しました' : 'ログインを開始';
+    controls();
+    if (value.state === 'succeeded' && !refreshed) { refreshed = true; load(); }
+  };
+  const poll = async () => {
+    if (closed || !session?.sessionId || !active()) return;
+    const id = session.sessionId, current = epoch;
+    try { const next = await call('canban_account_login_status', { sessionId: id }); if (!closed && current === epoch) show(next); }
+    catch { if (!closed && current === epoch) status.textContent = '認証状態を取得できませんでした。再確認しています…'; }
+    if (!closed && active()) timer = setTimeout(poll, 1000);
+  };
+  const perform = async (fn) => {
+    if (closed || busy) return;
+    busy = true; epoch++; clearTimeout(timer); controls(); notice.textContent = '';
+    try { await fn(); } catch (e) { if (!closed) status.textContent = e.message; }
+    finally { busy = false; if (!closed) { controls(); if (active()) timer = setTimeout(poll, 1000); } }
+  };
+  start.onclick = () => perform(async () => {
+    refreshed = false; status.textContent = '認証を開始しています…';
+    let result;
+    const created = await call('canban_start_account_login', { agent, method: 'browser', ...(home ? { profileId: home.id } : {}), ...(key ? { key } : {}), loginOptions: options() });
+    if (created.busy) throw new Error('別のアカウント操作が実行中です。少し待ってからお試しください');
+    home = created.profile; result = created.login; await load();
+    show(result);
+  });
+  reopen.onclick = () => perform(async () => show(await call('canban_account_login_open', { sessionId: session.sessionId, loginOptions: options() })));
+  cancel.onclick = () => perform(async () => show(await call('canban_account_login_cancel', { sessionId: session.sessionId })));
+  codeForm.onsubmit = (e) => {
+    e.preventDefault(); if (!code.value.trim()) return code.focus();
+    const value = code.value; code.value = '';
+    perform(async () => { show(await call('canban_account_login_code', { sessionId: session.sessionId, code: value })); if (!closed) notice.textContent = 'コードを送信しました'; });
+  };
+  try {
+    const catalog = await call('canban_login_browsers', home ? { profileId: home.id } : {});
+    if (closed) return;
+    browsers = catalog.browsers;
+    const target = catalog.active?.target || catalog.preference || { mode: 'manual', browserId: browsers[0]?.id };
+    browser.replaceChildren(...browsers.map((b) => h('option', { value: b.id, text: b.label })));
+    if (target.browserId && !browsers.some((b) => b.id === target.browserId)) browser.append(h('option', { value: target.browserId, disabled: true, text: '保存したブラウザが見つかりません' }));
+    mode.value = target.mode; browser.value = target.browserId || browsers[0]?.id || ''; fillProfiles(target.profileId);
+    status.textContent = 'ブラウザとプロファイルを選ぶか、手動起動でURLをコピーしてください'; controls();
+    if (catalog.active) { show(catalog.active); timer = setTimeout(poll, 1000); }
+  } catch (e) { if (!closed) status.textContent = e.message; }
 }
 
 $('#accountsBtn').addEventListener('click', (e) => accountsMenu(e.currentTarget));

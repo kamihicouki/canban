@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Store } from '../server/store.mjs';
-import { accountActions } from '../server/account-actions.mjs';
+import { accountActions, accountActionTools } from '../server/account-actions.mjs';
 import { normalizeAccounts } from '../server/accounts-settings.mjs';
 import { configureAccounts, refreshAccounts, accountsView, resetAccountsForTest } from '../server/accounts.mjs';
 
@@ -123,4 +123,46 @@ test('batch refresh keeps successful accounts isolated when another account fail
   assert.equal(result.updated.find(v => v.key === 'codex:a').status, 'error');
   const usage = (await store.load()).settings.accounts.usage;
   assert.equal(usage['codex:b'].primary.usedPercent, 67); assert.equal(usage['codex:a'].primary.usedPercent, 23);
+});
+
+test('browser login uses the same isolated pending home, reuses its session and can switch to terminal', async () => {
+  let session, starts = 0, cancelled = 0, terminal;
+  const manager = {
+    catalog: () => [], active: p => session?.homeId === p.id ? { id: session.sessionId } : null,
+    view: () => session,
+    start: async (p, target) => { starts++; assert.equal(target.mode, 'manual'); session = { sessionId: 'test-session', homeId: p.id, state: 'waiting', authUrl: 'https://auth.openai.com/authorize?state=fixture' }; return session; },
+    cancel: async () => { cancelled++; session = null; },
+  };
+  const actions = accountActions({ store, allSessions, bin: () => '/fake/codex', loginManager: manager,
+    launch: async value => { terminal = value; }, dryRun: true });
+  const result = await actions.startLogin({ agent: 'codex', method: 'browser', loginOptions: { mode: 'manual' } });
+  assert.equal(starts, 1); assert.equal(terminal, undefined);
+  assert.equal(result.login.state, 'waiting'); assert.notEqual(result.profile.dir, home);
+  assert.equal((await actions.loginBrowsers({ profileId: result.profile.id })).active.sessionId, 'test-session');
+  assert.equal((await actions.loginDetails({ profileId: result.profile.id })).command, result.command);
+  await actions.startLogin({ agent: 'codex', profileId: result.profile.id, method: 'browser' });
+  assert.equal(starts, 1);
+  await actions.startLogin({ agent: 'codex', profileId: result.profile.id, method: 'terminal' });
+  assert.equal(cancelled, 1); assert.ok(terminal.command.includes(result.profile.dir));
+  await actions.cancelLogin({ id: result.profile.id });
+});
+
+test('failed terminal launch preserves a copyable isolated command without raw launcher errors', async () => {
+  const actions = accountActions({ store, allSessions, bin: () => '/fake/codex',
+    launch: async () => { throw Error('PRIVATE-LAUNCH-ERROR'); }, dryRun: true });
+  const result = await actions.startLogin({ agent: 'codex', method: 'terminal' });
+  assert.equal(result.opened, false); assert.match(result.error, /コピー/);
+  assert.ok(result.command.includes(result.profile.dir));
+  assert.equal((await actions.loginDetails({ profileId: result.profile.id })).command, result.command);
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE-LAUNCH/);
+  assert.match(result.command, /CODEX_ACCESS_TOKEN/); assert.match(result.command, /BROWSER/);
+  await actions.cancelLogin({ id: result.profile.id });
+});
+
+test('account login tool schemas carry the method, browser target and ephemeral session operations', () => {
+  const list = accountActionTools({ actions: {}, store, appTool: (name, description, properties, required) => ({ name, properties, required }) });
+  const start = list.find(t => t.name === 'canban_start_account_login');
+  assert.deepEqual(start.properties.method.enum, ['terminal', 'browser']);
+  assert.deepEqual(start.properties.loginOptions.properties.mode.enum, ['auto', 'manual']);
+  for (const operation of ['status', 'open', 'cancel', 'code']) assert.ok(list.some(t => t.name === `canban_account_login_${operation}`));
 });

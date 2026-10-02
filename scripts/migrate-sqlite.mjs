@@ -6,6 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { dataDir, normalize, defaultState } from '../server/store.mjs';
+import { canonicalDataDirectory } from '../server/data-directory.mjs';
 import { openDatabase, db, transaction, writeBoard, writeRequests, readBoard, readRequests, readTransaction, alive, SCHEMA_VERSION } from '../server/sqlite-backend.mjs';
 const args = process.argv.slice(2);
 const index = args.indexOf('--data-dir');
@@ -30,7 +31,7 @@ function activeServers() {
     try {
       const environment = execFileSync('ps',['eww','-p',pid,'-o','command='],{encoding:'utf8'});
       const custom = environment.trim().match(/(?:^|\s)CANBAN_DATA_DIR=(.*?)(?=\s[A-Za-z_][A-Za-z0-9_]*=|$)/)?.[1];
-      return path.resolve(custom || path.join(os.homedir(),'.canban')) === dir;
+      return canonicalDataDirectory(custom || path.join(os.homedir(),'.canban')) === canonicalDataDirectory(dir);
     } catch { return alive(Number(pid)); } // A vanished process is stopped; an unknown live target blocks migration.
   });
 }

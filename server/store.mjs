@@ -1,11 +1,11 @@
 // Kanban state store. This is the only module that writes to disk, and it only
-// writes inside the kanban data directory (default ~/.canban).
+// writes inside the configured Canban data directory.
 import { isMainThread, proxyStore } from './sqlite-client.mjs';
 import { readBoard, writeBoard, transaction, currentFence } from './sqlite-backend.mjs';
 import { defaultAccounts, normalizeAccounts, applyAccountPatch } from './accounts-settings.mjs';
 import path from 'node:path';
-import os from 'node:os';
 import crypto from 'node:crypto';
+import { resolveDataDirectory } from './data-directory.mjs';
 import { normalizeTaskDashboard, taskDashboardRecord } from './task-dashboard.mjs';
 import { normalizeTaskContext } from './task-context.mjs';
 
@@ -17,7 +17,7 @@ export const TERMINALS = ['ghostty', 'terminal', 'iterm'];
 export const TERMINAL_TARGETS = ['new-window', 'new-tab', 'split', 'current'];
 
 export function dataDir() {
-  return process.env.CANBAN_DATA_DIR || path.join(os.homedir(), '.canban');
+  return resolveDataDirectory();
 }
 
 export const RULE_TRIGGERS = [
