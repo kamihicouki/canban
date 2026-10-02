@@ -10,7 +10,7 @@
 | `.local/config.json` | このcheckoutの保存先設定 |
 | `.local/data/` | 開発用データ、または既存共有データへの参照 |
 | `~/.canban/`（repo外） | 通常ユーザーのSQLite DB、検索索引、実行ログ、アカウントデータ |
-| `.local/chrome-main-test/` | 拡張の公開鍵・ID、Native Hostランチャー、ビルド記録 |
+| `.local/chrome-main-test/` | 拡張の公開鍵・ID、ビルド記録、更新ロック |
 | `.local/backups/` | 配置移行・設定変更前の控え |
 
 `.local/` はGitとMCPBパッケージから除外する。認証情報・実データ・ローカル設定をcommitや配布物に含めない。旧cloneの履歴・未追跡資料・worktreeの作業状態を保持する。
@@ -44,4 +44,10 @@ npm run update:local
 
 完了条件はpackage・MCP manifest・Codex plugin・登録先Chrome manifestのバージョン一致、ソースとビルドの一致、拡張IDとNative Hostの維持。Chromeで再読み込みする。インストール済み旧版MCPプロセスが残る場合は、次回そのホストを再接続したときに更新される。アプリのキャッシュを開発repoとして編集しない。
 
-ストア版は既存の `com.kamihicouki.canban` を使う。両ホストの起動先は正規repoを参照し、データは共有する。追加の旧テストホストは有効なworktreeを参照する限り保持する。
+## Chrome Native Hostの実行ファイル
+
+macOSのDocuments保護により、Chromeの子プロセスはDocuments内のrepoを読み取れない場合がある。ホストはrepoを直接起動せず、macOSでは `~/Library/Application Support/Canban/native-hosts/<host名>/`、Linuxでは `${XDG_DATA_HOME:-~/.local/share}/canban/native-hosts/<host名>/` のアプリ用配布物を起動する。OSのアクセス権を広げる必要はない。
+
+Main Testの更新はcommit済みmainを `git archive` でコミット別ディレクトリへ配布し、そのランチャーを登録する。`.git`、`.local`、未追跡資料は配布しない。旧コミットの実行ファイルは起動中プロセスのため保持する。拡張の登録先は引き続きrepoの `dist/chrome`。ビルド記録に実行ファイルの保存先も記録する。
+
+ストア版は既存の `com.kamihicouki.canban` を使い、Main Testとは別の実行ファイル・登録を持つ。通常版の `npm run install:chrome-native-host -- --extension-id <拡張ID>` も実行ファイルを配布し、以降の更新時は再実行する。Gitのない連携ソフトではプログラムに必要なファイルだけをコピーする。両ホストのデータは同じ `~/.canban/` を参照し、Main Testへの明示した保存先は維持する。追加の旧テストホストは有効なworktreeを参照する限り保持する。

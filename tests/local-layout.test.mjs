@@ -38,6 +38,7 @@ test('local Chrome update preserves the ID, shares repo data and refuses dirty o
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-local-chrome-'));
   try {
     const repository = path.join(temp, 'repository'), hostsDirectory = path.join(temp, 'hosts');
+    const runtimeDirectory = path.join(temp, 'application-support', 'canban-main-test');
     fs.mkdirSync(repository);
     for (const item of ['scripts', 'server', 'ui', 'assets', 'chrome', 'package.json', '.gitignore']) {
       fs.cpSync(path.join(source, item), path.join(repository, item), { recursive: true });
@@ -58,7 +59,7 @@ test('local Chrome update preserves the ID, shares repo data and refuses dirty o
     assert.equal(fs.existsSync(path.join(distribution.outputDirectory, 'untracked-local-note')), false);
     assert.equal(fs.existsSync(path.join(distribution.outputDirectory, '.git')), false);
     assert.equal(JSON.parse(fs.readFileSync(path.join(distribution.outputDirectory, 'package.json'))).version, distribution.version);
-    const result = updateLocalChrome({ repository, hostsDirectory });
+    const result = updateLocalChrome({ repository, hostsDirectory, runtimeDirectory });
     assert.equal(result.extensionId, extensionId);
     assert.equal(result.dataDirectory, path.join(repository, '.local', 'data'));
     assert.equal(result.sourceDirectory, repository);
@@ -66,7 +67,14 @@ test('local Chrome update preserves the ID, shares repo data and refuses dirty o
     assert.equal(manifest.key, publicKey); assert.equal(manifest.version, result.version);
     assert.match(fs.readFileSync(path.join(result.extensionDirectory, 'board.js'), 'utf8'), /connectNative\('com\.kamihicouki\.canban_main_test'\)/);
     const host = JSON.parse(fs.readFileSync(path.join(hostsDirectory, 'com.kamihicouki.canban_main_test.json')));
-    assert.equal(host.path, path.join(base, 'native-host.sh'));
+    assert.equal(host.path, path.join(runtimeDirectory, 'native-host.sh'));
+    assert.equal(result.runtimeDirectory, runtimeDirectory);
+    const runtime = path.join(runtimeDirectory, result.sha);
+    assert.equal(fs.existsSync(path.join(runtime, '.local')), false);
+    assert.equal(fs.existsSync(path.join(runtime, 'untracked-local-note')), false);
+    assert.equal(fs.existsSync(path.join(runtime, '.git')), false);
+    assert.equal(fs.readFileSync(path.join(runtime, 'server', 'index.mjs'), 'utf8'), fs.readFileSync(path.join(repository, 'server', 'index.mjs'), 'utf8'));
+    assert.ok(fs.readFileSync(host.path, 'utf8').includes(path.join(runtime, 'scripts', 'chrome-native-host.sh')));
     assert.deepEqual(host.allowed_origins, [`chrome-extension://${extensionId}/`]);
     assert.match(fs.readFileSync(host.path, 'utf8'), /CANBAN_DATA_DIR=.*\.local\/data/);
     assert.equal(fs.existsSync(path.join(base, 'update.lock')), false);

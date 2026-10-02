@@ -6,10 +6,10 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { resolveDataDirectory } from '../server/data-directory.mjs';
+import { chromeRuntimeDirectory, installChromeRuntime } from './chrome-runtime.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const hostName = 'com.kamihicouki.canban_main_test';
-const shellQuote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
 
 function chromeHostsDirectory() {
   if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome', 'NativeMessagingHosts');
@@ -17,7 +17,7 @@ function chromeHostsDirectory() {
   throw new Error('Chrome Native Messaging の登録はmacOS／Linuxに対応しています');
 }
 
-export function updateLocalChrome({ repository = root, hostsDirectory = chromeHostsDirectory() } = {}) {
+export function updateLocalChrome({ repository = root, hostsDirectory = chromeHostsDirectory(), runtimeDirectory = chromeRuntimeDirectory(hostName) } = {}) {
   const base = path.join(repository, '.local', 'chrome-main-test');
   const config = JSON.parse(fs.readFileSync(path.join(base, 'config.json'), 'utf8'));
   const dataDirectory = resolveDataDirectory({ root: repository });
@@ -70,15 +70,14 @@ export function updateLocalChrome({ repository = root, hostsDirectory = chromeHo
 
     fs.mkdirSync(extensionDirectory, { recursive: true });
     for (const filename of fs.readdirSync(staging)) writeAtomic(path.join(extensionDirectory, filename), fs.readFileSync(path.join(staging, filename)), 0o644);
-    const launcher = path.join(base, 'native-host.sh');
-    writeAtomic(launcher, `#!/bin/sh\nexport CANBAN_DATA_DIR=${shellQuote(dataDirectory)}\nexport CANBAN_NODE=${shellQuote(process.execPath)}\nexec ${shellQuote(path.join(repository, 'scripts', 'chrome-native-host.sh'))}\n`, 0o700);
+    const { launcher } = installChromeRuntime({ repository, runtimeDirectory, sha, dataDirectory });
     fs.mkdirSync(hostsDirectory, { recursive: true });
     writeAtomic(path.join(hostsDirectory, `${hostName}.json`), `${JSON.stringify({
       name: hostName, description: 'Canban main checkout local test', path: launcher,
       type: 'stdio', allowed_origins: [`chrome-extension://${extensionId}/`],
     }, null, 2)}\n`);
     const result = { ref: 'main', sha, version: manifest.version, extensionId, extensionDirectory,
-      sourceDirectory: repository, dataDirectory, updatedAt: new Date().toISOString() };
+      sourceDirectory: repository, runtimeDirectory, dataDirectory, updatedAt: new Date().toISOString() };
     writeAtomic(path.join(base, 'build.json'), `${JSON.stringify(result, null, 2)}\n`);
     return result;
   } finally {
