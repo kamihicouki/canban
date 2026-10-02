@@ -130,7 +130,7 @@ Chrome も Codex／Claude と同じ MCP サーバーと保存先の `canban.sqli
 
 ### ローカル開発環境の配置と更新
 
-このMacでは通常repoを `/Users/d/Documents/repo/canban` に集約し、共有データ・ログ・設定・バックアップをGit管理外の `.local/` に置きます。設定済みlocal mainのChromeテスト版は `npm run update:chrome` で `dist/chrome` に更新します。拡張IDとNative Messaging接続先を維持します。
+このMacでは通常repoを `/Users/d/Documents/repo/canban` に集約し、共有データ・ログ・設定・バックアップをGit管理外の `.local/` に置きます。設定済みlocal mainは `npm run update:local` で、Git管理ファイルのみのプラグイン配布物 `dist/codex-plugin`、登録済みChromeテスト版 `dist/chrome`、Codexへの導入を順に更新します。拡張IDとNative Messaging接続先を維持します。
 
 保存先は `CANBAN_DATA_DIR`、checkoutの `.local/config.json`、`~/.canban` の順で決まります。既存インストールは `~/.canban` を継続して使えます。移行済み環境ではこのパスがrepo内のデータへの互換リンクになります。具体的な配置・移行・クライアント間共有・更新完了条件は [ローカル配置の契約](docs/local-layout.md) を参照してください。
 

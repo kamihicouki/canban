@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolveDataDirectory } from '../server/data-directory.mjs';
 import { updateLocalChrome } from '../scripts/update-local-chrome.mjs';
+import { buildLocalPlugin } from '../scripts/build-local-plugin.mjs';
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const writeJson = (file, value) => fs.writeFileSync(file, JSON.stringify(value));
@@ -17,9 +18,12 @@ test('local data configuration, explicit override and installed copies resolve t
   try {
     const home = path.join(temp, 'home'), repository = path.join(temp, 'repository');
     const data = path.join(repository, '.local', 'data');
-    fs.mkdirSync(data, { recursive: true }); fs.mkdirSync(home);
+    fs.mkdirSync(data, { recursive: true }); fs.mkdirSync(home); fs.mkdirSync(path.join(repository, '.git'));
     writeJson(path.join(repository, '.local', 'config.json'), { dataDirectory: 'data' });
     fs.symlinkSync(data, path.join(home, '.canban'));
+    const installed = path.join(temp, 'installed-copy');
+    fs.mkdirSync(path.join(installed, '.local'), { recursive: true });
+    writeJson(path.join(installed, '.local', 'config.json'), { dataDirectory: 'accidental-copy' });
     assert.equal(resolveDataDirectory({ env: {}, home, root: repository }), fs.realpathSync(data));
     assert.equal(resolveDataDirectory({ env: {}, home, root: path.join(temp, 'installed-copy') }), fs.realpathSync(data));
     assert.equal(resolveDataDirectory({ env: { CANBAN_DATA_DIR: '/explicit/data' }, home, root: repository }), '/explicit/data');
@@ -47,6 +51,13 @@ test('local Chrome update preserves the ID, shares repo data and refuses dirty o
     const extensionId = crypto.createHash('sha256').update(Buffer.from(publicKey, 'base64')).digest('hex').slice(0, 32)
       .replace(/[0-9a-f]/g, digit => String.fromCharCode(97 + parseInt(digit, 16)));
     writeJson(path.join(base, 'config.json'), { publicKey, extensionId });
+    fs.writeFileSync(path.join(repository, '.local', 'private-data-sentinel'), 'private local data');
+    fs.writeFileSync(path.join(repository, 'untracked-local-note'), 'untracked user note');
+    const distribution = buildLocalPlugin({ repository });
+    assert.equal(fs.existsSync(path.join(distribution.outputDirectory, '.local')), false);
+    assert.equal(fs.existsSync(path.join(distribution.outputDirectory, 'untracked-local-note')), false);
+    assert.equal(fs.existsSync(path.join(distribution.outputDirectory, '.git')), false);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(distribution.outputDirectory, 'package.json'))).version, distribution.version);
     const result = updateLocalChrome({ repository, hostsDirectory });
     assert.equal(result.extensionId, extensionId);
     assert.equal(result.dataDirectory, path.join(repository, '.local', 'data'));
