@@ -115,7 +115,7 @@ Codex と Claude デスクトップの両方に入れた場合も、保存先を
    npm run install:chrome-native-host -- --extension-id <拡張ID>
    ```
 
-   登録するのはユーザー領域の Chrome Native Messaging Hosts マニフェスト 1 ファイルです。マニフェストはこのリポジトリ内の起動スクリプトを指し、接続を許可する拡張 ID を指定します。リポジトリを別の場所へ移動した場合は、再ビルドして Native Messaging Host を再登録してください。
+   このコマンドは連携ソフトをmacOSでは `~/Library/Application Support/Canban/native-hosts/<host名>/`、Linuxでは `${XDG_DATA_HOME:-~/.local/share}/canban/native-hosts/<host名>/` に配布し、ユーザー領域の Chrome Native Messaging Hosts マニフェストを登録します。マニフェストは配布先のランチャーを指し、接続を許可する拡張 ID を指定します。連携ソフトの更新時は同じ登録コマンドを再実行して、配布物と登録を更新してください。設定済みのローカルmainテスト版は `npm run update:local` で更新します。
 4. Chrome を再起動し、拡張をツールバーにピン留めしてボタンを押すと、Canban が専用タブで開きます。
 
 `Specified native messaging host not found` が表示された場合は、拡張の読み込みは成功していますが、手順3のホスト登録が未完了です。Chromeの拡張画面に表示されるIDで登録コマンドを実行し、Canbanのタブを再読み込みしてください。Codex／Claude／Chromeは同時に開けます。画面設定を同時に変更した場合は、競合を検知した画面の同期を止めます。 更新時は、既に動いているCodex／ClaudeのCanbanサーバーも再起動してください。旧版のサーバーは新しい画面設定の保存形式を知らないため、旧版と新版の併用中は共有画面設定が失われることがあります。

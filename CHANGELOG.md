@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.8 — 2026-10-03
+
+- Chrome導入手順の旧説明を修正し、Native HostがApplication Support／XDG領域の配布物を起動することと、通常版・ローカルmainテスト版それぞれの更新手順を統一しました。
+
 ## 0.16.7 — 2026-10-03
 
 - macOSがDocuments内のrepoへのアクセスをChromeの子プロセスに拒否し、`Native host has exited`で読み込めない問題を修正しました。Native Hostの実行ファイルをアプリ用保存領域へ配布します。
