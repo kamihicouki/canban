@@ -3,6 +3,7 @@ node_modules/
 *.log
 *.tmp
 .canban/
+.local/
 .claude/
 __pycache__/
 dist/

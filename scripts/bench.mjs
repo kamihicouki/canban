@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Performance check against your real agent data (read-only). Canban's own data is
-// copied to a temp dir, so nothing under ~/.canban changes.
+// copied to a temp dir, so the configured Canban data directory is unchanged.
 //   npm run bench                       local sessions
 //   npm run bench -- --remote           also enabled SSH hosts
 //   npm run bench -- --save a.json      write results; --compare a.json shows the diff
@@ -10,13 +10,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { resolveDataDirectory } from '../server/data-directory.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
 const flag = (n) => argv.includes(n);
 const opt = (n) => (argv.includes(n) ? argv[argv.indexOf(n) + 1] : null);
 
-const realData = process.env.CANBAN_DATA_DIR || path.join(os.homedir(), '.canban');
+const realData = resolveDataDirectory();
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-bench-'));
 try {
   const board = JSON.parse(fs.readFileSync(path.join(realData, 'board.json'), 'utf8'));
