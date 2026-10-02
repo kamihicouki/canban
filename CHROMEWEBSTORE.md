@@ -98,6 +98,8 @@ GitHub Actions の `chrome-web-store` Environment は作成済みで、Publisher
 
 Google 側の設定: https://developer.chrome.com/docs/webstore/using-api
 
+OAuth のトークン更新に失敗した場合、HTTP ステータスと既知の定型エラーコードだけを表示する。`invalid_client` はクライアント ID / secret の組み合わせを確認し、`invalid_grant` は同じクライアントで再認可して新しい refresh token を取得する。`deleted_client` は Google Cloud 側でクライアントの状態を確認する。レスポンス全文や `error_description` は認証情報を含む可能性があるため表示しない。
+
 公式 API 定義: https://chromewebstore.googleapis.com/$discovery/rest?version=v2
 
 認証の作成・同意はアカウント所有者が行う。公式の順序は、Google Cloud で Chrome Web Store API を有効化 → OAuth 同意画面を設定 → Web application の OAuth client を作成（redirect URI: `https://developers.google.com/oauthplayground`）→ OAuth Playground の「Use your own OAuth credentials」に自分の client を設定 → `https://www.googleapis.com/auth/chromewebstore` をストア管理アカウントで認可 → authorization code を交換して refresh token を取得、となる。External / Testing 状態で発行する refresh token は通常7日で失効するため、運用用の OAuth 設定と Google の要件を確認してから認可する。GitHub の secret 登録には `gh secret set NAME --env chrome-web-store` の対話入力を使う。コマンド引数やログへ値を露出させない。

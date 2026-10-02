@@ -47,6 +47,16 @@ test('store ZIP only contains extension assets and correct-sized icons', { skip:
 test('missing configuration fails before any network request', async () => {
   await assert.rejects(publishChromeWebStore({ env: {}, fetchImpl: () => assert.fail('Network called') }), /設定が不足/);
 });
+test('OAuth rejection reports only the known error code and stops before store access', async t => {
+  const requests = [];
+  await assert.rejects(publishChromeWebStore({ env: fixture(t), fetchImpl: mock([{ http: 400, error: 'invalid_grant', error_description: 'DO_NOT_LOG_SECRET' }], requests), log() {} }), /OAuth token refresh failed \(HTTP 400; invalid_grant\)/);
+  assert.equal(requests.length, 1);
+});
+test('unknown OAuth response text is never included in the error', async t => {
+  const requests = [];
+  await assert.rejects(publishChromeWebStore({ env: fixture(t), fetchImpl: mock([{ http: 400, error: 'DO_NOT_LOG_SECRET', error_description: 'DO_NOT_LOG_REFRESH' }], requests), log() {} }), error => /HTTP 400/.test(error.message) && !/DO_NOT_LOG/.test(error.message));
+  assert.equal(requests.length, 1);
+});
 test('upload only does not publish, waits for async success and keeps secrets out of logs', async t => {
   const requests = [], logs = [], env = fixture(t);
   const result = await publishChromeWebStore({ env, fetchImpl: mock([{ access_token: 'ACCESS' }, {}, { uploadState: 'IN_PROGRESS' }, { lastAsyncUploadState: 'SUCCEEDED' }], requests), sleep: async () => {}, log: message => logs.push(message) });
