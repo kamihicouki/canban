@@ -86,7 +86,7 @@ node scripts/package-chrome-web-store.mjs
 
 成果物: `dist/canban-web-store.zip` と SHA-256。ZIP のルートに manifest.json を配置。ローカル連携ソフトは ZIP に含めない。
 
-GitHub Actions の `chrome-web-store` Environment は作成済みで、Publisher ID とストア用拡張 ID を Variables に登録済み。OAuth secrets は未作成・未登録。以下を設定する。値を文書やチャットに貼らない。
+GitHub Actions の `chrome-web-store` Environment は作成済みで、Publisher ID とストア用拡張 ID を Variables に登録済み。OAuth Secrets 3件も登録済みで、2026-10-02 に production からの実申請で認証を確認した。初回設定・認証更新には以下を使う。値を文書やチャットに貼らない。
 
 | 種別 | 名前 | 内容 |
 |---|---|---|
@@ -115,6 +115,25 @@ GitLab Flow で `main` を開発用、`production` をリリース用として�
 同じストア項目へのデプロイを直列化する。既存の審査中・公開待ち申請がある場合、警告・ポリシー措置がある場合、アップロードが失敗した場合は停止する。申請後は API で状態を再取得する。`PENDING_REVIEW` は審査待ちであり、公開済みではない。
 
 公開後の確認: ストアの公開 URL、バージョン、ストアからのインストール、ストア ID に対する Native Messaging 登録、ボード表示と基本操作を確認する。開発用拡張 ID を流用しない。
+
+## production からの初回申請の証跡（2026-10-02）
+
+[main → production のリリース PR #22](https://github.com/kamihicouki/canban/pull/22) のマージを起点に、実ストアへ 0.16.0 をアップロードし、審査申請した。最初の認証失敗後、アカウント所有者が OAuth を再認可・Secrets を再登録し、同じ Actions 実行を再実行して成功した。申請直後の API 読み戻しで、対象バージョンと `PENDING_REVIEW` を確認した。
+
+| 項目 | 確認結果 |
+|---|---|
+| バージョン | `0.16.0` |
+| production コミット | `08136c0a0e490031a430aaf9501ce3ddf0a8d20c` |
+| Actions | [36951952423](https://github.com/kamihicouki/canban/actions/runs/36951952423) / attempt 2 / success |
+| ZIP SHA-256 | `fe0e2bdd5b8c7a89fd1b5f47ed3964e4dd41525cd9602cfe7553268c6cdff2f2` |
+| 申請後の状態 | `PENDING_REVIEW`（審査待ち） |
+| ストア拡張 ID | `kmnkdbmckholannmfhjfmceofmjdbndh` |
+
+同じ production コミットの Ubuntu/macOS × Node 22/24 の4構成テスト、ZIP 作成・バージョンとチェックサムの検証、実アップロード、審査申請、API 読み戻し、申請証跡の保存がすべて成功した。Actions の `canban-chrome-web-store-submission` 成果物に含まれる JSON と配布 ZIP をダウンロードし、上記バージョン・production SHA・拡張 ID・ZIP の SHA-256 を照合した。
+
+production の保護は、PR 必須・承認0人・管理者にも適用・6つの必須チェック・最新 production を含むこと・強制更新と削除の禁止を確認した。main / 開発 PR で deploy が省略されること、[main 以外を取り込み元にした検証 PR #20](https://github.com/kamihicouki/canban/pull/20) のチェック失敗とマージ拒否、production への直接 push 拒否を実際に確認した。タグの公開トリガーを削除し、Environment の利用元が production ブランチのみであることも設定で確認した。
+
+申請前の公開版は 0.15.0。0.16.0 の審査承認・一般公開・公開後の実機動作確認は、この申請成功の記録には含まない。既存 checkout・未コミット変更・Native Messaging Host は保持した。
 
 ## 審査担当者向け導入手順
 
@@ -147,8 +166,10 @@ Chrome の Canban アイコンからボードを開く。認証用の Canban ア
 - [x] ストア項目作成、掲載画像・分類・言語、データ種類とテスト手順の保存
 - [x] データ使用の3つの宣言の確定と保存後の再確認
 - [x] 公開連絡先メールの本人確認
-- [ ] GitHub Environment の認証設定
-- [ ] 審査申請、承認、公開ストアからの動作確認
+- [x] GitHub Environment の認証設定と実申請での認証確認
+- [x] production から 0.16.0 の審査申請と同じバージョンの API 読み戻し
+- [ ] 0.16.0 の審査承認・一般公開
+- [ ] 0.16.0 の公開ストアからの動作確認
 
 ## 0.15.0 の統合後の確認（2026-09-30）
 

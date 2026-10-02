@@ -496,6 +496,8 @@ Canbanの開発と`origin/main`への統合は、このCodex側を主管とし�
 
 リリースは同じリポジトリの **main → production の PR** で行います。production は直接 push・強制更新・削除を禁止し、4構成のテスト、ZIP作成、取り込み元の検証を必須にします。単独で運用できるよう、他者の承認人数は0人です。
 
+production に作られたマージ履歴は main に取り込み、次のリリース PR が production の最新コミットを含む状態で必須チェックを通します。
+
 main と PR では検証と ZIP 作成までを実行します。production の更新では、同じコミットの Ubuntu/macOS × Node 22/24 のテストと ZIP 検証が成功した後、Chrome Web Store へアップロード・審査申請します。タグからの公開は行いません。リリースごとに package・MCP manifest・Codex plugin のバージョンを揃え、公開済みより新しい番号にしてください。緊急修正も main に統合してから production へ取り込みます。
 
 認証設定、手動実行、申請の証拠は [CHROMEWEBSTORE.md](CHROMEWEBSTORE.md) を参照してください。審査申請の成功と実際の公開は別の状態です。
