@@ -95,3 +95,21 @@
 @media (max-width: 420px) {
   .topbar.compact .acct-btn .rings, .topbar.compact #refresh { display: none; }
 }
+
+.account-login { width: min(480px, calc(100vw - 48px)); max-height: calc(100vh - 48px); overflow: auto; padding: 20px; border: 1px solid var(--input-border); border-radius: 12px; background: var(--modal-bg); color: var(--list-fg); box-shadow: 0 12px 48px #0005; }
+.account-login::backdrop { background: #0006; }
+.account-login h2 { margin: 0 0 8px; font-size: 18px; }
+.account-login [hidden] { display: none; }
+.login-choices { display: grid; gap: 12px; margin: 16px 0; padding: 12px; border: 1px solid var(--input-border); border-radius: 8px; }
+.login-choices legend { font-size: 12px; }
+.login-field { display: grid; gap: 6px; font-size: 12px; }
+.login-status { white-space: pre-line; line-height: 1.6; }
+.login-url { box-sizing: border-box; width: 100%; font: 11px ui-monospace, monospace; resize: vertical; }
+.login-url-area .row, .login-actions { flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.account-login details { margin: 16px 0; font-size: 12px; }
+.account-login summary { cursor: pointer; }
+.login-code-form { display: grid; gap: 8px; margin-top: 10px; }
+.account-login .muted { font-size: 12px; line-height: 1.6; }
+
+.acct-login-actions, .acct-pending .row { flex-wrap: wrap; }
+.acct-login-actions button { flex: 1 1 140px; }

@@ -29,7 +29,7 @@ Canban は、Codex / Claude Code のセッションを Chrome からカンバン
 2. インストールした拡張の ID を使って、ローカル連携を登録します。
 3. Chrome の Canban アイコンをクリックしてボードを開きます。
 
-セッションやメモを Canban 開発者のサーバーへ送信しません。閲覧履歴や一般のウェブページを読み取らず、広告や追跡機能もありません。使用量の更新時はCodex / Claudeの公式サービスと通信します（既定5分の自動更新は変更・停止可能）。アカウント追加は専用保存先で公式CLIにログインします。利用者がリモート接続や AI への指示の送信を選んだ場合は、利用者が設定した接続先と通信します。
+セッションやメモを Canban 開発者のサーバーへ送信しません。閲覧履歴や一般のウェブページを読み取らず、広告や追跡機能もありません。使用量の更新時はCodex / Claudeの公式サービスと通信します（既定5分の自動更新は変更・停止可能）。アカウント追加はターミナル経由のログイン、または認証URLを任意のブラウザで開く方法を選べます。ChromeのプロファイルやSafariも選択できます。利用者がリモート接続や AI への指示の送信を選んだ場合は、利用者が設定した接続先と通信します。
 
 Canban は MIT ライセンスのオープンソースです。ソース、導入手順、問い合わせ先:
 https://github.com/kamihicouki/canban
@@ -52,7 +52,7 @@ https://github.com/kamihicouki/canban
 
 | 権限 | 審査向け説明 |
 |---|---|
-| nativeMessaging | The extension displays and manages the user's local Codex and Claude Code sessions through the Canban companion installed by the user. Native Messaging connects only to `com.kamihicouki.canban` on the same computer. The companion reads session metadata and conversations and stores board organization locally. User-initiated session actions use the installed agent applications. The companion also retrieves subscription usage from the official providers using locally stored account credentials and opens the official CLI for user-initiated account login. Credentials are not returned to the extension or developer. No browsing history or general website content is accessed. |
+| nativeMessaging | The extension displays and manages the user's local Codex and Claude Code sessions through the Canban companion installed by the user. Native Messaging connects only to `com.kamihicouki.canban` on the same computer. The companion reads session metadata and conversations and stores board organization locally. User-initiated session actions use the installed agent applications. The companion also retrieves subscription usage from the official providers using locally stored account credentials and runs the official CLI for user-initiated account login in a terminal or displays its authorization URL for the user to open in their chosen browser. Browser selection reads only application and profile display names, never browser cookies or credentials. Credentials are not returned to the extension or developer. No browsing history or general website content is accessed. |
 
 host_permissions、content_scripts、tabs、identity、storage 権限なし。リモート配信コードなし。拡張コードはすべて ZIP に同梱し、インラインスクリプトも除外する。
 
@@ -150,6 +150,8 @@ npm run install:chrome-native-host -- --extension-id kmnkdbmckholannmfhjfmceofmj
 Chrome の Canban アイコンからボードを開く。認証用の Canban アカウントは不要。セッションがない場合は空の一覧になる。ローカル連携ソフトがない場合は接続エラーと導入方法を表示する。
 
 ## バージョン履歴
+
+2026-10-02: 0.16.2。アカウント追加のターミナル経由／任意ブラウザ認証を復元。認証URLのコピー、Chromeプロファイル／Safariの選択、Claudeのコード入力、ターミナル起動失敗時のコマンドコピーに対応。拡張権限は変更なし。ブラウザの一覧取得は名称・プロファイル表示名のみで、Cookieやブラウザの認証情報は読み取りません。認証URLとコードはログやボード設定へ保存せず、公式CLIの認証情報は専用保存先内で扱います。アカウント追加と認証画面の掲載画像は更新対象です。
 
 2026-10-02: 0.16.1。会話欄の高さにフッターを含め、会話一覧と外側セクションの二重スクロールを解消。package / MCP manifest / Codex plugin / Chrome build の番号を同期。権限・データ利用・掲載画像の変更はなし。
 
