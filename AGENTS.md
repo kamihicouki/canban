@@ -1,7 +1,8 @@
 # 配置と共有データ
 
 - このMacの通常repoは `/Users/d/Documents/repo/canban` に集約する。Codex・Claudeのworktreeは各エージェントの管理場所を使う。
-- 更新処理は `scripts/`、ビルドは `dist/`、ローカル設定・DB・ログ・バックアップはGit管理外の `.local/` に置く。
+- 更新処理は `scripts/`、ビルドは `dist/`、開発・テスト用の設定・データ・バックアップはGit管理外の `.local/` に置く。
+- Chrome拡張だけを使う通常ユーザーのデータは `~/.canban/` に保存する。通常Chromeはcheckoutの `.local/config.json` を使わず、明示した `CANBAN_DATA_DIR` のみ優先する。このMacの共有実データも `~/.canban/` に置き、repoの `.local/data` から参照する。
 - 配置・導入・保存先・更新手順を変更するときは `docs/local-layout.md` の契約を読み、各クライアントの参照先と実データの一致まで確認する。
 
 # バージョンとローカル拡張

@@ -13,12 +13,12 @@ export function canonicalDataDirectory(directory) {
   }
 }
 
-// Installed copies share the compatibility path; the development checkout owns
-// its local configuration. An explicit environment setting always takes priority.
+// Chrome users and installed copies default to ~/.canban. Only development
+// checkouts use local configuration. An explicit environment setting wins.
 export function resolveDataDirectory({ env = process.env, home = os.homedir(), root = repository } = {}) {
   if (env.CANBAN_DATA_DIR) return env.CANBAN_DATA_DIR;
   const configFile = path.join(root, '.local', 'config.json');
-  if (fs.existsSync(path.join(root, '.git')) && fs.existsSync(configFile)) {
+  if (env.CANBAN_CLIENT !== 'canban-chrome' && fs.existsSync(path.join(root, '.git')) && fs.existsSync(configFile)) {
     const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
     if (typeof config.dataDirectory !== 'string' || !config.dataDirectory.trim()) {
       throw new Error(`${configFile}: dataDirectory を指定してください`);
