@@ -86,3 +86,88 @@ test('account login exposes terminal, manual URL and explicit browser/profile fl
     assert.equal(await page.getByRole('button', { name: '追加しました', exact: true }).isDisabled(), true);
   });
 });
+
+test('existing accounts use browser reauthentication and refresh only the matching successful account', async t => {
+  const require = createRequire(process.env.CANBAN_PLAYWRIGHT_PACKAGE || import.meta.url);
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch({ headless: true,
+    ...(process.env.CANBAN_BROWSER_EXECUTABLE ? { executablePath: process.env.CANBAN_BROWSER_EXECUTABLE } : {}) });
+  t.after(() => browser.close());
+  const html = boardHtml(), css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const helpers = script.slice(script.indexOf('function h('), script.indexOf('const colorVar ='));
+  const accounts = fs.readFileSync(new URL('../ui/accounts.js', import.meta.url), 'utf8');
+  const model = fs.readFileSync(new URL('../ui/workspace-model.js', import.meta.url), 'utf8');
+  for (const width of [1000, 390]) for (const agent of ['codex', 'claude']) {
+    for (const outcome of ['matching', 'wrong-account', 'failed', 'cancelled']) await t.test(`${width}px ${agent} ${outcome}`, async () => {
+      const page = await browser.newPage({ viewport: { width, height: 950 } });
+      page.setDefaultTimeout(5000);
+      t.after(() => page.close());
+      await page.setContent(`<style>${css}</style><button id="accountsBtn">アカウント</button><div id="menu"></div>`);
+      await page.addScriptTag({ content: `${helpers}
+        ${model.match(/function usageWindow\([\s\S]*?\n}/)[0]}
+        const $ = selector => document.querySelector(selector), calls = [], refreshed = [];
+        const agent = ${JSON.stringify(agent)}, outcome = ${JSON.stringify(outcome)}, key = agent + ':fictional';
+        const account = { key, agent, label: 'テスト', short: 'T', plan: 'prolite', signedIn: [], inHeader: true,
+          usage: { status: 'error', code: 'login_required' }, limits: { at: Date.now(), source: 'live',
+            primary: { usedPercent: 27, windowMinutes: 10080, resetsAt: Date.now() + 86400000 }, secondary: null } };
+        const state = { filters: {}, board: { accounts: { accounts: [account], homes: [], colors: [], profiles: [],
+          unknown: { codex: 0, claude: 0 }, refresh: { enabled: false, intervalMinutes: 5 } } } };
+        const workspace = { hasDrafts: () => false }, load = async () => {}, toast = () => {};
+        const colorVar = () => '#aaa', heat = () => 'normal', fmtDate = () => '記録時刻', relTime = () => '今';
+        const closePopover = () => $('#menu').replaceChildren(), popover = (anchor, title, body) => $('#menu').replaceChildren(body);
+        const pending = { id: 'pending', agent, expectedKey: key, pending: true, dir: '/tmp/fictional-canban-account' };
+        let reply = { sessionId: 'fixture', state: 'waiting', authUrl: 'https://example.com/auth?state=fictional' };
+        const completion = { sessionId: 'fixture', state: ['matching', 'wrong-account'].includes(outcome) ? 'succeeded' : outcome,
+          account: { key: outcome === 'wrong-account' ? agent + ':other' : key }, authUrl: null };
+        const bridge = { callTool: async (name, args) => {
+          calls.push({ name, args });
+          if (name === 'canban_login_browsers') return { result: { browsers: [{ id: 'safari', label: 'Safari', profiles: [] }] } };
+          if (name === 'canban_start_account_login') return { result: { profile: pending, login: { ...reply } } };
+          if (name === 'canban_account_login_status') return { result: { ...reply } };
+          if (name === 'canban_account_login_open') return { result: { ...reply } };
+          return { result: {} };
+        } };
+        const act = (name, args) => bridge.callTool(name, args);
+        ${accounts}
+        refreshAccountUsage = args => { if (!args.automatic) refreshed.push(args); };
+        window.calls = calls; window.refreshed = refreshed;
+        window.complete = () => { reply = completion; };
+        accountsMenu($('#accountsBtn'));
+      ` });
+      const meter = page.locator('.acct-usage-grid');
+      assert.equal(await meter.locator(':scope > div').count(), 1);
+      assert.doesNotMatch(await meter.innerText(), /5時間枠|未取得/);
+      const dimensions = await meter.evaluate(el => ({ total: el.clientWidth, item: el.firstElementChild.clientWidth }));
+      assert.ok(Math.abs(dimensions.total - dimensions.item) <= 1, 'a single reported window fills the available width');
+      await page.locator('.acct-auth-action').getByRole('button', { name: 'ターミナルでログイン', exact: true }).click();
+      const terminal = await page.evaluate(() => window.calls.find(c => c.name === 'canban_start_account_login').args);
+      assert.deepEqual(terminal, { agent, key: `${agent}:fictional`, method: 'terminal' });
+      await page.getByRole('button', { name: 'ログインして最新の使用量を取得', exact: true }).click();
+      await page.getByRole('dialog', { name: 'アカウントに再ログイン', exact: true }).waitFor();
+      assert.equal(await page.getByRole('button', { name: '追加してログイン', exact: true }).count(), 0);
+      await page.getByRole('button', { name: 'ログインを開始', exact: true }).click();
+      const started = await page.evaluate(() => window.calls.filter(c => c.name === 'canban_start_account_login').at(-1).args);
+      assert.equal(started.method, 'browser');
+      assert.equal(started.key, terminal.key);
+      assert.equal(started.agent, terminal.agent);
+      await page.evaluate(() => window.complete());
+      if (outcome === 'matching') {
+        await page.getByRole('button', { name: 'ログインしました', exact: true }).waitFor();
+        await page.waitForFunction(() => window.refreshed.length === 1);
+        assert.deepEqual(await page.evaluate(() => window.refreshed), [{ key: `${agent}:fictional` }]);
+        // A repeated view of the same completed session must not refresh usage twice.
+        await page.evaluate(() => document.querySelector('.login-url-area button:last-child').click());
+        await page.waitForFunction(() => window.calls.some(c => c.name === 'canban_account_login_open'));
+        assert.equal(await page.evaluate(() => window.refreshed.length), 1);
+      } else {
+        const message = outcome === 'wrong-account' ? '別のアカウントでは更新されません。'
+          : outcome === 'failed' ? '認証に失敗しました' : '認証をキャンセルしました';
+        await page.locator('.login-status').filter({ hasText: message }).waitFor();
+        assert.equal(await page.evaluate(() => window.refreshed.length), 0);
+      }
+      const dialogSize = await page.getByRole('dialog').evaluate(el => ({ width: el.clientWidth, content: el.scrollWidth }));
+      assert.ok(dialogSize.content <= dialogSize.width + 1, 'reauthentication fits the viewport');
+    });
+  }
+});

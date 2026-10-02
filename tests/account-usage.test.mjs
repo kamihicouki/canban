@@ -31,6 +31,8 @@ test('provider windows preserve zero, missing values and reset times; do not coe
   assert.throws(() => codexSnapshot({ rateLimits: { primary: { usedPercent: '0' } } }), { code: 'unsupported' });
   const x = codexSnapshot({ rateLimits: { primary: { usedPercent: 99 } }, rateLimitsByLimitId: { codex: { primary: { usedPercent: 6, windowDurationMins: 300, resetsAt: 1234 } } } });
   assert.equal(x.primary.usedPercent, 6); assert.equal(x.primary.resetsAt, 1234000);
+  const weekly = codexSnapshot({ rateLimits: { planType: 'prolite', primary: { usedPercent: 27, windowDurationMins: 10080 }, secondary: null } });
+  assert.equal(weekly.primary.windowMinutes, 10080); assert.equal(weekly.secondary, null); assert.equal(weekly.plan, 'prolite');
 });
 test('Codex stdio handshake uses the selected home, file credentials, and no model turns', async () => {
   let child;
