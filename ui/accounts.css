@@ -89,13 +89,13 @@
 .acct-menu .acct-row-refresh, .acct-menu .acct-refresh-all { background: transparent; color: var(--accent); }
 .popover:has(.acct-menu) > h3 { text-align: left; color: var(--list-fg); font-size: 15px; }
 @media (max-width: 380px) { .acct-detail { margin-left: 34px; } .acct-usage-grid { gap: 10px; } .acct-refresh-settings { padding: 8px 6px; } }
-/* Keep the account control reachable when several rings share the compact toolbar. */
+/* Keep the account control reachable on a narrow header. */
 @media (max-width: 640px) {
-  .topbar.compact #logo, .topbar.compact #quickTaskBtn .lbl, .topbar.compact .acct-lbl { display: none; }
-  .topbar.compact .hsearch { min-width: 40px; }
+  .topbar .acct-lbl, .topbar .theme-seg { display: none; }
+  .topbar .hsearch-wrap { min-width: 40px; }
 }
 @media (max-width: 420px) {
-  .topbar.compact .acct-btn .rings, .topbar.compact #refresh { display: none; }
+  .topbar .acct-btn .rings, .topbar #refresh { display: none; }
 }
 
 .account-login { width: min(480px, calc(100vw - 48px)); max-height: calc(100vh - 48px); overflow: auto; padding: 20px; border: 1px solid var(--input-border); border-radius: 12px; background: var(--modal-bg); color: var(--list-fg); box-shadow: 0 12px 48px #0005; }
