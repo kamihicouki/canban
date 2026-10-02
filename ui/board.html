@@ -830,10 +830,11 @@ const bridge = (() => {
     let res;
     const t0 = performance.now();
     const pending = !!hooks.pending?.();
+    const concurrent = !openai() && isChromeExtension();
     if (openai()) res = await window.openai.callTool(name, args);
-    else if (isChromeExtension()) res = await nativeRequest('tools/call', { name, arguments: args });
+    else if (concurrent) res = await nativeRequest('tools/call', { name, arguments: args });
     else res = await request('tools/call', { name, arguments: args });
-    hooks.after?.(name, t0, pending);
+    hooks.after?.(name, t0, pending, concurrent);
     if (res?.isError) {
       const text = (res.content || []).map((c) => c.text).filter(Boolean).join('\n');
       throw Object.assign(new Error(text || `${name} failed`), { code: res.structuredContent?.code || null });
@@ -855,7 +856,7 @@ const bridge = (() => {
     if (isChromeExtension()) return;
     notify('ui/notifications/size-changed', { width: document.documentElement.scrollWidth, height: Math.max(560, window.innerHeight) });
   }
-  const hooks = {}; // pending(): a long poll is open; after(name, startedAt, pending)
+  const hooks = {}; // pending(): a long poll is open; after(name, startedAt, pending, concurrent)
   return { init, callTool, on, openLink, requestFullscreen, reportSize, hooks };
 })();
 
@@ -2826,14 +2827,14 @@ function kickLive() {
   if (live.on && live.seq != null) watchOnce(0).catch(() => {});
 }
 
-// Some hosts may run an app's tool calls one at a time; then a held call would delay
-// every click. If a click's call finishes right after a long wait did, poll instead.
-function noteCall(name, startedAt, pendingAtStart) {
-  if (name === 'canban_watch' || !pendingAtStart || live.mode !== 'long') return;
+// Unknown hosts may serialize calls. Native Messaging multiplexes them, so a slow
+// normal response near a watch completion is not evidence of serialization there.
+function noteCall(name, startedAt, pendingAtStart, concurrent) {
+  if (concurrent || name === 'canban_watch' || !pendingAtStart || live.mode !== 'long') return;
   const now = performance.now();
   if (now - startedAt > 1500 && now - live.lastWatchEnd < 80) {
     live.mode = 'short';
-    console.warn('canban: host serializes tool calls; switching to short polling');
+    console.info('canban: using short polling to keep tool calls responsive');
   }
 }
 
