@@ -23,6 +23,7 @@ import { codexHome } from './sources/codex.mjs';
 import { claudeHome, claudeDesktopSessionsDir } from './sources/claude.mjs';
 import { accountTools, accountFilterProp, accountDesktopNote, extraWatchRoots } from './accounts-mcp.mjs';
 import { accountActions, accountActionTools } from './account-actions.mjs';
+import { shutdownLogins } from './login.mjs';
 import { boardHtml } from './ui.mjs';
 import { taskContextSchema } from './task-context.mjs';
 
@@ -692,8 +693,13 @@ rl.on('line', (line) => {
 });
 rl.on('close', async () => {
   await Promise.allSettled([...pending]);
+  await shutdownLogins();
   // Exit only after stdout has flushed; large responses are written asynchronously to pipes.
   process.stdout.write('', () => process.exit(0));
+});
+for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, async () => {
+  await shutdownLogins();
+  process.exit(0);
 });
 
 async function onLine(line) {
