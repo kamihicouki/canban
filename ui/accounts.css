@@ -46,6 +46,8 @@
 .acct-detail { margin: 3px 0 0 52px; }
 .acct-connection { font-size: 11px; margin-bottom: 5px; }
 .acct-usage-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.acct-usage-grid.single { grid-template-columns: minmax(0, 1fr); }
+.acct-auth-action { display: flex; flex-wrap: wrap; gap: 6px; }
 .acct-window-label { display: flex; justify-content: space-between; gap: 4px; font-size: 11px; }
 .acct-window-label strong { font-size: 12px; white-space: nowrap; }
 .acct-meter { height: 5px; border-radius: 3px; background: var(--btn-subtle-hover); margin: 4px 0 2px; overflow: hidden; }

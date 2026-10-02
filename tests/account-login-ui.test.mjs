@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-function menu(profiles = []) {
+function menu(profiles = [], accounts = []) {
   const source = fs.readFileSync(new URL('../ui/accounts.js', import.meta.url), 'utf8');
   const nodes = [], calls = [];
   const h = (tag, attrs = {}, ...children) => {
@@ -12,9 +12,10 @@ function menu(profiles = []) {
       querySelectorAll() { return []; } };
     nodes.push(node); return node;
   };
-  const state = { filters: {}, board: { accounts: { accounts: [], profiles, homes: [], colors: [], unknown: { codex: 0, claude: 0 }, refresh: { enabled: false, intervalMinutes: 5 } } } };
+  const state = { filters: {}, board: { accounts: { accounts, profiles, homes: [], colors: [], unknown: { codex: 0, claude: 0 }, refresh: { enabled: false, intervalMinutes: 5 } } } };
   const context = vm.createContext({ state, h, workspace: { hasDrafts: () => false },
     popover() {}, updateAccountMenuUsage() {}, refreshAccountUsage() {}, accountScheduleText: () => '',
+    usageTitle: () => '', ringFor: () => h('span'), accountUsageContent: () => h('div'), accountUpdateText: () => '',
     setTimeout() {}, clearTimeout() {}, toast() {},
     act: async (name, args) => { calls.push({ name, args }); return { result: {} }; },
     bridge: { callTool: async () => ({ result: {} }) },
@@ -37,6 +38,21 @@ test('account addition exposes terminal login and authentication in any browser'
   await browser.onclick();
   assert.equal(calls[1].name, 'browser-dialog');
   assert.equal(calls[1].args.agent, 'codex');
+});
+
+for (const agent of ['codex', 'claude']) test(`${agent} reauthentication routes both methods to the selected account`, async () => {
+  const account = { agent, key: `${agent}:test`, label: 'テスト', signedIn: [], usage: { code: 'login_required' } };
+  const { nodes, calls } = menu([], [account]);
+  const row = nodes.find(n => n.class === 'acct-row');
+  const button = {};
+  row._loginAction({ currentTarget: button });
+  assert.equal(calls[0].name, 'browser-dialog');
+  assert.equal(calls[0].args.agent, agent);
+  assert.equal(calls[0].args.key, account.key);
+  await row._terminalLoginAction();
+  assert.equal(calls[1].args.method, 'terminal');
+  assert.equal(calls[1].args.agent, agent);
+  assert.equal(calls[1].args.key, account.key);
 });
 
 test('a persisted pending login retains both methods and a copyable terminal command', async () => {

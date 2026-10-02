@@ -102,12 +102,12 @@ function ensureUsageRefreshTimer() {
 }
 function accountUsageContent(a) {
   const limits = a.limits;
-  const windows = [limits?.primary, limits?.secondary];
-  return h('div', { class: 'acct-usage-grid' }, ...windows.map((value, i) => {
-    const w = usageWindow(value, limits?.at);
+  const windows = usageWindows(limits).map(value => ({ value, w: usageWindow(value, limits?.at) })).filter(({ w }) => w);
+  if (!windows.length) return h('p', { class: 'muted acct-usage-empty', text: '使用量は未取得です' });
+  return h('div', { class: `acct-usage-grid${windows.length === 1 ? ' single' : ''}` }, ...windows.map(({ value, w }) => {
     const old = w?.stale || a.usage?.status === 'error';
     return h('div', {},
-      h('div', { class: 'acct-window-label' }, h('span', { text: w?.label || (i ? '週間枠' : '5時間枠') }),
+      h('div', { class: 'acct-window-label' }, h('span', { text: w.label }),
         h('strong', { text: w ? `${old ? '前回 ' : ''}${Math.round(value.usedPercent)}%` : '未取得' })),
       h('div', { class: `acct-meter${old ? ' stale' : ''}`, ...(w ? { role: 'meter', 'aria-label': `${a.label} ${w.label}の使用率`, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': value.usedPercent, 'aria-valuetext': `${old ? '前回の値 ' : ''}${Math.round(value.usedPercent)}% 使用${old ? '・要更新' : ''}` } : {}) }, w ? h('i', { class: heat(value.usedPercent), style: { width: `${value.usedPercent}%` } }) : null),
       h('span', { class: 'acct-reset muted', text: value?.resetsAt ? fmtReset(value.resetsAt) : w ? (old ? '要更新' : 'リセット時刻の記録なし') : '更新すると表示されます' }));
@@ -135,7 +135,8 @@ function updateAccountMenuUsage() {
     const refresh = row.querySelector('.acct-row-refresh');
     if (refresh) { refresh.disabled = accountRefreshBusy.has('*') || accountRefreshBusy.has(a.key); refresh.textContent = refresh.disabled ? '更新中…' : '更新'; }
     row.querySelector('.acct-auth-action')?.replaceChildren(...(a.usage?.code === 'login_required' || a.usage?.code === 'identity_changed'
-      ? [h('button', { class: 'btn', text: 'ログインして最新の使用量を取得', onclick: row._loginAction })] : []));
+      ? [h('button', { class: 'btn-primary', text: 'ログインして最新の使用量を取得', onclick: row._loginAction }),
+        h('button', { class: 'btn', text: 'ターミナルでログイン', onclick: row._terminalLoginAction })] : []));
   }
 }
 async function refreshAccountUsage({ key, automatic = false } = {}) {
@@ -220,7 +221,8 @@ function accountsMenu(anchor) {
         h('div', { class: 'acct-update-line' }, h('span', { class: `muted acct-update-status${a.usage?.status === 'error' ? ' acct-error' : ''}`, role: 'status', text: accountUpdateText(a) }),
           h('button', { class: 'btn acct-row-refresh', text: '更新', 'aria-label': `${a.label} の使用量を更新`, onclick: () => refreshAccountUsage({ key: a.key }) })),
         h('div', { class: 'acct-auth-action' })));
-    row._loginAction = () => startLogin(a.agent, a.key);
+    row._loginAction = (e) => accountLoginDialog(e?.currentTarget || anchor, { agent: a.agent, key: a.key });
+    row._terminalLoginAction = () => startLogin(a.agent, a.key);
     return row;
   });
   const unknown = v.unknown.codex + v.unknown.claude;
@@ -322,6 +324,8 @@ async function accountLoginDialog(anchor, { home = null, agent = home?.agent, ke
   if (document.querySelector('.account-login')) return;
   closePopover();
   let closed = false, busy = false, session = null, timer, epoch = 0, refreshed = false;
+  const relogin = !!key;
+  const title = relogin ? 'アカウントに再ログイン' : 'アカウントにログイン';
   const call = async (tool, args = {}) => (await bridge.callTool(tool, args)).result;
   const status = h('p', { class: 'login-status', role: 'status', 'aria-live': 'polite', text: 'ブラウザ一覧を読み込んでいます…' });
   const mode = h('select', { class: 'text-input', 'aria-label': '認証URLの開き方' },
@@ -345,13 +349,13 @@ async function accountLoginDialog(anchor, { home = null, agent = home?.agent, ke
   const codeSend = h('button', { class: 'btn', type: 'submit', text: 'コードを送信' });
   const codeForm = h('form', { class: 'login-code-form' }, h('label', { class: 'login-field' }, 'ブラウザに表示された認証コード', code), codeSend);
   const codeArea = h('details', { hidden: true }, h('summary', { text: '認証が戻らない場合（Claudeのコード入力）' }), codeForm);
-  const start = h('button', { class: 'btn-primary', type: 'button', text: home ? 'ログインを開始' : '追加してログイン', disabled: true });
+  const start = h('button', { class: 'btn-primary', type: 'button', text: home || relogin ? 'ログインを開始' : '追加してログイン', disabled: true });
   const cancel = h('button', { class: 'btn', type: 'button', text: '認証をキャンセル', hidden: true });
-  const dialog = h('dialog', { class: 'account-login', 'aria-label': 'アカウントにログイン', onclose: () => {
+  const dialog = h('dialog', { class: 'account-login', 'aria-label': title, onclose: () => {
     closed = true; epoch++; clearTimeout(timer); url.value = ''; code.value = ''; session = null; dialog.remove();
     (anchor?.isConnected ? anchor : $('#accountsBtn')).focus();
-  } }, h('h2', { text: 'アカウントにログイン' }),
-    h('p', { class: 'muted', text: `${agent === 'codex' ? 'Codex' : 'Claude'} · アカウントを追加` }), choices, status, urlArea, codeArea,
+  } }, h('h2', { text: title }),
+    h('p', { class: 'muted', text: `${agent === 'codex' ? 'Codex' : 'Claude'} · ${relogin ? 'アカウントに再ログイン' : 'アカウントを追加'}` }), choices, status, urlArea, codeArea,
     h('div', { class: 'row login-actions' }, start, cancel, h('button', { class: 'btn', type: 'button', text: '閉じる', onclick: () => dialog.close() })),
     h('p', { class: 'muted', text: '閉じても認証はバックグラウンドで続きます。ログインから認証状態を開き直せます。' }));
   // Native dialog owns focus and Escape; board shortcuts must not handle its keys.
@@ -379,6 +383,9 @@ async function accountLoginDialog(anchor, { home = null, agent = home?.agent, ke
   browser.onchange = () => { fillProfiles(); controls(); }; mode.onchange = profile.onchange = controls;
   const show = (value) => {
     if (closed) return;
+    if (value.state === 'succeeded' && key && value.account?.key !== key) {
+      value = { ...value, state: 'failed', authUrl: null, error: '選択したアカウントでログインしてください。別のアカウントでは更新されません。' };
+    }
     session = value;
     const message = { starting: '認証を開始しています…', waiting: value.browserOpened ? '選んだブラウザで認証を完了してください' : '認証URLをブラウザで開いてください',
       verifying: 'ログインしたアカウントを確認しています…', succeeded: `ログインしました: ${value.account?.email || value.account?.label || ''}`, failed: value.error || '認証に失敗しました', cancelled: '認証をキャンセルしました' }[value.state];
@@ -388,9 +395,14 @@ async function accountLoginDialog(anchor, { home = null, agent = home?.agent, ke
     codeArea.hidden = agent !== 'claude' || value.state !== 'waiting';
     if (value.manualCodeRequired) codeArea.open = true;
     if (!active()) { code.value = ''; codeArea.open = false; }
-    start.textContent = value.state === 'succeeded' ? '追加しました' : 'ログインを開始';
+    start.textContent = value.state === 'succeeded' ? (relogin ? 'ログインしました' : '追加しました') : 'ログインを開始';
     controls();
-    if (value.state === 'succeeded' && !refreshed) { refreshed = true; load(); }
+    if (value.state === 'succeeded' && !refreshed) {
+      refreshed = true;
+      load().then(() => value.account?.key && refreshAccountUsage({ key: value.account.key })).catch(() => {
+        if (!closed) notice.textContent = 'ログインしましたが、使用量の更新を確認できませんでした。アカウント一覧から更新してください。';
+      });
+    }
   };
   const poll = async () => {
     if (closed || !session?.sessionId || !active()) return;
