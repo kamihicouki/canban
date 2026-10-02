@@ -19,6 +19,7 @@
 //
 // Usage: Codex rate limits per account come from the logs (signals.mjs); Claude's
 // 5-hour / weekly usage per organization from each desktop profile's plan-usage-history.json.
+// Sanitized live snapshots are merged from settings; credential/network operations live in account-usage.mjs.
 import os from 'node:os';
 import path from 'node:path';
 import { exists, listDir, listSubdirs, readJson, realpath, stat } from './sources/readonly.mjs';
@@ -102,7 +103,8 @@ export async function claudeDesktopFolders() {
 // Settings → homes (called with state.settings.accounts whenever the board state is read).
 export function configureAccounts(s = {}) {
   const same = JSON.stringify([s.claudeHomes, s.codexHomes, s.discover]) === JSON.stringify([config.claudeHomes, config.codexHomes, config.discover]);
-  config = { claudeHomes: s.claudeHomes || [], codexHomes: s.codexHomes || [], discover: s.discover !== false };
+  config = { claudeHomes: s.claudeHomes || [], codexHomes: s.codexHomes || [], discover: s.discover !== false,
+    usage: s.usage || {}, refresh: s.refresh || { enabled: true, intervalMinutes: 5 }, profiles: s.profiles || [] };
   if (!same) discovered.at = desktopCache.at = 0;
   return !same;
 }
@@ -359,11 +361,16 @@ function claudeLimits(accountKeyOf) {
 
 // Usage per account: Codex rate limits from the logs, Claude plan usage from the desktop app.
 export function accountLimits(codexLimits = new Map(), now = Date.now()) {
-  const fresh = (w) => (w && w.resetsAt && w.resetsAt <= now ? { ...w, usedPercent: 0, stale: true } : w);
+  const fresh = (w) => (w && w.resetsAt && w.resetsAt <= now ? { ...w, stale: true } : w);
   const out = [];
   for (const [key, l] of codexLimits) if (key) out.push({ ...l, key, agent: 'codex', primary: fresh(l.primary), secondary: fresh(l.secondary), source: 'log' });
   out.push(...claudeLimits((org) => registry.orgToAccount.get(org)));
-  return out;
+  const merged = new Map(out.map((l) => [l.key, l]));
+  for (const [key, l] of Object.entries(config.usage || {})) {
+    if (!l.at || (!l.primary && !l.secondary) || (merged.get(key)?.at || 0) > l.at) continue;
+    merged.set(key, { ...l, key, agent: key.split(':')[0], primary: fresh(l.primary), secondary: fresh(l.secondary) });
+  }
+  return [...merged.values()];
 }
 
 // Accounts with their usage for the board / model. `codexLimits` maps account keys to
@@ -396,6 +403,7 @@ export function accountsView({ labels = {}, marks = {}, hidden = [], sessions = 
     homes: a.homes,
     count: counts.get(a.key) || 0,
     limits: limits.get(a.key) || null,
+    usage: config.usage?.[a.key] ? { status: config.usage[a.key].status, code: config.usage[a.key].code, attemptedAt: config.usage[a.key].attemptedAt } : null,
   }));
   accounts.sort((x, y) => (x.agent === y.agent ? y.count - x.count : x.agent === 'codex' ? -1 : 1));
   const taken = new Set(accounts.map((a) => marks[a.key]?.color).filter(Boolean));
@@ -412,6 +420,8 @@ export function accountsView({ labels = {}, marks = {}, hidden = [], sessions = 
     desktopActive: registry.desktopActive,
     discover: config.discover,
     colors: ACCOUNT_COLORS,
+    refresh: config.refresh || { enabled: true, intervalMinutes: 5 },
+    profiles: config.profiles || [],
   };
 }
 

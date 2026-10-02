@@ -228,6 +228,28 @@ test('accounts: usage is visible to the model, account settings only to the boar
   assert.ok(ids.length && !ids.some((id) => id.startsWith('codex:')));
 });
 
+test('account actions are app-only; refresh settings persist and public patches cannot inject snapshots', async () => {
+  const { result } = await rpc('tools/list');
+  for (const name of ['canban_refresh_account_usage', 'canban_set_usage_refresh', 'canban_start_account_login', 'canban_check_account_login', 'canban_cancel_account_login', 'canban_move_account_home']) {
+    assert.equal(result.tools.find(t => t.name === name)?._meta.ui.visibility.join(), 'app');
+  }
+  const saved = await call('canban_set_usage_refresh', { enabled: false, intervalMinutes: 7 });
+  assert.equal(saved.structuredContent.result.intervalMinutes, 7);
+  const usage = (await call('canban_get_usage')).structuredContent;
+  assert.equal(usage.refresh.enabled, false); assert.equal(usage.refresh.intervalMinutes, 7);
+  assert.equal((await call('canban_set_usage_refresh', { intervalMinutes: 0 })).isError, true);
+  await call('canban_update_accounts', { usage: { 'claude:a': { primary: { usedPercent: 99 }, at: Date.now(), status: 'ok' } }, profiles: [{ accessToken: 'PRIVATE-TOKEN' }] });
+  const before = (await call('canban_get_usage')).structuredContent.accounts.find(a => a.key === 'claude:a');
+  assert.equal(before.usage, null);
+  const refreshed = await call('canban_refresh_account_usage', { key: 'claude:a' });
+  assert.equal(refreshed.structuredContent.result.updated[0].status, 'error');
+  const after = (await call('canban_get_usage')).structuredContent.accounts.find(a => a.key === 'claude:a');
+  assert.equal(after.usage.code, 'unavailable');
+  assert.doesNotMatch(JSON.stringify(after), /PRIVATE-TOKEN/);
+  assert.deepEqual((await call('canban_refresh_account_usage', { automatic: true })).structuredContent.result.updated, []);
+  await call('canban_set_usage_refresh', { enabled: true, intervalMinutes: 5 });
+});
+
 test('task dashboards are app-only, retain closed linked panes and reject stale revisions and subagents', async () => {
   const { result } = await rpc('tools/list');
   for (const name of ['canban_get_task_dashboard','canban_save_task_dashboard']) assert.deepEqual(result.tools.find(t=>t.name===name)._meta.ui.visibility,['app']);
