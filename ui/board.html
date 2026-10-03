@@ -16,8 +16,9 @@
   --boardbar-bg: rgba(0, 0, 0, 0.12);
   --side-bg: rgba(0, 0, 0, 0.24);
   --side-active: rgba(255, 255, 255, 0.26);
-  --accent-ink: #0c66e4;
   --drawer-scrim: rgba(9, 30, 66, 0.24);
+  --on-board: #fff; --on-board-dim: rgba(255, 255, 255, 0.85); --on-board-btn: rgba(255, 255, 255, 0.2); --on-board-btn-hover: rgba(255, 255, 255, 0.32);
+  --pressed-bg: #fff; --pressed-fg: #0c66e4; --primary-bg: #fff; --primary-fg: #0c66e4;
   --tone-run: #216e4e; --tone-run-bg: #dcfff1; --tone-wait: #7f5f01; --tone-wait-bg: #fff7d6;
   --tone-err: #ae2e24; --tone-err-bg: #ffeceb; --tone-done: #0055cc; --tone-done-bg: #e9f2ff;
   --tone-idle: #44546f; --tone-idle-bg: rgba(9, 30, 66, 0.06);
@@ -61,8 +62,8 @@
   --boardbar-bg: rgba(0, 0, 0, 0.2);
   --side-bg: rgba(0, 0, 0, 0.32);
   --side-active: rgba(255, 255, 255, 0.18);
-  --accent-ink: #1d2125;
   --drawer-scrim: rgba(0, 0, 0, 0.4);
+  --pressed-bg: #dee4ea; --pressed-fg: #1d2125; --primary-bg: #579dff; --primary-fg: #1d2125;
   --tone-run: #7ee2b8; --tone-run-bg: #164b35; --tone-wait: #f5cd47; --tone-wait-bg: #533f04;
   --tone-err: #fd9891; --tone-err-bg: #5d1f1a; --tone-done: #85b8ff; --tone-done-bg: #09326c;
   --tone-idle: #9fadbc; --tone-idle-bg: rgba(255, 255, 255, 0.06);
@@ -111,7 +112,7 @@ button { cursor: pointer; border: 0; background: none; }
   height: 32px; border-radius: 6px; background: var(--header-btn); color: var(--header-fg); border: 0; padding: 0 10px;
 }
 .hbtn:hover, .hselect:hover { background: var(--header-btn-hover); }
-.hbtn[aria-pressed="true"] { background: var(--header-fg); color: var(--accent-ink); }
+.hbtn[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-fg); }
 .hselect option { color: #172b4d; }
 #projectBtn { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn, .btn-primary, .btn-danger { white-space: nowrap; flex: none; }
@@ -121,7 +122,7 @@ button { cursor: pointer; border: 0; background: none; }
 .seg { display: inline-flex; border-radius: 6px; overflow: hidden; padding: 2px; gap: 2px; background: var(--header-btn); }
 .seg button { height: 28px; padding: 0 10px; border-radius: 4px; color: var(--header-fg); font-weight: 600; }
 .seg button:hover { background: var(--header-btn-hover); }
-.seg button[aria-pressed="true"] { background: var(--header-fg); color: var(--accent-ink); }
+.seg button[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-fg); }
 .stat { font-size: 12px; opacity: 0.9; white-space: nowrap; }
 .errbar { background: var(--warn-bg); color: var(--warn-fg); padding: 6px 12px; font-size: 13px; }
 
@@ -216,10 +217,10 @@ button { cursor: pointer; border: 0; background: none; }
 
 .add-list { flex: 0 0 272px; }
 .add-list-btn {
-  width: 100%; text-align: left; padding: 10px 12px; border-radius: 12px; color: #fff;
-  background: rgba(255,255,255,0.24); font-weight: 500;
+  width: 100%; text-align: left; padding: 10px 12px; border-radius: 12px; color: var(--on-board);
+  background: var(--on-board-btn); font-weight: 500;
 }
-.add-list-btn:hover { background: rgba(255,255,255,0.32); }
+.add-list-btn:hover { background: var(--on-board-btn-hover); }
 .composer { background: var(--list-bg); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
 .text-input {
   width: 100%; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg);
@@ -408,7 +409,7 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .check-row .ck-passing { color: var(--c-green); }
 .check-row .ck-failing { color: var(--danger); }
 .check-row .ck-pending { color: var(--c-orange); }
-.ft-toggle { display: inline-flex; align-items: center; gap: 4px; color: #fff; font-size: 12px; margin-left: -4px; }
+.ft-toggle { display: inline-flex; align-items: center; gap: 4px; color: var(--header-fg); font-size: 12px; margin-left: -4px; }
 .snippet { margin-top: 6px; font-size: 12px; color: var(--card-muted); line-height: 17px; word-break: break-word; }
 .snippet mark { background: #ffe58f; color: #172b4d; border-radius: 2px; padding: 0 1px; }
 .kbd { display: inline-block; min-width: 16px; font-size: 11px; color: var(--list-muted); border: 1px solid var(--btn-subtle-hover); border-radius: 3px; text-align: center; }
@@ -416,21 +417,21 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .lane { flex: none; width: max-content; min-width: 100%; scroll-margin-top: 0; }
 .lane-head {
   position: sticky; top: 0; left: 0; z-index: 5; display: flex; align-items: center; gap: 8px; width: max-content; max-width: calc(100vw - 24px);
-  color: #fff; padding: 6px 6px 4px; border-radius: 0 0 8px 8px;
+  color: var(--on-board); padding: 6px 6px 4px; border-radius: 0 0 8px 8px;
   background: linear-gradient(var(--header-bg), var(--header-bg)), var(--board-bg);
 }
-.lane-toggle { display: flex; align-items: center; gap: 8px; font-weight: 700; padding: 2px 6px; border-radius: 6px; color: #fff; }
-.lane-toggle:hover { background: rgba(255,255,255,0.14); }
-.lane-head .count { color: rgba(255,255,255,0.85); }
-.lane-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 0 8px; height: 22px; border-radius: 11px; background: rgba(255,255,255,0.16); color: #fff; white-space: nowrap; }
+.lane-toggle { display: flex; align-items: center; gap: 8px; font-weight: 700; padding: 2px 6px; border-radius: 6px; color: var(--on-board); }
+.lane-toggle:hover { background: var(--on-board-btn); }
+.lane-head .count { color: var(--on-board-dim); }
+.lane-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 0 8px; height: 22px; border-radius: 11px; background: var(--on-board-btn); color: var(--on-board); white-space: nowrap; }
 .lane-chip .stripe { width: 8px; height: 8px; border-radius: 50%; }
-.lane-solo { font-size: 12px; padding: 0 8px; height: 24px; border-radius: 6px; color: rgba(255,255,255,0.9); }
-.lane-solo:hover { background: rgba(255,255,255,0.14); }
+.lane-solo { font-size: 12px; padding: 0 8px; height: 24px; border-radius: 6px; color: var(--on-board-dim); }
+.lane-solo:hover { background: var(--on-board-btn); }
 .lane-lists { display: flex; align-items: flex-start; gap: 12px; padding: 4px 0 8px; }
 .lane .list { max-height: var(--lane-max-h, 420px); }
 .lane .cards { overflow-y: auto; }
-.lane.drop-lane { outline: 2px dashed rgba(255,255,255,0.6); outline-offset: -2px; border-radius: 8px; }
-.solo-bar { display: flex; align-items: center; gap: 8px; color: #fff; padding: 6px 4px 0; font-size: 13px; }
+.lane.drop-lane { outline: 2px dashed var(--on-board-dim); outline-offset: -2px; border-radius: 8px; }
+.solo-bar { display: flex; align-items: center; gap: 8px; color: var(--on-board); padding: 6px 4px 0; font-size: 13px; }
 /* ---------- sidebar ---------- */
 .shell { flex: 1; display: flex; min-height: 0; }
 .board { min-width: 0; }
@@ -486,9 +487,9 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .card .act-err { color: var(--tone-err); background: var(--tone-err-bg); }
 .board.analytics-mode { display: block; overflow-y: auto; }
 .analytics { padding: 4px 8px 24px; position: relative; color: var(--list-fg); }
-.analytics h2 { color: #fff; margin: 0; font-size: 18px; }
+.analytics h2 { color: var(--on-board); margin: 0; font-size: 18px; }
 .analytics-bar { margin-bottom: 12px; flex-wrap: wrap; }
-.analytics-bar .muted { color: rgba(255,255,255,0.85); }
+.analytics-bar .muted { color: var(--on-board-dim); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 12px; }
 .tile, .panel { background: var(--list-bg); border-radius: 12px; padding: 12px 16px; box-shadow: var(--card-shadow); }
 .tile-label { font-size: 12px; color: var(--list-muted); }
@@ -518,7 +519,7 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
 .viz-table { margin-top: 8px; font-size: 12px; }
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #172b4d; color: #fff; padding: 8px 16px; border-radius: 6px; z-index: 1100; box-shadow: 0 4px 8px #0004; }
 .toast.error { background: var(--danger); }
-.loading { color: #fff; padding: 24px; }
+.loading { color: var(--on-board); padding: 24px; }
 /* ---------- detail panes: several cards at once, fixed (cosmos) or free (chaos) ---------- */
 .pane-layer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 800; display: flex; flex-direction: column; pointer-events: none; }
 .pane-layer[hidden] { display: none; }
@@ -709,6 +710,7 @@ body.orb-dragging .orb-zone { opacity: 1; }
 }
 /* @include workspace.css */
 /* @include task-dashboard.css */
+/* @include layouts.css */
 </style>
 </head>
 <body>
@@ -724,6 +726,7 @@ body.orb-dragging .orb-zone { opacity: 1; }
   <span id="statusBar" class="status-bar" role="group" aria-label="実行状態"></span>
   <button id="seenBtn" class="hbtn" title="新着をすべて既読にする" data-icon="check" hidden><span class="lbl">既読</span></button>
   <button id="perfBtn" class="hbtn" title="Canban 自身の処理が予算を超えました（クリックで詳細）" aria-label="処理時間の警告" data-icon="alert" hidden></button>
+  <button id="layoutBtn" class="hbtn icon-only" type="button" aria-haspopup="dialog" title="レイアウトと色" aria-label="レイアウトと色" data-icon="layout"></button>
   <div id="themeSeg" class="theme-seg" role="group" aria-label="テーマ">
     <button type="button" data-theme-pref="light" title="ライト" aria-label="ライト" data-icon="sun" data-icon-size="15"></button>
     <button type="button" data-theme-pref="dark" title="ダーク" aria-label="ダーク" data-icon="moon" data-icon-size="15"></button>
@@ -946,7 +949,7 @@ let taskDash = null;
 const PAGE = 40;
 const COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
 const COLOR_NAMES = { gray: 'グレー', blue: '青', green: '緑', yellow: '黄', orange: 'オレンジ', red: '赤', purple: '紫', pink: 'ピンク', sky: '水色', lime: 'ライム' };
-const SHARED_UI_KEYS = ['filters', 'themePref', 'cardFit', 'sidebar', 'view', 'workspacePage', 'activeTask', 'labelsExpanded', 'paneGlobal', 'paneLayout', 'panes', 'dashOpen', 'paneCollect', 'orbPos', 'paneBarOpen', 'collapsedLanes'];
+const SHARED_UI_KEYS = ['filters', 'themePref', 'layout', 'cardFit', 'sidebar', 'view', 'workspacePage', 'activeTask', 'labelsExpanded', 'paneGlobal', 'paneLayout', 'panes', 'dashOpen', 'paneCollect', 'orbPos', 'paneBarOpen', 'collapsedLanes'];
 const sharedUi = { revision: null, ready: false, dirty: false, blocked: false, applying: false, inflight: false, generation: 0, timer: null, checkTimer: null };
 const store = {
   get(k, d) { try { const v = localStorage.getItem(`sk:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -973,6 +976,7 @@ const state = {
   filters: { ...DEFAULT_FILTERS, ...store.get('filters', {}) },
   sideOpen: store.get('sidebar', window.innerWidth > 900),
   themePref: store.get('themePref', 'system'),
+  layout: store.get('layout', 'trello'),
   cardFit: store.get('cardFit', 'fixed') === 'auto' ? 'auto' : 'fixed',
   sideQ: '',
   soloLane: null,
@@ -1138,6 +1142,7 @@ function render() {
   }
   boardEl.replaceChildren(frag);
   renderSidebar(b);
+  paintLayoutChrome();
   paintSelection();
   if (focused && focused !== document.body && boardEl.contains(focused)) focused.focus({ preventScroll: true });
   else if (focusedCard) $(`.card[data-card-id="${CSS.escape(focusedCard)}"]`, boardEl)?.focus({ preventScroll: true });
@@ -3151,6 +3156,7 @@ function renderSidebar(b) {
   const el = $('#sidebar');
   $('#sideBtn').setAttribute('aria-pressed', String(state.sideOpen));
   el.hidden = !state.sideOpen || state.view === 'analytics';
+  document.body.classList.toggle('side-closed', el.hidden);
   if (el.hidden) return;
   const f = state.filters;
   if (!state.sideInput) {
@@ -3165,7 +3171,8 @@ function renderSidebar(b) {
   const hit = matcher(q);
   const count = (n) => h('span', { class: 'count', text: String(n) });
   const head = (title, ...extra) => h('div', { class: 'side-head' }, h('span', { class: 'grow', text: title }), ...extra);
-  const secs = [h('div', { class: 'side-top' }, h('span', { class: 'grow', text: 'ワークスペース' }),
+  const secs = [h('div', { class: 'side-brand', html: LOGO_SVG }, h('span', { class: 'brand-word', text: 'canban' })),
+    h('div', { class: 'side-top' }, h('span', { class: 'grow', text: 'ワークスペース' }),
       h('button', { class: 'side-fold', type: 'button', title: 'サイドバーを畳む（b）', 'aria-label': 'サイドバーを畳む', html: picon('chev', 18), onclick: () => toggleSidebar(false) })),
     state.sideInput];
   const views = (b.settings?.views || []).map((v, i) => ({ v, i })).filter(({ v }) => hit(v.name));
@@ -3176,8 +3183,8 @@ function renderSidebar(b) {
   // Short fixed entries first; the category list can be long, so it comes last.
   const entries = (list) => list.filter(([, , label]) => hit(label)).map((x) => sideEntry(b, x));
   const look = entries(SIDE_LOOK), manage = entries(SIDE_MANAGE);
-  if (look.length) secs.push(h('section', {}, head('見る'), look));
-  if (manage.length) secs.push(h('section', {}, head('管理'), manage));
+  if (look.length) secs.push(h('section', { class: 'side-sec-nav' }, head('見る'), look));
+  if (manage.length) secs.push(h('section', { class: 'side-sec-nav' }, head('管理'), manage));
 
   if (f.swimlane) {
     const rows = state.lanes.filter((l) => hit(l.name)).map((lane) => {
@@ -3196,11 +3203,22 @@ function renderSidebar(b) {
       rows.length ? rows : h('div', { class: 'side-head', text: '該当なし' })));
   }
 
+  // Running / waiting sessions per category, shown beside the name (the live HUD layout leans on these).
+  const liveBy = new Map();
+  for (const c of b.lists.flatMap((l) => l.cards)) {
+    if (c.status !== 'running' && c.status !== 'waiting') continue;
+    const key = c.directory?.id || '__none', v = liveBy.get(key) || { running: 0, waiting: 0 };
+    v[c.status]++; liveBy.set(key, v);
+  }
   const dirRow = (d) => h('div', { class: 'side-item side-dir', 'data-dir-id': d.id },
     h('button', { class: `side-row${f.directory === d.id ? ' active' : ''}`, title: 'クリックで絞り込み（もう一度で解除）。カードをここへドラッグすると所属を変えられます',
       onclick: () => setScope({ directory: f.directory === d.id ? '' : d.id }) },
-      h('span', { class: 'dot', style: { background: d.color ? colorVar(d.color) : 'rgba(255,255,255,0.35)' } }),
-      h('span', { class: 'grow ellipsis', text: d.name }), count(d.count)),
+      h('span', { class: 'dot', style: { background: d.color ? colorVar(d.color) : 'var(--header-btn-hover)' } }),
+      h('span', { class: 'dir-av', style: { background: d.color ? colorVar(d.color) : 'var(--header-btn-hover)' }, text: [...d.name][0]?.toUpperCase() || '' }),
+      h('span', { class: 'grow ellipsis', text: d.name }),
+      liveBy.get(d.id)?.running ? h('span', { class: 'dir-live s-run', title: `実行中 ${liveBy.get(d.id).running}`, text: String(liveBy.get(d.id).running) }) : null,
+      liveBy.get(d.id)?.waiting ? h('span', { class: 'dir-live s-wait', title: `入力待ち ${liveBy.get(d.id).waiting}`, text: String(liveBy.get(d.id).waiting) }) : null,
+      count(d.count)),
     d.id === '__none' ? null : h('button', { class: 'icon-btn', 'aria-label': `${d.name} の設定`, text: '⋯', onclick: (e) => directoryMenu(e.currentTarget, d.id) }));
   const dirs = [...b.directories, { id: '__none', name: 'カテゴリ無し', color: null, count: b.uncategorizedCount || 0 }].filter((d) => hit(d.name));
   const add = h('input', { class: 'side-filter', placeholder: `＋ 新しい${T.category}（Enter）`, 'aria-label': `新しい${T.category}`,
@@ -4327,6 +4345,8 @@ function commandPalette() {
     ...Object.entries(LANE_MODES).map(([v, t]) => ({ label: `スイムレーン: ${t}`, run: () => { f.swimlane = v; state.soloLane = null; saveFilters(); render(); } })),
     ...Object.entries(LANE_HEIGHTS).map(([v, [t]]) => ({ label: `レーンの高さ: ${t}`, run: () => { f.laneHeight = v; saveFilters(); render(); } })),
     { label: 'キーボードショートカット', run: showShortcuts, hint: '?' },
+    ...LAYOUTS.map(([id, name]) => ({ label: `レイアウト: ${name}`, run: () => setLayout(id) })),
+    ...[['light', 'ライト'], ['dark', 'ダーク'], ['system', 'システム']].map(([k, n]) => ({ label: `色: ${n}`, run: () => { setThemePref(k); paintLayoutChrome(); } })),
   ];
   const run = new Map();
   const items = [];
@@ -4381,6 +4401,7 @@ $('#board').addEventListener('wheel', (e) => {
 }, { passive: false });
 
 // ======================================================================
+// @include layouts.js
 // @include workspace.js
 // @include task-dashboard.js
 
@@ -4423,7 +4444,7 @@ async function restorePanes() {
 
 function sharedUiSnapshot() {
   return {
-    filters: { ...state.filters }, themePref: state.themePref, cardFit: state.cardFit, sidebar: state.sideOpen, view: state.view, workspacePage: workspace.page, activeTask: workspace.activeTask || workspace.pendingTask || null, labelsExpanded: state.labelsExpanded,
+    filters: { ...state.filters }, themePref: state.themePref, layout: state.layout, cardFit: state.cardFit, sidebar: state.sideOpen, view: state.view, workspacePage: workspace.page, activeTask: workspace.activeTask || workspace.pendingTask || null, labelsExpanded: state.labelsExpanded,
     paneGlobal: taskDash?.active ? store.get('paneGlobal', PANE_DEF) : { ...paneGlobal }, paneLayout: taskDash?.active ? store.get('paneLayout', PANE_LAYOUT_DEF) : structuredClone(paneLayout), panes: store.get('panes', []),
     dashOpen, paneCollect, orbPos: { ...orbPos }, paneBarOpen, collapsedLanes: [...collapsedLanes],
   };
@@ -4440,6 +4461,7 @@ function adoptSharedUi(record) {
     if (value.filters && typeof value.filters === 'object' && !Array.isArray(value.filters)) state.filters = { ...DEFAULT_FILTERS, ...value.filters };
     if (typeof value.sidebar === 'boolean') state.sideOpen = value.sidebar;
     if (typeof value.themePref === 'string') { state.themePref = value.themePref; applyTheme(); }
+    if (typeof value.layout === 'string') { state.layout = layoutOf(value.layout); applyLayout(); }
     if (value.cardFit === 'auto' || value.cardFit === 'fixed') state.cardFit = value.cardFit;
     workspace.pendingTask = value.activeTask || null;
     workspace.activeTask = null;

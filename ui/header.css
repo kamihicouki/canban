@@ -14,15 +14,15 @@
 .topbar .hsearch { width: 100%; padding-left: 32px; }
 .hbtn { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .hbtn.icon-only { width: 32px; padding: 0; justify-content: center; }
-.hbtn.primary { background: var(--header-fg); color: var(--accent-ink); }
-.hbtn.primary:hover { background: var(--header-fg); opacity: .9; }
+.hbtn.primary { background: var(--primary-bg); color: var(--primary-fg); }
+.hbtn.primary:hover { background: var(--primary-bg); opacity: .9; }
 .boardbar h1 { font-size: 18px; font-weight: 700; margin: 0 6px 0 4px; max-width: 360px; overflow: hidden; text-overflow: ellipsis; color: var(--header-fg); }
 .boardbar.compact .hbtn[data-pri] .lbl { display: none; }
 .boardbar [data-pri].folded { display: none !important; }
 .theme-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 6px; background: var(--header-btn); }
 .theme-seg button { width: 30px; height: 28px; border-radius: 4px; display: grid; place-items: center; color: var(--header-dim); }
 .theme-seg button:hover { color: var(--header-fg); }
-.theme-seg button[aria-pressed="true"] { background: var(--header-fg); color: var(--accent-ink); }
+.theme-seg button[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-fg); }
 .more-menu .menu-item { display: flex; align-items: center; gap: 8px; }
 .more-menu .more-row { display: flex; gap: 4px; padding: 2px 6px 6px; flex-wrap: wrap; }
 .more-menu .more-row button { padding: 3px 8px; border-radius: 4px; background: var(--btn-subtle); font-size: 12px; }

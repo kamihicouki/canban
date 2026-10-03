@@ -32,6 +32,7 @@ const workspace = {
       e.preventDefault(); this.navigate('home');
     });
     buildSelectionBar();
+    buildLayouts();
     this.initialized = true;
     this.navigate(this.page, { save: false, reload: false });
     setInterval(() => {
@@ -80,6 +81,7 @@ const workspace = {
     $('.shell').inert = !!layerOpen;
     $('.topbar').inert = !!layerOpen;
     $('.boardbar').inert = !!layerOpen;
+    paintLayoutChrome();
   },
   trackDrafts(root) {
     for (const el of root.querySelectorAll('input:not([type=checkbox]):not([type=radio]),textarea,select')) {
@@ -135,7 +137,7 @@ const workspace = {
         this.settingsTab = key; this.render(state.board);
       } }))));
     if (this.settingsTab === 'accounts') accountsMenu(anchor);
-    else if (this.settingsTab === 'display') optionsMenu(anchor);
+    else if (this.settingsTab === 'display') { optionsMenu(anchor); body.prepend(h('h3', { text: 'レイアウトと色' }), layoutChooser(), h('div', { class: 'sep' })); }
     else if (this.settingsTab === 'shortcuts') body.append(h('div', { class: 'keys' }, SHORTCUTS.flatMap(([group, keys]) =>
       [h('h4', { text: group }), ...keys.flatMap(([k, v]) => [h('kbd', { text: k }), h('span', { text: v })])])));
     else settingsMenu(anchor);
