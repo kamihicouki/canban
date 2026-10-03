@@ -110,9 +110,11 @@ test('a fresh session read rebuilds the feed without erasing prompt or memo draf
   const field=(label,value,baseline,kind)=>({value,defaultValue:baseline,getAttribute:()=>label,matches:s=>s===kind});
   let fields=[field('送るプロンプト','追加依頼の下書き','','.send-box textarea'),field('メモ','編集中のメモ','保存済み','textarea.note')],renders=0;
   const el={querySelector:()=>null,querySelectorAll:()=>fields};
-  const context=vm.createContext({workspace:{draftValues:new WeakMap()},renderPane:()=>{renders++;fields=[field('送るプロンプト','','','.send-box textarea'),field('メモ','最新のメモ','最新のメモ','textarea.note')];}});
-  context.p={el};vm.runInContext(`${source}\nrenderPaneKeepingDrafts(p,{feed:{offset:0}});`,context);
+  const promptDrafts=new Map([['dispatch:codex:a',{text:''}]]);
+  const context=vm.createContext({promptDrafts,workspace:{draftValues:new WeakMap()},renderPane:()=>{renders++;fields=[field('送るプロンプト','','','.send-box textarea'),field('メモ','最新のメモ','最新のメモ','textarea.note')];}});
+  context.p={id:'codex:a',el};vm.runInContext(`${source}\nrenderPaneKeepingDrafts(p,{feed:{offset:0}});`,context);
   assert.equal(renders,1);assert.equal(fields[0].value,'追加依頼の下書き');assert.equal(fields[1].value,'編集中のメモ');assert.equal(fields[1].defaultValue,'最新のメモ');
+  assert.equal(promptDrafts.get('dispatch:codex:a').text,'追加依頼の下書き');
 });
 
 test('bulk note changes retain the selected preset; explicit space changes switch to custom layout',()=>{

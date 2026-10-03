@@ -86,6 +86,7 @@ button { cursor: pointer; border: 0; background: none; }
 /* @include header.css */
 /* @include accounts.css */
 /* @include task-quick-add.css */
+/* @include prompt-composer.css */
 .hbtn, .hselect, .hsearch {
   height: 32px; border-radius: 4px; background: rgba(255,255,255,0.2); color: #fff; border: 0; padding: 0 10px;
 }
@@ -865,6 +866,7 @@ const bridge = (() => {
 // ======================================================================
 // @include workspace-model.js
 // @include task-dashboard-model.js
+// @include prompt-composer.js
 let taskDash = null;
 const PAGE = 40;
 const COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
@@ -1605,7 +1607,7 @@ const PANE_SECS = {
 };
 const secTitle = (id) => (id === 'task' ? T.taskCard : PANE_SECS[id][1]);
 const PANE_LAYOUT_DEF = { main: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'main'), side: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'side'), collapsed: [] };
-const PANE_HEIGHTS = { conv: 180, progress: 64, send: 180, labels: 84, memo: 150, detail: 320, pr: 180, related: 180, first: 150, resume: 290, task: 110, add: 130, prio: 130, other: 190 };
+const PANE_HEIGHTS = { conv: 180, progress: 64, send: 360, labels: 84, memo: 150, detail: 320, pr: 180, related: 180, first: 150, resume: 290, task: 110, add: 130, prio: 130, other: 190 };
 let paneLayout = normalizePaneLayout(store.get('paneLayout', null), PANE_LAYOUT_DEF, PANE_HEIGHTS);
 const savePaneLayout = () => taskDash?.active ? taskDash.changed() : store.set('paneLayout', paneLayout);
 
@@ -2273,6 +2275,9 @@ function renderPaneKeepingDrafts(p, d) {
     return (baseline !== undefined && baseline !== input.value) || input.matches('.send-box textarea') && !!input.value.trim()
       || input.matches('textarea.note') && input.value !== input.defaultValue;
   }).map(input => ({ label: input.getAttribute('aria-label'), value: input.value }));
+  const promptDraft = promptDrafts.get(`dispatch:${p.id}`);
+  const promptValue = drafts.find(draft => draft.label === '送るプロンプト');
+  if (promptDraft && promptValue) promptDraft.text = promptValue.value;
   renderPane(p, d);
   for (const draft of drafts) {
     if (!draft.label) continue;
@@ -2460,8 +2465,10 @@ function keepDisabledPrompt(box, value) {
   workspace.draftValues.set(input, ''); input.value = value; box.append(input);
 }
 function replaceDispatch(old, d) {
-  if (old.querySelector('.req-row textarea')) return;
+  if (old.querySelector('.req-row textarea, .prompt-skill-picker:not([hidden]), .prompt-composer[aria-busy="true"]')) return;
   const draft = old.querySelector('textarea[aria-label="送るプロンプト"]')?.value || '';
+  const stored = promptDrafts.get(`dispatch:${d.session.id}`);
+  if (stored) stored.text = draft;
   const next = renderDispatch(d), input = next.querySelector('.send-box textarea');
   if (input) { workspace.trackDrafts(next); input.value = draft; }
   // If sending has been disabled, retain the draft next to the reason.
@@ -2485,12 +2492,17 @@ function renderDispatch(d) {
   const ta = h('textarea', { placeholder: 'このセッションに送るプロンプト（⌘/Ctrl + Enter で今すぐ送信）', 'aria-label': '送るプロンプト' });
   const ack = p?.elevated ? h('input', { type: 'checkbox', 'aria-label': '制限なしで実行されることを確認しました' }) : null;
   const busy = s.status === 'running' || s.status === 'waiting' || !!s.codexFollowUps;
+  const composer = promptComposer(ta, { key: `dispatch:${s.id}`, context: () => ({ cardId: s.id }), submit: () => send('now') });
+  const sendButtons = [];
   const send = async (when) => {
     const prompt = ta.value.trim();
-    if (!prompt) return ta.focus();
+    if (!composer.hasContent()) return ta.focus();
+    if (composer.draft.sending) return;
     try {
-      await bridge.callTool('canban_dispatch', { cardId: s.id, prompt, when, expectedUpdatedAt: s.updatedAt || null, allowElevated: !!ack?.checked });
-      ta.value = '';
+      const payload = composer.payload();
+      composer.setSending(true); sendButtons.forEach(b => { b.disabled = true; });
+      await bridge.callTool('canban_dispatch', { cardId: s.id, prompt, ...payload, when, expectedUpdatedAt: s.updatedAt || null, allowElevated: !!ack?.checked });
+      composer.clear();
       toast(when === 'now' ? '送信しました' : 'キューに追加しました');
       openCard(s.id);
       load();
@@ -2499,9 +2511,12 @@ function renderDispatch(d) {
       if (e.code === 'conflict') { toast(e.message,true); return; }
       if (e.code === 'busy') return toast(`${e.message}。入力は保持しています。状態を確認してから再操作してください。`,true);
       toast(e.message, true);
+    } finally {
+      composer.setSending(false); sendButtons.forEach(b => { b.disabled = busy; });
     }
   };
-  ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send('now'); } });
+  sendButtons.push(h('button', { class: 'btn-primary', disabled: busy, text: '▶ 今すぐ送信', onclick: () => send('now') }),
+    h('button', { class:'side-btn',disabled:busy,style:{width:'auto',marginBottom:0},text:'＋ キューに追加', onclick: () => send('queue') }));
   const appNote = s.agent === 'codex' || s.desktopSessionId || s.entrypoint === 'claude-desktop'
     ? helpTip(`${s.agent === 'codex' ? 'Codex' : 'Claude'} アプリでこのセッションを開いている場合は、閉じてから送ってください（アプリ側の表示と履歴がずれることがあります）。`) : null;
   box.append(...[title,
@@ -2509,21 +2524,20 @@ function renderDispatch(d) {
       h('button', { class: 'link-btn', text: '再開', onclick: () => act('canban_resume_queue', { cardId: s.id }, { okMsg: 'キューを再開しました' }).then(() => openCard(s.id)) })) : null,
     h('div', { class: 'send-box' },
       h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap', marginBottom: '6px' } }, permChip),
-      ta,
+      composer.root,
       ack ? h('label', { class: 'send-note row', style: { gap: '6px' } }, ack, 'このセッションはサンドボックス／確認なしで動いています。そのまま実行されることを確認しました') : null,
       busy ? h('div', { class: 'muted', style: { marginTop: '6px' }, text: s.codexFollowUps
         ? `Codex アプリのキューにフォローアップが ${s.codexFollowUps} 件あります。二重に送らないよう、アプリ側で送るか消すまで Canban からは送りません。`
         : `セッションが${s.status === 'running' ? '実行中' : '入力待ち'}のため、今すぐは送れません。入力を保持します。状態を確認してから再操作してください。` }) : null,
       h('div', { class: 'send-actions' },
-        h('button', { class: 'btn-primary', disabled: busy, text: '▶ 今すぐ送信', onclick: () => send('now') }),
-        h('button', { class:'side-btn',disabled:busy,style:{width:'auto',marginBottom:0},text:'＋ キューに追加', onclick: () => send('queue') }),
+        ...sendButtons,
         helpTip('1 ターンずつ公式 CLI で実行します')),
       appNote),
     ...D.active.map((r) => requestRow(s, r)),
     D.queue.length ? h('div', { class: 'field-label', text: `キュー（${D.queue.length}）` }) : null,
     ...D.queue.map((r, i) => requestRow(s, r, { index: i, queue: D.queue })),
     D.history.length ? h('div', { class: 'field-label', text: '履歴' }) : null,
-    ...D.history.map((r) => requestRow(s,r,{review:() => { if (ta.value.trim()) return toast('入力中の指示があります。先に確認してください。',true); ta.value=r.prompt || ''; ta.focus(); toast('実行状況を確認し、内容を確認してから送信してください。'); }})),
+    ...D.history.map((r) => requestRow(s,r,{review:() => { try { composer.restore(r); toast('実行状況を確認し、内容を確認してから送信してください。'); } catch(e) { toast(e.message, true); } }})),
   ].filter(Boolean));
   return box;
 }
@@ -2555,6 +2569,7 @@ function requestRow(s,r,{index=-1,queue=[],review=null}={}) {
     h('span', { class: `req-state ${r.state}`, title: REQ_LABELS[r.state], text: REQ_ICONS[r.state] || '•' }),
     h('div', { class: 'grow' },
       h('div', { class: 'req-prompt', text: r.prompt }),
+      r.images?.length || r.skills?.length ? h('div', { class: 'muted', text: [...(r.images || []).map(i => `画像: ${i.name}`), ...(r.skills || []).map(s => `$${s.name}`)].join(' / ') }) : null,
       h('div', { class: 'muted', text: `${who}${REQ_LABELS[r.state]}・${when}${r.state === 'queued' && r.blockedReason ? `・${r.blockedReason}` : ''}` }),
       result ? h('details', {}, h('summary', { text: r.error ? `エラー: ${r.error.split('\n')[0].slice(0, 80)}` : `結果: ${r.resultText.split('\n')[0].slice(0, 80)}` }), h('div', { class: 'msg', text: result })) : null),
     btns);
@@ -3384,7 +3399,7 @@ async function openTaskModal(cardId, init = null) {
   agentSel.value = t.agent || 'codex';
   const hostSel = pickerButton({ title: 'マシン', value: t.hostId || 'local', stack: false,
     items: () => b.hosts.map((x) => ({ value: x.local ? 'local' : x.id, label: x.local ? 'このマシン' : `⌂ ${x.label}${x.enabled ? '' : '（読み取りオフ）'}`, keywords: x.alias || '' })),
-    onChange: () => fillFolders() });
+    onChange: () => { fillFolders(); composer.contextChanged(); } });
   const dl = h('datalist', { id: `folders-${cardId}` });
   const cwd = h('input', { class: 'text-input', list: dl.id, placeholder: '作業フォルダ（絶対パス）', value: t.cwd || '', 'aria-label': '作業フォルダ' });
   const fillFolders = () => dl.replaceChildren(...b.folders.filter((f) => f.hostId === hostSel.value).map((f) => h('option', { value: f.cwd, label: f.project || '' })));
@@ -3392,17 +3407,30 @@ async function openTaskModal(cardId, init = null) {
   const prompt = h('textarea', { class: 'note', 'aria-label': '依頼文' });
   prompt.value = taskRequestText(card.title, card.description, card.note);
   prompt.defaultValue = prompt.value;
+  const composer = promptComposer(prompt, { key: `start:${cardId}`, context: () => ({ agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim() }), submit: () => start() });
+  agentSel.addEventListener('change', () => composer.contextChanged());
+  cwd.addEventListener('change', () => composer.contextChanged());
+  const startButtons = [];
   const start = async (opts = {}) => {
+    if (composer.draft.sending) return;
     try {
-      const r = await bridge.callTool('canban_start_session', { taskId: cardId, agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim(), prompt: prompt.value, ...opts });
+      const payload = composer.payload();
+      composer.setSending(true); startButtons.forEach(b => { b.disabled = true; });
+      const r = await bridge.callTool('canban_start_session', { taskId: cardId, agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim(), prompt: prompt.value, ...payload, ...opts });
       toast(r.note || `${agentSel.value === 'codex' ? 'Codex' : 'Claude'} で開始しました。セッションが現れると自動で紐付きます`, !!r.note);
+      composer.clear();
       if (!taskDash?.active) closePane(cardId);
       else { prompt.value = ''; workspace.draftValues.set(prompt, ''); }
       load();
     } catch (e) {
       toast(e.message, true);
+    } finally {
+      composer.setSending(false); startButtons.forEach(b => { b.disabled = false; });
     }
   };
+  startButtons.push(h('button', { class: 'btn-primary', title: shortcutHelp(), text: `▶ 開始（${routeLabel(b.settings.launch.route, { desktop: true })}）`, onclick: e => start(optsFromEvent(e)) }),
+    h('button', { class: 'btn', text: 'デスクトップで', onclick: () => start({ route: 'desktop' }) }),
+    h('button', { class: 'btn', text: 'ターミナルで', onclick: () => start({ route: 'terminal' }) }));
 
   const linkRows = card.links.map((l) => h('div', { class: 'sub-row' },
     h('span', { class: `sdot s-${l.status}` }),
@@ -3434,11 +3462,11 @@ async function openTaskModal(cardId, init = null) {
       h('button', { class: 'btn', text: '説明・メモを依頼文に取り込む', onclick: () => {
         if (prompt.value !== prompt.defaultValue && prompt.value.trim()) return toast('入力中の依頼文があります。先に内容を確認してください', true);
         prompt.value = taskRequestText(title.value, desc.value, memo.value);
-      } }), prompt,
+        prompt.dispatchEvent(new Event('input', { bubbles: true }));
+      } }), composer.root,
+      h('div', { class: 'muted', text: 'デスクトップで開始すると、依頼文に画像の参照を含めます。' }),
       h('div', { class: 'row', style: { marginTop: '8px', flexWrap: 'wrap' } },
-        h('button', { class: 'btn-primary', title: shortcutHelp(), text: `▶ 開始（${routeLabel(b.settings.launch.route, { desktop: true })}）`, onclick: e => start(optsFromEvent(e)) }),
-        h('button', { class: 'btn', text: 'デスクトップで', onclick: () => start({ route: 'desktop' }) }),
-        h('button', { class: 'btn', text: 'ターミナルで', onclick: () => start({ route: 'terminal' }) }))], hint: '開始したセッションは、AI App・マシン・フォルダ・依頼文が一致すると自動でこのカードに紐付きます。' },
+        ...startButtons)], hint: '開始したセッションは、AI App・マシン・フォルダ・依頼文が一致すると自動でこのカードに紐付きます。' },
     add: { nodes: [taskQuickAdd.summary(card),
       h('button', { class: 'side-btn', text: '所属を変更', onclick: () => taskQuickAdd.edit(card, list) }), h('button', { class: 'side-btn', text: '🏷 ラベル', onclick: e => labelPicker(e.currentTarget, cardId, labelState, () => {}) }),
       h('button', { class: 'side-btn', text: `📂 カテゴリ: ${card.directory?.name || 'カテゴリ無し'}`, onclick: e => directoryPicker(e.currentTarget, card, { cwd: cwd.value.trim() || null, after: () => openTaskModal(cardId) }) })] },
@@ -4461,6 +4489,7 @@ async function initializeSharedUi() {
 
 function hasUnsavedPaneInput() {
   if (taskDash?.hasDrafts()) return true;
+  if ([...promptDrafts.values()].some(d => d.images.length || d.skills.length || d.sending || d.text !== d.baseline)) return true;
   return workspace.hasDrafts() || [...document.querySelectorAll('.send-box textarea')].some((input) => input.value.trim())
     || [...document.querySelectorAll('textarea.note')].some((input) => input.value !== input.defaultValue);
 }

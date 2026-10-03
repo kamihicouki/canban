@@ -10,7 +10,7 @@ import { Store } from './store.mjs';
 import { leaderFor } from './leader.mjs';
 import { perf } from './perf.mjs';
 import { dispatcherFor, tickDispatch, setSpawner, dryRunSpawner } from './dispatch.mjs';
-import { buildBoard, sessionDetail, allSessions, findSession, hostsWithState, effectiveOrder, runRules, tickRules, tickSearch } from './board.mjs';
+import { buildBoard, sessionDetail, allSessions, findSession, hostsWithState, effectiveOrder, runRules, tickRules, tickSearch, pool } from './board.mjs';
 import { RULE_TRIGGERS } from './store.mjs';
 import { computeStats } from './stats.mjs';
 import { desktopLink, resumeCommand, newSessionLink, newSessionCommand } from './agents.mjs';
@@ -26,6 +26,8 @@ import { accountActions, accountActionTools } from './account-actions.mjs';
 import { shutdownLogins } from './login.mjs';
 import { boardHtml } from './ui.mjs';
 import { taskContextSchema } from './task-context.mjs';
+import { uploadImage, promptImages, listSkills, withSkills, withImagePaths, remoteImages } from './prompt-input.mjs';
+import { resolveSession } from './dispatch.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // The Codex plugin manifest is absent when installed another way (Claude Desktop extension, a bare copy).
@@ -86,6 +88,27 @@ const filterProps = {
 };
 
 const TOOLS = [
+  appTool('canban_upload_prompt_image', 'プロンプトに画像を添付', {
+    id: { type: 'string' }, offset: { type: 'integer' }, data: { type: 'string' },
+    name: { type: 'string' }, mime: { type: 'string' }, size: { type: 'integer' },
+  }, ['data'], a => uploadImage(store.dir, a)),
+  appTool('canban_prompt_skills', '利用できるスキルを取得', {
+    cardId: { type: 'string' }, agent: { type: 'string', enum: ['codex', 'claude'] },
+    hostId: { type: 'string' }, cwd: { type: 'string' },
+  }, [], async a => {
+    let context = a, host = null;
+    if (a.cardId) {
+      const resolved = await resolveSession(store, a.cardId);
+      context = resolved.session; host = resolved.host;
+    } else if (a.hostId && a.hostId !== 'local') {
+      host = (await hostsWithState(await store.load())).find(h => h.id === a.hostId);
+      if (!host) throw new Error('Codex に登録されていない接続です');
+    }
+    if (!host) return { skills: listSkills(context) };
+    const result = await pool.dispatch(host, { mode: 'prompt_skills', agent: context.agent || 'codex', cwd: context.cwd || '', homeDir: context.homeDir });
+    if (!result.ok) throw new Error(result.error || '接続先のスキルを取得できません');
+    return { skills: result.skills || [] };
+  }),
   {
     name: 'open_canban',
     title: 'Canban',
@@ -330,6 +353,8 @@ const TOOLS = [
       properties: {
         cardId: { type: 'string' },
         prompt: { type: 'string' },
+        imageIds: { type: 'array', items: { type: 'string' }, maxItems: 8 },
+        skills: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, path: { type: 'string' } }, required: ['name', 'path'], additionalProperties: false }, maxItems: 20 },
         when: { type: 'string', enum: ['now', 'queue'] },
         expectedUpdatedAt: { type: ['number', 'null'] },
         allowElevated: { type: 'boolean' },
@@ -446,6 +471,8 @@ const TOOLS = [
         hostId: { type: 'string', description: "'local' またはリモート接続の hostId" },
         cwd: { type: 'string', description: '作業フォルダ（そのマシン上の絶対パス）' },
         prompt: { type: 'string' },
+        imageIds: { type: 'array', items: { type: 'string' }, maxItems: 8 },
+        skills: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, path: { type: 'string' } }, required: ['name', 'path'], additionalProperties: false }, maxItems: 20 },
         route: { type: 'string', enum: ['desktop', 'terminal'] },
         terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
         target: { type: 'string', enum: ['new-window', 'new-tab', 'split', 'current'] },
@@ -454,7 +481,7 @@ const TOOLS = [
       additionalProperties: false,
     },
     _meta: appAndModel,
-    handler: async ({ taskId, agent, hostId = 'local', cwd = '', prompt, route, terminal, target }) => {
+    handler: async ({ taskId, agent, hostId = 'local', cwd = '', prompt, imageIds = [], skills = [], route, terminal, target }) => {
       const state = (await store.load());
       const task = state.cards[taskId];
       if (task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
@@ -466,7 +493,12 @@ const TOOLS = [
         host = { id: h.id, alias: h.alias, label: h.label, local: false, sshPort: h.sshPort };
         remoteEnabled = h.enabled;
       }
-      const text = String(prompt ?? [task.title, task.description, task.note].filter(Boolean).join('\n\n')).slice(0, 8000);
+      const rawPrompt = String(prompt ?? [task.title, task.description, task.note].filter(Boolean).join('\n\n'));
+      if (rawPrompt.length > 20000) throw new Error('依頼文は20000文字までです');
+      const skillPrompt = withSkills(rawPrompt, skills);
+      const localImages = promptImages(store.dir, imageIds);
+      const images = host.local === false ? await remoteImages(store.dir, localImages, host, pool) : localImages;
+      const text = withImagePaths(skillPrompt, images);
       const prefs = state.settings.launch;
       const useRoute = route || prefs.route;
       let detail;
@@ -477,7 +509,7 @@ const TOOLS = [
       } else {
         const term = terminal || prefs.terminal;
         if (!installedTerminals().some((t) => t.id === term)) throw new Error(`${TERMINAL_LABELS[term] || term} が見つかりません。設定でターミナルを選んでください。`);
-        const command = newSessionCommand(agent, { host, cwd, prompt: text });
+        const command = newSessionCommand(agent, { host, cwd, prompt: agent === 'codex' ? skillPrompt : text, images });
         detail = { route: 'terminal', command, ...(await runInTerminal({ terminal: term, target: target || prefs.target, command })) };
       }
       await store.updateTask({ cardId: taskId, target: { agent, hostId: host.local === false ? host.id : 'local', cwd } });
@@ -666,7 +698,7 @@ async function handle(method, params = {}) {
             mimeType: UI_MIME,
             text: uiHtml(),
             _meta: {
-              ui: { prefersBorder: false, csp: { connectDomains: [], resourceDomains: [] } },
+              ui: { prefersBorder: false, csp: { connectDomains: [], resourceDomains: ['blob:', 'data:'] } },
               'openai/widgetPrefersBorder': false,
               'openai/widgetDescription': 'Codex / Claude セッションのカンバンボード',
             },

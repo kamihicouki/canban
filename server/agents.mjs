@@ -68,10 +68,16 @@ export const HEADLESS = {
   },
 };
 
-export function headlessArgs(s, permission) {
+export function headlessArgs(s, permission, { images = [] } = {}) {
   const h = HEADLESS[s.agent];
   if (!h || !s.nativeId) return null;
-  return { bin: h.bin, args: h.args(s, permission) };
+  const args = h.args(s, permission);
+  if (images.length && s.agent === 'codex') args.splice(2, 0, ...images.flatMap(i => ['--image', i.path]));
+  if (images.length && s.agent === 'claude') {
+    args[args.indexOf('--output-format') + 1] = 'stream-json';
+    args.push('--input-format', 'stream-json', '--verbose');
+  }
+  return { bin: h.bin, args };
 }
 
 // A session from another config folder (CLAUDE_CONFIG_DIR / CODEX_HOME profile) resumes there.
@@ -119,9 +125,10 @@ export function newSessionLink(agent, { host, cwd, prompt }) {
   return null;
 }
 
-export function newSessionCommand(agent, { host, cwd, prompt }) {
+export function newSessionCommand(agent, { host, cwd, prompt, images = [] }) {
   const bin = agent === 'codex' ? 'codex' : agent === 'claude' ? 'claude' : null;
   if (!bin) return null;
-  const inner = `${cwd ? `cd ${shq(cwd)} 2>/dev/null; ` : ''}${bin}${prompt ? ` ${shq(prompt)}` : ''}`;
+  const imageArgs = agent === 'codex' ? images.map(i => ` --image ${shq(i.path)}`).join('') : '';
+  const inner = `${cwd ? `cd ${shq(cwd)} 2>/dev/null; ` : ''}${bin}${imageArgs}${prompt ? `${imageArgs ? ' --' : ''} ${shq(prompt)}` : ''}`;
   return host && host.local === false ? `ssh -t ${shq(host.alias)} ${shq(inner)}` : inner;
 }

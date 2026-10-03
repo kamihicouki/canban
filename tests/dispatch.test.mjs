@@ -89,6 +89,7 @@ before(async () => {
     ...(await import('../server/permissions.mjs')),
     ...(await import('../server/requests.mjs')),
     ...(await import('../server/agents.mjs')),
+    ...(await import('../server/prompt-input.mjs')),
     store: await import('../server/store.mjs'),
     perf: (await import('../server/perf.mjs')).perf,
     codex: await import('../server/sources/codex.mjs'),
@@ -186,6 +187,28 @@ test('send now: prompt on stdin, inherited sandbox, agent env scrubbed, result r
   assert.equal(run.claudecode, null);
   assert.equal(run.entrypoint, null);
   assert.equal(done.permission.source, 'session');
+});
+
+test('image-only requests and skill choices persist through the queue into the official CLI input', async () => {
+  const d = freshDispatcher();
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/9l0AAAAASUVORK5CYII=', 'base64');
+  const image = M.uploadImage(dataDir, { name: 'screen.png', mime: 'image/png', size: png.length, data: png.toString('base64') });
+  const first = await d.submit({ cardId: 'codex:th-ok', prompt: '', imageIds: [image.id], when: 'now' });
+  assert.equal((await finished(d, first.id)).state, 'succeeded');
+  const codexRun = runs().at(-1);
+  assert.equal(codexRun.prompt, '');
+  assert.equal(fs.readFileSync(codexRun.argv[codexRun.argv.indexOf('--image') + 1]).toString('base64'), png.toString('base64'));
+  assert.equal((await d.requests.get(first.id)).images[0].id, image.id);
+  const skills = [{ name: 'demo', path: path.join(ws, '.agents', 'skills', 'demo', 'SKILL.md') }];
+  const queued = await d.requests.create({ cardId: 'claude:cl-ok', agent: 'claude', nativeId: 'cl-ok', hostId: 'local', cwd: ws, prompt: '画像を確認', images: M.promptImages(dataDir, [image.id]), skills });
+  await d.requests.update(queued.id, { prompt: '' });
+  await d.tick();
+  assert.equal((await finished(d, queued.id)).state, 'succeeded');
+  const claudeRun = runs().at(-1);
+  const content = JSON.parse(claudeRun.prompt).message.content;
+  assert.match(content[0].text, /\$demo/);
+  assert.equal(content[1].source.data, png.toString('base64'));
+  assert.ok(claudeRun.argv.includes('--input-format'));
 });
 
 test('gates: running, just-updated, changed-since-viewed, archived and task cards are refused', async () => {

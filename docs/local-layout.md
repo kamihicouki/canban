@@ -10,12 +10,15 @@
 | `.local/config.json` | このcheckoutの保存先設定 |
 | `.local/data/` | 開発用データ、または既存共有データへの参照 |
 | `~/.canban/`（repo外） | 通常ユーザーのSQLite DB、検索索引、実行ログ、アカウントデータ |
+| `<Canban保存先>/prompt-images/` | プロンプトの添付画像・アップロード状態。通常は `~/.canban/prompt-images/`。開発・テストは明示した `.local/` 配下 |
 | `.local/chrome-main-test/` | 拡張の公開鍵・ID、ビルド記録、更新ロック |
 | `.local/backups/` | 配置移行・設定変更前の控え |
 
 `.local/` はGitとMCPBパッケージから除外する。認証情報・実データ・ローカル設定をcommitや配布物に含めない。旧cloneの履歴・未追跡資料・worktreeの作業状態を保持する。
 
 ## 保存先
+
+画像添付も各クライアントが接続するCanban保存先に保存する。Chrome・Codex・Claudeの間で別の画像保存先を使わない。SSH接続先で画像のファイル参照が必要な操作は、接続先の `~/.canban-remote/prompt-images/` に画像を転送する。画像を入力欄から外しても保存済みファイルは自動削除しない。
 
 `.local/config.json` は次の内容を使う。相対パスはこの設定ファイルのあるディレクトリを基準に解決する。
 

@@ -28,6 +28,7 @@ import { codexAppState, annotateCodexApp } from './sources/codex-app.mjs';
 import { pool, hostsWithState } from './board.mjs';
 import { perf } from './perf.mjs';
 import { homeEnv, configureAccounts } from './accounts.mjs';
+import { promptImages, withSkills, claudeImageInput, remoteImages } from './prompt-input.mjs';
 
 export const QUIET_MS = Number(process.env.CANBAN_DISPATCH_QUIET_MS) || 20e3;
 const INSPECT_BYTES = 256 * 1024;
@@ -240,13 +241,14 @@ export class Dispatcher {
   }
 
   // Validate and record a request; "now" starts it immediately or fails with the reason.
-  async submit({ cardId, prompt, when = 'queue', origin = 'ui', expectedUpdatedAt = null, allowElevated = false, now = Date.now() }) {
+  async submit({ cardId, prompt, imageIds = [], skills = [], when = 'queue', origin = 'ui', expectedUpdatedAt = null, allowElevated = false, now = Date.now() }) {
     const cfg = (await this.settings());
     if (!cfg.enabled) throw new Error('指示の送信は設定でオフになっています');
     if (origin === 'model' && !cfg.allowModel) throw new Error('モデルからの送信は設定でオフになっています');
     const text = String(prompt ?? '').trim();
-    if (!text) throw new Error('プロンプトを入力してください');
-    if (text.length > MAX_PROMPT) throw new Error(`プロンプトは ${MAX_PROMPT} 文字までです`);
+    const images = promptImages(this.store.dir, imageIds);
+    if (!text && !images.length && !skills.length) throw new Error('プロンプトを入力してください');
+    if (withSkills(text, skills).length > MAX_PROMPT) throw new Error(`プロンプトは ${MAX_PROMPT} 文字までです`);
     if (origin === 'model') {
       const recent = (await this.requests.list({ cardId })).filter((r) => r.origin === 'model' && now - r.createdAt < 3600e3).length;
       if (recent >= cfg.modelPerHour) throw new Error(`このセッションへのモデルからの送信は 1 時間 ${cfg.modelPerHour} 件までです`);
@@ -273,6 +275,8 @@ export class Dispatcher {
       cwd: session.cwd,
       title: session.title,
       prompt: text,
+      images,
+      skills,
       when,
       origin,
       allowElevated: !!allowElevated || (origin === 'model' && cfg.allowModelElevated),
@@ -319,7 +323,10 @@ export class Dispatcher {
   }
 
   async startLocal(req, session, permission) {
-    const h = headlessArgs(session, permission);
+    const images = promptImages(this.store.dir, (req.images || []).map(i => i.id));
+    const h = headlessArgs(session, permission, { images });
+    const prompt = withSkills(req.prompt, req.skills);
+    const input = session.agent === 'claude' && images.length ? claudeImageInput(prompt, images, this.store.dir) : prompt;
     const bin = resolveBin(h.bin);
     if (!bin) throw Object.assign(new Error(`${h.bin} が見つかりません（PATH か CANBAN_${h.bin.toUpperCase()}_BIN を確認してください）`),{code:'pre_spawn'});
     const logPath = this.requests.logPath(req.id);
@@ -344,13 +351,17 @@ export class Dispatcher {
     if (child.pid) this.children.set(req.id, child);
     const running = await this.requests.transition(req.id,['starting'],{state:'running',pid:child.pid ?? null,logPath,permission,argv:[h.bin,...h.args]},{owner:req.ownerUuid,generation:req.leaseGeneration});
     if (!running) { try { child.kill?.('SIGTERM'); } catch {} throw new Error('送信の実行権が失われました'); }
-    child.stdin.end(req.prompt);
+    child.stdin.end(input);
     return running;
   }
 
   async startRemote(req, session, host, permission) {
-    const h = headlessArgs(session, permission);
-    const res = await pool.dispatch(host, { mode: 'start', id: req.id, binName: h.bin, args: h.args, cwd: session.cwd, prompt: req.prompt });
+    const localImages = promptImages(this.store.dir, (req.images || []).map(i => i.id));
+    const images = session.agent === 'codex' ? await remoteImages(this.store.dir, localImages, host, pool) : localImages;
+    const h = headlessArgs(session, permission, { images });
+    const prompt = withSkills(req.prompt, req.skills);
+    const input = session.agent === 'claude' && images.length ? claudeImageInput(prompt, images, this.store.dir) : prompt;
+    const res = await pool.dispatch(host, { mode: 'start', id: req.id, binName: h.bin, args: h.args, cwd: session.cwd, prompt: input });
     if (!res.ok || !Number.isInteger(res.pid) || res.pid <= 0) throw new Error(res.error || '接続先の起動結果を確認できません');
     return (await this.requests.transition(req.id, ['starting'], { state: 'running', remotePid: res.pid, logPath: res.log, permission, argv:[h.bin,...h.args] },{owner:req.ownerUuid,generation:req.leaseGeneration})) || req;
   }
