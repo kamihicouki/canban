@@ -37,16 +37,15 @@ test('adopting shared view state refreshes the board and analytics toggle', () =
   const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
   const adopt = html.match(/function adoptSharedUi\(record\) \{([\s\S]*?)\n\}\n\nasync function applySharedUi/);
   const toggle = html.match(/function syncViewButton\(\) \{[\s\S]*?\n\}/)[0];
-  const button = { setAttribute(name, value) { this[name] = value; } };
-  const icon = {}, label = {};
+  const analytics = { setAttribute(name, value) { this[name] = value; } };
+  const boardView = { setAttribute(name, value) { this[name] = value; } };
   const state = { view: 'board' };
   const context = vm.createContext({ state, sharedUi: {}, SHARED_UI_KEYS: ['view'], workspacePage: (page,fallback) => page || fallback, workspace: { navigate() {} }, store: { cache() {} },
-    $: (selector) => selector === '#analyticsBtn' ? button : selector === '#analyticsBtn .ic' ? icon : selector === '#analyticsBtn .lbl' ? label : null });
+    $: (selector) => selector === '#analyticsBtn' ? analytics : selector === '#boardViewBtn' ? boardView : null });
   vm.runInContext(`${toggle}\nfunction adoptSharedUi(record) {${adopt[1]}\n}\nadoptSharedUi({revision: 1, state: {view: 'analytics'}});`, context);
   assert.equal(state.view, 'analytics');
-  assert.equal(button['aria-pressed'], 'true');
-  assert.equal(icon.textContent, '▦');
-  assert.equal(label.textContent, 'ボード');
+  assert.equal(analytics['aria-pressed'], 'true');
+  assert.equal(boardView['aria-pressed'], 'false');
 });
 
 test('Chrome bridge waits for every large-response chunk before decoding', () => {

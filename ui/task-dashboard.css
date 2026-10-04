@@ -47,7 +47,6 @@
   .task-presets { grid-column: 1 / 4; grid-row: 2; justify-self: start; }
   .task-session-select { grid-column: 4 / 7; grid-row: 2; min-inline-size: 0; max-inline-size: 100%; }
   .task-pages { grid-column: 1 / -1; grid-row: 3; justify-self: end; }
-  .pane-layer[data-task-preset] .pane-bar > .nav-mobile { grid-column: 1; grid-row: 1; }
 }
 @media (max-width: 719px) {
   .pane-layer[data-task-preset] .pane-bar > .quick-task-trigger { grid-column: 3; }
