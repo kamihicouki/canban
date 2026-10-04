@@ -36,7 +36,6 @@ body:not([data-layout="trello"]) .list { box-shadow: none; }
   body[data-layout] .app-content > .topbar { grid-area: top; }
   body[data-layout] .app-content > .boardbar { grid-area: bar; }
   body[data-layout] .app-content > #errbar { grid-area: err; }
-  body[data-layout] .app-content > .selection-bar { grid-area: sel; }
   body[data-layout] .live-hud { grid-area: hud; }
   body[data-layout] .layout-rail { grid-area: rail; }
   body[data-layout="classic"] .shell > .sidebar, body[data-layout="rail"] .shell > .sidebar, body[data-layout="hud"] .shell > .sidebar { grid-area: side; }
@@ -46,16 +45,16 @@ body:not([data-layout="trello"]) .list { box-shadow: none; }
 
   /* A: the sidebar runs to the top and carries the logo. */
   body[data-layout="classic"] .app-content {
-    grid-template-rows: auto auto auto auto minmax(0, 1fr);
-    grid-template-areas: "side top" "side bar" "side err" "side sel" "side main";
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-areas: "side top" "side bar" "side err" "side main";
   }
   body[data-layout="classic"]:not(.side-closed) .topbar .brand { display: none; }
   body[data-layout="classic"] .side-brand { display: flex; }
 
   /* B: rail (where) → context panel (what is there) → board (what to do). */
   body[data-layout="rail"] .app-content {
-    grid-template-columns: auto auto minmax(0, 1fr); grid-template-rows: auto auto auto auto minmax(0, 1fr);
-    grid-template-areas: "rail side top" "rail side bar" "rail side err" "rail side sel" "rail side main";
+    grid-template-columns: auto auto minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-areas: "rail side top" "rail side bar" "rail side err" "rail side main";
   }
   body[data-layout="rail"] .layout-rail { display: flex; }
   body[data-layout="rail"] .topbar .brand, body[data-layout="rail"] .sidebar .side-sec-nav { display: none; }
@@ -63,8 +62,8 @@ body:not([data-layout="trello"]) .list { box-shadow: none; }
 
   /* D: header tabs, then the live HUD across the whole width, then spaces and the board. */
   body[data-layout="hud"] .app-content {
-    grid-template-rows: auto auto auto auto auto minmax(0, 1fr);
-    grid-template-areas: "top top" "bar bar" "hud hud" "err err" "sel sel" "side main";
+    grid-template-rows: auto auto auto auto minmax(0, 1fr);
+    grid-template-areas: "top top" "bar bar" "hud hud" "err err" "side main";
   }
 }
 body[data-layout="rail"] .shell { position: static; }

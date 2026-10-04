@@ -73,7 +73,6 @@ function setLayout(id) {
   state.layout = layoutOf(id);
   store.set('layout', state.layout);
   applyLayout();
-  layoutPanes();
   if (state.board && state.view !== 'analytics') render();
 }
 

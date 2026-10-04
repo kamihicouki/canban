@@ -5,40 +5,13 @@ import vm from 'node:vm';
 import { boardHtml } from '../server/ui.mjs';
 
 const source = fs.readFileSync(new URL('../ui/workspace-model.js', import.meta.url), 'utf8');
-const model = new vm.Script(source + '\n({workspacePage, usageWindow, paneGeometry, normalizePaneLayout, paneBatch})').runInNewContext();
+const model = new vm.Script(source + '\n({workspacePage, usageWindow, normalizePaneLayout})').runInNewContext();
 const plain = value => JSON.parse(JSON.stringify(value));
 
 test('workspace routes preserve old home and analytics fallbacks', () => {
   assert.equal(model.workspacePage('usage'), 'usage');
   assert.equal(model.workspacePage('unknown', 'analytics'), 'analytics');
   assert.equal(model.workspacePage(null), 'home');
-});
-test('a single fixed card fills the available height with twelve-pixel margins', () => {
-  const p = model.paneGeometry([{index:0,w:900,h:450,note:false}], 'grid', 1300, 850);
-  assert.deepEqual(plain(p.rects), [{index:0,x:200,y:12,h:826}]);
-  assert.equal(p.height,850);
-});
-test('two columns share the full height while notes stay compact', () => {
-  const p = model.paneGeometry([{index:0,w:560,h:450,note:false},{index:1,w:560,h:100,note:true}], 'grid', 1300, 850);
-  assert.equal(p.rects[0].h,826); assert.equal(p.rects[1].h,100);
-});
-test('grid rows distribute height and scroll if minimum readable height cannot fit', () => {
-  const items = [0,1].map(index => ({index,w:900,h:450,note:false}));
-  const fit = model.paneGeometry(items,'grid',1000,850);
-  assert.equal(fit.rects[0].h,407); assert.equal(fit.rects[1].h,407);
-  assert.equal(fit.height,850);
-  const scroll = model.paneGeometry(items,'grid',1000,500);
-  assert.ok(scroll.height>500); assert.ok(scroll.rects.every(r=>r.h===320));
-});
-test('column layout gives each card viewport height and row layout can scroll horizontally', () => {
-  const items=[0,1].map(index=>({index,w:700,h:500,note:false}));
-  const col=model.paneGeometry(items,'col',1000,600);
-  assert.equal(col.rects[0].h,576); assert.equal(col.rects[1].h,576); assert.ok(col.height>600);
-  const row=model.paneGeometry(items,'row',1000,600); assert.ok(row.width>1000);
-});
-test('tiny containers never create negative card geometry', () => {
-  const p=model.paneGeometry([{index:0,w:20,h:10,note:false}],'grid',10,10);
-  assert.ok(p.rects[0].h>=0);
 });
 test('usage separates used and remaining amounts and names the limit window', () => {
   const now=1790760000000;
@@ -164,38 +137,31 @@ test('shared layout restores cross-column moves, repairs duplicates and migrates
   const old = model.normalizePaneLayout(defaults,defaults,{conv:300});
   assert.equal(old.ratio,2/3); assert.equal(old.heights.conv,300);
 });
-test('a batch mixes task/session cards, deduplicates open cards and rejects an oversized batch atomically', () => {
-  assert.deepEqual(plain(model.paneBatch(['task:1','codex:1','task:1'],['codex:1'],8)),{ids:['task:1','codex:1'],additions:['task:1'],fits:true});
-  const rejected = model.paneBatch(['task:1','claude:2'],['codex:1'],2);
-  assert.equal(rejected.fits,false); assert.equal(rejected.additions.length,2);
-});
-test('restoring a session retains its pane on a transient read failure and removes a genuinely missing session', async () => {
+test('a session that cannot be read keeps its card with a reload button; a genuinely missing one closes the layer on restore', async () => {
   const html = boardHtml();
-  const source = html.slice(html.indexOf('async function openCard('), html.indexOf('function updateNoteLine('));
-  const panes = []; let error = new Error('db_busy'), closed = 0;
-  const context = vm.createContext({ panes, PANE_MAX: 8, taskDash: null, batchOpening: false, state: {board:{lists:[]}},
-    closePopover: () => {}, bridge: {callTool: async () => {throw error;}},
-    newPane: id => {const p={id,el:{replaceChildren(...nodes){this.nodes=nodes;}}};panes.push(p);return p;},
-    closePane: () => {closed++;panes.splice(0);}, h: (tag,attrs) => ({tag,attrs}), toast: () => {},
-  });
-  await vm.runInContext(`${source}\nopenCard('codex:mock',{});`,context);
-  assert.equal(panes.length,1); assert.equal(closed,0);
-  assert.ok(panes[0].el.nodes.some(n => n.attrs.text === '再読み込み'));
-  panes.splice(0); error = new Error('セッションが見つかりません: codex:mock');
-  await vm.runInContext(`openCard('codex:mock',{});`,context);
-  assert.equal(panes.length,0); assert.equal(closed,1);
+  const source = html.slice(html.indexOf('async function loadSession('), html.indexOf('async function openTaskCard('));
+  const p = {id:'codex:mock',d:null,el:{replaceChildren(...nodes){this.nodes=nodes;}}}, panes = [p];
+  let error = new Error('db_busy'), closed = 0;
+  const context = vm.createContext({ panes, bridge: {callTool: async () => {throw error;}},
+    closeCards: () => {closed++;}, h: (tag,attrs) => ({tag,attrs}), toast: () => {}, renderPaneKeepingDrafts: () => {} });
+  await vm.runInContext(`${source}\nloadSession(panes[0],{restore:true});`,context);
+  assert.equal(closed,0); assert.ok(p.el.nodes.some(n => n.attrs.text === '再読み込み'));
+  error = new Error('セッションが見つかりません: codex:mock');
+  await vm.runInContext(`loadSession(panes[0],{restore:true});`,context);
+  assert.equal(closed,1);
+  closed = 0; await vm.runInContext(`loadSession(panes[0]);`,context);
+  assert.equal(closed,0); // outside a restore the error is shown, not hidden
 });
-test('restoration saves surviving session/task panes after a missing card without transiently leaving the dashboard', async () => {
+test('the card that was open comes back after a reload, and only that one', async () => {
   const html = boardHtml();
-  const source = html.slice(html.indexOf('async function restorePanes('), html.indexOf('function sharedUiSnapshot('));
-  const panes = []; let remembered, folded = 0;
-  const context = vm.createContext({ store: {get:()=>[{id:'codex:gone'},{id:'task:survives'}]}, panes, restoringPanes:false,
-    PANE_MAX:8, PANE_SPACES:[], PANE_MODES:[], PANE_SIZES:[], oneOf:(_v,_list,fallback)=>fallback,
-    openCard:async id=>{assert.equal(context.restoringPanes,true);if(id==='task:survives')panes.push({id});},
-    savePanes:()=>{remembered=panes.map(p=>p.id);}, workspace:{page:'cards'}, setDash:()=>{folded++;},
-  });
-  await vm.runInContext(`${source}\nrestorePanes();`,context);
-  assert.deepEqual(remembered,['task:survives']); assert.equal(folded,0); assert.equal(context.restoringPanes,false);
+  const start = html.indexOf('async function restoreCards('), source = html.slice(start, html.indexOf('\n}\n', start) + 3);
+  const opened = []; let stored = 'task:survives';
+  const context = vm.createContext({ store: {get:()=>stored}, restoringPanes:false,
+    openCard:async (id,opts)=>{assert.equal(context.restoringPanes,true);opened.push([id,opts.restore]);} });
+  await vm.runInContext(`${source}\nrestoreCards();`,context);
+  assert.deepEqual(opened,[['task:survives',true]]); assert.equal(context.restoringPanes,false);
+  stored = null; await vm.runInContext('restoreCards();',context);
+  assert.equal(opened.length,1);
 });
 test('task autosave advances only the submitted draft baseline', async()=>{
   const w=workspaceHarness(), input={value:'保存する値',defaultValue:''};
@@ -207,11 +173,8 @@ test('task autosave advances only the submitted draft baseline', async()=>{
   await w.saveField(input,async()=>{throw new Error('db_busy');});
   assert.equal(w.draftValues.get(input),'保存する値');
 });
-test('legacy task modals migrate to panes independently of home filters', async () => {
-  let opened = 0, saved = 0;
-  const w = workspaceHarness({ taskDash: { open: async (_id, opts) => { assert.equal(opts.reveal, false); opened++; } }, savePanes: () => { saved++; } });
-  w.pendingTask = 'task:mock'; w.page = 'home';
-  await w.restoreTask();
-  assert.equal(w.pendingTask, null); assert.equal(opened, 1); assert.equal(saved, 1); assert.equal(w.page, 'home');
-  await w.restoreTask(); assert.equal(opened, 1);
+test('only the drawer pages are pages; the home board and analytics are the board itself', () => {
+  const w = workspaceHarness();
+  for (const [page, utility] of [['home', false], ['analytics', false], ['usage', true], ['settings', true]]) { w.page = page; assert.equal(w.utilityPage(), utility, page); }
+  assert.equal(model.workspacePage('cards'), 'home'); // the old card dashboard page folds into the board
 });

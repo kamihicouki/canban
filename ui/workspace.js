@@ -2,11 +2,10 @@
 // Existing tool-backed editors can mount their body in a page instead of a popover.
 // The pages that open in the menu drawer (Trello's board menu), in tab order.
 const DRAWER_PAGES = ['rules', 'labels', 'directories', 'views', 'hosts', 'usage', 'settings'];
-const PAGE_ICONS = { rules: 'zap', labels: 'tag', directories: 'folder', views: 'bookmark', hosts: 'server', usage: 'gauge', settings: 'gear', analytics: 'chart', cards: 'cards', home: 'board' };
+const PAGE_ICONS = { rules: 'zap', labels: 'tag', directories: 'folder', views: 'bookmark', hosts: 'server', usage: 'gauge', settings: 'gear', analytics: 'chart', home: 'board' };
 const workspace = {
-  page: workspacePage(store.get('workspacePage', null), state.view === 'analytics' ? 'analytics' : dashOpen && store.get('panes', []).length ? 'cards' : 'home'),
-  switching: false, initialized: false, entries: new Map(), draftValues: new WeakMap(), settingsTab: 'launch',
-  pendingTask: store.get('activeTask', null), lastMenu: 'rules',
+  page: workspacePage(store.get('workspacePage', null), state.view === 'analytics' ? 'analytics' : 'home'),
+  switching: false, initialized: false, entries: new Map(), draftValues: new WeakMap(), settingsTab: 'launch', lastMenu: 'rules',
   init() {
     $('#brand').insertAdjacentHTML('afterbegin', LOGO_SVG);
     fillIcons();
@@ -25,13 +24,11 @@ const workspace = {
     this.drawer = h('aside', { class: 'mgmt-drawer', hidden: true, 'aria-label': 'メニュー' }, this.toolbar, this.tabs, this.pages);
     this.scrim = h('div', { class: 'drawer-scrim', hidden: true, onclick: () => this.navigate('home') });
     $('.shell').append(this.scrim, this.drawer);
-    paneBar.prepend(taskQuickAdd.button());
     $('#boardMenuBtn').addEventListener('click', () => this.navigate(this.utilityPage() ? 'home' : this.lastMenu));
     document.addEventListener('keydown', e => {
       if (e.key !== 'Escape' || e.defaultPrevented || !this.utilityPage() || document.querySelector('.popover, dialog[open]') || typingIn(e.target)) return;
       e.preventDefault(); this.navigate('home');
     });
-    buildSelectionBar();
     buildLayouts();
     this.initialized = true;
     this.navigate(this.page, { save: false, reload: false });
@@ -41,30 +38,20 @@ const workspace = {
       if (this.page === 'usage') this.render(state.board);
     }, 30000);
   },
-  utilityPage() { return !['home', 'analytics'].includes(this.page) && !(this.page === 'cards' && (panes.length || this.activeTask)); },
+  // The pages in the drawer; the home board and analytics are the board itself.
+  utilityPage() { return !['home', 'analytics'].includes(this.page); },
   navigate(value, { save = true, reload = true } = {}) {
-    const requested = workspacePage(value);
-    const next = requested === 'cards' && !panes.length && !store.get('panes', []).length && !this.pendingTask ? 'home' : requested;
+    const next = workspacePage(value);
     this.switching = true;
     try {
       this.page = next; state.view = next === 'analytics' ? 'analytics' : 'board';
-      dashOpen = next === 'cards';
       closePopover();
-      if (save) { store.set('workspacePage', next); store.set('view', state.view); store.set('dashOpen', dashOpen); }
-      for (const o of $$('.overlay')) o.hidden = next !== 'cards' || o.dataset.taskId !== this.activeTask;
-      state.modalOpen = next === 'cards' && !!document.querySelector('.overlay:not([hidden])');
+      if (next !== 'home' && next !== 'analytics') closeCards(); // a drawer and a card are both layer 1: the newer one wins
+      if (save) { store.set('workspacePage', next); store.set('view', state.view); }
       this.syncShell();
-      paintDash(); layoutPanes();
       if (state.board && state.view !== 'analytics') render();
       if (reload) load();
     } finally { this.switching = false; }
-  },
-  syncDash() {
-    if (!this.initialized || this.switching) return;
-    if (dashOpen && panes.length && this.page !== 'cards') this.navigate('cards', { reload: false });
-    else if (!dashOpen && this.lastDash && this.page === 'cards' && !state.modalOpen) this.navigate('home', { reload: false });
-    else this.syncShell();
-    this.lastDash = dashOpen;
   },
   syncShell() {
     document.body.dataset.page = this.page;
@@ -77,24 +64,13 @@ const workspace = {
     for (const b of [...this.tabs.children, ...$$('#sidebar [data-page]')]) b.setAttribute('aria-current', b.dataset.page === this.page ? 'page' : 'false');
     this.title.replaceChildren(h('span', { html: picon(PAGE_ICONS[this.page] || 'more', 20) }), WORKSPACE_PAGES.find(([id]) => id === this.page)?.[1] || 'メニュー');
     for (const entry of this.entries.values()) entry.el.hidden = entry.page !== this.page || (entry.page === 'settings' && entry.tab !== this.settingsTab);
-    const layerOpen = this.page === 'cards' && (dashOpen && panes.length || state.modalOpen);
-    $('.shell').inert = !!layerOpen;
-    $('.topbar').inert = !!layerOpen;
-    $('.boardbar').inert = !!layerOpen;
+    $('.shell').inert = !paneLayer.hidden; // layer 0 waits while a card is open; the header and the board bar stay usable
     paintLayoutChrome();
   },
   trackDrafts(root) {
     for (const el of root.querySelectorAll('input:not([type=checkbox]):not([type=radio]),textarea,select')) {
       if (!this.draftValues.has(el)) this.draftValues.set(el, el.value);
     }
-  },
-  async restoreTask() {
-    const id = this.pendingTask;
-    if (typeof id !== 'string' || !id.startsWith('task:')) return;
-    this.pendingTask = null;
-    store.set('activeTask', null);
-    await taskDash.open(id, { reveal: false });
-    savePanes();
   },
   async saveField(el, save) {
     const value = el.value;

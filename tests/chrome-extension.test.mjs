@@ -75,10 +75,10 @@ test('repainting adopted settings does not create an unsaved local change', () =
   let saves = 0;
   const context = vm.createContext({ localStorage: { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) },
     scheduleSharedUiSave: () => saves++ });
-  vm.runInContext(`${source}\nsharedUi.ready = true; store.cache('dashOpen', true); store.set('dashOpen', true);`, context);
+  vm.runInContext(`${source}\nsharedUi.ready = true; store.cache('cardWidths', {}); store.set('cardWidths', {});`, context);
   assert.equal(vm.runInContext('sharedUi.dirty', context), false);
   assert.equal(saves, 0);
-  vm.runInContext("store.set('dashOpen', false)", context);
+  vm.runInContext("store.set('cardWidths', { task: 480 })", context);
   assert.equal(vm.runInContext('sharedUi.dirty', context), true);
   assert.equal(saves, 1);
 });
@@ -87,7 +87,7 @@ test('foreground synchronization preserves an unsent session prompt', async () =
   const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
   const source = html.slice(html.indexOf('function hasUnsavedPaneInput()'), html.indexOf('function scheduleSharedUiCheck()'));
   let reads = 0;
-  const context = vm.createContext({ promptDrafts: new Map(), taskDash: null, sharedUi: { ready: true }, workspace: { hasDrafts: () => false }, idle: () => true,
+  const context = vm.createContext({ promptDrafts: new Map(), paneCache: new Map(), sharedUi: { ready: true }, workspace: { hasDrafts: () => false }, idle: () => true,
     document: { visibilityState: 'visible', querySelectorAll: () => [{ value: 'まだ送らない指示' }] },
     bridge: { callTool() { reads++; return Promise.resolve({ revision: 0 }); } },
     sharedUiRecord: (value) => value, applySharedUi() {}, console });
@@ -110,7 +110,7 @@ test('foreground synchronization preserves an edited card note', async () => {
   const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
   const source = html.slice(html.indexOf('function hasUnsavedPaneInput()'), html.indexOf('function scheduleSharedUiCheck()'));
   let reads = 0;
-  const context = vm.createContext({ promptDrafts: new Map(), taskDash: null, sharedUi: { ready: true }, workspace: { hasDrafts: () => false }, idle: () => true,
+  const context = vm.createContext({ promptDrafts: new Map(), paneCache: new Map(), sharedUi: { ready: true }, workspace: { hasDrafts: () => false }, idle: () => true,
     document: { visibilityState: 'visible', querySelectorAll: (selector) => selector === 'textarea.note' ? [{ value: '編集中', defaultValue: '保存済み' }] : [] },
     bridge: { callTool() { reads++; } }, console });
   await vm.runInContext(`${source}\ncheckSharedUiOnReturn();`, context);
