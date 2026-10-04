@@ -17,7 +17,7 @@ function applyAccountLimits(list) {
   for (const l of list) { const a = state.board.accounts.accounts.find((x) => x.key === l.key); if (a) a.limits = l; }
   renderUsage(state.board.accounts);
   workspace.renderLimitChip(state.board.limits);
-  if (workspace.page === 'usage') workspace.render(state.board);
+  if (openViewKind() === 'usage') refreshViews();
 }
 function accountKv(s) {
   return [...(s.host ? [] : kv('アカウント', s.accountLabel || '不明（記録なし）')), ...(s.homeDir ? kv('設定フォルダ', s.homeDir) : [])];

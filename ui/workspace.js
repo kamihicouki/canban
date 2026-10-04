@@ -1,32 +1,27 @@
 // Common navigation, retained page forms and account/usage presentation.
 // Existing tool-backed editors can mount their body in a page instead of a popover.
-// The pages that open in the menu drawer (Trello's board menu), in tab order.
-const DRAWER_PAGES = ['rules', 'labels', 'directories', 'views', 'hosts', 'usage', 'settings'];
-const PAGE_ICONS = { rules: 'zap', labels: 'tag', directories: 'folder', views: 'bookmark', hosts: 'server', usage: 'gauge', settings: 'gear', analytics: 'chart', home: 'board' };
+// The pages of the management panel (docs/ui-components.md), in the order the navigation lists them.
+const DRAWER_PAGES = ['rules', 'labels', 'directories', 'views', 'hosts', 'settings'];
+const PAGE_ICONS = { rules: 'zap', labels: 'tag', directories: 'folder', views: 'bookmark', hosts: 'server', settings: 'gear', home: 'board' };
 const workspace = {
-  page: workspacePage(store.get('workspacePage', null), state.view === 'analytics' ? 'analytics' : 'home'),
-  switching: false, initialized: false, entries: new Map(), draftValues: new WeakMap(), settingsTab: 'launch', lastMenu: 'rules',
+  page: workspacePage(store.get('workspacePage', null)),
+  switching: false, initialized: false, entries: new Map(), draftValues: new WeakMap(), settingsTab: 'launch',
   init() {
     $('#brand').insertAdjacentHTML('afterbegin', LOGO_SVG);
     fillIcons();
     this.content = h('div', { class: 'app-content' });
-    for (const el of [$('.topbar'), $('.boardbar'), $('#errbar'), $('.shell')]) this.content.append(el);
+    for (const el of [$('.topbar'), $('#errbar'), $('.shell')]) this.content.append(el);
     document.body.append(this.content);
-    // Management pages slide in from the right over the board; the header and board bar stay.
+    // The management panel opens next to the navigation (sidebar, rail or dock) and pushes the board aside.
+    // The navigation that opened it is its only index: the panel has no tabs of its own.
     this.title = h('h2');
-    this.limit = h('button', { class: 'usage-link', 'aria-label': 'Agent Usageを開く', onclick: () => this.navigate('usage') });
-    this.toolbar = h('header', { class: 'drawer-head' }, this.title, this.limit,
+    this.toolbar = h('header', { class: 'drawer-head' }, this.title,
       h('button', { class: 'icon-btn drawer-close', type: 'button', 'aria-label': '閉じる（Esc）', title: '閉じる（Esc）', html: picon('close', 18), onclick: () => this.navigate('home') }));
-    this.tabs = h('nav', { class: 'drawer-tabs', 'aria-label': 'メニューの項目' }, DRAWER_PAGES.map((id) =>
-      h('button', { type: 'button', 'data-page': id, onclick: () => this.navigate(id) },
-        h('span', { html: picon(PAGE_ICONS[id], 16) }), WORKSPACE_PAGES.find(([p]) => p === id)[1])));
-    this.pages = h('div', { class: 'workspace-pages', 'aria-label': 'メニューの内容' });
-    this.drawer = h('aside', { class: 'mgmt-drawer', hidden: true, 'aria-label': 'メニュー' }, this.toolbar, this.tabs, this.pages);
-    this.scrim = h('div', { class: 'drawer-scrim', hidden: true, onclick: () => this.navigate('home') });
-    $('.shell').append(this.scrim, this.drawer);
-    $('#boardMenuBtn').addEventListener('click', () => this.navigate(this.utilityPage() ? 'home' : this.lastMenu));
+    this.pages = h('div', { class: 'workspace-pages', 'aria-label': '管理パネルの内容' });
+    this.drawer = h('aside', { class: 'mgmt-drawer', hidden: true, 'aria-label': '管理パネル' }, this.toolbar, this.pages);
+    $('#sidebar').after(this.drawer);
     document.addEventListener('keydown', e => {
-      if (e.key !== 'Escape' || e.defaultPrevented || !this.utilityPage() || document.querySelector('.popover, dialog[open]') || typingIn(e.target)) return;
+      if (e.key !== 'Escape' || e.defaultPrevented || !this.utilityPage() || !paneLayer.hidden || document.querySelector('.popover, dialog[open]') || typingIn(e.target)) return;
       e.preventDefault(); this.navigate('home');
     });
     buildLayouts();
@@ -35,36 +30,36 @@ const workspace = {
     setInterval(() => {
       if (document.visibilityState !== 'visible' || !state.board) return;
       this.renderLimitChip(state.board.limits);
-      if (this.page === 'usage') this.render(state.board);
+      if (openViewKind() === 'usage') refreshViews();
     }, 30000);
   },
-  // The pages in the drawer; the home board and analytics are the board itself.
-  utilityPage() { return !['home', 'analytics'].includes(this.page); },
+  // A management page is open in the panel; home is the board alone.
+  utilityPage() { return DRAWER_PAGES.includes(this.page); },
+  // Pressing the open page again closes the panel, so one entry both opens and closes it.
+  toggle(page) { this.navigate(this.page === page ? 'home' : page); },
   navigate(value, { save = true, reload = true } = {}) {
     const next = workspacePage(value);
     this.switching = true;
     try {
-      this.page = next; state.view = next === 'analytics' ? 'analytics' : 'board';
+      this.page = next;
       closePopover();
-      if (next !== 'home' && next !== 'analytics') closeCards(); // a drawer and a card are both layer 1: the newer one wins
-      if (save) { store.set('workspacePage', next); store.set('view', state.view); }
+      if (next !== 'home') closeCards(); // the overlay covers the panel: opening a page brings the panel forward
+      if (save) store.set('workspacePage', next);
       this.syncShell();
-      if (state.board && state.view !== 'analytics') render();
+      if (state.board) render();
       if (reload) load();
     } finally { this.switching = false; }
   },
+  // The entry that is open — a management page or a sheet — is marked in every navigation.
+  current() { return openViewKind() || this.page; },
   syncShell() {
     document.body.dataset.page = this.page;
-    if (this.page === 'analytics') $('#logo').textContent = '分析';
     const utility = this.utilityPage();
-    if (utility && DRAWER_PAGES.includes(this.page)) this.lastMenu = this.page;
     this.drawer.hidden = !utility;
-    this.scrim.hidden = !utility;
-    $('#boardMenuBtn').setAttribute('aria-pressed', String(utility));
-    for (const b of [...this.tabs.children, ...$$('#sidebar [data-page]')]) b.setAttribute('aria-current', b.dataset.page === this.page ? 'page' : 'false');
-    this.title.replaceChildren(h('span', { html: picon(PAGE_ICONS[this.page] || 'more', 20) }), WORKSPACE_PAGES.find(([id]) => id === this.page)?.[1] || 'メニュー');
+    for (const b of $$('#sidebar [data-page]')) b.setAttribute('aria-current', b.dataset.page === this.current() ? 'page' : 'false');
+    this.title.replaceChildren(h('span', { html: picon(PAGE_ICONS[this.page] || 'more', 20) }), WORKSPACE_PAGES.find(([id]) => id === this.page)?.[1] || '');
     for (const entry of this.entries.values()) entry.el.hidden = entry.page !== this.page || (entry.page === 'settings' && entry.tab !== this.settingsTab);
-    $('.shell').inert = !paneLayer.hidden; // layer 0 waits while a card is open; the header and the board bar stay usable
+    $('.shell').inert = !paneLayer.hidden; // the board waits while the overlay is open; the app bar stays usable
     paintLayoutChrome();
   },
   trackDrafts(root) {
@@ -102,18 +97,16 @@ const workspace = {
     if (builders[this.page]) builders[this.page](anchor);
     else if (this.page === 'settings') this.renderSettings(entry, anchor, body);
     else if (this.page === 'directories') this.renderDirectories(entry, board);
-    else if (this.page === 'usage') this.renderUsage(entry, board);
     this.trackDrafts(entry.el);
     bridge.reportSize();
   },
   renderSettings(entry, anchor, body) {
-    const tabs = [['launch', '再開・送信'], ['display', '表示'], ['accounts', 'アカウント'], ['shortcuts', 'ショートカット']];
+    const tabs = [['launch', '再開・送信'], ['accounts', 'アカウント'], ['shortcuts', 'ショートカット']]; // 表示 lives in the app bar's 表示 menu
     entry.el.prepend(h('div', { class: 'page-tabs', role: 'group', 'aria-label': '設定の種類' }, tabs.map(([key, name]) =>
       h('button', { text: name, 'aria-pressed': String(this.settingsTab === key), onclick: () => {
         this.settingsTab = key; this.render(state.board);
       } }))));
     if (this.settingsTab === 'accounts') accountsMenu(anchor);
-    else if (this.settingsTab === 'display') { optionsMenu(anchor); body.prepend(h('h3', { text: 'レイアウトと色' }), layoutChooser(), h('div', { class: 'sep' })); }
     else if (this.settingsTab === 'shortcuts') body.append(h('div', { class: 'keys' }, SHORTCUTS.flatMap(([group, keys]) =>
       [h('h4', { text: group }), ...keys.flatMap(([k, v]) => [h('kbd', { text: k }), h('span', { text: v })])])));
     else settingsMenu(anchor);
@@ -155,7 +148,6 @@ const workspace = {
       const selected = usageWindows(a.limits).map(w => usageWindow(w, a.limits.at)).filter(Boolean).at(-1);
       return `${a.label} ${selected ? `${selected.label} ${selected.stale ? '要更新' : `残り${selected.remaining}%`}` : '未取得'}`;
     }).join(' · ') || 'アカウントの利用上限：未取得';
-    this.limit.textContent = text;
     // Account rings in the home header are the compact entry point to quota details.
     const bar = $('#limitsBar'); if (bar) bar.hidden = true;
     $('#accountsBtn')?.setAttribute('title', text);

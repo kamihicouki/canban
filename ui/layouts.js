@@ -1,66 +1,56 @@
 // Layout themes (included into board.html's script by server/ui.mjs; shares its scope).
-// The same parts — header, board bar, sidebar, board, menu drawer — are arranged five ways.
-// body[data-layout] drives the arrangement in layouts.css; this file adds the few parts a
-// layout has of its own (rail, dock, live HUD, tabs, category strip) and the picker.
+// The same parts — app bar, navigation, board, management panel, overlay — are arranged five ways
+// (docs/ui-components.md). body[data-layout] drives the arrangement in layouts.css; this file adds the
+// few parts a layout has of its own (rail, dock, live HUD, tabs, category strip) and the picker.
+// Each place has exactly one entry per layout: the navigation that a layout shows is its only index.
 const LAYOUTS = [
-  ['trello', 'Trello', 'グラデーションの背景に、半透明のヘッダーとサイドバー'],
+  ['trello', 'Trello', 'グラデーションの背景に、半透明のアプリバーとサイドバー。管理はサイドバーの隣に開く'],
   ['classic', '定番', 'サイドバーが上まで通る、落ち着いた配色（Linear・Notion 型）'],
   ['rail', 'レール', '左のレールで場所を選び、隣のパネルで中身を選ぶ（VS Code・Slack 型）'],
   ['omni', 'オムニバー', 'サイドバーなし。絞り込みは検索欄とカテゴリの帯、移動は下のドック'],
   ['hud', 'ライブ HUD', '動いているセッションを、いつも最上段にタイルで表示'],
 ];
 const layoutOf = (v) => (LAYOUTS.some(([id]) => id === v) ? v : 'trello');
-// Places a layout can jump to: [page, icon, label]. Pages other than home/analytics open the menu drawer.
+// Places a layout can jump to: [icon, label]. analytics / usage open a sheet on the overlay; the rest open the management panel.
 const PLACES = {
-  home: ['board', 'ボード'], analytics: ['chart', '分析'], usage: ['gauge', '使用量'], rules: ['zap', T.automation],
-  labels: ['tag', 'ラベル'], directories: ['folder', T.category], views: ['bookmark', 'ビュー'], hosts: ['server', 'マシン'], settings: ['gear', '設定'],
+  home: ['board', 'ボード'], analytics: ['chart', '分析'], usage: ['gauge', 'Agent Usage'], rules: ['zap', T.automation],
+  labels: ['tag', 'ラベル'], directories: ['folder', T.category], views: ['bookmark', '保存ビュー'], hosts: ['server', 'マシン'], settings: ['gear', '設定'],
 };
+const MANAGE_PLACES = ['rules', 'labels', 'directories', 'views', 'hosts', 'settings'];
 const layoutParts = {};
 
-function currentPlace() {
-  if (state.view === 'analytics') return 'analytics';
-  return workspace.utilityPage() ? workspace.page : 'home';
-}
+function currentPlace() { return workspace.current(); }
 function goPlace(page) {
-  workspace.navigate(page);
-  syncViewButton();
+  if (VIEW_SHEETS[page]) return toggleView(page);
+  if (page === 'home') { closeCards(); return workspace.navigate('home'); }
+  workspace.toggle(page);
 }
 const placeBtn = (page, cls, { label = PLACES[page][1], size = 20 } = {}) =>
   h('button', { class: cls, type: 'button', 'data-place': page, title: label, 'aria-label': label, onclick: () => goPlace(page) },
     h('span', { class: 'place-ic', html: picon(PLACES[page][0], size) }), h('span', { class: 'place-lbl', text: label }));
 
 function buildLayouts() {
-  const nextTheme = () => ({ light: 'dark', dark: 'system', system: 'light' }[state.themePref] || 'light');
-  const themeCycle = h('button', { class: 'rail-theme', type: 'button', onclick: () => { setThemePref(nextTheme()); paintLayoutChrome(); } });
-  layoutParts.themeCycle = themeCycle;
-  // B: the rail. Places with labels under the icons, theme and layout at the bottom.
+  // B: the rail lists every place; the column next to it shows views and categories, or the management page.
   layoutParts.rail = h('nav', { class: 'layout-rail', 'aria-label': '場所' },
     h('span', { class: 'rail-logo', html: LOGO_SVG }),
-    ...['home', 'analytics', 'usage', 'rules', 'hosts'].map((p) => placeBtn(p, 'rail-item', { size: 21 })),
-    h('span', { class: 'grow' }), themeCycle,
-    h('button', { class: 'rail-item', type: 'button', title: 'レイアウト', 'aria-label': 'レイアウト', onclick: (e) => layoutPicker(e.currentTarget) },
-      h('span', { class: 'place-ic', html: picon('layout', 21) }), h('span', { class: 'place-lbl', text: 'レイアウト' })),
-    placeBtn('settings', 'rail-item', { size: 21 }));
-  // C: the dock, floating over the bottom of the board.
+    ...['home', 'analytics', 'usage'].map((p) => placeBtn(p, 'rail-item', { size: 21 })), h('span', { class: 'rail-sep' }),
+    ...MANAGE_PLACES.map((p) => placeBtn(p, 'rail-item', { size: 21 })));
+  // C: the dock, floating over the bottom of the board: the only navigation of a layout without a sidebar.
   layoutParts.dock = h('nav', { class: 'layout-dock', 'aria-label': '場所' },
     ...['home', 'analytics', 'usage'].map((p) => placeBtn(p, 'dock-item', { size: 22 })), h('span', { class: 'dock-sep' }),
-    ...['rules', 'labels', 'directories', 'hosts', 'settings'].map((p) => placeBtn(p, 'dock-item', { size: 22 })), h('span', { class: 'dock-sep' }),
-    h('button', { class: 'dock-item dock-add', type: 'button', title: 'タスクを作成（c）', onclick: () => taskQuickAdd.open() },
-      h('span', { class: 'place-ic', html: picon('plus', 22) }), h('span', { class: 'place-lbl', text: 'タスク' })));
-  // D: tabs in the header and the live HUD under the board bar.
+    ...MANAGE_PLACES.map((p) => placeBtn(p, 'dock-item', { size: 22 })));
+  // D: the board and the two sheets as tabs in the app bar; management stays in the sidebar.
   layoutParts.tabs = h('nav', { class: 'layout-tabs', 'aria-label': '場所' },
-    ...['home', 'analytics', 'usage'].map((p) => placeBtn(p, 'layout-tab', { size: 17 })),
-    placeBtn('rules', 'layout-tab', { label: '管理', size: 17 }));
+    ...['home', 'analytics', 'usage'].map((p) => placeBtn(p, 'layout-tab', { size: 17 })));
   layoutParts.hud = h('section', { class: 'live-hud', 'aria-label': '動いているセッション' });
-  // C: categories as a strip of pills in the board bar.
+  // C: categories as a strip of pills in the app bar.
   layoutParts.strip = h('div', { class: 'cat-strip', role: 'group', 'aria-label': T.category });
   const content = $('.app-content');
   content.prepend(layoutParts.rail);
   content.append(layoutParts.dock);
-  $('.boardbar').after(layoutParts.hud);
+  $('.topbar').after(layoutParts.hud);
   $('#brand').after(layoutParts.tabs);
-  $('#logo').after(layoutParts.strip);
-  $('#layoutBtn').addEventListener('click', (e) => layoutPicker(e.currentTarget));
+  $('#quickTaskBtn').after(layoutParts.strip);
   applyLayout();
 }
 
@@ -73,24 +63,14 @@ function setLayout(id) {
   state.layout = layoutOf(id);
   store.set('layout', state.layout);
   applyLayout();
-  if (state.board && state.view !== 'analytics') render();
+  if (state.board) render();
 }
 
 // Called after every board render and page change.
 function paintLayoutChrome() {
   if (!layoutParts.rail) return;
   const here = currentPlace();
-  // The HUD's 管理 tab stands for every management page except Agent Usage (which has its own tab).
-  const managing = DRAWER_PAGES.includes(here) && here !== 'usage';
-  for (const b of $$('[data-place]')) {
-    const on = b.dataset.place === here || (managing && b.dataset.place === 'rules' && !!b.closest('.layout-tabs'));
-    b.setAttribute('aria-current', String(on));
-  }
-  // (THEME_PREFS is defined later in board.html; this runs during start-up.)
-  const pref = ['light', 'dark'].includes(state.themePref) ? state.themePref : 'system';
-  const name = { light: 'ライト', dark: 'ダーク', system: 'システム' }[pref];
-  layoutParts.themeCycle.replaceChildren(h('span', { class: 'place-ic', html: picon(pref === 'system' ? 'system' : pref === 'dark' ? 'moon' : 'sun', 21) }), h('span', { class: 'place-lbl', text: name }));
-  layoutParts.themeCycle.title = `テーマ: ${name}（押すと次へ）`;
+  for (const b of $$('[data-place]')) b.setAttribute('aria-current', String(b.dataset.place === here));
   const b = state.board;
   if (!b) return;
   if (state.layout === 'omni') paintStrip(b);
@@ -140,7 +120,4 @@ function layoutChooser(after = () => {}) {
   };
   paint();
   return box;
-}
-function layoutPicker(anchor) {
-  popover(anchor, 'レイアウトと色', layoutChooser(), { width: 460 });
 }

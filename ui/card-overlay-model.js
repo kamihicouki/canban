@@ -5,7 +5,10 @@ const CARD_KINDS = ['session', 'task'];
 const CARD_WIDTH_DEF = { session: 720, task: 520 };
 const CARD_WIDTH_MIN = 360, CARD_WIDTH_MAX = 1200;
 const TASK_SESSIONS_MAX = 8;
-const cardKind = (id) => (String(id).startsWith('task:') ? 'task' : 'session');
+// Analytics and Agent Usage open on the same layer as sheets, under ids of their own ("view:analytics").
+const VIEW_SHEETS = { analytics: ['chart', '分析'], usage: ['gauge', 'Agent Usage'] };
+const cardKind = (id) => (String(id).startsWith('task:') ? 'task' : String(id).startsWith('view:') ? 'view' : 'session');
+const viewOf = (id) => (cardKind(id) === 'view' && Object.hasOwn(VIEW_SHEETS, String(id).slice(5)) ? String(id).slice(5) : null);
 function normalizeCardWidths(value) {
   const out = {};
   for (const kind of CARD_KINDS) {

@@ -35,19 +35,16 @@ test('Chrome build emits an MV3 toolbar extension with an external CSP-safe boar
   }
 });
 
-test('adopting shared view state refreshes the board and analytics toggle', () => {
+test('adopting shared state from an older version lands on the board: analytics is no longer a page', () => {
   const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
   const adopt = html.match(/function adoptSharedUi\(record\) \{([\s\S]*?)\n\}\n\nasync function applySharedUi/);
-  const toggle = html.match(/function syncViewButton\(\) \{[\s\S]*?\n\}/)[0];
-  const analytics = { setAttribute(name, value) { this[name] = value; } };
-  const boardView = { setAttribute(name, value) { this[name] = value; } };
-  const state = { view: 'board' };
-  const context = vm.createContext({ state, sharedUi: {}, SHARED_UI_KEYS: ['view'], workspacePage: (page,fallback) => page || fallback, workspace: { navigate() {} }, store: { cache() {} },
-    $: (selector) => selector === '#analyticsBtn' ? analytics : selector === '#boardViewBtn' ? boardView : null });
-  vm.runInContext(`${toggle}\nfunction adoptSharedUi(record) {${adopt[1]}\n}\nadoptSharedUi({revision: 1, state: {view: 'analytics'}});`, context);
-  assert.equal(state.view, 'analytics');
-  assert.equal(analytics['aria-pressed'], 'true');
-  assert.equal(boardView['aria-pressed'], 'false');
+  const pages = ['home', 'rules', 'settings'], navigated = [];
+  const state = { filters: {} };
+  const context = vm.createContext({ state, sharedUi: {}, SHARED_UI_KEYS: ['workspacePage'], workspacePage: (page, fallback = 'home') => (pages.includes(page) ? page : fallback),
+    workspace: { navigate(page) { navigated.push(page); } }, store: { cache() {} }, $: () => null });
+  vm.runInContext(`function adoptSharedUi(record) {${adopt[1]}\n}\nadoptSharedUi({revision: 1, state: {view: 'analytics', workspacePage: 'analytics'}});`, context);
+  assert.deepEqual(navigated, ['home']);
+  assert.equal(state.view, undefined);
 });
 
 test('Chrome bridge waits for every large-response chunk before decoding', () => {

@@ -1,7 +1,6 @@
 // Pure routing and presentation rules; also exercised by the Node tests.
 const WORKSPACE_PAGES = [
   ['home', 'ホーム', 'home'],
-  ['usage', 'Agent Usage', 'chart-no-axes-combined'], ['analytics', '分析', 'chart-column'],
   ['rules', '自動化', 'zap'], ['views', '保存ビュー', 'bookmark'],
   ['labels', 'ラベル', 'tags'], ['directories', 'カテゴリ', 'folder'],
   ['hosts', 'マシン', 'monitor'], ['settings', '設定', 'settings'],

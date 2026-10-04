@@ -5,20 +5,14 @@ body { display: flex; flex-direction: column; height: 100%; }
 .app-content { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0;
   background: linear-gradient(135deg, var(--board-bg), var(--board-bg-2)); }
 .app-content > .shell { flex: 1; min-height: 0; position: relative; }
-/* The menu drawer: Trello's board menu, over the board and under the two bars. */
-.drawer-scrim { position: absolute; inset: 0; background: var(--drawer-scrim); z-index: 800; }
-.mgmt-drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(680px, 100%); z-index: 801; display: flex; flex-direction: column;
-  background: var(--list-bg); color: var(--list-fg); box-shadow: -12px 0 40px rgba(9,30,66,.28); border-top-left-radius: 12px; }
-.drawer-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 8px 18px; }
-.drawer-head h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 18px; flex: none; white-space: nowrap; }
-.drawer-head .usage-link { flex: 0 1 auto; min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The management panel: opens next to the navigation and pushes the board aside (no scrim, no tabs). */
+.mgmt-drawer { position: relative; flex: none; width: min(560px, 46vw); min-height: 0; display: flex; flex-direction: column;
+  background: var(--modal-bg); color: var(--list-fg); box-shadow: 4px 0 16px rgba(9,30,66,.12); z-index: 2; }
+.drawer-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 8px 18px; border-bottom: 1px solid var(--btn-subtle-hover); }
+.drawer-head h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 18px; flex: 1; white-space: nowrap; }
 .drawer-close { width: 32px; height: 32px; border-radius: 6px; display: grid; place-items: center; color: var(--list-muted); }
 .drawer-close:hover { background: var(--btn-subtle-hover); color: var(--list-fg); }
-.drawer-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 14px 10px; border-bottom: 1px solid var(--btn-subtle-hover); }
-.drawer-tabs button { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: 6px; font-weight: 600; color: var(--list-muted); }
-.drawer-tabs button:hover { background: var(--btn-subtle-hover); color: var(--list-fg); }
-.drawer-tabs button[aria-current="page"] { background: var(--accent); color: #fff; }
-.usage-link { font-size: 12px; padding: 6px 10px; background: var(--btn-subtle); border-radius: 8px; }
+@media (max-width: 720px) { .mgmt-drawer { position: absolute; inset: 0; width: auto; z-index: 760; } }
 .workspace-pages { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; }
 .workspace-page { padding: 14px 18px 20px; }
 .page-panel { padding: 20px; background: var(--modal-panel); border-radius: 10px; border: 1px solid var(--btn-subtle-hover); margin-bottom: 16px; }
@@ -98,7 +92,6 @@ body[data-page="settings"] .page-panel > .seg { display: flex; flex-wrap: wrap; 
 .overlay .modal-head { flex: none; }
 .overlay .modal-body { min-height: 0; flex: 1; overflow: auto; }
 .overlay .modal-grid { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; }
-.app-content .analytics { max-width: 1400px; }
 @media(max-width:719px) {
   .workspace-page { padding: 12px; }
   .page-grid { grid-template-columns: minmax(0,1fr); }

@@ -8,10 +8,10 @@ const source = fs.readFileSync(new URL('../ui/workspace-model.js', import.meta.u
 const model = new vm.Script(source + '\n({workspacePage, usageWindow, normalizePaneLayout})').runInNewContext();
 const plain = value => JSON.parse(JSON.stringify(value));
 
-test('workspace routes preserve old home and analytics fallbacks', () => {
-  assert.equal(model.workspacePage('usage'), 'usage');
-  assert.equal(model.workspacePage('unknown', 'analytics'), 'analytics');
-  assert.equal(model.workspacePage(null), 'home');
+test('pages are the board and the management pages; analytics and Agent Usage open as sheets, not pages', () => {
+  assert.equal(model.workspacePage('rules'), 'rules');
+  assert.equal(model.workspacePage('settings'), 'settings');
+  for (const old of ['usage', 'analytics', 'cards', null]) assert.equal(model.workspacePage(old), 'home');
 });
 test('usage separates used and remaining amounts and names the limit window', () => {
   const now=1790760000000;
@@ -45,31 +45,23 @@ test('MCP UI includes feature modules and still compiles as one self-contained s
   new vm.Script(html.match(/<script>([\s\S]*?)<\/script>/)[1]);
 });
 
-test('restoring analytics migrates a legacy project scope before requesting category statistics', async () => {
+test('analytics follows the board filters and renders into its sheet, after the board has loaded', async () => {
   const html = boardHtml();
-  const loading = html.slice(html.indexOf('let loadSeq = 0;'), html.indexOf('function saveFilters()'));
-  const analytics = html.slice(html.indexOf('async function loadAnalytics('), html.indexOf('function svgEl('));
-  const calls = []; let saved = 0, rendered = 0;
-  const state = { view: 'analytics', board: null, filters: { project: 'Old Project', folder: '/old', swimlane: 'project', directory: '', agent: 'codex', host: 'local', account: 'a1' } };
-  const context = vm.createContext({ state, saveFilters: () => saved++, renderAnalytics: () => rendered++,
-    store: { values: new Map(), get(key, fallback) { return this.values.get(key) ?? fallback; }, set(key, value) { this.values.set(key, value); } },
-    bridge: { callTool: async (name, args) => {
-      calls.push([name, plain(args)]);
-      return name === 'canban_get_board' ? { directories: [{ id: 'd1', name: 'Old Project' }] } : {};
-    } },
-  });
-  await vm.runInContext(`${loading}\n${analytics}\nload();`, context);
-  assert.deepEqual(calls.map(([name]) => name), ['canban_get_board', 'canban_get_stats']);
-  assert.deepEqual(calls[1][1], { days: 30, agent: 'codex', host: 'local', account: 'a1', directory: 'd1' });
-  assert.equal(state.filters.project, ''); assert.equal(state.filters.folder, '');
-  assert.equal(state.filters.swimlane, 'directory'); assert.equal(saved, 1); assert.equal(rendered, 1);
-  Object.assign(state.filters, { project: 'New Project', folder: 'new-folder', swimlane: 'project', label: 'l1' });
-  await vm.runInContext('load();', context);
-  assert.equal(state.filters.project, 'New Project');
-  assert.equal(state.filters.folder, 'new-folder');
-  assert.equal(state.filters.swimlane, 'project');
-  assert.equal(calls.at(-1)[1].project, 'New Project');
-  assert.equal(calls.at(-1)[1].label, 'l1');
+  const analytics = html.slice(html.indexOf('let statsSeq = 0;'), html.indexOf('function svgEl('));
+  const calls = [], rendered = [];
+  const p = { id: 'view:analytics', el: {} }, panes = [p];
+  const state = { board: null, analyticsDays: 7, filters: { directory: 'd1', agent: 'codex', host: 'local', account: 'a1', label: 'l1' } };
+  const context = vm.createContext({ state, panes, $: () => ({ replaceChildren() {} }), h: () => ({}), renderAnalytics: (st, pane) => rendered.push([st, pane]),
+    bridge: { callTool: async (name, args) => { calls.push([name, plain(args)]); return { ok: true }; } } });
+  vm.runInContext(analytics, context);
+  await vm.runInContext('loadAnalytics(panes[0]);', context);
+  assert.equal(calls.length, 0); // no board yet: refreshViews() comes back after the board loads
+  state.board = { lists: [] };
+  await vm.runInContext('loadAnalytics(panes[0]);', context);
+  assert.deepEqual(calls, [['canban_get_stats', { days: 7, agent: 'codex', label: 'l1', host: 'local', account: 'a1', directory: 'd1' }]]);
+  assert.equal(rendered.length, 1); assert.equal(rendered[0][1], p);
+  panes.length = 0; await vm.runInContext('loadAnalytics(panes[0] || {el:{}});', context);
+  assert.equal(rendered.length, 1); // a sheet closed meanwhile is not drawn into
 });
 
 test('explicit shared-state reload keeps edited forms and open panes', async () => {
@@ -173,9 +165,9 @@ test('task autosave advances only the submitted draft baseline', async()=>{
   await w.saveField(input,async()=>{throw new Error('db_busy');});
   assert.equal(w.draftValues.get(input),'保存する値');
 });
-test('only the drawer pages are pages; the home board and analytics are the board itself', () => {
+test('only the management pages open the panel; the home board is the board itself', () => {
   const w = workspaceHarness();
-  for (const [page, utility] of [['home', false], ['analytics', false], ['usage', true], ['settings', true]]) { w.page = page; assert.equal(w.utilityPage(), utility, page); }
+  for (const [page, utility] of [['home', false], ['rules', true], ['settings', true]]) { w.page = page; assert.equal(w.utilityPage(), utility, page); }
   assert.equal(model.workspacePage('cards'), 'home'); // the old card dashboard page folds into the board
 });
 test('a session linked again while its task is open is loaded afresh, a card that stayed is not', () => {
