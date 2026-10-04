@@ -15,6 +15,82 @@ import shutil
 import signal
 import subprocess
 import sys
+import base64
+import hashlib
+
+def prompt_images(a):
+    images = a.get('images') or []
+    if not isinstance(images, list) or len(images) > 8:
+        raise ValueError('画像は8枚までです')
+    out = []
+    folder = os.path.join(HOME, '.canban-remote', 'prompt-images')
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    types = {'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif'}
+    for image in images:
+        if image.get('mime') not in types or not re.fullmatch(r'[a-f0-9]{64}', image.get('sha256') or ''):
+            raise ValueError('画像の指定が不正です')
+        data = base64.b64decode(image.get('data') or '', validate=True)
+        if not 0 < len(data) <= 10 * 1024 * 1024 or hashlib.sha256(data).hexdigest() != image['sha256']:
+            raise ValueError('画像の内容が一致しません')
+        file = os.path.join(folder, image['sha256'] + '.' + types[image['mime']])
+        fd = os.open(file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'wb') as f:
+            f.write(data)
+        out.append({k: v for k, v in image.items() if k not in ('data', 'path')})
+        out[-1]['path'] = file
+    return {'ok': True, 'images': out}
+
+def prompt_skills(a):
+    agent = a.get('agent') or 'codex'
+    if agent not in ('codex', 'claude'):
+        raise ValueError('未対応のAI Appです')
+    home = a.get('homeDir') or os.environ.get('CODEX_HOME' if agent == 'codex' else 'CLAUDE_CONFIG_DIR') or os.path.join(HOME, '.' + agent)
+    roots = [os.path.join(home, 'skills'), os.path.join(home, 'plugins', 'cache')]
+    if agent == 'codex':
+        roots.append(os.path.join(HOME, '.agents', 'skills'))
+    cwd = a.get('cwd') or ''
+    if cwd and not os.path.isabs(cwd):
+        raise ValueError('作業フォルダは絶対パスで指定してください')
+    while cwd:
+        roots.insert(0, os.path.join(cwd, '.agents' if agent == 'codex' else '.claude', 'skills'))
+        if agent == 'codex':
+            roots.insert(0, os.path.join(cwd, '.codex', 'skills'))
+        parent = os.path.dirname(cwd)
+        if parent == cwd:
+            break
+        cwd = parent
+    skills, seen = [], set()
+    def walk(folder, depth=0):
+        real = os.path.realpath(folder)
+        if real in seen or depth > 8 or len(skills) >= 1000:
+            return
+        seen.add(real)
+        file = os.path.join(folder, 'SKILL.md')
+        try:
+            if os.path.isfile(file):
+                with open(file, encoding='utf-8') as f:
+                    text = f.read(16000)
+                header = re.match(r'^---\r?\n([\s\S]*?)\r?\n---', text)
+                header = header.group(1) if header else ''
+                name = re.search(r'^name:\s*[\"\x27]?([^\r\n\"\x27]+)', header, re.M)
+                name = name.group(1).strip() if name else os.path.basename(folder)
+                if not re.fullmatch(r'[\w.:-]+', name):
+                    return
+                description = re.search(r'^description:\s*(.+)', header, re.M)
+                description = description.group(1).strip() if description else ''
+                if re.fullmatch(r'[>|]-?', description):
+                    match = re.search(r'^description:\s*[>|]-?\s*\n((?:[ \t]+[^\n]*\n?)+)', header, re.M)
+                    description = ' '.join(match.group(1).split()) if match else ''
+                skills.append({'name': name, 'path': file, 'description': description.strip('\"\x27')[:300]})
+                return
+            for entry in os.scandir(folder):
+                if entry.name not in ('node_modules', '.git') and entry.is_dir():
+                    walk(entry.path, depth + 1)
+        except (OSError, UnicodeError):
+            pass
+    for root in roots:
+        walk(root)
+    return {'ok': True, 'skills': sorted(skills, key=lambda s: (s['name'], s['path']))}
 
 HOME = os.path.expanduser("~")
 RUNS = os.path.join(HOME, ".canban-remote", "runs")
@@ -162,7 +238,7 @@ def stop(a):
 def main():
     a = args()
     mode = a.get("mode")
-    handlers = {"inspect": inspect, "start": start, "poll": poll, "stop": stop}
+    handlers = {"inspect": inspect, "start": start, "poll": poll, "stop": stop, "prompt_images": prompt_images, "prompt_skills": prompt_skills}
     if mode not in handlers:
         result = {"ok": False, "error": "unknown mode"}
     else:

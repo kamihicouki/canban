@@ -98,6 +98,27 @@ test('list and card operations persist only to the kanban store', async () => {
   assert.equal(bad.isError, true);
 });
 
+test('an archive rule can be replayed over MCP even when disabled and archived cards are filtered out', async () => {
+  const archive = (await call('canban_create_list', { title: 'アーカイブ' })).structuredContent.result;
+  const saved = await call('canban_set_rule', { id: 'archive-replay', enabled: false, trigger: 'archived', fromListId: 'any', toListId: archive.id });
+  assert.ok(!saved.isError, saved.content?.[0]?.text);
+  const hidden = (await call('canban_get_board', { includeArchived: false, days: 0 })).structuredContent;
+  assert.ok(!hidden.lists.flatMap((l) => l.cards).some((c) => c.archived));
+  const res = await call('canban_run_rule', { ruleId: 'archive-replay' });
+  assert.ok(!res.isError, res.content?.[0]?.text);
+  assert.equal(res.structuredContent.result.moved, 2);
+  const board = (await call('canban_get_board', { includeArchived: true, days: 0 })).structuredContent;
+  assert.deepEqual(board.lists.find((l) => l.id === archive.id).cards.map((c) => c.id).sort(), ['claude:c1', 'codex:t3']);
+  assert.equal(board.settings.rules.find((r) => r.id === 'archive-replay').enabled, false);
+  assert.equal((await call('canban_run_rule', { ruleId: 'archive-replay' })).structuredContent.result.moved, 0);
+  for (const cardId of ['claude:c1', 'codex:t3']) {
+    assert.ok(!(await call('canban_undo_move', { cardId })).isError);
+  }
+  assert.equal((await call('canban_run_rule', { ruleId: 'missing' })).isError, true);
+  await call('canban_delete_rule', { ruleId: 'archive-replay' });
+  await call('canban_delete_list', { listId: archive.id });
+});
+
 test('directories: source categories, explicit assignment and category-less filter', async () => {
   const dir = (await call('canban_create_directory', { name: 'Web', paths: ['/r/web'] })).structuredContent.result;
   let board = (await call('canban_get_board', { days: 0 })).structuredContent;
@@ -226,6 +247,28 @@ test('accounts: usage is visible to the model, account settings only to the boar
   assert.equal(board.accounts.accounts.find((a) => a.key === 'claude:a').label, '個人');
   const ids = board.lists.flatMap((l) => l.cards.map((c) => c.id)); // c2, possibly inside a task card
   assert.ok(ids.length && !ids.some((id) => id.startsWith('codex:')));
+});
+
+test('account actions are app-only; refresh settings persist and public patches cannot inject snapshots', async () => {
+  const { result } = await rpc('tools/list');
+  for (const name of ['canban_refresh_account_usage', 'canban_set_usage_refresh', 'canban_start_account_login', 'canban_check_account_login', 'canban_cancel_account_login', 'canban_move_account_home']) {
+    assert.equal(result.tools.find(t => t.name === name)?._meta.ui.visibility.join(), 'app');
+  }
+  const saved = await call('canban_set_usage_refresh', { enabled: false, intervalMinutes: 7 });
+  assert.equal(saved.structuredContent.result.intervalMinutes, 7);
+  const usage = (await call('canban_get_usage')).structuredContent;
+  assert.equal(usage.refresh.enabled, false); assert.equal(usage.refresh.intervalMinutes, 7);
+  assert.equal((await call('canban_set_usage_refresh', { intervalMinutes: 0 })).isError, true);
+  await call('canban_update_accounts', { usage: { 'claude:a': { primary: { usedPercent: 99 }, at: Date.now(), status: 'ok' } }, profiles: [{ accessToken: 'PRIVATE-TOKEN' }] });
+  const before = (await call('canban_get_usage')).structuredContent.accounts.find(a => a.key === 'claude:a');
+  assert.equal(before.usage, null);
+  const refreshed = await call('canban_refresh_account_usage', { key: 'claude:a' });
+  assert.equal(refreshed.structuredContent.result.updated[0].status, 'error');
+  const after = (await call('canban_get_usage')).structuredContent.accounts.find(a => a.key === 'claude:a');
+  assert.equal(after.usage.code, 'unavailable');
+  assert.doesNotMatch(JSON.stringify(after), /PRIVATE-TOKEN/);
+  assert.deepEqual((await call('canban_refresh_account_usage', { automatic: true })).structuredContent.result.updated, []);
+  await call('canban_set_usage_refresh', { enabled: true, intervalMinutes: 5 });
 });
 
 test('task dashboards are app-only, retain closed linked panes and reject stale revisions and subagents', async () => {

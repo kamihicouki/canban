@@ -1,11 +1,11 @@
 // Kanban state store. This is the only module that writes to disk, and it only
-// writes inside the kanban data directory (default ~/.canban).
+// writes inside the configured Canban data directory.
 import { isMainThread, proxyStore } from './sqlite-client.mjs';
 import { readBoard, writeBoard, transaction, currentFence } from './sqlite-backend.mjs';
 import { defaultAccounts, normalizeAccounts, applyAccountPatch } from './accounts-settings.mjs';
 import path from 'node:path';
-import os from 'node:os';
 import crypto from 'node:crypto';
+import { resolveDataDirectory } from './data-directory.mjs';
 import { normalizeTaskDashboard, taskDashboardRecord } from './task-dashboard.mjs';
 import { normalizeTaskContext } from './task-context.mjs';
 
@@ -17,11 +17,12 @@ export const TERMINALS = ['ghostty', 'terminal', 'iterm'];
 export const TERMINAL_TARGETS = ['new-window', 'new-tab', 'split', 'current'];
 
 export function dataDir() {
-  return process.env.CANBAN_DATA_DIR || path.join(os.homedir(), '.canban');
+  return resolveDataDirectory();
 }
 
 export const RULE_TRIGGERS = [
   'status:running', 'status:waiting', 'status:completed', 'status:aborted', 'activity',
+  'archived',
   'pr:opened', 'pr:merged', 'pr:closed', 'ci:failed', 'ci:passed',
 ];
 const HISTORY_MAX = 50;
@@ -509,14 +510,23 @@ export class Store {
   }
 
   // ---- rule-driven moves -------------------------------------------------
-  // moves: [{cardId, toListId, order, ruleId}] — the previous placement is kept for undo.
-  applyAutoMoves(moves) {
+  // moves: [{cardId, fromListId?, toListId, order, ruleId}] — keep previous placement for undo.
+  applyAutoMoves(moves, { rule = null } = {}) {
     if (!moves.length) return Promise.resolve([]);
     return this.mutate((s) => {
+      if (rule) {
+        const current = s.settings.rules.find((r) => r.id === rule.id);
+        if (!current || ['trigger', 'fromListId', 'toListId'].some((k) => current[k] !== rule[k])) {
+          throw new Error('自動化が変更または削除されました。もう一度実行してください');
+        }
+        if (!s.lists.some((l) => l.id === rule.toListId)) throw new Error('移動先のリストが見つかりません');
+      }
       const done = [];
       const at = new Date().toISOString();
       for (const m of moves) {
         if (!s.lists.some((l) => l.id === m.toListId)) continue;
+        const currentListId = s.cards[m.cardId]?.listId ?? s.defaultListId;
+        if (currentListId === m.toListId || (m.fromListId && m.fromListId !== currentListId)) continue;
         const card = (s.cards[m.cardId] ||= {});
         const prev = { listId: card.listId ?? null, order: card.order ?? null };
         placeCard(card, m.toListId, m.order, at);

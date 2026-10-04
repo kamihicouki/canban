@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { chromeRuntimeDirectory, installChromeRuntime } from './chrome-runtime.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -25,7 +26,7 @@ const manifestPath = path.join(hostsDir, `${hostName}.json`);
 const manifest = {
   name: hostName,
   description: 'Canban Native Messaging Host',
-  path: path.join(root, 'scripts', 'chrome-native-host.sh'),
+  path: path.join(chromeRuntimeDirectory(hostName), 'native-host.sh'),
   type: 'stdio',
   allowed_origins: [`chrome-extension://${extensionId}/`],
 };
@@ -46,6 +47,7 @@ if (uninstall) {
     else throw error;
   }
 } else {
+  installChromeRuntime({ repository: root, runtimeDirectory: chromeRuntimeDirectory(hostName) });
   fs.mkdirSync(hostsDir, { recursive: true });
   const tempPath = `${manifestPath}.${process.pid}.tmp`;
   fs.writeFileSync(tempPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });

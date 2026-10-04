@@ -10,6 +10,21 @@
   --board-bg-2: #5067c5;
   --header-bg: rgba(0, 0, 0, 0.24);
   --header-fg: #fff;
+  --header-dim: rgba(255, 255, 255, 0.78);
+  --header-btn: rgba(255, 255, 255, 0.2);
+  --header-btn-hover: rgba(255, 255, 255, 0.32);
+  --boardbar-bg: rgba(0, 0, 0, 0.12);
+  --side-bg: rgba(0, 0, 0, 0.24);
+  --side-active: rgba(255, 255, 255, 0.26);
+  --drawer-scrim: rgba(9, 30, 66, 0.24);
+  --on-board: #fff; --on-board-dim: rgba(255, 255, 255, 0.85); --on-board-btn: rgba(255, 255, 255, 0.2); --on-board-btn-hover: rgba(255, 255, 255, 0.32);
+  --pressed-bg: #fff; --pressed-fg: #0c66e4; --primary-bg: #fff; --primary-fg: #0c66e4;
+  --tone-run: #216e4e; --tone-run-bg: #dcfff1; --tone-wait: #7f5f01; --tone-wait-bg: #fff7d6;
+  --tone-err: #ae2e24; --tone-err-bg: #ffeceb; --tone-done: #0055cc; --tone-done-bg: #e9f2ff;
+  --tone-idle: #44546f; --tone-idle-bg: rgba(9, 30, 66, 0.06);
+  --ag-codex: #0a7c62; --ag-codex-bg: #dff5ee; --ag-claude: #a8462a; --ag-claude-bg: #fdeee8; --ag-task: #5e4db2; --ag-task-bg: #f3f0ff;
+  --logo-bg: #fff;
+  --logo-fg: #0c66e4;
   --list-bg: #f1f2f4;
   --list-fg: #172b4d;
   --list-muted: #44546f;
@@ -41,6 +56,20 @@
   --board-bg: #1d2125;
   --board-bg-2: #0b2a4a;
   --header-bg: rgba(0, 0, 0, 0.35);
+  --header-dim: rgba(255, 255, 255, 0.7);
+  --header-btn: rgba(255, 255, 255, 0.12);
+  --header-btn-hover: rgba(255, 255, 255, 0.2);
+  --boardbar-bg: rgba(0, 0, 0, 0.2);
+  --side-bg: rgba(0, 0, 0, 0.32);
+  --side-active: rgba(255, 255, 255, 0.18);
+  --drawer-scrim: rgba(0, 0, 0, 0.4);
+  --pressed-bg: #dee4ea; --pressed-fg: #1d2125; --primary-bg: #579dff; --primary-fg: #1d2125;
+  --tone-run: #7ee2b8; --tone-run-bg: #164b35; --tone-wait: #f5cd47; --tone-wait-bg: #533f04;
+  --tone-err: #fd9891; --tone-err-bg: #5d1f1a; --tone-done: #85b8ff; --tone-done-bg: #09326c;
+  --tone-idle: #9fadbc; --tone-idle-bg: rgba(255, 255, 255, 0.06);
+  --ag-codex: #6cd4b6; --ag-codex-bg: #0f3a30; --ag-claude: #f0a281; --ag-claude-bg: #4a2617; --ag-task: #b8acf6; --ag-task-bg: #352c63;
+  --logo-bg: #579dff;
+  --logo-fg: #1d2125;
   --list-bg: #101204;
   --list-fg: #b6c2cf;
   --list-muted: #8c9bab;
@@ -76,31 +105,25 @@ button { cursor: pointer; border: 0; background: none; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 
 /* ---------- header ---------- */
-.topbar {
-  display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow: hidden; white-space: nowrap;
-  padding: 10px 12px; background: var(--header-bg); color: var(--header-fg);
-  backdrop-filter: blur(6px);
-}
-.topbar h1 { font-size: 18px; margin: 0 8px 0 4px; font-weight: 700; white-space: nowrap; }
-.topbar .spacer { flex: 1 1 0; min-width: 4px; }
 /* @include header.css */
 /* @include accounts.css */
 /* @include task-quick-add.css */
+/* @include prompt-composer.css */
 .hbtn, .hselect, .hsearch {
-  height: 32px; border-radius: 4px; background: rgba(255,255,255,0.2); color: #fff; border: 0; padding: 0 10px;
+  height: 32px; border-radius: 6px; background: var(--header-btn); color: var(--header-fg); border: 0; padding: 0 10px;
 }
-.hbtn:hover, .hselect:hover { background: rgba(255,255,255,0.3); }
-.hbtn[aria-pressed="true"] { background: #dfe1e6; color: #172b4d; }
+.hbtn:hover, .hselect:hover { background: var(--header-btn-hover); }
+.hbtn[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-fg); }
 .hselect option { color: #172b4d; }
 #projectBtn { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn, .btn-primary, .btn-danger { white-space: nowrap; flex: none; }
-.hsearch { width: 220px; background: rgba(255,255,255,0.2); }
-.hsearch::placeholder { color: rgba(255,255,255,0.8); }
-.hsearch:focus { background: #fff; color: #172b4d; outline: none; }
-.seg { display: inline-flex; border-radius: 4px; overflow: hidden; }
-.seg button { height: 32px; padding: 0 10px; background: rgba(255,255,255,0.2); color: #fff; }
-.seg button + button { border-left: 1px solid rgba(255,255,255,0.15); }
-.seg button[aria-pressed="true"] { background: #dfe1e6; color: #172b4d; font-weight: 600; }
+.hsearch { width: 220px; }
+.hsearch::placeholder { color: var(--header-dim); }
+.hsearch:focus { background: var(--input-bg); color: var(--list-fg); outline: none; }
+.seg { display: inline-flex; border-radius: 6px; overflow: hidden; padding: 2px; gap: 2px; background: var(--header-btn); }
+.seg button { height: 28px; padding: 0 10px; border-radius: 4px; color: var(--header-fg); font-weight: 600; }
+.seg button:hover { background: var(--header-btn-hover); }
+.seg button[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-fg); }
 .stat { font-size: 12px; opacity: 0.9; white-space: nowrap; }
 .errbar { background: var(--warn-bg); color: var(--warn-fg); padding: 6px 12px; font-size: 13px; }
 
@@ -132,17 +155,52 @@ button { cursor: pointer; border: 0; background: none; }
 .more-btn:hover { background: var(--btn-subtle-hover); }
 
 .card {
-  background: var(--card-bg); color: var(--card-fg); border-radius: 8px; box-shadow: var(--card-shadow);
-  padding: 8px 10px; cursor: pointer; user-select: none; position: relative; touch-action: none;
+  background: var(--card-bg); color: var(--card-fg); border-radius: 10px; box-shadow: var(--card-shadow);
+  padding: 9px 11px 8px; cursor: pointer; user-select: none; position: relative; touch-action: none;
+  display: flex; flex-direction: column; gap: 6px;
 }
+/* Equal-height cards: every slot keeps its place, so the eye and j/k move in a steady rhythm. */
+.card.fixed { height: 150px; flex: none; }
+.card-top { display: flex; align-items: center; gap: 5px; min-height: 22px; font-size: 11.5px; line-height: 1; min-width: 0; }
+.card-top .grow { flex: 1; min-width: 0; }
+.st { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; padding: 4px 7px 4px 6px; border-radius: 6px; white-space: nowrap; flex: none; }
+.st i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.st i.pulse-dot { animation: pulse 1.6s infinite; box-shadow: 0 0 0 0 currentColor; }
+.st-run { color: var(--tone-run); background: var(--tone-run-bg); }
+.st-wait { color: var(--tone-wait); background: var(--tone-wait-bg); }
+.st-err { color: var(--tone-err); background: var(--tone-err-bg); }
+.st-done { color: var(--tone-done); background: var(--tone-done-bg); }
+.st-idle { color: var(--tone-idle); background: var(--tone-idle-bg); }
+.ag { font-weight: 700; padding: 4px 6px; border-radius: 6px; white-space: nowrap; flex: none; }
+.ag-codex { color: var(--ag-codex); background: var(--ag-codex-bg); }
+.ag-claude { color: var(--ag-claude); background: var(--ag-claude-bg); }
+.ag-task { color: var(--ag-task); background: var(--ag-task-bg); }
+.flag { font-size: 11px; font-weight: 600; padding: 3px 5px; border-radius: 5px; background: var(--tone-idle-bg); color: var(--card-muted); white-space: nowrap; max-width: 110px; overflow: hidden; text-overflow: ellipsis; flex: none; }
+.flag-new { background: var(--accent); color: #fff; }
+.card-top .labels { margin: 0; flex-wrap: nowrap; flex: none; }
+.card-top .labels:not(.expanded) .chip { height: 6px; min-width: 22px; }
+.card-slot { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.card-slot:empty { display: none; }
+.card.fixed .card-slot { height: 22px; overflow: hidden; justify-content: center; }
+.slot-empty { font-size: 12px; color: var(--card-muted); opacity: .8; }
+.card .meta > * { white-space: nowrap; }
+.card.fixed .meta { flex-wrap: nowrap; overflow: hidden; margin-top: auto; }
+.card.fixed .meta > * { flex: none; }
+/* Only the category and branch give way; flags and the time keep their size. */
+.card.fixed .meta > .dir-pill, .card.fixed .meta > .ellipsis, .card.fixed .meta > .branch, .card.fixed .meta > .acct-chip { flex: 0 1 auto; min-width: 28px; overflow: hidden; text-overflow: ellipsis; }
+.card.fixed .meta > .dir-pill { flex-shrink: .4; min-width: 64px; }
+.card.fixed .card-slot > :not(:first-child) { display: none; }
+.card.fixed .card-slot .snippet { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meta-end { margin-left: auto; flex: none !important; padding-left: 4px; white-space: nowrap; }
 .card:hover { background: var(--card-hover); }
 .card.is-archived { opacity: 0.6; }
 .card.drag-source { opacity: 0.25; }
 .card .labels { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
 .chip { height: 8px; min-width: 40px; border-radius: 4px; }
 .labels.expanded .chip { height: 16px; font-size: 12px; line-height: 16px; padding: 0 6px; color: #172b4d; font-weight: 600; min-width: 0; }
-.card .title { word-break: break-word; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.card .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; font-size: 12px; color: var(--card-muted); }
+.card .title { word-break: break-word; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 14.5px; font-weight: 700; line-height: 1.4; }
+.card.fixed .title { -webkit-line-clamp: 2; min-height: 2.8em; }
+.card .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding-top: 6px; border-top: 1px dashed var(--btn-subtle-hover); font-size: 12px; color: var(--card-muted); }
 .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 3px; color: #fff; line-height: 16px; }
 .badge.codex { background: var(--codex); }
 .badge.claude { background: var(--claude); }
@@ -160,10 +218,10 @@ button { cursor: pointer; border: 0; background: none; }
 
 .add-list { flex: 0 0 272px; }
 .add-list-btn {
-  width: 100%; text-align: left; padding: 10px 12px; border-radius: 12px; color: #fff;
-  background: rgba(255,255,255,0.24); font-weight: 500;
+  width: 100%; text-align: left; padding: 10px 12px; border-radius: 12px; color: var(--on-board);
+  background: var(--on-board-btn); font-weight: 500;
 }
-.add-list-btn:hover { background: rgba(255,255,255,0.32); }
+.add-list-btn:hover { background: var(--on-board-btn-hover); }
 .composer { background: var(--list-bg); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
 .text-input {
   width: 100%; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg);
@@ -215,7 +273,7 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .msg.user { border-left: 3px solid var(--accent); }
 .muted { color: var(--list-muted); font-size: 12px; }
 /* ---------- live session feed (like the agent apps' own conversation view) ---------- */
-.card .activity { margin-top: 4px; font-size: 12px; line-height: 16px; color: var(--card-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.card .activity { border-radius: 5px; padding: 3px 7px; background: var(--tone-idle-bg); font-size: 12px; line-height: 16px; color: var(--card-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .sig-row { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 4px; font-size: 11px; line-height: 15px; color: var(--card-muted); }
 .sig-row span { white-space: nowrap; }
 .sig-warn { color: var(--c-orange); font-weight: 600; }
@@ -296,11 +354,13 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .status-chip .sdot { margin-right: 4px; }
 .status-chip[aria-pressed="true"] { background: #fff; color: #172b4d; }
 .rule-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; }
+.rule-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+.rule-run { white-space: nowrap; }
 .toast-btn { margin-left: 8px; color: #fff; text-decoration: underline; font-weight: 600; }
 .card.task { border-top: 3px solid var(--c-purple); }
 .task-badge { background: var(--c-purple); }
-.task-links { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
-.task-link { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--card-muted); min-width: 0; overflow: hidden; white-space: nowrap; }
+.task-links { display: flex; flex-wrap: wrap; gap: 3px 10px; align-items: center; font-size: 12px; }
+.task-link { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; color: var(--card-muted); min-width: 0; white-space: nowrap; }
 .task-link .host-chip { flex: none; max-width: 90px; }
 .ellipsis.grow { max-width: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .grow { flex: 1; min-width: 0; }
@@ -350,7 +410,7 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .check-row .ck-passing { color: var(--c-green); }
 .check-row .ck-failing { color: var(--danger); }
 .check-row .ck-pending { color: var(--c-orange); }
-.ft-toggle { display: inline-flex; align-items: center; gap: 4px; color: #fff; font-size: 12px; margin-left: -4px; }
+.ft-toggle { display: inline-flex; align-items: center; gap: 4px; color: var(--header-fg); font-size: 12px; margin-left: -4px; }
 .snippet { margin-top: 6px; font-size: 12px; color: var(--card-muted); line-height: 17px; word-break: break-word; }
 .snippet mark { background: #ffe58f; color: #172b4d; border-radius: 2px; padding: 0 1px; }
 .kbd { display: inline-block; min-width: 16px; font-size: 11px; color: var(--list-muted); border: 1px solid var(--btn-subtle-hover); border-radius: 3px; text-align: center; }
@@ -358,48 +418,55 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .lane { flex: none; width: max-content; min-width: 100%; scroll-margin-top: 0; }
 .lane-head {
   position: sticky; top: 0; left: 0; z-index: 5; display: flex; align-items: center; gap: 8px; width: max-content; max-width: calc(100vw - 24px);
-  color: #fff; padding: 6px 6px 4px; border-radius: 0 0 8px 8px;
+  color: var(--on-board); padding: 6px 6px 4px; border-radius: 0 0 8px 8px;
   background: linear-gradient(var(--header-bg), var(--header-bg)), var(--board-bg);
 }
-.lane-toggle { display: flex; align-items: center; gap: 8px; font-weight: 700; padding: 2px 6px; border-radius: 6px; color: #fff; }
-.lane-toggle:hover { background: rgba(255,255,255,0.14); }
-.lane-head .count { color: rgba(255,255,255,0.85); }
-.lane-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 0 8px; height: 22px; border-radius: 11px; background: rgba(255,255,255,0.16); color: #fff; white-space: nowrap; }
+.lane-toggle { display: flex; align-items: center; gap: 8px; font-weight: 700; padding: 2px 6px; border-radius: 6px; color: var(--on-board); }
+.lane-toggle:hover { background: var(--on-board-btn); }
+.lane-head .count { color: var(--on-board-dim); }
+.lane-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 0 8px; height: 22px; border-radius: 11px; background: var(--on-board-btn); color: var(--on-board); white-space: nowrap; }
 .lane-chip .stripe { width: 8px; height: 8px; border-radius: 50%; }
-.lane-solo { font-size: 12px; padding: 0 8px; height: 24px; border-radius: 6px; color: rgba(255,255,255,0.9); }
-.lane-solo:hover { background: rgba(255,255,255,0.14); }
+.lane-solo { font-size: 12px; padding: 0 8px; height: 24px; border-radius: 6px; color: var(--on-board-dim); }
+.lane-solo:hover { background: var(--on-board-btn); }
 .lane-lists { display: flex; align-items: flex-start; gap: 12px; padding: 4px 0 8px; }
 .lane .list { max-height: var(--lane-max-h, 420px); }
 .lane .cards { overflow-y: auto; }
-.lane.drop-lane { outline: 2px dashed rgba(255,255,255,0.6); outline-offset: -2px; border-radius: 8px; }
-.solo-bar { display: flex; align-items: center; gap: 8px; color: #fff; padding: 6px 4px 0; font-size: 13px; }
+.lane.drop-lane { outline: 2px dashed var(--on-board-dim); outline-offset: -2px; border-radius: 8px; }
+.solo-bar { display: flex; align-items: center; gap: 8px; color: var(--on-board); padding: 6px 4px 0; font-size: 13px; }
 /* ---------- sidebar ---------- */
 .shell { flex: 1; display: flex; min-height: 0; }
 .board { min-width: 0; }
+/* Trello's workspace sidebar: translucent, readable 14px items, quiet bold headings. */
 .sidebar {
-  flex: 0 0 232px; width: 232px; overflow-y: auto; padding: 10px 8px 16px; display: flex; flex-direction: column; gap: 12px;
-  background: var(--header-bg); color: #fff; font-size: 13px;
+  flex: 0 0 260px; width: 260px; overflow-y: auto; padding: 8px 8px 16px; display: flex; flex-direction: column; gap: 6px;
+  background: var(--side-bg); color: var(--header-fg); font-size: 14px;
 }
 .sidebar[hidden] { display: none; }
-.side-filter { width: 100%; height: 30px; border-radius: 4px; border: 0; padding: 0 8px; background: rgba(255,255,255,0.2); color: #fff; }
-.side-filter::placeholder { color: rgba(255,255,255,0.75); }
-.side-filter:focus { background: #fff; color: #172b4d; outline: none; }
-.side-head { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; letter-spacing: .04em; color: rgba(255,255,255,0.75); padding: 0 6px 4px; }
+.side-top { display: flex; align-items: center; gap: 6px; padding: 4px 2px 4px 10px; font-size: 15px; font-weight: 700; }
+.side-fold { width: 30px; height: 30px; border-radius: 6px; display: grid; place-items: center; color: var(--header-fg); transform: rotate(90deg); }
+.side-fold:hover { background: var(--header-btn); }
+.side-filter { flex: none; width: 100%; height: 32px; border-radius: 6px; border: 0; padding: 0 10px; background: var(--header-btn); color: var(--header-fg); font-size: 13px; }
+.side-filter::placeholder { color: var(--header-dim); }
+.side-filter:focus { background: var(--input-bg); color: var(--list-fg); outline: none; }
+.sidebar section, .side-top { flex: none; }
+.sidebar section { display: flex; flex-direction: column; gap: 1px; }
+.side-head { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; letter-spacing: .05em; color: var(--header-dim); padding: 10px 10px 6px; }
 .side-head .grow { flex: 1; }
-.side-mini { font-size: 11px; color: rgba(255,255,255,0.85); padding: 0 6px; height: 20px; border-radius: 4px; }
-.side-mini:hover { background: rgba(255,255,255,0.16); }
-.side-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 4px 6px; border-radius: 6px; color: #fff; min-height: 28px; }
-.side-row:hover, .side-row:focus-visible { background: rgba(255,255,255,0.16); }
-.side-row.active { background: rgba(255,255,255,0.3); font-weight: 600; }
-.side-row .count { color: rgba(255,255,255,0.8); }
-.side-row .dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.side-mini { font-size: 12px; font-weight: 600; color: var(--header-dim); padding: 0 6px; height: 22px; border-radius: 4px; letter-spacing: 0; }
+.side-mini:hover { background: var(--header-btn); color: var(--header-fg); }
+.side-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 0 10px; border-radius: 6px; color: var(--header-fg); min-height: 34px; font-weight: 500; }
+.side-row:hover, .side-row:focus-visible { background: var(--header-btn); }
+.side-row.active, .side-row[aria-current="page"] { background: var(--side-active); font-weight: 700; }
+.side-row .count { color: var(--header-dim); font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.side-row .dot { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.side-ic { width: 18px; flex: none; display: grid; place-items: center; }
+.side-key { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--header-dim); }
 .side-new { font-size: 11px; font-weight: 700; background: var(--accent); color: #fff; border-radius: 8px; padding: 0 6px; }
 .side-item { display: flex; align-items: center; border-radius: 6px; }
 .side-item .side-row { flex: 1; min-width: 0; }
-.side-item .icon-btn { width: 24px; height: 24px; color: rgba(255,255,255,0.8); visibility: hidden; flex: none; }
+.side-item .icon-btn { width: 26px; height: 26px; color: var(--header-dim); visibility: hidden; flex: none; }
 .side-item:hover .icon-btn, .side-item:focus-within .icon-btn { visibility: visible; }
 .side-dir.drop-target { outline: 2px dashed #fff; outline-offset: -2px; }
-.side-close { display: none; align-self: flex-end; color: #fff; padding: 2px 8px; border-radius: 4px; }
 /* ---------- picker / palette ---------- */
 .picker { display: flex; flex-direction: column; gap: 6px; }
 .picker-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; }
@@ -415,12 +482,15 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
 .keys kbd { font: 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--btn-subtle); border: 1px solid var(--btn-subtle-hover); border-radius: 4px; padding: 0 6px; white-space: nowrap; justify-self: start; }
 .keys h4 { grid-column: 1 / -1; margin: 8px 0 0; font-size: 12px; color: var(--list-muted); }
-.dir-pill { display: inline-flex; align-items: center; gap: 3px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 3px; padding: 0 4px; font-weight: 600; }
+.dir-pill { display: inline-flex; align-items: center; gap: 5px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--card-fg); }
+.dir-dot { width: 8px; height: 8px; border-radius: 3px; flex: none; }
+.card .act-wait { color: var(--tone-wait); background: var(--tone-wait-bg); }
+.card .act-err { color: var(--tone-err); background: var(--tone-err-bg); }
 .board.analytics-mode { display: block; overflow-y: auto; }
 .analytics { padding: 4px 8px 24px; position: relative; color: var(--list-fg); }
-.analytics h2 { color: #fff; margin: 0; font-size: 18px; }
+.analytics h2 { color: var(--on-board); margin: 0; font-size: 18px; }
 .analytics-bar { margin-bottom: 12px; flex-wrap: wrap; }
-.analytics-bar .muted { color: rgba(255,255,255,0.85); }
+.analytics-bar .muted { color: var(--on-board-dim); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 12px; }
 .tile, .panel { background: var(--list-bg); border-radius: 12px; padding: 12px 16px; box-shadow: var(--card-shadow); }
 .tile-label { font-size: 12px; color: var(--list-muted); }
@@ -450,7 +520,7 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
 .viz-table { margin-top: 8px; font-size: 12px; }
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #172b4d; color: #fff; padding: 8px 16px; border-radius: 6px; z-index: 1100; box-shadow: 0 4px 8px #0004; }
 .toast.error { background: var(--danger); }
-.loading { color: #fff; padding: 24px; }
+.loading { color: var(--on-board); padding: 24px; }
 /* ---------- detail panes: several cards at once, fixed (cosmos) or free (chaos) ---------- */
 .pane-layer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 800; display: flex; flex-direction: column; pointer-events: none; }
 .pane-layer[hidden] { display: none; }
@@ -637,48 +707,63 @@ body.orb-dragging .orb-zone { opacity: 1; }
 @media (max-width: 720px) {
   .hsearch { width: 140px; }
   .sidebar { position: fixed; z-index: 750; left: 0; bottom: 0; top: 0; box-shadow: 4px 0 12px #0006; background: var(--board-bg); }
-  .side-close { display: block; }
   .modal-grid { grid-template-columns: 1fr; }
 }
 /* @include workspace.css */
 /* @include task-dashboard.css */
+/* @include layouts.css */
 </style>
 </head>
 <body>
 <header class="topbar">
-  <button id="sideBtn" class="hbtn" title="サイドバー（b）" aria-label="サイドバー" aria-pressed="true">☰</button>
-  <h1 id="logo">Canban</h1>
-  <button id="quickTaskBtn" class="hbtn quick-task-trigger" type="button" title="タスクを追加（c）">＋ タスク</button>
-  <input id="q" class="hsearch" type="search" placeholder="検索（/）・⌘K" aria-label="検索" aria-keyshortcuts="/" />
-  <label class="ft-toggle" data-pri="0" title="会話の本文も検索する（3 文字以上）"><input id="fulltext" type="checkbox" /> 本文</label>
+  <span id="brand" class="brand" title="Canban"><span class="brand-word">canban</span></span>
+  <label class="hsearch-wrap" data-icon="search" data-icon-size="16">
+    <input id="q" class="hsearch" type="search" placeholder="検索・コマンド（/・⌘K）" aria-label="検索" aria-keyshortcuts="/" />
+  </label>
+  <label class="ft-toggle" title="会話の本文も検索する（3 文字以上）"><input id="fulltext" type="checkbox" /> 本文</label>
+  <button id="quickTaskBtn" class="hbtn primary quick-task-trigger" type="button" aria-label="タスクを作成" title="タスクを作成（c）" data-icon="plus"><span class="lbl">作成</span></button>
+  <span class="spacer"></span>
+  <span id="presenceBar" class="limits presence" hidden></span>
+  <span id="statusBar" class="status-bar" role="group" aria-label="実行状態"></span>
+  <button id="seenBtn" class="hbtn" title="新着をすべて既読にする" data-icon="check" hidden><span class="lbl">既読</span></button>
+  <button id="perfBtn" class="hbtn" title="Canban 自身の処理が予算を超えました（クリックで詳細）" aria-label="処理時間の警告" data-icon="alert" hidden></button>
+  <button id="layoutBtn" class="hbtn icon-only" type="button" aria-haspopup="dialog" title="レイアウトと色" aria-label="レイアウトと色" data-icon="layout"></button>
+  <div id="themeSeg" class="theme-seg" role="group" aria-label="テーマ">
+    <button type="button" data-theme-pref="light" title="ライト" aria-label="ライト" data-icon="sun" data-icon-size="15"></button>
+    <button type="button" data-theme-pref="dark" title="ダーク" aria-label="ダーク" data-icon="moon" data-icon-size="15"></button>
+    <button type="button" data-theme-pref="system" title="システムに合わせる" aria-label="システムに合わせる" data-icon="system" data-icon-size="15"></button>
+  </div>
+  <button id="accountsBtn" class="hbtn acct-btn" aria-haspopup="dialog" aria-label="アカウントと使用量" title="アカウント・使用量・設定フォルダ"><span id="acctRings" class="rings"></span><span class="ic"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><!-- Lucide UsersRound, ISC --><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/></svg></span><span class="lbl acct-lbl"></span><span class="caret">▾</span></button>
+  <button id="refresh" class="hbtn icon-only" title="再読み込み（r）" aria-label="再読み込み" data-icon="refresh"></button>
+</header>
+<div class="boardbar" role="toolbar" aria-label="ボードの操作">
+  <button id="sideBtn" class="hbtn icon-only" title="ワークスペースサイドバー（b）" aria-label="ワークスペースサイドバー" aria-pressed="true" data-icon="sidebar"></button>
+  <h1 id="logo">すべてのセッション</h1>
+  <div class="seg view-seg" role="group" aria-label="表示">
+    <button id="boardViewBtn" type="button" aria-pressed="true">ボード</button>
+    <button id="analyticsBtn" type="button" aria-pressed="false" title="ボード / 分析 の切り替え（a）">分析</button>
+  </div>
+  <span class="spacer"></span>
   <div class="seg" data-pri="9" role="group" aria-label="AI Apps">
     <button data-agent="all" aria-pressed="true">すべて</button>
     <button data-agent="codex" aria-pressed="false">Codex</button>
     <button data-agent="claude" aria-pressed="false">Claude</button>
   </div>
-  <button id="projectBtn" class="hbtn" data-pri="8" aria-haspopup="listbox" title="カテゴリで絞り込み（p）">📁 すべて ▾</button>
+  <button id="projectBtn" class="hbtn" data-pri="8" aria-haspopup="listbox" title="カテゴリで絞り込み（p）" data-icon="folder"><span class="lbl">すべて ▾</span></button>
   <select id="days" class="hselect" data-pri="7" aria-label="期間">
     <option value="7">7日以内</option>
     <option value="30" selected>30日以内</option>
     <option value="90">90日以内</option>
     <option value="0">全期間</option>
   </select>
-  <button id="optBtn" class="hbtn" data-pri="6" aria-haspopup="true" title="表示"><span class="ic">👁</span><span class="lbl">表示 ▾</span></button>
-  <button id="rulesBtn" class="hbtn" data-pri="1" title="自動化（カードの自動移動）"><span class="ic">⚡</span><span class="lbl">自動化</span></button>
-  <button id="viewsBtn" class="hbtn" data-pri="2" aria-haspopup="true" title="保存したビュー（1〜9 キーで切り替え）"><span class="ic">▦</span><span class="lbl">ビュー ▾</span></button>
-  <button id="analyticsBtn" class="hbtn" data-pri="5" aria-pressed="false" title="ボード / 分析 の切り替え"><span class="ic">📊</span><span class="lbl">分析</span></button>
-  <button id="labelsBtn" class="hbtn" data-pri="3" title="ラベル"><span class="ic">🏷</span><span class="lbl">ラベル</span></button>
-  <button id="hostsBtn" class="hbtn" data-pri="4" aria-haspopup="true" title="マシン"><span class="ic">🖥</span><span class="lbl">マシン ▾</span></button>
-  <span class="spacer"></span>
-  <span id="presenceBar" class="limits presence" hidden></span>
-  <span id="statusBar" class="status-bar" data-pri="10" role="group" aria-label="実行状態"></span>
-  <button id="seenBtn" class="hbtn" title="新着をすべて既読にする" hidden>✓ 既読</button>
-  <button id="perfBtn" class="hbtn" title="Canban 自身の処理が予算を超えました（クリックで詳細）" hidden>⚠</button>
-  <button id="accountsBtn" class="hbtn acct-btn" aria-haspopup="true" title="アカウント・使用量・設定フォルダ"><span id="acctRings" class="rings"></span><span class="ic">👤</span><span class="lbl acct-lbl"></span><span class="caret">▾</span></button>
-  <button id="moreBtn" class="hbtn" aria-haspopup="true" title="その他" aria-label="その他" hidden>⋯</button>
-  <button id="settingsBtn" class="hbtn" title="再開と指示の送信の設定" aria-label="再開と指示の送信の設定">⚙</button>
-  <button id="refresh" class="hbtn" title="再読み込み" aria-label="再読み込み">⟳</button>
-</header>
+  <button id="optBtn" class="hbtn" data-pri="6" aria-haspopup="true" title="表示" data-icon="sliders"><span class="lbl">表示 ▾</span></button>
+  <div id="fitSeg" class="seg" data-pri="5" role="group" aria-label="カードの高さ">
+    <button type="button" data-card-fit="fixed" title="カードの高さを揃える">揃える</button>
+    <button type="button" data-card-fit="auto" title="カードの高さを内容に合わせる">内容に合わせる</button>
+  </div>
+  <button id="moreBtn" class="hbtn icon-only" aria-haspopup="true" title="その他" aria-label="その他" data-icon="more" hidden></button>
+  <button id="boardMenuBtn" class="hbtn" aria-haspopup="dialog" title="メニュー（自動化・ラベル・カテゴリ・マシン・設定）" data-icon="more"><span class="lbl">メニュー</span></button>
+</div>
 <div id="errbar" class="errbar" hidden></div>
 <div class="shell">
   <aside id="sidebar" class="sidebar" aria-label="レーン・カテゴリ" hidden></aside>
@@ -691,11 +776,9 @@ body.orb-dragging .orb-zone { opacity: 1; }
 const T = { category: 'カテゴリ', automation: '自動化', taskCard: 'タスクカード', aiApps: 'AI Apps', folder: 'フォルダ' };
 {
   const set = (sel, attr, v) => { const el = document.querySelector(sel); if (el) (attr === 'text' ? (el.textContent = v) : el.setAttribute(attr, v)); };
-  set('#rulesBtn .lbl', 'text', T.automation);
-  set('#rulesBtn', 'title', `${T.automation}（カードの自動移動）`);
   set('#projectBtn', 'title', `${T.category}で絞り込み（p）`);
   set('#sidebar', 'aria-label', `レーン・${T.category}`);
-  set('.seg[role="group"]', 'aria-label', T.aiApps);
+  set('.seg[data-pri="9"]', 'aria-label', T.aiApps);
 }
 
 (() => {
@@ -828,10 +911,11 @@ const bridge = (() => {
     let res;
     const t0 = performance.now();
     const pending = !!hooks.pending?.();
+    const concurrent = !openai() && isChromeExtension();
     if (openai()) res = await window.openai.callTool(name, args);
-    else if (isChromeExtension()) res = await nativeRequest('tools/call', { name, arguments: args });
+    else if (concurrent) res = await nativeRequest('tools/call', { name, arguments: args });
     else res = await request('tools/call', { name, arguments: args });
-    hooks.after?.(name, t0, pending);
+    hooks.after?.(name, t0, pending, concurrent);
     if (res?.isError) {
       const text = (res.content || []).map((c) => c.text).filter(Boolean).join('\n');
       throw Object.assign(new Error(text || `${name} failed`), { code: res.structuredContent?.code || null });
@@ -853,7 +937,7 @@ const bridge = (() => {
     if (isChromeExtension()) return;
     notify('ui/notifications/size-changed', { width: document.documentElement.scrollWidth, height: Math.max(560, window.innerHeight) });
   }
-  const hooks = {}; // pending(): a long poll is open; after(name, startedAt, pending)
+  const hooks = {}; // pending(): a long poll is open; after(name, startedAt, pending, concurrent)
   return { init, callTool, on, openLink, requestFullscreen, reportSize, hooks };
 })();
 
@@ -862,11 +946,12 @@ const bridge = (() => {
 // ======================================================================
 // @include workspace-model.js
 // @include task-dashboard-model.js
+// @include prompt-composer.js
 let taskDash = null;
 const PAGE = 40;
 const COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
 const COLOR_NAMES = { gray: 'グレー', blue: '青', green: '緑', yellow: '黄', orange: 'オレンジ', red: '赤', purple: '紫', pink: 'ピンク', sky: '水色', lime: 'ライム' };
-const SHARED_UI_KEYS = ['filters', 'sidebar', 'view', 'workspacePage', 'navCollapsed', 'activeTask', 'labelsExpanded', 'paneGlobal', 'paneLayout', 'panes', 'dashOpen', 'paneCollect', 'orbPos', 'paneBarOpen', 'collapsedLanes'];
+const SHARED_UI_KEYS = ['filters', 'themePref', 'layout', 'cardFit', 'sidebar', 'view', 'workspacePage', 'activeTask', 'labelsExpanded', 'paneGlobal', 'paneLayout', 'panes', 'dashOpen', 'paneCollect', 'orbPos', 'paneBarOpen', 'collapsedLanes'];
 const sharedUi = { revision: null, ready: false, dirty: false, blocked: false, applying: false, inflight: false, generation: 0, timer: null, checkTimer: null };
 const store = {
   get(k, d) { try { const v = localStorage.getItem(`sk:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -892,6 +977,9 @@ const state = {
   board: null,
   filters: { ...DEFAULT_FILTERS, ...store.get('filters', {}) },
   sideOpen: store.get('sidebar', window.innerWidth > 900),
+  themePref: store.get('themePref', 'system'),
+  layout: store.get('layout', 'trello'),
+  cardFit: store.get('cardFit', 'fixed') === 'auto' ? 'auto' : 'fixed',
   sideQ: '',
   soloLane: null,
   lanes: [],
@@ -1008,14 +1096,14 @@ function render() {
 
   // header
   document.querySelectorAll('.seg button[data-agent]').forEach((btn) => btn.setAttribute('aria-pressed', String(btn.dataset.agent === state.filters.agent)));
-  $('#projectBtn').textContent = `${scopeLabel(b)} ▾`;
+  $('#projectBtn .lbl').textContent = `${scopeLabel(b)} ▾`;
   $('#projectBtn').setAttribute('aria-pressed', String(!!(state.filters.project || state.filters.directory || state.filters.folder || state.filters.section || state.filters.label)));
   $('#days').value = String(state.filters.days);
-  const activeHost = b.hosts.find((x) => (x.local ? 'local' : x.id) === state.filters.host);
-  const remoteOn = b.hosts.filter((x) => !x.local && x.enabled).length;
-  $('#hostsBtn .lbl').textContent = `${activeHost ? activeHost.label : 'マシン'}${remoteOn ? `（+${remoteOn}）` : ''} ▾`;
-  $('#hostsBtn').setAttribute('aria-pressed', String(!!activeHost));
+  for (const btn of $$('#fitSeg [data-card-fit]')) btn.setAttribute('aria-pressed', String(btn.dataset.cardFit === state.cardFit));
   renderAccountsButton(b);
+  // The board bar names what the board is showing (Trello's board title).
+  const scope = scopeLabel(b);
+  $('#logo').textContent = scope === 'すべて' ? 'すべてのセッション' : scope;
   $('#logo').title = `表示 ${b.totals.shown} / Codex ${b.totals.codex}・Claude ${b.totals.claude}`;
   renderStatusBar(b);
   $('#seenBtn').hidden = !b.lists.some((l) => l.cards.some((c) => c.unread));
@@ -1056,6 +1144,7 @@ function render() {
   }
   boardEl.replaceChildren(frag);
   renderSidebar(b);
+  paintLayoutChrome();
   paintSelection();
   if (focused && focused !== document.body && boardEl.contains(focused)) focused.focus({ preventScroll: true });
   else if (focusedCard) $(`.card[data-card-id="${CSS.escape(focusedCard)}"]`, boardEl)?.focus({ preventScroll: true });
@@ -1099,53 +1188,71 @@ function renderAddCard(list, { lane = null } = {}) {
     text: '＋ タスクを追加', onclick: () => taskQuickAdd.open({ listId: list.id, lane }) }));
 }
 
+// Card anatomy (AGENTS.md「カードの構造」): status and agent / title / what it is doing / details.
+const STATUS_TONE = { running: 'run', waiting: 'wait', aborted: 'err', completed: 'done', idle: 'idle' };
+function statusTag(status) {
+  return h('span', { class: `st st-${STATUS_TONE[status] || 'idle'}` }, h('i', { class: status === 'running' ? 'pulse-dot' : '' }), STATUS_LABELS[status] || STATUS_LABELS.idle);
+}
+const agentTag = (agent) => h('span', { class: `ag ag-${agent}`, text: agent === 'codex' ? 'Codex' : agent === 'claude' ? 'Claude' : T.taskCard });
+// Small flags beside the status: an icon-sized pill with the meaning in the tooltip.
+const flag = (text, title, cls = '') => h('span', { class: `flag ${cls}`, title, text });
+function cardShell(card, extraClass) {
+  return h('article', {
+    class: `card${extraClass}${card.archived ? ' is-archived' : ''}${card.unread ? ' unread' : ''}${state.cardFit === 'fixed' ? ' fixed' : ''}`, tabindex: 0, 'data-card-id': card.id,
+    'aria-label': `${card.title}（${card.kind === 'task' ? `${T.taskCard}・` : ''}${STATUS_LABELS[card.status]}${card.unread ? '・新着' : ''}）`, title: card.title,
+  });
+}
+function cardSlot(card, nodes, empty) {
+  const slot = h('div', { class: 'card-slot' }, ...nodes.filter(Boolean));
+  if (!slot.childNodes.length && state.cardFit === 'fixed') slot.append(h('span', { class: 'slot-empty', text: empty }));
+  return slot;
+}
+function cardMeta(...nodes) {
+  const meta = h('div', { class: 'meta' }, ...nodes.filter(Boolean));
+  return meta;
+}
+
 function renderCard(card, list) {
   if (card.kind === 'task') return renderTaskCard(card, list);
-  const el = h('article', {
-    class: `card${card.archived ? ' is-archived' : ''}${card.unread ? ' unread' : ''}`, tabindex: 0, 'data-card-id': card.id,
-    'aria-label': `${card.title}（${STATUS_LABELS[card.status]}${card.unread ? '・新着' : ''}）`,
-  });
-  const lbl = cardLabels(card);
-  if (lbl) el.append(lbl);
-  el.append(h('div', { class: 'title' },
-    card.status !== 'idle' ? h('span', { class: `sdot s-${card.status}`, title: STATUS_LABELS[card.status] }) : null,
-    card.title));
+  const el = cardShell(card, '');
+  const viewers = live.viewers.get(card.id);
+  el.append(h('div', { class: 'card-top' },
+    statusTag(card.status), agentTag(card.agent),
+    card.unread ? flag('新着', '新しい動きがあります', 'flag-new') : null,
+    card.autoMoved ? flag('⚡', `${T.automation}で移動`) : null,
+    viewers ? flag('◉', `${viewers.join('・')}で開いています`) : null,
+    card.pinnedInAgent ? flag('ピン', 'Codex アプリでピン留め') : null,
+    card.codexSection ? flag(`§ ${card.codexSection.name}`, 'Codex のセクション（サイドバーの見出し）') : null,
+    h('span', { class: 'grow' }), cardLabels(card)));
+  el.append(h('div', { class: 'title', text: card.title }));
   const busy = card.status === 'running' || card.status === 'waiting';
   const doing = busy ? activityText(card.activity, card.status, card.signals) : null;
-  if (doing) el.append(h('div', { class: 'activity', title: doing, text: doing }));
-  const sig = signalRow(card.signals, busy);
-  if (sig) el.append(sig);
-  const meta = h('div', { class: 'meta' },
-    card.unread ? h('span', { class: 'pill new-pill', text: '新着' }) : null,
-    card.autoMoved ? h('span', { class: 'pill', title: `${T.automation}で移動`, text: '⚡' }) : null,
-    live.viewers.get(card.id) ? h('span', { class: 'pill viewer-pill', title: `${live.viewers.get(card.id).join('・')}で開いています`, text: '👁' }) : null,
-    card.pinnedInAgent ? h('span', { class: 'pill', title: 'Codex アプリでピン留め', text: '📌' }) : null,
-    card.codexSection ? h('span', { class: 'pill', title: 'Codex のセクション（サイドバーの見出し）', text: `§ ${card.codexSection.name}` }) : null,
-    h('span', { class: `badge ${card.agent}`, text: card.agent === 'codex' ? 'Codex' : 'Claude' }),
+  el.append(cardSlot(card, [
+    doing ? h('div', { class: `activity act-${STATUS_TONE[card.status]}`, title: doing, text: doing }) : null,
+    signalRow(card.signals, busy),
+    card.snippet ? renderSnippet(card.snippet) : null,
+  ], card.pr ? 'プルリクエストあり' : '最近の動きなし'));
+  const meta = cardMeta(
+    dirPill(card.directory || { name: 'カテゴリ無し' }),
+    card.git ? gitPill(card.git, card.branch) : card.branch ? h('span', { class: 'branch ellipsis', title: card.branch, text: `⎇ ${card.branch}` }) : null,
     card.host ? h('span', { class: 'host-chip', title: `SSH: ${card.host.alias}`, text: `⌂ ${card.host.label}` }) : null,
     acctChip(card),
-    dirPill(card.directory || { name: 'カテゴリ無し' }),
-    card.git ? gitPill(card.git, card.branch) : card.branch ? h('span', { class: 'ellipsis', title: card.branch, text: `⎇ ${card.branch}` }) : null,
-    h('span', { title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }),
-  );
+    card.pr ? prPill(card.pr) : card.prUrl ? h('span', { title: card.prUrl, text: 'PR' }) : null);
   if (card.priority) meta.append(h('span', { class: `pill prio-${card.priority}`, text: { high: '優先度 高', medium: '優先度 中', low: '優先度 低' }[card.priority] }));
   if (card.due) {
     const overdue = Date.parse(card.due) < Date.now() - 86400000;
-    meta.append(h('span', { class: `pill${overdue ? ' due-over' : ''}`, text: `🕑 ${new Date(card.due).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}` }));
+    meta.append(h('span', { class: `pill${overdue ? ' due-over' : ''}`, text: `期限 ${new Date(card.due).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}` }));
   }
   if (card.note) meta.append(h('span', { title: 'メモあり', text: '≡' }));
-  if (card.pr) meta.append(prPill(card.pr));
-  else if (card.prUrl) meta.append(h('span', { title: card.prUrl, text: 'PR' }));
   if (card.grouped?.length) meta.append(h('span', { class: 'pill', title: card.grouped.map((g) => g.title).join('\n'), text: `＋${card.grouped.length} 同じブランチ` }));
   if (card.archived) meta.append(h('span', { text: 'アーカイブ済' }));
   if (card.subagent) meta.append(h('span', { text: 'サブエージェント' }));
-  if (card.subagents) meta.append(h('span', { class: 'pill', title: 'このセッションが起動したサブエージェント', text: `🤖 ${card.subagents.total}${card.subagents.running ? `（動作中 ${card.subagents.running}）` : ''}` }));
+  if (card.subagents) meta.append(h('span', { class: 'pill', title: 'このセッションが起動したサブエージェント', text: `サブ ${card.subagents.total}${card.subagents.running ? `（動作中 ${card.subagents.running}）` : ''}` }));
   if (card.hidden) meta.append(h('span', { text: '非表示' }));
   if (card.requests) meta.append(requestPill(card.requests));
-  if (card.codexFollowUps) meta.append(h('span', { class: 'pill', title: 'Codex アプリのキューにフォローアップが待機しています（Canban からは送りません）', text: `⏭ Codex キュー ${card.codexFollowUps}` }));
+  if (card.codexFollowUps) meta.append(h('span', { class: 'pill', title: 'Codex アプリのキューにフォローアップが待機しています（Canban からは送りません）', text: `Codex キュー ${card.codexFollowUps}` }));
+  meta.append(h('span', { class: 'meta-end', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }));
   el.append(meta);
-  if (card.snippet) el.append(renderSnippet(card.snippet));
-
   return attachCardBehavior(el, card, list, (opts) => resume(card.id, opts));
 }
 
@@ -1195,7 +1302,8 @@ async function openSelectedCards() {
 // Shared by session and task cards: drag, click to open, ▶ resume, keyboard.
 function attachCardBehavior(el, card, list, onResume) {
   const select = h('input', { type: 'checkbox', checked: selectedCards.has(card.id), 'aria-label': `${card.title} を選択`, onchange: e => { e.target.checked ? selectedCards.add(card.id) : selectedCards.delete(card.id); paintSelection(); } });
-  el.prepend(h('label', { class: 'card-select', title: '複数選択してダッシュボードへ追加', onpointerdown: e => e.stopPropagation(), onclick: e => e.stopPropagation() }, select));
+  const pick = h('label', { class: 'card-select', title: '複数選択してダッシュボードへ追加', onpointerdown: e => e.stopPropagation(), onclick: e => e.stopPropagation() }, select);
+  ($('.card-top', el) || el).prepend(pick);
   el.classList.toggle('is-selected', selectedCards.has(card.id));
   el.addEventListener('pointerdown', (e) => startCardDrag(e, card, el));
   el.addEventListener('click', () => { if (!state.justDragged) openCard(card.id); });
@@ -1221,8 +1329,8 @@ function attachCardBehavior(el, card, list, onResume) {
 }
 
 function dirPill(d) {
-  return h('span', { class: 'dir-pill', style: { background: d.color ? colorVar(d.color) : 'var(--btn-subtle-hover)', color: d.color ? '#172b4d' : 'inherit' },
-    title: `${T.category}: ${d.name}`, text: `📂 ${d.name}` });
+  return h('span', { class: 'dir-pill', title: `${T.category}: ${d.name}` },
+    h('i', { class: 'dir-dot', style: { background: d.color ? colorVar(d.color) : 'var(--btn-subtle-hover)' } }), d.name);
 }
 
 // Attribute keys on a focused card (Trello-like): l = labels, g = directory, m = move, h = hide.
@@ -1289,36 +1397,24 @@ function planMeta(meta, card) {
 
 // A task card: user-made, with its linked sessions listed inside.
 function renderTaskCard(card, list) {
-  const el = h('article', {
-    class: `card task${card.unread ? ' unread' : ''}`, tabindex: 0, 'data-card-id': card.id,
-    'aria-label': `${card.title}（${T.taskCard}・${STATUS_LABELS[card.status]}）`,
-  });
-  const lbl = cardLabels(card);
-  if (lbl) el.append(lbl);
-  el.append(h('div', { class: 'title' },
-    card.status !== 'idle' ? h('span', { class: `sdot s-${card.status}`, title: STATUS_LABELS[card.status] }) : null, card.title));
-  if (card.links.length) {
-    const box = h('div', { class: 'task-links' });
-    for (const l of card.links.slice(0, 3)) {
-      box.append(h('div', { class: 'task-link', title: l.title },
-        h('span', { class: `sdot s-${l.status}` }),
-        h('span', { class: `badge ${l.agent}`, text: l.agent === 'codex' ? 'Codex' : 'Claude' }),
-        l.host ? h('span', { class: 'host-chip', text: `⌂ ${l.host.label}` }) : null,
-        h('span', { class: 'ellipsis grow', text: l.title })));
-    }
-    if (card.links.length > 3) box.append(h('div', { class: 'muted', text: `ほか ${card.links.length - 3} 件` }));
-    el.append(box);
-  }
-  const meta = h('div', { class: 'meta' },
-    h('span', { class: 'badge task-badge', text: `${T.taskCard}` }),
-    dirPill(card.directory || { name: 'カテゴリ無し' }),
-    card.unread ? h('span', { class: 'pill new-pill', text: '新着' }) : null,
-    card.autoMoved ? h('span', { class: 'pill', title: `${T.automation}で移動`, text: '⚡' }) : null,
-    card.description ? h('span', { title: '説明あり', text: '📝' }) : null);
+  const el = cardShell(card, ' task');
+  el.append(h('div', { class: 'card-top' },
+    statusTag(card.status), agentTag('task'),
+    card.unread ? flag('新着', '新しい動きがあります', 'flag-new') : null,
+    card.autoMoved ? flag('⚡', `${T.automation}で移動`) : null,
+    card.description ? flag('説明', '説明あり') : null,
+    h('span', { class: 'grow' }), cardLabels(card)));
+  el.append(h('div', { class: 'title', text: card.title }));
+  // The linked sessions, one line: each session's state and agent.
+  const links = card.links.length ? h('div', { class: 'task-links' }, ...card.links.slice(0, 3).map((l) =>
+    h('span', { class: 'task-link', title: l.title }, h('span', { class: `sdot s-${l.status}` }), l.agent === 'codex' ? 'Codex' : 'Claude', l.host ? ` ⌂ ${l.host.label}` : '')),
+    card.links.length > 3 ? h('span', { class: 'muted', text: `ほか ${card.links.length - 3}` }) : null) : null;
+  el.append(cardSlot(card, [links], 'セッションはまだありません'));
+  const meta = cardMeta(dirPill(card.directory || { name: 'カテゴリ無し' }), card.pr ? prPill(card.pr) : null);
   planMeta(meta, card);
-  if (card.pr) meta.append(prPill(card.pr));
   for (const p of card.pending) meta.append(h('span', { class: `pill${p.expired ? ' due-over' : ''}`, title: p.expired ? '開始したセッションが見つかりません。詳細から手動で紐付けてください' : '開始したセッションを待っています',
     text: `${p.expired ? '⚠' : '⏳'} ${p.agent === 'codex' ? 'Codex' : 'Claude'}` }));
+  meta.append(h('span', { class: 'meta-end', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }));
   el.append(meta);
   const latest = [...card.links].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
   return attachCardBehavior(el, card, list, latest ? (opts) => resume(latest.id, opts) : null);
@@ -1602,19 +1698,11 @@ const PANE_SECS = {
 };
 const secTitle = (id) => (id === 'task' ? T.taskCard : PANE_SECS[id][1]);
 const PANE_LAYOUT_DEF = { main: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'main'), side: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'side'), collapsed: [] };
-const PANE_HEIGHTS = { conv: 180, progress: 64, send: 180, labels: 84, memo: 150, detail: 320, pr: 180, related: 180, first: 150, resume: 290, task: 110, add: 130, prio: 130, other: 190 };
+const PANE_HEIGHTS = { conv: 180, progress: 64, send: 360, labels: 84, memo: 150, detail: 320, pr: 180, related: 180, first: 150, resume: 290, task: 110, add: 130, prio: 130, other: 190 };
 let paneLayout = normalizePaneLayout(store.get('paneLayout', null), PANE_LAYOUT_DEF, PANE_HEIGHTS);
 const savePaneLayout = () => taskDash?.active ? taskDash.changed() : store.set('paneLayout', paneLayout);
 
-const PIC = {
-  grip: '<g fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></g>',
-  chev: '<path d="M6 9l6 6 6-6"/>', close: '<path d="M6 6l12 12M18 6L6 18"/>', note: '<path d="M5 5h14v9l-5 5H5z"/><path d="M14 19v-5h5"/>',
-  lock: '<path d="M8 11V8a4 4 0 018 0v3"/><rect x="5" y="11" width="14" height="9" rx="2"/>',
-  free: '<path d="M14 4h6v6M20 4l-9 9M10 6H5v13h13v-5"/>',
-  follow: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/>',
-  view: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',
-};
-const picon = (n, s = 16) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PIC[n]}</svg>`;
+// @include icons.js
 const pbtn = (icon, label, fn, cls = '') => h('button', { class: `icon-btn ${cls}`, type: 'button', 'aria-label': label, title: label, html: picon(icon), onclick: (e) => { e.stopPropagation(); fn(e); } });
 
 // ---- the assistant's text as a preview (Markdown, lightly) ----
@@ -2270,6 +2358,9 @@ function renderPaneKeepingDrafts(p, d) {
     return (baseline !== undefined && baseline !== input.value) || input.matches('.send-box textarea') && !!input.value.trim()
       || input.matches('textarea.note') && input.value !== input.defaultValue;
   }).map(input => ({ label: input.getAttribute('aria-label'), value: input.value }));
+  const promptDraft = promptDrafts.get(`dispatch:${p.id}`);
+  const promptValue = drafts.find(draft => draft.label === '送るプロンプト');
+  if (promptDraft && promptValue) promptDraft.text = promptValue.value;
   renderPane(p, d);
   for (const draft of drafts) {
     if (!draft.label) continue;
@@ -2457,8 +2548,10 @@ function keepDisabledPrompt(box, value) {
   workspace.draftValues.set(input, ''); input.value = value; box.append(input);
 }
 function replaceDispatch(old, d) {
-  if (old.querySelector('.req-row textarea')) return;
+  if (old.querySelector('.req-row textarea, .prompt-skill-picker:not([hidden]), .prompt-composer[aria-busy="true"]')) return;
   const draft = old.querySelector('textarea[aria-label="送るプロンプト"]')?.value || '';
+  const stored = promptDrafts.get(`dispatch:${d.session.id}`);
+  if (stored) stored.text = draft;
   const next = renderDispatch(d), input = next.querySelector('.send-box textarea');
   if (input) { workspace.trackDrafts(next); input.value = draft; }
   // If sending has been disabled, retain the draft next to the reason.
@@ -2482,12 +2575,17 @@ function renderDispatch(d) {
   const ta = h('textarea', { placeholder: 'このセッションに送るプロンプト（⌘/Ctrl + Enter で今すぐ送信）', 'aria-label': '送るプロンプト' });
   const ack = p?.elevated ? h('input', { type: 'checkbox', 'aria-label': '制限なしで実行されることを確認しました' }) : null;
   const busy = s.status === 'running' || s.status === 'waiting' || !!s.codexFollowUps;
+  const composer = promptComposer(ta, { key: `dispatch:${s.id}`, context: () => ({ cardId: s.id }), submit: () => send('now') });
+  const sendButtons = [];
   const send = async (when) => {
     const prompt = ta.value.trim();
-    if (!prompt) return ta.focus();
+    if (!composer.hasContent()) return ta.focus();
+    if (composer.draft.sending) return;
     try {
-      await bridge.callTool('canban_dispatch', { cardId: s.id, prompt, when, expectedUpdatedAt: s.updatedAt || null, allowElevated: !!ack?.checked });
-      ta.value = '';
+      const payload = composer.payload();
+      composer.setSending(true); sendButtons.forEach(b => { b.disabled = true; });
+      await bridge.callTool('canban_dispatch', { cardId: s.id, prompt, ...payload, when, expectedUpdatedAt: s.updatedAt || null, allowElevated: !!ack?.checked });
+      composer.clear();
       toast(when === 'now' ? '送信しました' : 'キューに追加しました');
       openCard(s.id);
       load();
@@ -2496,9 +2594,12 @@ function renderDispatch(d) {
       if (e.code === 'conflict') { toast(e.message,true); return; }
       if (e.code === 'busy') return toast(`${e.message}。入力は保持しています。状態を確認してから再操作してください。`,true);
       toast(e.message, true);
+    } finally {
+      composer.setSending(false); sendButtons.forEach(b => { b.disabled = busy; });
     }
   };
-  ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send('now'); } });
+  sendButtons.push(h('button', { class: 'btn-primary', disabled: busy, text: '▶ 今すぐ送信', onclick: () => send('now') }),
+    h('button', { class:'side-btn',disabled:busy,style:{width:'auto',marginBottom:0},text:'＋ キューに追加', onclick: () => send('queue') }));
   const appNote = s.agent === 'codex' || s.desktopSessionId || s.entrypoint === 'claude-desktop'
     ? helpTip(`${s.agent === 'codex' ? 'Codex' : 'Claude'} アプリでこのセッションを開いている場合は、閉じてから送ってください（アプリ側の表示と履歴がずれることがあります）。`) : null;
   box.append(...[title,
@@ -2506,21 +2607,20 @@ function renderDispatch(d) {
       h('button', { class: 'link-btn', text: '再開', onclick: () => act('canban_resume_queue', { cardId: s.id }, { okMsg: 'キューを再開しました' }).then(() => openCard(s.id)) })) : null,
     h('div', { class: 'send-box' },
       h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap', marginBottom: '6px' } }, permChip),
-      ta,
+      composer.root,
       ack ? h('label', { class: 'send-note row', style: { gap: '6px' } }, ack, 'このセッションはサンドボックス／確認なしで動いています。そのまま実行されることを確認しました') : null,
       busy ? h('div', { class: 'muted', style: { marginTop: '6px' }, text: s.codexFollowUps
         ? `Codex アプリのキューにフォローアップが ${s.codexFollowUps} 件あります。二重に送らないよう、アプリ側で送るか消すまで Canban からは送りません。`
         : `セッションが${s.status === 'running' ? '実行中' : '入力待ち'}のため、今すぐは送れません。入力を保持します。状態を確認してから再操作してください。` }) : null,
       h('div', { class: 'send-actions' },
-        h('button', { class: 'btn-primary', disabled: busy, text: '▶ 今すぐ送信', onclick: () => send('now') }),
-        h('button', { class:'side-btn',disabled:busy,style:{width:'auto',marginBottom:0},text:'＋ キューに追加', onclick: () => send('queue') }),
+        ...sendButtons,
         helpTip('1 ターンずつ公式 CLI で実行します')),
       appNote),
     ...D.active.map((r) => requestRow(s, r)),
     D.queue.length ? h('div', { class: 'field-label', text: `キュー（${D.queue.length}）` }) : null,
     ...D.queue.map((r, i) => requestRow(s, r, { index: i, queue: D.queue })),
     D.history.length ? h('div', { class: 'field-label', text: '履歴' }) : null,
-    ...D.history.map((r) => requestRow(s,r,{review:() => { if (ta.value.trim()) return toast('入力中の指示があります。先に確認してください。',true); ta.value=r.prompt || ''; ta.focus(); toast('実行状況を確認し、内容を確認してから送信してください。'); }})),
+    ...D.history.map((r) => requestRow(s,r,{review:() => { try { composer.restore(r); toast('実行状況を確認し、内容を確認してから送信してください。'); } catch(e) { toast(e.message, true); } }})),
   ].filter(Boolean));
   return box;
 }
@@ -2552,6 +2652,7 @@ function requestRow(s,r,{index=-1,queue=[],review=null}={}) {
     h('span', { class: `req-state ${r.state}`, title: REQ_LABELS[r.state], text: REQ_ICONS[r.state] || '•' }),
     h('div', { class: 'grow' },
       h('div', { class: 'req-prompt', text: r.prompt }),
+      r.images?.length || r.skills?.length ? h('div', { class: 'muted', text: [...(r.images || []).map(i => `画像: ${i.name}`), ...(r.skills || []).map(s => `$${s.name}`)].join(' / ') }) : null,
       h('div', { class: 'muted', text: `${who}${REQ_LABELS[r.state]}・${when}${r.state === 'queued' && r.blockedReason ? `・${r.blockedReason}` : ''}` }),
       result ? h('details', {}, h('summary', { text: r.error ? `エラー: ${r.error.split('\n')[0].slice(0, 80)}` : `結果: ${r.resultText.split('\n')[0].slice(0, 80)}` }), h('div', { class: 'msg', text: result })) : null),
     btns);
@@ -2824,14 +2925,14 @@ function kickLive() {
   if (live.on && live.seq != null) watchOnce(0).catch(() => {});
 }
 
-// Some hosts may run an app's tool calls one at a time; then a held call would delay
-// every click. If a click's call finishes right after a long wait did, poll instead.
-function noteCall(name, startedAt, pendingAtStart) {
-  if (name === 'canban_watch' || !pendingAtStart || live.mode !== 'long') return;
+// Unknown hosts may serialize calls. Native Messaging multiplexes them, so a slow
+// normal response near a watch completion is not evidence of serialization there.
+function noteCall(name, startedAt, pendingAtStart, concurrent) {
+  if (concurrent || name === 'canban_watch' || !pendingAtStart || live.mode !== 'long') return;
   const now = performance.now();
   if (now - startedAt > 1500 && now - live.lastWatchEnd < 80) {
     live.mode = 'short';
-    console.warn('canban: host serializes tool calls; switching to short polling');
+    console.info('canban: using short polling to keep tool calls responsive');
   }
 }
 
@@ -3006,8 +3107,10 @@ function scopeLabel(b) {
   const f = state.filters;
   const dir = f.directory === '__none' ? 'カテゴリ無し' : b?.directories.find((d) => d.id === f.directory)?.name;
   const sec = f.section === '__none' ? 'セクションなし' : b?.codexSections?.find((x) => x.id === f.section)?.name;
-  const parts = [dir && `📂 ${dir}`, f.project && `📁 ${f.project}`, f.folder && `🗂 ${f.folder}`, sec && `§ ${sec}`, f.label && `ラベル: ${f.label === '__none' ? 'なし' : b?.labels.find(l => l.id === f.label)?.name || f.label}`].filter(Boolean);
-  return parts.length ? parts.join(' · ') : '📁 すべて';
+  const host = f.host ? b?.hosts.find((x) => (x.local ? 'local' : x.id) === f.host) : null;
+  const parts = [dir, f.project, f.folder && `フォルダ ${f.folder}`, sec && `§ ${sec}`, f.label && `ラベル: ${f.label === '__none' ? 'なし' : b?.labels.find(l => l.id === f.label)?.name || f.label}`,
+    host && `マシン: ${host.local ? 'このマシン' : host.label}`].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'すべて';
 }
 function setScope(patch) {
   if (workspace.utilityPage()) workspace.navigate('home', { reload: false });
@@ -3050,10 +3153,25 @@ function toggleSidebar(open = !state.sideOpen) {
   if (state.board) renderSidebar(state.board);
   if (open) state.sideInput?.focus();
 }
+// Sidebar entries that open something other than a filter: [page, icon, label, key hint].
+const SIDE_LOOK = [['analytics', 'chart', '分析', 'a'], ['usage', 'gauge', 'Agent Usage', ''], ['cards', 'cards', 'カードダッシュボード', 'D']];
+const SIDE_MANAGE = [['rules', 'zap', T.automation], ['labels', 'tag', 'ラベル'], ['directories', 'folder', T.category], ['views', 'bookmark', '保存ビュー'], ['hosts', 'server', 'マシン'], ['settings', 'gear', '設定']];
+function sideCount(b, page) {
+  return { rules: b.settings?.rules?.length, views: b.settings?.views?.length, labels: b.labels?.length, directories: b.directories?.length,
+    hosts: (b.hosts || []).filter((x) => !x.local && x.enabled).length || null, cards: panes.length || null }[page] ?? null;
+}
+function sideEntry(b, [page, icon, label, key]) {
+  const n = sideCount(b, page);
+  return h('button', { class: 'side-row side-entry', 'data-page': page, title: `${label}${key ? `（${key}）` : ''}`,
+    'aria-current': workspace.page === page ? 'page' : 'false', onclick: () => (page === 'analytics' ? toggleAnalytics() : workspace.navigate(page)) },
+    h('span', { class: 'side-ic', html: picon(icon, 18) }), h('span', { class: 'grow ellipsis', text: label }),
+    n == null ? null : h('span', { class: 'count', text: String(n) }));
+}
 function renderSidebar(b) {
   const el = $('#sidebar');
   $('#sideBtn').setAttribute('aria-pressed', String(state.sideOpen));
   el.hidden = !state.sideOpen || state.view === 'analytics';
+  document.body.classList.toggle('side-closed', el.hidden);
   if (el.hidden) return;
   const f = state.filters;
   if (!state.sideInput) {
@@ -3068,7 +3186,20 @@ function renderSidebar(b) {
   const hit = matcher(q);
   const count = (n) => h('span', { class: 'count', text: String(n) });
   const head = (title, ...extra) => h('div', { class: 'side-head' }, h('span', { class: 'grow', text: title }), ...extra);
-  const secs = [h('button', { class: 'side-close', text: '✕ 閉じる', onclick: () => toggleSidebar(false) }), state.sideInput];
+  const secs = [h('div', { class: 'side-brand', html: LOGO_SVG }, h('span', { class: 'brand-word', text: 'canban' })),
+    h('div', { class: 'side-top' }, h('span', { class: 'grow', text: 'ワークスペース' }),
+      h('button', { class: 'side-fold', type: 'button', title: 'サイドバーを畳む（b）', 'aria-label': 'サイドバーを畳む', html: picon('chev', 18), onclick: () => toggleSidebar(false) })),
+    state.sideInput];
+  const views = (b.settings?.views || []).map((v, i) => ({ v, i })).filter(({ v }) => hit(v.name));
+  if (views.length) secs.push(h('section', {}, head('ビュー'), views.map(({ v, i }) =>
+    h('button', { class: 'side-row', title: i < 9 ? `${v.name}（${i + 1}）` : v.name, onclick: () => applyView(v) },
+      h('span', { class: 'side-ic side-key', text: i < 9 ? String(i + 1) : '' }), h('span', { class: 'grow ellipsis', text: v.name })))));
+
+  // Short fixed entries first; the category list can be long, so it comes last.
+  const entries = (list) => list.filter(([, , label]) => hit(label)).map((x) => sideEntry(b, x));
+  const look = entries(SIDE_LOOK), manage = entries(SIDE_MANAGE);
+  if (look.length) secs.push(h('section', { class: 'side-sec-nav' }, head('見る'), look));
+  if (manage.length) secs.push(h('section', { class: 'side-sec-nav' }, head('管理'), manage));
 
   if (f.swimlane) {
     const rows = state.lanes.filter((l) => hit(l.name)).map((lane) => {
@@ -3087,11 +3218,22 @@ function renderSidebar(b) {
       rows.length ? rows : h('div', { class: 'side-head', text: '該当なし' })));
   }
 
+  // Running / waiting sessions per category, shown beside the name (the live HUD layout leans on these).
+  const liveBy = new Map();
+  for (const c of b.lists.flatMap((l) => l.cards)) {
+    if (c.status !== 'running' && c.status !== 'waiting') continue;
+    const key = c.directory?.id || '__none', v = liveBy.get(key) || { running: 0, waiting: 0 };
+    v[c.status]++; liveBy.set(key, v);
+  }
   const dirRow = (d) => h('div', { class: 'side-item side-dir', 'data-dir-id': d.id },
     h('button', { class: `side-row${f.directory === d.id ? ' active' : ''}`, title: 'クリックで絞り込み（もう一度で解除）。カードをここへドラッグすると所属を変えられます',
       onclick: () => setScope({ directory: f.directory === d.id ? '' : d.id }) },
-      h('span', { class: 'dot', style: { background: d.color ? colorVar(d.color) : 'rgba(255,255,255,0.35)' } }),
-      h('span', { class: 'grow ellipsis', text: d.name }), count(d.count)),
+      h('span', { class: 'dot', style: { background: d.color ? colorVar(d.color) : 'var(--header-btn-hover)' } }),
+      h('span', { class: 'dir-av', style: { background: d.color ? colorVar(d.color) : 'var(--header-btn-hover)' }, text: [...d.name][0]?.toUpperCase() || '' }),
+      h('span', { class: 'grow ellipsis', text: d.name }),
+      liveBy.get(d.id)?.running ? h('span', { class: 'dir-live s-run', title: `実行中 ${liveBy.get(d.id).running}`, text: String(liveBy.get(d.id).running) }) : null,
+      liveBy.get(d.id)?.waiting ? h('span', { class: 'dir-live s-wait', title: `入力待ち ${liveBy.get(d.id).waiting}`, text: String(liveBy.get(d.id).waiting) }) : null,
+      count(d.count)),
     d.id === '__none' ? null : h('button', { class: 'icon-btn', 'aria-label': `${d.name} の設定`, text: '⋯', onclick: (e) => directoryMenu(e.currentTarget, d.id) }));
   const dirs = [...b.directories, { id: '__none', name: 'カテゴリ無し', color: null, count: b.uncategorizedCount || 0 }].filter((d) => hit(d.name));
   const add = h('input', { class: 'side-filter', placeholder: `＋ 新しい${T.category}（Enter）`, 'aria-label': `新しい${T.category}`,
@@ -3381,7 +3523,7 @@ async function openTaskModal(cardId, init = null) {
   agentSel.value = t.agent || 'codex';
   const hostSel = pickerButton({ title: 'マシン', value: t.hostId || 'local', stack: false,
     items: () => b.hosts.map((x) => ({ value: x.local ? 'local' : x.id, label: x.local ? 'このマシン' : `⌂ ${x.label}${x.enabled ? '' : '（読み取りオフ）'}`, keywords: x.alias || '' })),
-    onChange: () => fillFolders() });
+    onChange: () => { fillFolders(); composer.contextChanged(); } });
   const dl = h('datalist', { id: `folders-${cardId}` });
   const cwd = h('input', { class: 'text-input', list: dl.id, placeholder: '作業フォルダ（絶対パス）', value: t.cwd || '', 'aria-label': '作業フォルダ' });
   const fillFolders = () => dl.replaceChildren(...b.folders.filter((f) => f.hostId === hostSel.value).map((f) => h('option', { value: f.cwd, label: f.project || '' })));
@@ -3389,17 +3531,30 @@ async function openTaskModal(cardId, init = null) {
   const prompt = h('textarea', { class: 'note', 'aria-label': '依頼文' });
   prompt.value = taskRequestText(card.title, card.description, card.note);
   prompt.defaultValue = prompt.value;
+  const composer = promptComposer(prompt, { key: `start:${cardId}`, context: () => ({ agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim() }), submit: () => start() });
+  agentSel.addEventListener('change', () => composer.contextChanged());
+  cwd.addEventListener('change', () => composer.contextChanged());
+  const startButtons = [];
   const start = async (opts = {}) => {
+    if (composer.draft.sending) return;
     try {
-      const r = await bridge.callTool('canban_start_session', { taskId: cardId, agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim(), prompt: prompt.value, ...opts });
+      const payload = composer.payload();
+      composer.setSending(true); startButtons.forEach(b => { b.disabled = true; });
+      const r = await bridge.callTool('canban_start_session', { taskId: cardId, agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim(), prompt: prompt.value, ...payload, ...opts });
       toast(r.note || `${agentSel.value === 'codex' ? 'Codex' : 'Claude'} で開始しました。セッションが現れると自動で紐付きます`, !!r.note);
+      composer.clear();
       if (!taskDash?.active) closePane(cardId);
       else { prompt.value = ''; workspace.draftValues.set(prompt, ''); }
       load();
     } catch (e) {
       toast(e.message, true);
+    } finally {
+      composer.setSending(false); startButtons.forEach(b => { b.disabled = false; });
     }
   };
+  startButtons.push(h('button', { class: 'btn-primary', title: shortcutHelp(), text: `▶ 開始（${routeLabel(b.settings.launch.route, { desktop: true })}）`, onclick: e => start(optsFromEvent(e)) }),
+    h('button', { class: 'btn', text: 'デスクトップで', onclick: () => start({ route: 'desktop' }) }),
+    h('button', { class: 'btn', text: 'ターミナルで', onclick: () => start({ route: 'terminal' }) }));
 
   const linkRows = card.links.map((l) => h('div', { class: 'sub-row' },
     h('span', { class: `sdot s-${l.status}` }),
@@ -3431,11 +3586,11 @@ async function openTaskModal(cardId, init = null) {
       h('button', { class: 'btn', text: '説明・メモを依頼文に取り込む', onclick: () => {
         if (prompt.value !== prompt.defaultValue && prompt.value.trim()) return toast('入力中の依頼文があります。先に内容を確認してください', true);
         prompt.value = taskRequestText(title.value, desc.value, memo.value);
-      } }), prompt,
+        prompt.dispatchEvent(new Event('input', { bubbles: true }));
+      } }), composer.root,
+      h('div', { class: 'muted', text: 'デスクトップで開始すると、依頼文に画像の参照を含めます。' }),
       h('div', { class: 'row', style: { marginTop: '8px', flexWrap: 'wrap' } },
-        h('button', { class: 'btn-primary', title: shortcutHelp(), text: `▶ 開始（${routeLabel(b.settings.launch.route, { desktop: true })}）`, onclick: e => start(optsFromEvent(e)) }),
-        h('button', { class: 'btn', text: 'デスクトップで', onclick: () => start({ route: 'desktop' }) }),
-        h('button', { class: 'btn', text: 'ターミナルで', onclick: () => start({ route: 'terminal' }) }))], hint: '開始したセッションは、AI App・マシン・フォルダ・依頼文が一致すると自動でこのカードに紐付きます。' },
+        ...startButtons)], hint: '開始したセッションは、AI App・マシン・フォルダ・依頼文が一致すると自動でこのカードに紐付きます。' },
     add: { nodes: [taskQuickAdd.summary(card),
       h('button', { class: 'side-btn', text: '所属を変更', onclick: () => taskQuickAdd.edit(card, list) }), h('button', { class: 'side-btn', text: '🏷 ラベル', onclick: e => labelPicker(e.currentTarget, cardId, labelState, () => {}) }),
       h('button', { class: 'side-btn', text: `📂 カテゴリ: ${card.directory?.name || 'カテゴリ無し'}`, onclick: e => directoryPicker(e.currentTarget, card, { cwd: cwd.value.trim() || null, after: () => openTaskModal(cardId) }) })] },
@@ -3491,6 +3646,7 @@ const TRIGGER_LABELS = {
   'status:waiting': '入力待ちになったら',
   'status:completed': '完了したら',
   'status:aborted': '中断したら',
+  archived: 'アーカイブされたら',
   activity: '新しい活動があったら',
   'pr:opened': 'PR / MR が作られたら',
   'pr:merged': 'PR / MR がマージされたら',
@@ -3614,17 +3770,45 @@ function toastAction(msg, label, fn) {
   toastTimer = setTimeout(() => t.remove(), 8000);
 }
 
+const runningRules = new Set();
+async function runRuleNow(ruleId) {
+  if (runningRules.has(ruleId)) return;
+  const updateButtons = (busy) => {
+    for (const button of document.querySelectorAll('[data-run-rule]')) {
+      if (button.dataset.runRule !== ruleId) continue;
+      button.disabled = busy;
+      button.textContent = busy ? '実行中…' : '今すぐ実行';
+      button.setAttribute('aria-busy', String(busy));
+    }
+  };
+  runningRules.add(ruleId);
+  updateButtons(true);
+  try {
+    const { result } = await act('canban_run_rule', { ruleId });
+    toast(`${result.moved} 件のカードを移動しました${result.errors?.length ? '（一部のセッションを取得できませんでした）' : ''}`);
+  } catch {
+    // act already displays the server error and refreshes the board.
+  } finally {
+    runningRules.delete(ruleId);
+    updateButtons(false);
+  }
+}
+
 function rulesMenu(anchor) {
   const b = state.board;
   const listName = (id) => (id === 'any' ? 'どのリストでも' : b.lists.find((l) => l.id === id)?.title ?? '（削除済みリスト）');
   const listSelect = (value, withAny) => pickerButton({ title: withAny ? '移動元のリスト' : '移動先のリスト', value,
     items: () => [withAny ? { value: 'any', label: 'どのリストでも' } : null, ...b.lists.map((l) => ({ value: l.id, label: l.title, color: l.color }))].filter(Boolean) });
   const rows = b.settings.rules.map((r) => h('div', { class: 'rule-row', 'data-key': `${triggerLabel(r.trigger)} ${listName(r.fromListId)} ${listName(r.toListId)}` },
-    h('label', { class: 'row' },
+    h('label', { class: 'row grow' },
       h('input', { type: 'checkbox', checked: r.enabled, 'aria-label': `この${T.automation}を有効にする`,
         onchange: (e) => act('canban_set_rule', { ...r, enabled: e.target.checked }).then(() => rulesMenu(anchor)) }),
       h('span', { text: `${triggerLabel(r.trigger)}、${listName(r.fromListId)} → ${listName(r.toListId)}` })),
-    h('button', { class: 'icon-btn', 'aria-label': `この${T.automation}を削除`, text: '🗑', onclick: () => act('canban_delete_rule', { ruleId: r.id }).then(() => rulesMenu(anchor)) })));
+    h('div', { class: 'rule-actions' },
+      h('button', { class: 'btn rule-run', 'data-run-rule': r.id, disabled: runningRules.has(r.id), 'aria-busy': String(runningRules.has(r.id)),
+        'aria-label': `${triggerLabel(r.trigger)}の自動化を今すぐ実行`, title: '現在の条件に一致するカードに適用します。自動実行が無効でも実行できます。',
+        text: runningRules.has(r.id) ? '実行中…' : '今すぐ実行', onclick: () => runRuleNow(r.id) }),
+      h('button', { class: 'icon-btn', 'aria-label': `この${T.automation}を削除`, text: '🗑', onclick: () => act('canban_delete_rule', { ruleId: r.id }).then(() => rulesMenu(anchor)) }))));
   const trig = pickerButton({ title: 'きっかけ', value: 'status:completed', items: () => [...Object.entries(TRIGGER_LABELS).map(([value, label]) => ({ value, label })),
     ...(b.codexSections || []).map((x) => ({ value: `section:${x.id}`, label: triggerLabel(`section:${x.id}`), group: 'Codex セクション' }))] });
   const from = listSelect('any', true);
@@ -3638,6 +3822,7 @@ function rulesMenu(anchor) {
     h('div', { class: 'row', style: { marginTop: '8px' } }, h('button', { class: 'btn-primary', text: '追加',
       onclick: () => act('canban_set_rule', { enabled: true, trigger: trig.value, fromListId: from.value, toListId: to.value }, { okMsg: `${T.automation}を追加しました` }).then(() => rulesMenu(anchor)) })),
     h('p', { class: 'muted', text: '状態が変わった瞬間にだけ動きます。ボードを閉じていても、Canban を入れた Codex か Claude デスクトップが起動していれば 60 秒ごとに評価されます。自動で動いたカードには ⚡ が付き、直後のお知らせから元に戻せます。' }),
+    h('p', { class: 'muted', text: '「今すぐ実行」は、画面の絞り込みに関係なく、現在の条件と移動元に一致するカードを移動します。無効にしたルールも手動実行できます。「新しい活動があったら」は取得したすべてのセッションが対象です。アーカイブ済みのカードを見るには、表示設定でアーカイブ済みを含めてください。' }),
     b.git && b.git.available === false ? h('p', { class: 'muted', text: `PR / CI の${T.automation}は使えません: ${b.git.reason}` }) : null);
   popover(anchor, `${T.automation}（カードの自動移動）`, body, { width: 400 });
 }
@@ -4119,23 +4304,26 @@ $('#projectBtn').addEventListener('click', (e) => scopePicker(e.currentTarget));
 $('#sideBtn').addEventListener('click', () => toggleSidebar());
 $('#days').addEventListener('change', (e) => { state.filters.days = Number(e.target.value); saveFilters(); state.shown = {}; load(); });
 $('#optBtn').addEventListener('click', (e) => optionsMenu(e.currentTarget));
-$('#labelsBtn').addEventListener('click', (e) => labelsManager(e.currentTarget));
-$('#hostsBtn').addEventListener('click', (e) => hostsMenu(e.currentTarget));
-$('#rulesBtn').addEventListener('click', (e) => rulesMenu(e.currentTarget));
-$('#viewsBtn').addEventListener('click', (e) => viewsMenu(e.currentTarget));
 $('#fulltext').checked = !!state.filters.fulltext;
 $('#fulltext').addEventListener('change', (e) => { state.filters.fulltext = e.target.checked; saveFilters(); if (state.filters.q) load(); });
 function syncViewButton() {
   $('#analyticsBtn').setAttribute('aria-pressed', String(state.view === 'analytics'));
-  $('#analyticsBtn .ic').textContent = state.view === 'analytics' ? '▦' : '📊';
-  $('#analyticsBtn .lbl').textContent = state.view === 'analytics' ? 'ボード' : '分析';
+  $('#boardViewBtn').setAttribute('aria-pressed', String(state.view !== 'analytics'));
 }
 syncViewButton();
 function toggleAnalytics() {
   workspace.navigate(state.view === 'analytics' ? 'home' : 'analytics');
   syncViewButton();
 }
-$('#analyticsBtn').addEventListener('click', toggleAnalytics);
+$('#analyticsBtn').addEventListener('click', () => { if (state.view !== 'analytics') toggleAnalytics(); });
+$('#boardViewBtn').addEventListener('click', () => { if (state.view === 'analytics') toggleAnalytics(); });
+// Card height: equal (the default) or fit to content; shared like the other view settings.
+$('#fitSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-card-fit]');
+  if (!b || state.cardFit === b.dataset.cardFit) return;
+  state.cardFit = b.dataset.cardFit; store.set('cardFit', state.cardFit);
+  if (state.board) render();
+});
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.querySelector('.popover')) closePopover(); });
 
 // ======================================================================
@@ -4185,6 +4373,8 @@ function commandPalette() {
     ...Object.entries(LANE_MODES).map(([v, t]) => ({ label: `スイムレーン: ${t}`, run: () => { f.swimlane = v; state.soloLane = null; saveFilters(); render(); } })),
     ...Object.entries(LANE_HEIGHTS).map(([v, [t]]) => ({ label: `レーンの高さ: ${t}`, run: () => { f.laneHeight = v; saveFilters(); render(); } })),
     { label: 'キーボードショートカット', run: showShortcuts, hint: '?' },
+    ...LAYOUTS.map(([id, name]) => ({ label: `レイアウト: ${name}`, run: () => setLayout(id) })),
+    ...[['light', 'ライト'], ['dark', 'ダーク'], ['system', 'システム']].map(([k, n]) => ({ label: `色: ${n}`, run: () => { setThemePref(k); paintLayoutChrome(); } })),
   ];
   const run = new Map();
   const items = [];
@@ -4229,7 +4419,6 @@ document.addEventListener('keydown', (e) => {
   }
 });
 $('#seenBtn').addEventListener('click', () => act('canban_mark_all_seen', {}, { okMsg: 'すべて既読にしました' }));
-$('#settingsBtn').addEventListener('click', (e) => settingsMenu(e.currentTarget));
 $('#perfBtn').addEventListener('click', (e) => perfPanel(e.currentTarget));
 $('#refresh').addEventListener('click', () => load({ refresh: true }).then(() => toast('最新の状態に更新しました')));
 
@@ -4240,19 +4429,29 @@ $('#board').addEventListener('wheel', (e) => {
 }, { passive: false });
 
 // ======================================================================
-// @include workspace-icons.js
+// @include layouts.js
 // @include workspace.js
 // @include task-dashboard.js
 
 // Theme & lifecycle
 // ======================================================================
-function applyTheme(t) {
-  const theme = t === 'dark' || t === 'light' ? t : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+// The user's choice (light / dark / system) wins; "system" follows the host app, then the OS.
+const THEME_PREFS = ['light', 'dark', 'system'];
+function applyTheme(host = state.hostTheme) {
+  const pref = THEME_PREFS.includes(state.themePref) ? state.themePref : 'system';
+  const theme = pref !== 'system' ? pref : host === 'dark' || host === 'light' ? host : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   document.documentElement.dataset.theme = theme;
+  for (const b of $$('#themeSeg [data-theme-pref]')) b.setAttribute('aria-pressed', String(b.dataset.themePref === pref));
 }
-bridge.on('ui/notifications/host-context-changed', (p) => { if (p?.theme) applyTheme(p.theme); });
-window.addEventListener('openai:set_globals', (e) => { const t = e.detail?.globals?.theme; if (t) applyTheme(t); });
-matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { if (!state.hostTheme) applyTheme(); });
+function setThemePref(pref) {
+  state.themePref = THEME_PREFS.includes(pref) ? pref : 'system';
+  store.set('themePref', state.themePref);
+  applyTheme();
+}
+$('#themeSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-theme-pref]'); if (b) setThemePref(b.dataset.themePref); });
+bridge.on('ui/notifications/host-context-changed', (p) => { if (p?.theme) { state.hostTheme = p.theme; applyTheme(); } });
+window.addEventListener('openai:set_globals', (e) => { const t = e.detail?.globals?.theme; if (t) { state.hostTheme = t; applyTheme(); } });
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => applyTheme());
 
 // Panes that were open last time come back (a card that no longer exists just drops out).
 async function restorePanes() {
@@ -4273,7 +4472,7 @@ async function restorePanes() {
 
 function sharedUiSnapshot() {
   return {
-    filters: { ...state.filters }, sidebar: state.sideOpen, view: state.view, workspacePage: workspace.page, navCollapsed: workspace.collapsed, activeTask: workspace.activeTask || workspace.pendingTask || null, labelsExpanded: state.labelsExpanded,
+    filters: { ...state.filters }, themePref: state.themePref, layout: state.layout, cardFit: state.cardFit, sidebar: state.sideOpen, view: state.view, workspacePage: workspace.page, activeTask: workspace.activeTask || workspace.pendingTask || null, labelsExpanded: state.labelsExpanded,
     paneGlobal: taskDash?.active ? store.get('paneGlobal', PANE_DEF) : { ...paneGlobal }, paneLayout: taskDash?.active ? store.get('paneLayout', PANE_LAYOUT_DEF) : structuredClone(paneLayout), panes: store.get('panes', []),
     dashOpen, paneCollect, orbPos: { ...orbPos }, paneBarOpen, collapsedLanes: [...collapsedLanes],
   };
@@ -4289,7 +4488,9 @@ function adoptSharedUi(record) {
     for (const key of SHARED_UI_KEYS) if (Object.hasOwn(value, key)) store.cache(key, value[key]);
     if (value.filters && typeof value.filters === 'object' && !Array.isArray(value.filters)) state.filters = { ...DEFAULT_FILTERS, ...value.filters };
     if (typeof value.sidebar === 'boolean') state.sideOpen = value.sidebar;
-    if (typeof value.navCollapsed === 'boolean') workspace.setCollapsed(value.navCollapsed, false);
+    if (typeof value.themePref === 'string') { state.themePref = value.themePref; applyTheme(); }
+    if (typeof value.layout === 'string') { state.layout = layoutOf(value.layout); applyLayout(); }
+    if (value.cardFit === 'auto' || value.cardFit === 'fixed') state.cardFit = value.cardFit;
     workspace.pendingTask = value.activeTask || null;
     workspace.activeTask = null;
     if (value.view === 'board' || value.view === 'analytics') {
@@ -4428,6 +4629,7 @@ async function initializeSharedUi() {
 
 function hasUnsavedPaneInput() {
   if (taskDash?.hasDrafts()) return true;
+  if ([...promptDrafts.values()].some(d => d.images.length || d.skills.length || d.sending || d.text !== d.baseline)) return true;
   return workspace.hasDrafts() || [...document.querySelectorAll('.send-box textarea')].some((input) => input.value.trim())
     || [...document.querySelectorAll('textarea.note')].some((input) => input.value !== input.defaultValue);
 }

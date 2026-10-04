@@ -133,7 +133,8 @@ export class RequestStore {
     const patch = {};
     if (prompt !== undefined) {
       const p = String(prompt).trim();
-      if (!p) throw new Error('プロンプトを入力してください');
+      const current = this.get(id);
+      if (!p && !current?.images?.length && !current?.skills?.length) throw new Error('プロンプトを入力してください');
       if (p.length > MAX_PROMPT) throw new Error(`プロンプトは ${MAX_PROMPT} 文字までです`);
       patch.prompt = p;
     }

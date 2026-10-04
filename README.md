@@ -18,9 +18,9 @@
 - カードから**ワンクリックでセッションを再開**できます。再開先は、Codex / Claude のデスクトップアプリか、ターミナル（新規ウィンドウ / 新規タブ / 分割 / 既存ウィンドウ）を選べます。
 - ボードは**リアルタイム**に動きます。実行中のカードには、いま何をしているか（`Bash: npm test` など）が出ます。カードを開くと、Codex / Claude アプリと同じように会話・ツールの実行・結果がその場で流れます。
 - カードから既存のセッションに**指示（プロンプト）を送れます**。今すぐ送るか、キューに積み、起動時の安全確認を通った依頼を順に送ります。使用中や状態不明の場合は止めて通知します。送信はエージェント公式の CLI で 1 ターンずつ行い、権限はそのセッションの設定をそのまま引き継ぎます。
-- Canban がセッションのファイルを**直接書き換えることはありません**。Canban 側の情報は `~/.canban/` にだけ保存します。
+- Canban がセッションのファイルを**直接書き換えることはありません**。Canban 側の情報は設定されたCanban専用の保存先に保存します。
 
-> English summary: Canban is a Codex desktop sidebar app (also installable in Claude Desktop as an extension, where the board opens inside the conversation) that puts your Codex and Claude Code sessions — local and on SSH hosts registered in Codex — on a Trello-style board. It never writes agent data itself, stores its own state in `~/.canban`, and can resume any session in the agent's desktop app or in your terminal (new window / tab / split / current window). It can also send a prompt (now or queued) to an existing session: one headless turn through the agent's own CLI (`codex exec resume` / `claude -p --resume`), with the session's own sandbox / permission mode. Requires Node.js ≥ 22.13.
+> English summary: Canban is a Codex desktop sidebar app (also installable in Claude Desktop as an extension, where the board opens inside the conversation) that puts your Codex and Claude Code sessions — local and on SSH hosts registered in Codex — on a Trello-style board. It never writes agent data itself, stores its own state in its configured data directory, and can resume any session in the agent's desktop app or in your terminal (new window / tab / split / current window). It can also send a prompt (now or queued) to an existing session: one headless turn through the agent's own CLI (`codex exec resume` / `claude -p --resume`), with the session's own sandbox / permission mode. Requires Node.js ≥ 22.13.
 
 ## 必要なもの
 
@@ -31,10 +31,10 @@
 
 ## インストール
 
-1. リポジトリを `~/plugins/canban` に置きます。
+1. リポジトリを `~/Documents/repo/canban` に置きます。
 
    ```bash
-   git clone --branch production https://github.com/kamihicouki/canban.git ~/plugins/canban
+   git clone --branch production https://github.com/kamihicouki/canban.git ~/Documents/repo/canban
    ```
 
 2. 個人マーケットプレイス `~/.agents/plugins/marketplace.json` に登録します（ファイルが無ければ作成します）。
@@ -70,7 +70,7 @@ Claude デスクトップには、拡張機能（`.mcpb`）として入れます
 1. 拡張機能のファイルを作ります（`dist/canban.mcpb` ができます）。
 
    ```bash
-   cd ~/plugins/canban
+   cd ~/Documents/repo/canban
    npm run pack:mcpb
    ```
 
@@ -93,7 +93,7 @@ Claude デスクトップには、拡張機能（`.mcpb`）として入れます
 }
 ```
 
-Codex と Claude デスクトップの両方に入れた場合も、保存先は同じ `~/.canban/` なので、同じボードが見えます。背景処理（自動化・索引作成・指示のキュー）は、SQLite の実行権を取得したサーバーだけが実行します。
+Codex と Claude デスクトップの両方に入れた場合も、保存先を同じCanbanデータディレクトリに揃えることで、同じボードが見えます。背景処理（自動化・索引作成・指示のキュー）は、SQLite の実行権を取得したサーバーだけが実行します。
 
 ### Chrome で使う
 
@@ -102,7 +102,7 @@ Codex と Claude デスクトップの両方に入れた場合も、保存先は
 1. このリポジトリで拡張をビルドします。
 
    ```bash
-   cd ~/plugins/canban
+   cd ~/Documents/repo/canban
    npm run build:chrome
    ```
 
@@ -115,7 +115,7 @@ Codex と Claude デスクトップの両方に入れた場合も、保存先は
    npm run install:chrome-native-host -- --extension-id <拡張ID>
    ```
 
-   登録するのはユーザー領域の Chrome Native Messaging Hosts マニフェスト 1 ファイルです。マニフェストはこのリポジトリ内の起動スクリプトを指し、接続を許可する拡張 ID を指定します。リポジトリを別の場所へ移動した場合は、再ビルドして Native Messaging Host を再登録してください。
+   このコマンドは連携ソフトをmacOSでは `~/Library/Application Support/Canban/native-hosts/<host名>/`、Linuxでは `${XDG_DATA_HOME:-~/.local/share}/canban/native-hosts/<host名>/` に配布し、ユーザー領域の Chrome Native Messaging Hosts マニフェストを登録します。マニフェストは配布先のランチャーを指し、接続を許可する拡張 ID を指定します。連携ソフトの更新時は同じ登録コマンドを再実行して、配布物と登録を更新してください。設定済みのローカルmainテスト版は `npm run update:local` で更新します。
 4. Chrome を再起動し、拡張をツールバーにピン留めしてボタンを押すと、Canban が専用タブで開きます。
 
 `Specified native messaging host not found` が表示された場合は、拡張の読み込みは成功していますが、手順3のホスト登録が未完了です。Chromeの拡張画面に表示されるIDで登録コマンドを実行し、Canbanのタブを再読み込みしてください。Codex／Claude／Chromeは同時に開けます。画面設定を同時に変更した場合は、競合を検知した画面の同期を止めます。 更新時は、既に動いているCodex／ClaudeのCanbanサーバーも再起動してください。旧版のサーバーは新しい画面設定の保存形式を知らないため、旧版と新版の併用中は共有画面設定が失われることがあります。
@@ -126,7 +126,15 @@ Codex と Claude デスクトップの両方に入れた場合も、保存先は
 npm run uninstall:chrome-native-host -- --extension-id <拡張ID>
 ```
 
-Chrome も Codex／Claude と同じ MCP サーバーと `~/.canban/canban.sqlite` を使います。フィルター、ボード／分析表示、サイドバー、開いているカード、パネル配置、折り畳みレーンなどの画面設定はアプリ間で共有されます。起動時と画面に戻ったときに同期します。スクロール位置、フォーカス、入力途中の文字は共有しません。競合を検知すると自動マージせず、その画面からの保存を止めて「共有状態を読み込む」操作を表示します。
+Chrome も Codex／Claude と同じ MCP サーバーと保存先の `canban.sqlite` を使います。フィルター、ボード／分析表示、サイドバー、開いているカード、パネル配置、折り畳みレーンなどの画面設定はアプリ間で共有されます。起動時と画面に戻ったときに同期します。スクロール位置、フォーカス、入力途中の文字は共有しません。競合を検知すると自動マージせず、その画面からの保存を止めて「共有状態を読み込む」操作を表示します。
+
+### ローカル開発環境の配置と更新
+
+Chromeの連携ソフトはmacOSでは `~/Library/Application Support/Canban/`、LinuxではXDGデータ領域へ配布します。Documents内のrepoをChromeから直接起動して読み取りを拒否される問題を防ぎます。ユーザーデータは引き続き `~/.canban/` に保存します。連携ソフトの更新時はNative Hostの登録コマンドを再実行してください。
+
+このMacでは通常repoを `/Users/d/Documents/repo/canban` に集約し、開発・テスト用の設定・データ・バックアップをGit管理外の `.local/` に置きます。通常ユーザーのデータは `~/.canban/` に保存します。設定済みlocal mainは `npm run update:local` で、Git管理ファイルのみのプラグイン配布物 `dist/codex-plugin`、登録済みChromeテスト版 `dist/chrome`、Codexへの導入を順に更新します。拡張IDとNative Messaging接続先を維持します。
+
+通常Chromeは `CANBAN_DATA_DIR`、`~/.canban/` の順で保存先を決め、checkoutの開発設定を読みません。開発checkoutは `CANBAN_DATA_DIR`、`.local/config.json`、`~/.canban/` の順です。このMacの共有実データも `~/.canban/` に置き、repoの `.local/data` はそこへの参照リンクにします。具体的な配置・移行・クライアント間共有・更新完了条件は [ローカル配置の契約](docs/local-layout.md) を参照してください。
 
 ## 用語（Codex / Claude Code との対応）
 
@@ -139,7 +147,7 @@ Canban の言葉が Codex / Claude Code の同名の概念と食い違わない�
 | **カテゴリ** | Canban だけのまとまり。1 枚のカードに 1 つ（API 上の名前は `directory`）。サイドバーの「⇣ Codex」で Codex のプロジェクトから作れます | 近いもの: Codex のプロジェクト、Claude デスクトップのグループ（Canban からは読みません） |
 | **ラベル** | 複数付けられるタグ | なし |
 | **リスト** | カンバンの列 | 近いもの: Codex のセクション（サイドバーの見出し）。カードに「§ 名前」と表示し、絞り込み・スイムレーンにも使えます。「⚡ 自動化」の「Codex のセクション『…』に入ったら」で、セクションの移動に合わせてリストを動かせます |
-| **⚡ 自動化** | 状態・PR・CI・Codex のセクションの変化でカードを別のリストへ移す | 別物: Codex の**オートメーション**（定期実行されるスレッド。カードには「⏰ Codex オートメーション」と表示）、Codex の `.rules` / Claude の許可ルール（コマンドの実行許可） |
+| **⚡ 自動化** | 状態・アーカイブ・PR・CI・Codex のセクションの変化でカードを別のリストへ移す。各ルールの「今すぐ実行」で現在の条件に再適用できる | 別物: Codex の**オートメーション**（定期実行されるスレッド。カードには「⏰ Codex オートメーション」と表示）、Codex の `.rules` / Claude の許可ルール（コマンドの実行許可） |
 | **タスクカード** | 仕事の情報・通常セッション・保存した作業画面を束ねるカード | 別物: Claude Code の Task / TaskCreate、Codex のクラウドタスク |
 | **AI Apps** | Codex / Claude Code のどちらのセッションか | — |
 | **📌** | Codex アプリでピン留めしたスレッド（「表示」→ ピン留めしたものだけ） | Codex のピン留め（同じ） |
@@ -246,10 +254,13 @@ AI App（Codex / Claude Code）ごとに、次のリンクやコマンドで再�
 - ヘッダの集計ボタンを押すと、その状態のカードだけを表示します。
 - 前回見たあとに動きがあったカードには「新着」を付けます。「✓ 既読」でまとめて消せます。
 - 「⚡ 自動化」では「完了したら 進行中 → レビュー」のような、カードの自動移動を設定できます。初期状態はすべてオフです。
-  - 自動化が動くのは、状態が**変わった瞬間**だけです。
+  - 自動化が自動で動くのは、状態が**変わった瞬間**だけです。
+  - 「アーカイブされたら」「どのリストでも → アーカイブ」のルールで、セッションをアーカイブしたときにカードを指定のリストへ移せます。同時に活動や実行状態も変わった場合、アーカイブのルールを優先します。
+  - 各ルールの「今すぐ実行」は、画面の絞り込みに関係なく、現在の条件と移動元に一致するカードへ再適用します。無効にしたルールも実行でき、すでにアーカイブ済みのカードの整理にも使えます。「新しい活動があったら」の手動実行は、取得したすべてのセッションが対象です。
+  - アーカイブ済みのカードを確認するには、表示設定でアーカイブ済みを含めてください。Claude のアーカイブ状態が不明なセッションは、アーカイブのルールの対象にしません。
   - Codex が起動していれば、ボードを閉じていても 60 秒ごとに評価します。
   - 自動で動いたカードには ⚡ が付き、直後のお知らせから元に戻せます。
-  - 直前の状態は、Canban 専用の `~/.canban/status.json` に保存します。
+  - 直前の状態は、Canban 専用の 保存先の `canban.sqlite` に保存します。手動実行では、この状態を変更しません。
 
 ### カードの表示（複数のパネル）
 
@@ -315,7 +326,7 @@ AI App（Codex / Claude Code）ごとに、次のリンクやコマンドで再�
   - ヘッダの絞り込み（AI Apps・マシン・カテゴリ・プロジェクト）がそのまま効きます。カテゴリ別の内訳も表示します。
   - 各グラフはホバーで数値を確認でき、「表で見る」で表形式にも切り替えられます。
 - **本文検索**: 検索欄の横の「本文」をオンにすると、会話の本文も検索します（3 文字以上、日本語の部分一致に対応）。
-  - 直近 90 日のセッションを Canban 専用の索引 `~/.canban/search.sqlite`（SQLite FTS5 trigram）にバックグラウンドで取り込み、カードに一致箇所を表示します。
+  - 直近 90 日のセッションを Canban 専用の索引 保存先の `search.sqlite`（SQLite FTS5 trigram）にバックグラウンドで取り込み、カードに一致箇所を表示します。
   - 有効にしたリモートのホストでは、その場で検索します。
 - **スイムレーン**: 「表示」メニューで、行をカテゴリ・プロジェクト・マシン・AI App・ラベルごとに分けられます。
   - レーンの見出しはスクロールしても上に残ります。
@@ -353,26 +364,19 @@ Canban は自分自身の処理時間を計測し、予算（[docs/performance.m
 
 ### アカウントと使用量
 
-ヘッダの 👤 ボタンに、アカウントごとの使用量が二重リングで並びます（外側が 5 時間枠、内側が週枠。緑・オレンジ・赤で使用率を示し、中央に頭文字とアカウントの色、角に Codex／Claude の印）。押すと見つかったアカウントが AI App ごとに並びます。名前をクリックすると、そのアカウントのセッションだけを表示します。チェックを外したアカウントはリングに出しません。✎ で表示名・頭文字・色を変えられます。
+ヘッダのアカウントボタンに、使用量が二重リングで並びます（外側が5時間枠、内側が週枠）。押すと各アカウントのログイン状態、使用量、最終取得時刻を確認できます。名前をクリックするとカードを絞り込み、チェックでリングの表示を切り替えます。設定ボタンから表示名・頭文字・色を変更できます。
 
-ヘッダは折り返さず 1 段で表示します。幅が足りないときは、まずボタンの文字を消してアイコンだけにし、それでも入らないものは優先度の低い順に ⋯ へ移します。
+**使用量の更新**: アカウントごとの「更新」または「すべて更新」で現在の使用量を取得します。自動更新は既定5分で、1〜1440分の任意の間隔を保存できます。Canbanの連携プロセスが稼働している間に更新し、次の取得までの時間も表示します。複数の画面や連携プロセスがあっても、同じアカウントへの同時取得を抑制します。
 
-- **どのアカウントのセッションか**
-  - Claude: Claude デスクトップのセッション情報の置き場所（`claude-code-sessions/<アカウント>/<組織>/`）から分かります。CLI だけで使ったセッションは記録がないため「アカウント不明」になります。
-  - Codex: スレッドに記録されたアカウント（`threads.creator_account_id`）から分かります。記録が始まる前の古いスレッドは「アカウント不明」になります。
-  - 既定以外の設定フォルダ（下記）のセッションは、そのフォルダでサインインしているアカウントのものとみなします。
-- **サインイン中のアカウント**: Claude CLI は各設定フォルダの `.claude.json`、Codex は `auth.json`（アカウント ID・メールアドレス・プランだけを読み、トークンを保存・出力しません）、Claude デスクトップは各プロファイルの `config.json` から読みます。
-- **使用量**: Codex はセッションのログに書かれた利用上限、Claude は Claude デスクトップが記録している使用率（`plan-usage-history.json`、5 時間枠・週枠）を、アカウントごとに表示します。Claude はデスクトップが動いている間だけ記録されるため、1 時間以上前の値は薄く表示します。
-- **Claude デスクトップのプロファイル**: `~/Library/Application Support/Claude-*` や `Claude-Profiles/*`（アプリのデータフォルダを切り替えて複数アカウントを使う構成）も読みます。シンボリックリンクで共有しているフォルダは 1 回だけ読み、実体のある場所のアカウントのものとみなします。
-- **アカウントが違うとき**: Claude デスクトップは、サインイン中のアカウントのセッションしか開けません。別アカウントのセッションは、既定の再開ではターミナル（`claude --resume`）で開きます。詳細画面にも注意が出ます。
+- Codexは対象の `CODEX_HOME` に保存された認証情報で公式CLIのApp Serverから利用上限を取得します。モデルへの指示や有料のターンは実行しません。APIキーのアカウントはサブスクリプション使用量の取得対象外です。
+- Claudeは対象のCLI保存先のOAuth認証で公式の使用量APIから取得します。認証切れやデスクトップのみのアカウントには「ログインして最新の使用量を取得」を表示します。取得したアカウントIDを照合して別アカウントの値を混ぜません。
+- セッションログやClaude Desktopの記録も表示に使用します。取得失敗時は前回の値と時刻を残し、更新状態を別に表示します。未取得・期限切れを残量100%として表示しません。
 
-**設定フォルダ**: `CLAUDE_CONFIG_DIR` / `CODEX_HOME` で別のフォルダを使っているアカウントも読めます。
+**追加**: サービスを選び「ターミナルでログイン」または「任意のブラウザで認証」を選びます。保存先の `accounts/<service>/<id>/`に専用の保存先を作成します。ブラウザ認証ではURLをコピーして好きなブラウザで開くか、Chromeのプロファイル／Safariを選んで起動できます。Claudeはブラウザに表示された認証コードも入力できます。ターミナルを開けない場合は、ログイン待ちの「ログインコマンドをコピー」から任意のターミナルで実行してください。ディレクトリ入力は不要です。ログイン完了は自動確認し、「完了を確認」からも確認できます。既存の認証情報は上書きしません。ログイン待ちは再起動後も残り、取消時にもファイルは削除しません。ブラウザ認証とターミナル起動は現在macOS対応です。
 
-- `~/.claude-*`、`~/.claude-profiles/*`、`~/.codex-*` のうち、セッションのデータがあるものは自動で見つけます（「アカウント」の設定でオフにできます）。
-- それ以外の場所は「アカウント」→「設定フォルダ」で追加します。
-- そのフォルダのセッションを再開・送信するときは、`CLAUDE_CONFIG_DIR=<フォルダ>` / `CODEX_HOME=<フォルダ>` を付けて CLI を動かします。
+**保存先の変更**: Canbanで追加した専用保存先は、アカウント設定から同じディスク内の未使用フォルダへデータごと移動できます。実行中・入力待ちのセッションがある間は変更できません。Claudeの認証は移動先でCLIが読める `.credentials.json`（本人のみ読み書き可能）にも保存します。既定の `~/.codex` や `~/.claude` は移動しません。既存フォルダの登録・解除、自動検出は「詳細設定」から操作できます。別のフォルダのセッションを再開・送信するときは、その `CODEX_HOME` / `CLAUDE_CONFIG_DIR` を使用します。
 
-モデルからは `canban_get_usage` で、アカウントごとの使用量・セッション数・サインイン状況を読めます。一覧や分析のツールは `account` で絞り込めます。
+モデルからは `canban_get_usage` でアカウントと使用量を参照できます。更新・ログイン・保存先の変更はUI用の操作です。
 
 ### リモートのセッション
 
@@ -389,8 +393,8 @@ Canban は自分自身の処理時間を計測し、予算（[docs/performance.m
 |---|---|
 | `~/.codex/state_*.sqlite`、`~/.codex/sessions/**` | Canban は読み取り専用（SQLite の read-only モード＋`PRAGMA query_only`）。指示を送ったときは、Codex 自身（`codex exec resume`）がセッションに 1 ターン追記します |
 | `~/.claude/projects/**`、Claude デスクトップのセッション情報 | Canban は読み取り専用。指示を送ったときは、Claude Code 自身（`claude -p --resume`）が追記します |
-| アカウント情報（`~/.claude.json`・各設定フォルダの `.claude.json`、Codex の `auth.json`、Claude デスクトップの `config.json`・`plan-usage-history.json`） | 読み取り専用。アカウント ID・メールアドレス・プラン・使用率だけを取り出し、トークンを保存・出力しません |
-| `~/.canban/canban.sqlite`（WAL を含む）、`search.sqlite`、`runs/*.log` | Canban が書き込むファイル（Canban 専用のディレクトリ） |
+| アカウント情報（`~/.claude.json`・各設定フォルダの `.claude.json`、Codex の `auth.json`、Claude デスクトップの `config.json`・`plan-usage-history.json`） | 読み取り専用。アカウント 表示にはID・メールアドレス・プラン・使用率だけを使います。使用量取得では認証情報を公式サービスへ渡しますが、CanbanのDB・返却値・ログには保存・出力しません |
+| Canbanデータディレクトリ内の `canban.sqlite`（WAL を含む）、`search.sqlite`、`runs/*.log` | Canban が書き込むファイル（Canban 専用のディレクトリ） |
 
 詳しくは [SECURITY.md](SECURITY.md) を参照してください。
 
@@ -457,7 +461,7 @@ Issue や PR を歓迎します。
 
 ## SQLite への移行（0.14.0）
 
-同一端末の Codex Desktop・Claude Desktop・Chrome は `~/.canban/canban.sqlite` を共有します。各 MCP プロセスの専用 Worker が DB 操作を行います。WAL によって閲覧を継続でき、書き込みは `BEGIN IMMEDIATE` で直列化します。ロック待ちは 250ms、DB 操作の再試行を含めて最大 2 秒です。取得できなければ「別の画面が更新中」と通知します。Turso による端末間同期は含みません。
+同一端末の Codex Desktop・Claude Desktop・Chrome は 保存先の `canban.sqlite` を共有します。各 MCP プロセスの専用 Worker が DB 操作を行います。WAL によって閲覧を継続でき、書き込みは `BEGIN IMMEDIATE` で直列化します。ロック待ちは 250ms、DB 操作の再試行を含めて最大 2 秒です。取得できなければ「別の画面が更新中」と通知します。Turso による端末間同期は含みません。
 
 1. すべてのアプリの Canban を閉じ、Canban サーバーを停止します。
 2. `npm run migrate:sqlite` で停止状態と移行先を事前確認します。
@@ -496,6 +500,8 @@ Canbanの開発と`origin/main`への統合は、このCodex側を主管とし�
 
 リリースは同じリポジトリの **main → production の PR** で行います。production は直接 push・強制更新・削除を禁止し、4構成のテスト、ZIP作成、取り込み元の検証を必須にします。単独で運用できるよう、他者の承認人数は0人です。
 
-main と PR では検証と ZIP 作成までを実行します。production の更新では、同じコミットの Ubuntu/macOS × Node 22/24 のテストと ZIP 検証が成功した後、Chrome Web Store へアップロード・審査申請します。タグからの公開は行いません。リリースごとに package・MCP manifest・Codex plugin のバージョンを揃え、公開済みより新しい番号にしてください。緊急修正も main に統合してから production へ取り込みます。
+production に作られたマージ履歴は main に取り込み、次のリリース PR が production の最新コミットを含む状態で必須チェックを通します。
+
+main と PR では検証と ZIP 作成までを実行します。production の更新では、同じコミットの Ubuntu/macOS × Node 22/24 のテストと ZIP 検証が成功した後、Chrome Web Store へアップロード・審査申請します。タグからの公開は行いません。軽微な修正を含め、変更ごとに `x.y.z` のバージョンを上げ、package・MCP manifest・Codex plugin・Chrome build の番号と CHANGELOG を揃えてください。ローカル main に取り込んだ変更は、Chrome に登録済みの固定フォルダーへ再ビルドしてから拡張を再読み込みします。ストアへのリリース時は公開済みより新しい番号を使用します。緊急修正も main に統合してから production へ取り込みます。
 
 認証設定、手動実行、申請の証拠は [CHROMEWEBSTORE.md](CHROMEWEBSTORE.md) を参照してください。審査申請の成功と実際の公開は別の状態です。

@@ -1,10 +1,12 @@
 # Chrome Web Store — Canban
 
-最終更新: 2026-10-02
+最終更新: 2026-10-04
 
 ## ストア掲載情報
 
-名前: Canban
+名前: Canban 0.18.1
+
+拡張名はビルド時にバージョンを含め、アドレスバー左側にも表示します。
 
 短い説明（manifest と同一）: Codex / Claude Code のセッションをカンバンで管理します。
 
@@ -21,13 +23,17 @@ Canban は、Codex / Claude Code のセッションを Chrome からカンバン
 
 セッションを一覧表示し、検索、分類、ラベル、メモで作業を整理できます。タスクをすばやく追加し、詳細画面でダッシュボードや進捗を確認できます。会話や実行状態を確認し、複数のセッションを並べて表示できます。Canban を利用している Codex / Claude の画面と、ボードの分類や表示設定を共有できます。
 
+アーカイブされたセッションを指定のリストへ自動で移動できます。保存した自動化は「今すぐ実行」で、現在の条件に一致するカードへまとめて適用できます。
+
+カードの依頼文やセッションへの指示に画像を添付し、利用するスキルを検索・選択できます。画像は選択・貼り付け・ドロップで追加でき、指示のキューにも保持します。
+
 利用には Chrome 拡張に加え、コンピューターへの Canban 連携ソフトの導入が必要です。macOS / Linux と Node.js 22.13 以降に対応します。Chrome 拡張だけをインストールしてもセッションは表示されません。導入手順はサポートサイトをご覧ください。
 
 1. サポートサイトの手順で Canban 連携ソフトを導入します。
 2. インストールした拡張の ID を使って、ローカル連携を登録します。
 3. Chrome の Canban アイコンをクリックしてボードを開きます。
 
-セッションやメモを Canban 開発者のサーバーへ送信しません。閲覧履歴や一般のウェブページを読み取らず、広告や追跡機能もありません。利用者がリモート接続や AI への指示の送信を選んだ場合は、利用者が設定した接続先と通信します。
+セッションやメモを Canban 開発者のサーバーへ送信しません。閲覧履歴や一般のウェブページを読み取らず、広告や追跡機能もありません。使用量の更新時はCodex / Claudeの公式サービスと通信します（既定5分の自動更新は変更・停止可能）。アカウント追加はターミナル経由のログイン、または認証URLを任意のブラウザで開く方法を選べます。ChromeのプロファイルやSafariも選択できます。利用者がリモート接続や AI への指示の送信を選んだ場合は、利用者が設定した接続先と通信します。
 
 Canban は MIT ライセンスのオープンソースです。ソース、導入手順、問い合わせ先:
 https://github.com/kamihicouki/canban
@@ -50,15 +56,17 @@ https://github.com/kamihicouki/canban
 
 | 権限 | 審査向け説明 |
 |---|---|
-| nativeMessaging | The extension displays and manages the user's local Codex and Claude Code sessions through the Canban companion installed by the user. Native Messaging connects only to `com.kamihicouki.canban` on the same computer. The companion reads session metadata and conversations and stores board organization locally. User-initiated session actions use the installed agent applications. No browsing history or website content is accessed. |
+| nativeMessaging | The extension displays and manages the user's local Codex and Claude Code sessions through the Canban companion installed by the user. Native Messaging connects only to `com.kamihicouki.canban` on the same computer. The companion reads session metadata and conversations and stores board organization locally. User-initiated session actions use the installed agent applications. The companion also retrieves subscription usage from the official providers using locally stored account credentials and runs the official CLI for user-initiated account login in a terminal or displays its authorization URL for the user to open in their chosen browser. Browser selection reads only application and profile display names, never browser cookies or credentials. Credentials are not returned to the extension or developer. No browsing history or general website content is accessed. |
 
 host_permissions、content_scripts、tabs、identity、storage 権限なし。リモート配信コードなし。拡張コードはすべて ZIP に同梱し、インラインスクリプトも除外する。
 
 ## プライバシー申告
 
+添付画像と選択したスキルの名前・保存場所は利用者のコンピューターに保存します。画像はCanbanの保存先の `prompt-images/` に保持し、送信時に選択したAIへ渡します。SSH接続先に画像が必要な操作では、その接続先の `~/.canban-remote/prompt-images/` にも保存します。スキルの候補は利用者のマシン・プロジェクト・インストール済みプラグインのスキル定義から取得します。開発者への送信はありません。
+
 開発者へのデータ収集・販売・広告利用なし。ローカル連携プロセスへ渡すデータは、会話・メモ・検索条件・作業フォルダー・実行状態など。指示送信や SSH 接続は利用者が設定した外部サービスを使うため、単に「外部通信は一切ない」とは申告しない。
 
-Google の [User Data FAQ](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq) は、ローカルだけで処理・保存するデータも開示が必要としている。ストアのフォームには Personal communications（会話）/ User activity（セッションの操作・実行状態）/ Website content（表示する会話テキストや生成コード）を選択し、開発者への送信はないことを PRIVACY.md に記載する。閲覧履歴、決済、健康、位置情報を収集する機能はない。
+Google の [User Data FAQ](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq) は、ローカルだけで処理・保存するデータも開示が必要としている。ストアのフォームには Personal communications（会話）/ User activity（セッションの操作・実行状態）/ Website content（表示する会話テキストや生成コード）に加え、Authentication information（連携ソフトが使用量取得・ログインに使うローカル認証情報）の扱いを開示し、開発者への送信はないことを PRIVACY.md に記載する。閲覧履歴、決済、健康、位置情報を収集する機能はない。
 
 販売しない、単一用途以外に使用・転送しない、信用情報・融資の判断に使用しない、の各宣言は実装と整合する。
 
@@ -86,7 +94,7 @@ node scripts/package-chrome-web-store.mjs
 
 成果物: `dist/canban-web-store.zip` と SHA-256。ZIP のルートに manifest.json を配置。ローカル連携ソフトは ZIP に含めない。
 
-GitHub Actions の `chrome-web-store` Environment は作成済みで、Publisher ID とストア用拡張 ID を Variables に登録済み。OAuth secrets は未作成・未登録。以下を設定する。値を文書やチャットに貼らない。
+GitHub Actions の `chrome-web-store` Environment は作成済みで、Publisher ID とストア用拡張 ID を Variables に登録済み。OAuth Secrets 3件も登録済みで、2026-10-02 に production からの実申請で認証を確認した。初回設定・認証更新には以下を使う。値を文書やチャットに貼らない。
 
 | 種別 | 名前 | 内容 |
 |---|---|---|
@@ -116,6 +124,25 @@ GitLab Flow で `main` を開発用、`production` をリリース用として�
 
 公開後の確認: ストアの公開 URL、バージョン、ストアからのインストール、ストア ID に対する Native Messaging 登録、ボード表示と基本操作を確認する。開発用拡張 ID を流用しない。
 
+## production からの初回申請の証跡（2026-10-02）
+
+[main → production のリリース PR #22](https://github.com/kamihicouki/canban/pull/22) のマージを起点に、実ストアへ 0.16.0 をアップロードし、審査申請した。最初の認証失敗後、アカウント所有者が OAuth を再認可・Secrets を再登録し、同じ Actions 実行を再実行して成功した。申請直後の API 読み戻しで、対象バージョンと `PENDING_REVIEW` を確認した。
+
+| 項目 | 確認結果 |
+|---|---|
+| バージョン | `0.16.0` |
+| production コミット | `08136c0a0e490031a430aaf9501ce3ddf0a8d20c` |
+| Actions | [36951952423](https://github.com/kamihicouki/canban/actions/runs/36951952423) / attempt 2 / success |
+| ZIP SHA-256 | `fe0e2bdd5b8c7a89fd1b5f47ed3964e4dd41525cd9602cfe7553268c6cdff2f2` |
+| 申請後の状態 | `PENDING_REVIEW`（審査待ち） |
+| ストア拡張 ID | `kmnkdbmckholannmfhjfmceofmjdbndh` |
+
+同じ production コミットの Ubuntu/macOS × Node 22/24 の4構成テスト、ZIP 作成・バージョンとチェックサムの検証、実アップロード、審査申請、API 読み戻し、申請証跡の保存がすべて成功した。Actions の `canban-chrome-web-store-submission` 成果物に含まれる JSON と配布 ZIP をダウンロードし、上記バージョン・production SHA・拡張 ID・ZIP の SHA-256 を照合した。
+
+production の保護は、PR 必須・承認0人・管理者にも適用・6つの必須チェック・最新 production を含むこと・強制更新と削除の禁止を確認した。main / 開発 PR で deploy が省略されること、[main 以外を取り込み元にした検証 PR #20](https://github.com/kamihicouki/canban/pull/20) のチェック失敗とマージ拒否、production への直接 push 拒否を実際に確認した。タグの公開トリガーを削除し、Environment の利用元が production ブランチのみであることも設定で確認した。
+
+申請前の公開版は 0.15.0。0.16.0 の審査承認・一般公開・公開後の実機動作確認は、この申請成功の記録には含まない。既存 checkout・未コミット変更・Native Messaging Host は保持した。
+
 ## 審査担当者向け導入手順
 
 Node.js 22.13 以降、macOS または Linux、Codex / Claude Code のローカルセッションが必要。Windows のローカル連携は未対応。
@@ -129,6 +156,16 @@ npm run install:chrome-native-host -- --extension-id kmnkdbmckholannmfhjfmceofmj
 Chrome の Canban アイコンからボードを開く。認証用の Canban アカウントは不要。セッションがない場合は空の一覧になる。ローカル連携ソフトがない場合は接続エラーと導入方法を表示する。
 
 ## バージョン履歴
+
+2026-10-02: 0.16.4。Codexプラグインの導入元をGit管理ファイルだけの配布物へ変更し、ローカル保存データのコピーを防止。Chromeとの版を同期。ストア拡張の権限・外部通信の変更なし。
+
+2026-10-02: 0.16.3。ローカル開発環境の設定・共有データをrepo配下へ集約。固定IDのテスト版更新をrepo管理のコマンドに移行。ストア拡張の権限・外部通信の追加なし。
+
+2026-10-02: 0.16.2。アカウント追加のターミナル経由／任意ブラウザ認証を復元。認証URLのコピー、Chromeプロファイル／Safariの選択、Claudeのコード入力、ターミナル起動失敗時のコマンドコピーに対応。拡張権限は変更なし。ブラウザの一覧取得は名称・プロファイル表示名のみで、Cookieやブラウザの認証情報は読み取りません。認証URLとコードはログやボード設定へ保存せず、公式CLIの認証情報は専用保存先内で扱います。アカウント追加と認証画面の掲載画像は更新対象です。
+
+2026-10-02: 0.16.1。会話欄の高さにフッターを含め、会話一覧と外側セクションの二重スクロールを解消。package / MCP manifest / Codex plugin / Chrome build の番号を同期。権限・データ利用・掲載画像の変更はなし。
+
+2026-10-02（開発中）: アーカイブ変更をきっかけにする自動化と、各ルールの手動実行を追加。権限の追加はなし。自動化画面の画像は公開前に更新する。
 
 2026-10-02: 0.16.0 の公開準備。`origin/main` の `03702abfb06cb402c24883846fc4e93420e6ba11` を基に、公開済み 0.15.0 と重複しないよう package / MCP manifest / Codex plugin の番号を更新。タスクのクイック追加、タスク詳細ダッシュボード、ワークスペース表示と属性継承の改善を含む。権限とデータ利用区分は変わらない。変更前のmain push の4構成テストとパッケージ作成は成功済み。公開版の実機動作確認は別途必要。
 
@@ -147,8 +184,10 @@ Chrome の Canban アイコンからボードを開く。認証用の Canban ア
 - [x] ストア項目作成、掲載画像・分類・言語、データ種類とテスト手順の保存
 - [x] データ使用の3つの宣言の確定と保存後の再確認
 - [x] 公開連絡先メールの本人確認
-- [ ] GitHub Environment の認証設定
-- [ ] 審査申請、承認、公開ストアからの動作確認
+- [x] GitHub Environment の認証設定と実申請での認証確認
+- [x] production から 0.16.0 の審査申請と同じバージョンの API 読み戻し
+- [ ] 0.16.0 の審査承認・一般公開
+- [ ] 0.16.0 の公開ストアからの動作確認
 
 ## 0.15.0 の統合後の確認（2026-09-30）
 
@@ -180,3 +219,21 @@ PR #10は main `897ee4c69008fecfbb5917ba6b5bac849a66bbc5` へ統合済み。PR h
 
 - 全画面の「＋ タスク」と、列・レーンからの属性継承を追加。2026-10-02 に隔離した模擬セッションでボードとタスク追加フォームの掲載画像を更新済み。
 - Chromeの権限追加はなく、タスクの所属情報は従来のローカル保存先に保持する。
+
+2026-10-02: 0.16.5。通常Chromeのユーザーデータは `~/.canban/` に保存し、checkoutの開発設定を適用しない。明示した `CANBAN_DATA_DIR` は優先。拡張の権限・外部通信の変更なし。
+
+2026-10-03: 0.16.6。Chromeで通信の遅れを直列通信と誤判定して警告が出る問題を修正し、リアルタイム更新を維持。拡張の権限・保存先・外部通信の変更なし。
+
+2026-10-03: 0.16.7。macOSのDocuments保護でローカル連携プロセスが終了する問題に対応し、連携ソフトをApplication Supportへ配布して起動する。LinuxはXDGデータ領域を使用。既存の連携ソフトはホスト登録コマンドで更新する。拡張の権限・ユーザーデータの保存先・外部通信の変更なし。
+
+2026-10-03: 0.16.8。Chrome導入手順を配布先ランチャーと現在の更新方式に合わせて修正。拡張の権限・実行処理・保存先・外部通信の変更なし。
+
+2026-10-03: 0.16.9。既存アカウントの再ログインにもブラウザ起動・認証URLコピーを提供し、成功後にそのアカウントの使用量を更新。利用枠は取得データに存在する枠だけを表示し、週間枠のみの場合の余分な未取得表示を解消。拡張の権限・ユーザーデータの保存先・外部通信先の変更なし。
+
+2026-10-03: 0.16.10。カードとセッションの入力欄に画像添付・スキル選択を追加。画像・スキルを下書き、キュー、履歴に保持。画像はローカルのCanban保存先と、必要に応じて利用者が選んだSSH接続先に保存し、指示送信時に選択したAIへ渡す。Chromeの追加権限なし。入力欄のスクリーンショットは更新対象。
+
+2026-10-03: 0.17.0。Trello 基調の画面（2段のヘッダー、ワークスペースサイドバー、右から出るメニュー）、新しいロゴ、線のアイコン、ライト・ダーク・システムのテーマ切り替え、4段構造で高さを揃えたカードに更新。拡張の権限・実行処理・保存先・外部通信の変更なし。
+
+2026-10-03: 0.18.0。レイアウトを5種（Trello・定番・レール・オムニバー・ライブ HUD）から選べるようにし、色のテーマと別々に保存。拡張の権限・実行処理・保存先・外部通信の変更なし。
+
+2026-10-04: 0.18.1。Trello 基調の画面・レイアウトと、指示入力の画像添付・スキル選択、拡張名のバージョン表示を統合。拡張の権限・実行処理・保存先・外部通信の変更なし。
