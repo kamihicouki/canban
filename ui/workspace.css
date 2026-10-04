@@ -1,7 +1,9 @@
 /* The viewport belongs to the application shell, not to an individual page. */
 [hidden] { display: none !important; }
 body { display: flex; flex-direction: column; height: 100%; }
-.app-content { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+/* MCP hosts can make html/body transparent; paint the board on our own viewport. */
+.app-content { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  background: linear-gradient(135deg, var(--board-bg), var(--board-bg-2)); }
 .app-content > .shell { flex: 1; min-height: 0; position: relative; }
 /* The menu drawer: Trello's board menu, over the board and under the two bars. */
 .drawer-scrim { position: absolute; inset: 0; background: var(--drawer-scrim); z-index: 800; }
