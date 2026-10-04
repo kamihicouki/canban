@@ -19,7 +19,9 @@ test('Chrome build emits an MV3 toolbar extension with an external CSP-safe boar
     assert.equal(manifest.manifest_version, 3);
     assert.deepEqual(manifest.permissions, ['nativeMessaging']);
     assert.equal(manifest.background.service_worker, 'service-worker.js');
-    assert.equal(manifest.action.default_title, 'Canban');
+    const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+    assert.equal(manifest.name, `Canban ${version}`);
+    assert.equal(manifest.action.default_title, manifest.name);
 
     const html = fs.readFileSync(path.join(out, 'board.html'), 'utf8');
     assert.match(html, /<link[^>]+href="board\.css"/);

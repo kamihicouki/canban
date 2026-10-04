@@ -55,9 +55,9 @@ export function updateLocalChrome({ repository = root, hostsDirectory = chromeHo
 
     const manifest = JSON.parse(fs.readFileSync(path.join(staging, 'manifest.json'), 'utf8'));
     manifest.key = config.publicKey;
-    manifest.name = 'Canban Main Test';
+    manifest.name = `Canban Main Test ${manifest.version}`;
     manifest.description = 'ローカルmain checkoutのCanbanをテストします。';
-    manifest.action.default_title = 'Canban Main Test';
+    manifest.action.default_title = manifest.name;
     fs.writeFileSync(path.join(staging, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
     const boardPath = path.join(staging, 'board.js');
     const board = fs.readFileSync(boardPath, 'utf8');

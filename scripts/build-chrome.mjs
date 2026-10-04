@@ -22,12 +22,12 @@ html = html.replace(scripts[0][0], '<script src="board.js" defer></script>');
 
 const manifest = {
   manifest_version: 3,
-  name: 'Canban',
+  name: `Canban ${pkg.version}`,
   version: pkg.version,
   description: 'Codex / Claude Code のセッションをカンバンで管理します。',
   permissions: ['nativeMessaging'],
   background: { service_worker: 'service-worker.js' },
-  action: { default_title: 'Canban' },
+  action: { default_title: `Canban ${pkg.version}` },
   icons: { 128: 'canban.png' },
 };
 
