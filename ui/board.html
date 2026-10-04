@@ -44,6 +44,7 @@
   --scrim-ctl: rgba(255, 255, 255, 0.15);
   --scrim-ctl-hover: rgba(255, 255, 255, 0.25);
   --task-accent: #8b7bb2;
+  --danger-solid: #c43135;
   --lift-shadow: 0 8px 24px rgba(9, 30, 66, 0.25), 0 0 1px rgba(9, 30, 66, 0.5);
   --accent: #0c66e4;
   --danger: #c9372c;
@@ -94,6 +95,7 @@
   --scrim-ctl: rgba(255, 255, 255, 0.15);
   --scrim-ctl-hover: rgba(255, 255, 255, 0.25);
   --task-accent: #a89bd1;
+  --danger-solid: #c43135;
   --lift-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 1px rgba(0, 0, 0, 0.7);
   --accent: #579dff;
   --danger: #f87168;
@@ -1329,6 +1331,7 @@ function refocus(el) {
   const id = el.dataset?.cardId;
   if (id) $(`.card[data-card-id="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
 }
+let popoverClosedAt = 0; // when a popover last closed: the press that closed it must not also close a card
 function closePopover(p = null) {
   const all = [...document.querySelectorAll('.popover')];
   const gone = p ? all.slice(all.indexOf(p)) : all;
@@ -1592,7 +1595,7 @@ const paneRow = h('div', { class: 'pane-row' });
 paneStage.append(paneRow);
 paneLayer.append(paneBar, paneStage);
 // Only a press that starts and ends on the backdrop closes the card, and not the same press that just closed a popover.
-let backdropDown = false, popoverClosedAt = 0;
+let backdropDown = false;
 const onBackdrop = (e) => !e.target.closest('.pane, .pane-bar, .popover');
 paneLayer.addEventListener('pointerdown', e => { backdropDown = onBackdrop(e) && Date.now() - popoverClosedAt > 300; });
 paneLayer.addEventListener('click', e => { if (backdropDown && onBackdrop(e) && !sectionGesture && Date.now() - lastSectionDrag > 300) closeCards(); backdropDown = false; });
