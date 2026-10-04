@@ -65,7 +65,8 @@ test('MCP UI includes feature modules and still compiles as one self-contained s
   const html=boardHtml({version:'0.14.1'});
   assert.doesNotMatch(html,/@include/);
   assert.match(html,/const workspace =/);
-  assert.match(html,/Canbanの画面/);
+  assert.match(html,/class: 'mgmt-drawer'/);
+  assert.doesNotMatch(html,/class: 'app-nav'/);
   assert.equal([...html.matchAll(/<script>/g)].length,1);
   assert.equal([...html.matchAll(/<style>/g)].length,1);
   new vm.Script(html.match(/<script>([\s\S]*?)<\/script>/)[1]);

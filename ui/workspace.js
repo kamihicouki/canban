@@ -1,53 +1,38 @@
 // Common navigation, retained page forms and account/usage presentation.
 // Existing tool-backed editors can mount their body in a page instead of a popover.
+// The pages that open in the menu drawer (Trello's board menu), in tab order.
+const DRAWER_PAGES = ['rules', 'labels', 'directories', 'views', 'hosts', 'usage', 'settings'];
+const PAGE_ICONS = { rules: 'zap', labels: 'tag', directories: 'folder', views: 'bookmark', hosts: 'server', usage: 'gauge', settings: 'gear', analytics: 'chart', cards: 'cards', home: 'board' };
 const workspace = {
   page: workspacePage(store.get('workspacePage', null), state.view === 'analytics' ? 'analytics' : dashOpen && store.get('panes', []).length ? 'cards' : 'home'),
-  collapsed: store.get('navCollapsed', false) === true,
   switching: false, initialized: false, entries: new Map(), draftValues: new WeakMap(), settingsTab: 'launch',
-  pendingTask: store.get('activeTask', null),
+  pendingTask: store.get('activeTask', null), lastMenu: 'rules',
   init() {
-    this.nav = h('nav', { class: 'app-nav', 'aria-label': 'Canbanの画面' },
-      h('div', { class: 'nav-brand', text: 'Canban' }));
-    this.links = h('div', { class: 'nav-links' });
-    for (const [id, title, icon] of WORKSPACE_PAGES) {
-      if (id === 'views') this.links.append(h('div', { class: 'nav-divider', text: '管理' }));
-      if (id === 'settings') this.links.append(h('div', { class: 'nav-divider' }));
-      this.links.append(h('button', { class: 'nav-item', 'data-page': id, 'aria-label': title, title,
-        onclick: () => this.navigate(id) },
-        h('span', { class: 'nav-icon', html: WORKSPACE_ICONS[icon] }),
-        h('span', { class: 'nav-text', text: title }),
-        id === 'cards' ? h('span', { class: 'nav-count', text: panes.length }) : null));
-    }
-    this.collapse = h('button', { class: 'nav-collapse', 'aria-label': 'サイドバーを折り畳む',
-      onclick: () => { if (window.innerWidth < 720) this.closeMobile(); else this.setCollapsed(!this.collapsed); } });
-    this.nav.append(this.links, h('div', { class: 'nav-foot' },
-      h('span', { class: 'nav-foot-label', text: 'Canban' }), this.collapse));
+    $('#brand').insertAdjacentHTML('afterbegin', LOGO_SVG);
+    fillIcons();
     this.content = h('div', { class: 'app-content' });
-    for (const el of [$('.topbar'), $('#errbar'), $('.shell')]) this.content.append(el);
-    this.toolbar = h('header', { class: 'page-toolbar', hidden: true });
-    this.title = h('h1');
+    for (const el of [$('.topbar'), $('.boardbar'), $('#errbar'), $('.shell')]) this.content.append(el);
+    document.body.append(this.content);
+    // Management pages slide in from the right over the board; the header and board bar stay.
+    this.title = h('h2');
     this.limit = h('button', { class: 'usage-link', 'aria-label': 'Agent Usageを開く', onclick: () => this.navigate('usage') });
-    this.refresh = h('button', { class: 'btn', text: '再読み込み', onclick: () => load({ refresh: true }) });
-    this.toolbar.append(this.mobileButton(), this.title, taskQuickAdd.button(), this.limit, this.refresh);
-    this.pages = h('main', { class: 'workspace-pages', hidden: true, 'aria-label': 'ページの内容' });
-    this.content.prepend(this.toolbar); this.content.append(this.pages);
-    this.content.querySelector('.topbar').prepend(this.mobileButton());
-    this.content.querySelector('#logo').textContent = 'ホーム';
-    this.content.querySelector('#sideBtn').setAttribute('aria-label', '絞り込みパネル');
-    this.content.querySelector('#sideBtn').title = 'カテゴリの絞り込み（b）';
-    for (const id of ['rulesBtn','viewsBtn','analyticsBtn','labelsBtn','hostsBtn','settingsBtn']) {
-      const el = this.content.querySelector(`#${id}`); el.hidden = true; el.removeAttribute('data-pri');
-    }
-    paneBar.prepend(this.mobileButton(), taskQuickAdd.button());
-    document.body.append(this.nav, this.content);
-    this.nav.addEventListener('keydown', e => {
-      if (e.key === 'Escape' && window.innerWidth < 720) { this.closeMobile(); this.mobileReturn?.focus(); }
+    this.toolbar = h('header', { class: 'drawer-head' }, this.title, this.limit,
+      h('button', { class: 'icon-btn drawer-close', type: 'button', 'aria-label': '閉じる（Esc）', title: '閉じる（Esc）', html: picon('close', 18), onclick: () => this.navigate('home') }));
+    this.tabs = h('nav', { class: 'drawer-tabs', 'aria-label': 'メニューの項目' }, DRAWER_PAGES.map((id) =>
+      h('button', { type: 'button', 'data-page': id, onclick: () => this.navigate(id) },
+        h('span', { html: picon(PAGE_ICONS[id], 16) }), WORKSPACE_PAGES.find(([p]) => p === id)[1])));
+    this.pages = h('div', { class: 'workspace-pages', 'aria-label': 'メニューの内容' });
+    this.drawer = h('aside', { class: 'mgmt-drawer', hidden: true, 'aria-label': 'メニュー' }, this.toolbar, this.tabs, this.pages);
+    this.scrim = h('div', { class: 'drawer-scrim', hidden: true, onclick: () => this.navigate('home') });
+    $('.shell').append(this.scrim, this.drawer);
+    paneBar.prepend(taskQuickAdd.button());
+    $('#boardMenuBtn').addEventListener('click', () => this.navigate(this.utilityPage() ? 'home' : this.lastMenu));
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Escape' || e.defaultPrevented || !this.utilityPage() || document.querySelector('.popover, dialog[open]') || typingIn(e.target)) return;
+      e.preventDefault(); this.navigate('home');
     });
-    document.addEventListener('pointerdown', e => {
-      if (document.body.classList.contains('nav-open') && !this.nav.contains(e.target) && !e.target.closest('.nav-mobile')) this.closeMobile();
-    });
-    this.setCollapsed(this.collapsed, false);
     buildSelectionBar();
+    buildLayouts();
     this.initialized = true;
     this.navigate(this.page, { save: false, reload: false });
     setInterval(() => {
@@ -55,27 +40,6 @@ const workspace = {
       this.renderLimitChip(state.board.limits);
       if (this.page === 'usage') this.render(state.board);
     }, 30000);
-  },
-  mobileButton() {
-    return h('button', { class: 'nav-mobile', 'aria-label': '画面メニュー', 'aria-expanded': 'false',
-      onclick: e => {
-        const open = document.body.classList.toggle('nav-open');
-        this.mobileReturn = e.currentTarget;
-        $$('.nav-mobile').forEach(b => b.setAttribute('aria-expanded', String(open)));
-        if (open) this.links.querySelector('[aria-current="page"]')?.focus();
-      } }, h('span', { class: 'nav-icon', html: WORKSPACE_ICONS.menu }));
-  },
-  closeMobile() {
-    document.body.classList.remove('nav-open');
-    $$('.nav-mobile').forEach(b => b.setAttribute('aria-expanded', 'false'));
-  },
-  setCollapsed(value, save = true) {
-    this.collapsed = value === true;
-    document.body.classList.toggle('nav-collapsed', this.collapsed);
-    this.collapse?.replaceChildren(h('span', { class: 'nav-icon', html: WORKSPACE_ICONS[this.collapsed ? 'chevrons-right' : 'chevrons-left'] }));
-    this.collapse?.setAttribute('aria-label', this.collapsed ? 'サイドバーを広げる' : 'サイドバーを折り畳む');
-    if (save) store.set('navCollapsed', this.collapsed);
-    layoutPanes();
   },
   utilityPage() { return !['home', 'analytics'].includes(this.page) && !(this.page === 'cards' && (panes.length || this.activeTask)); },
   navigate(value, { save = true, reload = true } = {}) {
@@ -85,7 +49,7 @@ const workspace = {
     try {
       this.page = next; state.view = next === 'analytics' ? 'analytics' : 'board';
       dashOpen = next === 'cards';
-      closePopover(); this.closeMobile();
+      closePopover();
       if (save) { store.set('workspacePage', next); store.set('view', state.view); store.set('dashOpen', dashOpen); }
       for (const o of $$('.overlay')) o.hidden = next !== 'cards' || o.dataset.taskId !== this.activeTask;
       state.modalOpen = next === 'cards' && !!document.querySelector('.overlay:not([hidden])');
@@ -104,21 +68,20 @@ const workspace = {
   },
   syncShell() {
     document.body.dataset.page = this.page;
-    $('#logo').textContent = this.page === 'analytics' ? '分析' : 'ホーム';
-    for (const b of this.links.children) {
-      if (b.dataset.page) b.setAttribute('aria-current', b.dataset.page === this.page ? 'page' : 'false');
-      const count = b.querySelector('.nav-count'); if (count) count.textContent = panes.length + (this.pendingTask && !panes.some(p => p.id === this.pendingTask) ? 1 : 0);
-    }
+    if (this.page === 'analytics') $('#logo').textContent = '分析';
     const utility = this.utilityPage();
-    this.toolbar.hidden = !utility;
-    this.pages.hidden = !utility;
-    $('.shell').hidden = utility;
-    this.title.textContent = WORKSPACE_PAGES.find(([id]) => id === this.page)?.[1] || 'Canban';
+    if (utility && DRAWER_PAGES.includes(this.page)) this.lastMenu = this.page;
+    this.drawer.hidden = !utility;
+    this.scrim.hidden = !utility;
+    $('#boardMenuBtn').setAttribute('aria-pressed', String(utility));
+    for (const b of [...this.tabs.children, ...$$('#sidebar [data-page]')]) b.setAttribute('aria-current', b.dataset.page === this.page ? 'page' : 'false');
+    this.title.replaceChildren(h('span', { html: picon(PAGE_ICONS[this.page] || 'more', 20) }), WORKSPACE_PAGES.find(([id]) => id === this.page)?.[1] || 'メニュー');
     for (const entry of this.entries.values()) entry.el.hidden = entry.page !== this.page || (entry.page === 'settings' && entry.tab !== this.settingsTab);
     const layerOpen = this.page === 'cards' && (dashOpen && panes.length || state.modalOpen);
     $('.shell').inert = !!layerOpen;
     $('.topbar').inert = !!layerOpen;
-    this.pages.inert = !!layerOpen;
+    $('.boardbar').inert = !!layerOpen;
+    paintLayoutChrome();
   },
   trackDrafts(root) {
     for (const el of root.querySelectorAll('input:not([type=checkbox]):not([type=radio]),textarea,select')) {
@@ -174,7 +137,7 @@ const workspace = {
         this.settingsTab = key; this.render(state.board);
       } }))));
     if (this.settingsTab === 'accounts') accountsMenu(anchor);
-    else if (this.settingsTab === 'display') optionsMenu(anchor);
+    else if (this.settingsTab === 'display') { optionsMenu(anchor); body.prepend(h('h3', { text: 'レイアウトと色' }), layoutChooser(), h('div', { class: 'sep' })); }
     else if (this.settingsTab === 'shortcuts') body.append(h('div', { class: 'keys' }, SHORTCUTS.flatMap(([group, keys]) =>
       [h('h4', { text: group }), ...keys.flatMap(([k, v]) => [h('kbd', { text: k }), h('span', { text: v })])])));
     else settingsMenu(anchor);
