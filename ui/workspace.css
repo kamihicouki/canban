@@ -54,7 +54,7 @@ body[data-page="settings"] .page-panel > .seg { display: flex; flex-wrap: wrap; 
 .usage-remaining { background: #c9ddff; color: #0747a6; flex: 1; display: grid; align-items: center; text-align: center; }
 .usage-numbers { margin-top: 6px; color: var(--list-muted); font-size: 12px; }
 .usage-stale { padding: 8px 12px; border-radius: 5px; background: var(--warn-bg); color: var(--warn-fg); }
-.pane-close { display: inline-flex; align-items: center; justify-content: center; height: 28px; width: 28px; padding: 0; border-radius: 6px; font-weight: 700; flex: none; background: #c43135; color: #fff; }
+.pane-close { display: inline-flex; align-items: center; justify-content: center; height: 28px; width: 28px; padding: 0; border-radius: 6px; font-weight: 700; flex: none; background: var(--danger); color: var(--on-scrim); }
 .pane-close:hover { filter: brightness(1.12); }
 .help-tip { display: inline-grid; place-items: center; border: 1px solid var(--list-muted); color: var(--list-muted); border-radius: 50%; width: 18px; height: 18px; font-size: 11px; flex: none; }
 .pane .ph-top { min-height: 32px; align-items: center; }

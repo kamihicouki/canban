@@ -40,6 +40,11 @@
   --modal-bg: #f1f2f4;
   --modal-panel: #fff;
   --overlay: rgba(0, 0, 0, 0.64);
+  --on-scrim: #fff;
+  --scrim-ctl: rgba(255, 255, 255, 0.15);
+  --scrim-ctl-hover: rgba(255, 255, 255, 0.25);
+  --task-accent: #8b7bb2;
+  --lift-shadow: 0 8px 24px rgba(9, 30, 66, 0.25), 0 0 1px rgba(9, 30, 66, 0.5);
   --accent: #0c66e4;
   --danger: #c9372c;
   --warn-bg: #ffecb3;
@@ -85,6 +90,11 @@
   --modal-bg: #323940;
   --modal-panel: #282e33;
   --overlay: rgba(0, 0, 0, 0.72);
+  --on-scrim: #fff;
+  --scrim-ctl: rgba(255, 255, 255, 0.15);
+  --scrim-ctl-hover: rgba(255, 255, 255, 0.25);
+  --task-accent: #a89bd1;
+  --lift-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 1px rgba(0, 0, 0, 0.7);
   --accent: #579dff;
   --danger: #f87168;
   --warn-bg: #533f04;
@@ -1324,6 +1334,7 @@ function closePopover(p = null) {
   const gone = p ? all.slice(all.indexOf(p)) : all;
   if (!gone.length || (p && !p.isConnected)) return;
   gone.forEach((x) => { x.remove(); x.onClose?.(); });
+  popoverClosedAt = Date.now();
   if (!document.activeElement || document.activeElement === document.body) refocus(gone[0].returnFocus);
 }
 function popover(anchor, title, body, { width, stack = false } = {}) {
@@ -1580,7 +1591,11 @@ const paneStage = h('div', { class: 'pane-stage' });
 const paneRow = h('div', { class: 'pane-row' });
 paneStage.append(paneRow);
 paneLayer.append(paneBar, paneStage);
-paneLayer.addEventListener('click', e => { if (!e.target.closest('.pane, .pane-bar, .popover') && !sectionGesture && Date.now() - lastSectionDrag > 300) closeCards(); });
+// Only a press that starts and ends on the backdrop closes the card, and not the same press that just closed a popover.
+let backdropDown = false, popoverClosedAt = 0;
+const onBackdrop = (e) => !e.target.closest('.pane, .pane-bar, .popover');
+paneLayer.addEventListener('pointerdown', e => { backdropDown = onBackdrop(e) && Date.now() - popoverClosedAt > 300; });
+paneLayer.addEventListener('click', e => { if (backdropDown && onBackdrop(e) && !sectionGesture && Date.now() - lastSectionDrag > 300) closeCards(); backdropDown = false; });
 document.body.append(paneLayer);
 const panes = []; // the cards on the layer in the order they sit: a task first, then the sessions linked to it
 const paneCache = new Map(); // cards that are no longer shown keep their DOM, and whatever is typed in it, until they are opened again
@@ -1661,7 +1676,7 @@ function closeCards() {
   store.set('openCard', null);
   workspace.syncShell(); kickLive();
   const back = cardReturn; cardReturn = null;
-  if (back?.isConnected) refocus(back);
+  refocus(back); // refocus() finds a card the board has re-rendered since by its id
 }
 // Every card of the same kind shares one width and one layout.
 function resetCardLayout() {
@@ -1699,7 +1714,9 @@ function paneButtons(p) {
 function paintPaneButtons(p) { const slot = $('.ph-btns', p.el); if (slot) slot.replaceChildren(...paneButtons(p)); }
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing || paneLayer.hidden || document.querySelector('.popover, dialog[open]')) return;
-  e.preventDefault(); closeCards();
+  e.preventDefault();
+  if (typingIn(e.target)) { e.target.blur(); return; } // the first Esc leaves the field, the next one closes the card
+  closeCards();
 });
 
 // ---- Sections share placement, column width and content height across all cards. ----
@@ -1891,10 +1908,11 @@ function reconcileCards(board) {
   const status = $('.pane-status', root.el);
   if (status) status.replaceChildren(h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]);
   paintTaskRelated(root, card);
-  const { ids } = taskOverlayIds(root.id, card.links, panes.map((p) => p.id));
-  if (ids.join() === panes.map((p) => p.id).join()) return;
+  const shown = panes.map((p) => p.id), { ids } = taskOverlayIds(root.id, card.links, shown);
+  if (ids.join() === shown.join()) return;
   showCards(ids);
-  for (const p of panes) if (!p.d && p.kind === 'session') loadSession(p);
+  // A card that comes back (linked again) was detached with its live feed: it always needs a fresh load.
+  for (const p of panes) if (!shown.includes(p.id)) loadSession(p);
 }
 async function restoreCards() {
   const id = store.get('openCard', null);
@@ -3061,7 +3079,7 @@ function taskRelatedNodes(card) {
 function paintTaskRelated(p, card) {
   const sec = $('.psec[data-sec="related"]', p.el);
   if (!sec) return;
-  const signature = JSON.stringify([card.links, card.pending]);
+  const signature = JSON.stringify([card.links.map((l) => [l.id, l.title, l.status, l.agent, l.host?.label, relTime(l.updatedAt)]), card.pending]);
   if (sec.dataset.signature === signature) return;
   sec.dataset.signature = signature;
   $('.psec-b', sec).replaceChildren(...taskRelatedNodes(card));

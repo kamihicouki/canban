@@ -1,25 +1,25 @@
 /* The card overlay: the board dims a little and one card (or a task with its sessions) floats above it, as in Trello. */
 .pane-layer { position: fixed; inset: 0; top: 0; z-index: 800; display: flex; flex-direction: column; background: color-mix(in srgb, var(--overlay) 72%, transparent); }
 .pane-layer[hidden] { display: none; }
-.pane-bar { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 0; padding: 8px 20px 0; min-height: 44px; background: none; color: #fff; border-radius: 0; backdrop-filter: none; }
+.pane-bar { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 0; padding: 8px 20px 0; min-height: 44px; background: none; color: var(--on-scrim); border-radius: 0; backdrop-filter: none; }
 .pane-bar .pb-title { margin-right: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; opacity: .9; }
-.pane-bar .hbtn { height: 30px; font-size: 12px; background: #ffffff26; color: #fff; }
-.pane-bar .hbtn:hover { background: #ffffff40; }
-.pane-bar .seg button { height: 26px; padding: 0 10px; font-size: 12px; color: #fff; }
+.pane-bar .hbtn { height: 30px; font-size: 12px; background: var(--scrim-ctl); color: var(--on-scrim); }
+.pane-bar .hbtn:hover { background: var(--scrim-ctl-hover); }
+.pane-bar .seg button { height: 26px; padding: 0 10px; font-size: 12px; color: var(--on-scrim); }
 .pane-bar .seg button[aria-pressed="true"] { background: var(--modal-bg); color: var(--list-fg); }
 .pane-stage { flex: 1; min-height: 0; display: flex; overflow-x: auto; overflow-y: hidden; padding: 8px 24px 24px; scroll-snap-type: x proximity; overscroll-behavior: contain; }
 .pane-row { display: flex; align-items: stretch; gap: 16px; margin: 0 auto; width: max-content; height: 100%; max-height: 960px; }
 .pane { --fs: 13px; --pw: var(--w-session, 720px); position: relative; flex: none; display: flex; flex-direction: column; scroll-snap-align: center;
   width: min(var(--pw), calc(100vw - 48px)); background: var(--modal-bg); color: var(--list-fg); border-radius: 12px; overflow: hidden; font-size: var(--fs); line-height: 1.55;
-  box-shadow: 0 8px 24px #091e4240, 0 0 1px #091e4280; }
-.pane[data-kind="task"] { --pw: var(--w-task, 520px); border-block-start: 3px solid #8b7bb2; }
-.pane[data-kind="task"] .pane-h { background: color-mix(in srgb, #8b7bb2 9%, var(--modal-bg)); }
+  box-shadow: var(--lift-shadow); }
+.pane[data-kind="task"] { --pw: var(--w-task, 520px); border-block-start: 3px solid var(--task-accent); }
+.pane[data-kind="task"] .pane-h { background: color-mix(in srgb, var(--task-accent) 9%, var(--modal-bg)); }
 .pane:focus { outline: none; }
-.pane:focus-within { box-shadow: 0 8px 24px #091e4260, 0 0 0 2px var(--focus); }
+.pane:focus-within { box-shadow: var(--lift-shadow), 0 0 0 2px var(--focus); }
 .pane-width { position: absolute; z-index: 2; top: 0; bottom: 0; right: 0; width: 8px; cursor: ew-resize; touch-action: none; }
 .pane-width:hover, .pane-width:focus-visible { background: color-mix(in srgb, var(--accent) 45%, transparent); outline: none; }
 .task-parent-actions { flex: none; padding: 10px 12px; border-top: 1px solid var(--btn-subtle-hover); }
-.task-parent-actions .task-request { width: 100%; background: color-mix(in srgb, #8b7bb2 9%, var(--modal-bg)); color: var(--list-fg); }
+.task-parent-actions .task-request { width: 100%; background: color-mix(in srgb, var(--task-accent) 9%, var(--modal-bg)); color: var(--list-fg); }
 .task-related-more { font-size: 12px; margin: 4px 0 0; }
 .pane-layer.stack .pane-stage { padding-inline: 12px; }
 .pane-layer.stack .pane { width: calc(100vw - 24px); }
