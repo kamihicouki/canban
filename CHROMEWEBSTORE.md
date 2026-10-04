@@ -143,6 +143,23 @@ production の保護は、PR 必須・承認0人・管理者にも適用・6つ�
 
 申請前の公開版は 0.15.0。0.16.0 の審査承認・一般公開・公開後の実機動作確認は、この申請成功の記録には含まない。既存 checkout・未コミット変更・Native Messaging Host は保持した。
 
+## 0.18.1 の申請の証跡（2026-10-04）
+
+[main → production のリリース PR #30](https://github.com/kamihicouki/canban/pull/30) のマージを起点に、実ストアへ 0.18.1 をアップロードし、審査申請した。申請直後の API 読み戻しで、対象バージョンと `PENDING_REVIEW` を確認した。
+
+| 項目 | 確認結果 |
+|---|---|
+| バージョン | `0.18.1` |
+| production コミット | `c0cfc43fcc33be3b3a326a0cb41396cbcc53f363` |
+| Actions | [37176095294](https://github.com/kamihicouki/canban/actions/runs/37176095294) / success |
+| ZIP SHA-256 | `7c7e15be46339f1da1ff261eb14dceda3ffc8eb0edb95078247e9208ca9fd9fb` |
+| 申請後の状態 | `PENDING_REVIEW`（審査待ち） |
+| ストア拡張 ID | `kmnkdbmckholannmfhjfmceofmjdbndh` |
+
+同じ production コミットで、Ubuntu/macOS × Node 22/24 の4構成テスト、ZIP 作成、バージョンとチェックサムの検証、実アップロード、審査申請、申請証跡の保存がすべて成功した。Actions の `canban-chrome-web-store-submission` 成果物の JSON をダウンロードし、上記のバージョン・production SHA・拡張 ID・ZIP の SHA-256 を照合した。
+
+画面が Trello 基調に変わったため、ストアの掲載画像は差し替えが必要（Developer Dashboard で手作業）。0.18.1 の審査承認・一般公開・公開後の実機動作確認は、この申請成功の記録には含まない。
+
 ## 審査担当者向け導入手順
 
 Node.js 22.13 以降、macOS または Linux、Codex / Claude Code のローカルセッションが必要。Windows のローカル連携は未対応。
@@ -188,6 +205,10 @@ Chrome の Canban アイコンからボードを開く。認証用の Canban ア
 - [x] production から 0.16.0 の審査申請と同じバージョンの API 読み戻し
 - [ ] 0.16.0 の審査承認・一般公開
 - [ ] 0.16.0 の公開ストアからの動作確認
+- [x] production から 0.18.1 の審査申請と同じバージョンの API 読み戻し
+- [ ] 0.18.1 用の掲載画像の差し替え
+- [ ] 0.18.1 の審査承認・一般公開
+- [ ] 0.18.1 の公開ストアからの動作確認
 
 ## 0.15.0 の統合後の確認（2026-09-30）
 
@@ -237,3 +258,5 @@ PR #10は main `897ee4c69008fecfbb5917ba6b5bac849a66bbc5` へ統合済み。PR h
 2026-10-03: 0.18.0。レイアウトを5種（Trello・定番・レール・オムニバー・ライブ HUD）から選べるようにし、色のテーマと別々に保存。拡張の権限・実行処理・保存先・外部通信の変更なし。
 
 2026-10-04: 0.18.1。Trello 基調の画面・レイアウトと、指示入力の画像添付・スキル選択、拡張名のバージョン表示を統合。拡張の権限・実行処理・保存先・外部通信の変更なし。
+
+2026-10-04: 0.18.2。0.18.1 の審査申請（PENDING_REVIEW）を記録。拡張の機能・権限・実行処理・保存先・外部通信の変更なし。
