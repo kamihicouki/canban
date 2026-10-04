@@ -181,3 +181,20 @@ test('a session linked again while its task is open is loaded afresh, a card tha
   vm.runInContext(`${source}\nreconcileCards({lists:[{cards:[{id:'task:t',status:'idle',links:[{id:'codex:a'},{id:'codex:b'}]}]}]});`, context);
   assert.deepEqual(loaded, ['codex:b']); // b has data from before it was unlinked, but its feed is gone
 });
+test('the filters in effect become chips, except the axis the lanes follow', () => {
+  const html = boardHtml();
+  const source = html.slice(html.indexOf('const FILTER_KEYS ='), html.indexOf('function clearFilters('));
+  const defaults = html.match(/const DEFAULT_FILTERS = (\{[^\n]*\});/)[1];
+  const state = { filters: {} };
+  const context = vm.createContext({ state, STATUS_LABELS: { waiting: '入力待ち' } });
+  vm.runInContext(`const DEFAULT_FILTERS = ${defaults};\n${source}\nstate.filters = { ...DEFAULT_FILTERS };`, context);
+  const board = { directories: [{ id: 'd1', name: 'pical' }], labels: [], hosts: [], settings: { views: [{ name: '返事待ち', filters: { status: 'waiting' } }] } };
+  const chips = () => plain(vm.runInContext('filterChips(board).map(c => c.text)', Object.assign(context, { board })));
+  assert.deepEqual(chips(), ['30日以内']);
+  Object.assign(context.state.filters, { agent: 'codex', directory: 'd1', status: 'waiting', days: 0 });
+  assert.deepEqual(chips(), ['Codex', '入力待ち', 'pical']);
+  context.state.filters.swimlane = 'directory';
+  assert.deepEqual(chips(), ['Codex', '入力待ち']); // lanes by category already show every category
+  Object.assign(context.state.filters, { agent: 'all', directory: '', swimlane: '', days: 30 });
+  assert.equal(vm.runInContext('activeView(board)?.name', context), '返事待ち');
+});

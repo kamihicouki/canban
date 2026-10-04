@@ -10,7 +10,7 @@
 .board-name { margin: 0; font-size: 16px; font-weight: 700; }
 .board-name #logo { display: block; height: 32px; padding: 0 8px; border-radius: 6px; color: var(--header-fg); font: inherit; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .board-name #logo:hover, .board-name #logo[aria-pressed="true"] { background: var(--header-btn); }
-.hsearch-wrap { position: relative; display: inline-flex; align-items: center; flex: 0 1 320px !important; min-width: 200px; }
+.hsearch-wrap { position: relative; display: inline-flex; align-items: center; flex: 0 1 320px !important; min-width: 160px; }
 .hsearch-wrap > svg { position: absolute; left: 10px; color: var(--header-dim); pointer-events: none; }
 .hsearch-wrap:focus-within > svg { color: var(--list-muted); }
 .topbar .hsearch { width: 100%; padding-left: 32px; }

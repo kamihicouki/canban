@@ -40,6 +40,6 @@ function moreMenu(anchor) {
   popover(anchor, 'その他', h('div', { class: 'more-menu' }, ...rows), { width: 260 });
 }
 
-const HEADER_OPEN = { optBtn: (a) => optionsMenu(a) };
+const HEADER_OPEN = {};
 $('#moreBtn').addEventListener('click', (e) => moreMenu(e.currentTarget));
 if (typeof ResizeObserver === 'function') new ResizeObserver(() => fitHeader()).observe($('.topbar'));

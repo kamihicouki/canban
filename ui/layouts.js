@@ -15,18 +15,20 @@ const layoutOf = (v) => (LAYOUTS.some(([id]) => id === v) ? v : 'trello');
 const PLACES = {
   home: ['board', 'ボード'], analytics: ['chart', '分析'], usage: ['gauge', 'Agent Usage'], rules: ['zap', T.automation],
   labels: ['tag', 'ラベル'], directories: ['folder', T.category], views: ['bookmark', '保存ビュー'], hosts: ['server', 'マシン'], settings: ['gear', '設定'],
+  look: ['layout', 'テーマ'],
 };
 const MANAGE_PLACES = ['rules', 'labels', 'directories', 'views', 'hosts', 'settings'];
 const layoutParts = {};
 
 function currentPlace() { return workspace.current(); }
-function goPlace(page) {
+function goPlace(page, anchor) {
+  if (page === 'look') return lookMenu(anchor);
   if (VIEW_SHEETS[page]) return toggleView(page);
   if (page === 'home') { closeCards(); return workspace.navigate('home'); }
   workspace.toggle(page);
 }
 const placeBtn = (page, cls, { label = PLACES[page][1], size = 20 } = {}) =>
-  h('button', { class: cls, type: 'button', 'data-place': page, title: label, 'aria-label': label, onclick: () => goPlace(page) },
+  h('button', { class: cls, type: 'button', 'data-place': page, title: label, 'aria-label': label, onclick: (e) => goPlace(page, e.currentTarget) },
     h('span', { class: 'place-ic', html: picon(PLACES[page][0], size) }), h('span', { class: 'place-lbl', text: label }));
 
 function buildLayouts() {
@@ -34,11 +36,17 @@ function buildLayouts() {
   layoutParts.rail = h('nav', { class: 'layout-rail', 'aria-label': '場所' },
     h('span', { class: 'rail-logo', html: LOGO_SVG }),
     ...['home', 'analytics', 'usage'].map((p) => placeBtn(p, 'rail-item', { size: 21 })), h('span', { class: 'rail-sep' }),
-    ...MANAGE_PLACES.map((p) => placeBtn(p, 'rail-item', { size: 21 })));
+    ...MANAGE_PLACES.map((p) => placeBtn(p, 'rail-item', { size: 21 })), h('span', { class: 'rail-sep' }), placeBtn('look', 'rail-item', { size: 21 }));
   // C: the dock, floating over the bottom of the board: the only navigation of a layout without a sidebar.
   layoutParts.dock = h('nav', { class: 'layout-dock', 'aria-label': '場所' },
     ...['home', 'analytics', 'usage'].map((p) => placeBtn(p, 'dock-item', { size: 22 })), h('span', { class: 'dock-sep' }),
-    ...MANAGE_PLACES.map((p) => placeBtn(p, 'dock-item', { size: 22 })));
+    ...MANAGE_PLACES.map((p) => placeBtn(p, 'dock-item', { size: 22 })), h('span', { class: 'dock-sep' }), placeBtn('look', 'dock-item', { size: 22 }));
+  // C: without a sidebar, the lane axis and the filters open from the app bar.
+  layoutParts.filterBtn = h('button', { class: 'hbtn omni-filter', type: 'button', 'aria-haspopup': 'dialog', onclick: (e) => {
+    const b = state.board; if (!b) return;
+    const box = h('div', { class: 'sidebar omni-pop' }, laneSection(b, () => true), filterSection(b));
+    popover(e.currentTarget, 'レーンと絞り込み', box, { width: 320 });
+  } }, h('span', { html: picon('sliders', 16) }), h('span', { class: 'lbl', text: '絞り込み' }));
   // D: the board and the two sheets as tabs in the app bar; management stays in the sidebar.
   layoutParts.tabs = h('nav', { class: 'layout-tabs', 'aria-label': '場所' },
     ...['home', 'analytics', 'usage'].map((p) => placeBtn(p, 'layout-tab', { size: 17 })));
@@ -50,7 +58,7 @@ function buildLayouts() {
   content.append(layoutParts.dock);
   $('.topbar').after(layoutParts.hud);
   $('#brand').after(layoutParts.tabs);
-  $('#quickTaskBtn').after(layoutParts.strip);
+  $('#quickTaskBtn').after(layoutParts.strip, layoutParts.filterBtn);
   applyLayout();
 }
 
@@ -77,8 +85,16 @@ function paintLayoutChrome() {
   if (state.layout === 'hud') paintHud(b);
 }
 
+// C: the strip lists the lanes (a press jumps to one) or, without lanes, the categories (a press filters).
 function paintStrip(b) {
   const f = state.filters;
+  const n = filterChips(b).length;
+  layoutParts.filterBtn.querySelector('.lbl').textContent = n ? `絞り込み ${n}` : '絞り込み';
+  if (f.swimlane) {
+    layoutParts.strip.replaceChildren(...state.lanes.map((lane) => h('button', { class: 'cat-pill', type: 'button', title: 'そのレーンへ移動', onclick: () => jumpToLane(lane.key) },
+      lane.color ? h('i', { style: { background: colorVar(lane.color) } }) : null, lane.name, h('span', { class: 'n', text: String(lane.count) }))));
+    return;
+  }
   const pill = (id, name, color, count) => h('button', { class: 'cat-pill', type: 'button', 'aria-pressed': String((f.directory || '') === id),
     onclick: () => setScope({ directory: (f.directory || '') === id && id ? '' : id }) },
     color ? h('i', { style: { background: colorVar(color) } }) : null, name, h('span', { class: 'n', text: String(count ?? '') }));

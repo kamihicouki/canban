@@ -1,6 +1,8 @@
 /* Layout themes (ui/layouts.js). body[data-layout] arranges the same parts five ways.
    Trello keeps the gradient; the other four use calm, solid surfaces in both color themes. */
-.layout-rail, .layout-dock, .live-hud, .layout-tabs, .cat-strip, .side-brand, .dir-av { display: none; }
+.layout-rail, .layout-dock, .live-hud, .layout-tabs, .cat-strip, .omni-filter, .side-brand, .dir-av { display: none; }
+.omni-pop { width: auto; background: none; color: var(--list-fg); --header-fg: var(--list-fg); --header-dim: var(--list-muted); --header-btn: var(--btn-subtle); --header-btn-hover: var(--btn-subtle-hover); --side-active: var(--btn-subtle-hover); }
+.omni-pop .icon-btn { color: var(--list-muted); }
 .dir-live { font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 2px 5px; border-radius: 8px; color: #fff; flex: none; }
 .dir-live.s-run { background: var(--c-green); color: #0b3a26; }
 .dir-live.s-wait { background: var(--c-yellow); color: #533f04; }
@@ -59,7 +61,7 @@ body:not([data-layout="trello"]) .list { box-shadow: none; }
   body[data-layout="rail"] .shell > .mgmt-drawer { grid-area: side; min-height: 0; }
   body[data-layout="rail"]:not([data-page="home"]) .shell > .sidebar { display: none; }
   body[data-layout="rail"] .layout-rail { display: flex; }
-  body[data-layout="rail"] .topbar .brand, body[data-layout="rail"] .sidebar .side-sec-nav { display: none; }
+  body[data-layout="rail"] .topbar .brand, body[data-layout="rail"] .sidebar .side-foot { display: none; } /* the rail lists every place */
   body[data-layout="rail"] .sidebar { background: var(--header-bg); }
 
   /* D: app bar with tabs, then the live HUD across the whole width, then spaces, panel and the board. */
@@ -84,7 +86,9 @@ body[data-layout="omni"] .sidebar, body[data-layout="omni"] #sideBtn, body[data-
 body[data-layout="omni"] .topbar .hsearch-wrap { flex: 0 1 380px !important; }
 body[data-layout="omni"] .topbar .hsearch { height: 36px; border-radius: 10px; }
 body[data-layout="omni"] .topbar > .spacer { display: none; }
-body[data-layout="omni"] .cat-strip { display: flex; flex: 1 1 auto !important; min-width: 300px; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+body[data-layout="omni"] .omni-filter { display: inline-flex; }
+body[data-layout="omni"] .filter-chips { display: none; } /* the 絞り込み button carries the count; its popover lists and lifts them */
+body[data-layout="omni"] .cat-strip { display: flex; flex: 1 1 auto !important; min-width: 200px; gap: 6px; overflow-x: auto; scrollbar-width: none; }
 .cat-pill { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: 16px; background: var(--header-btn); color: var(--header-fg); font-weight: 600; white-space: nowrap; flex: none; }
 .cat-pill i { width: 9px; height: 9px; border-radius: 3px; }
 .cat-pill .n { font: 11.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--header-dim); }

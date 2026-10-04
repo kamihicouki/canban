@@ -444,9 +444,29 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .board { min-width: 0; }
 /* Trello's workspace sidebar: translucent, readable 14px items, quiet bold headings. */
 .sidebar {
-  flex: 0 0 260px; width: 260px; overflow-y: auto; padding: 8px 8px 16px; display: flex; flex-direction: column; gap: 6px;
+  flex: 0 0 260px; width: 260px; min-height: 0; display: flex; flex-direction: column;
   background: var(--side-bg); color: var(--header-fg); font-size: 14px;
 }
+/* The sidebar scrolls; its foot (sheets, management, look) stays in reach. */
+.side-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+.side-foot { flex: none; padding: 6px 8px 8px; border-top: 1px solid var(--header-btn-hover); display: flex; flex-direction: column; gap: 1px; }
+.side-foot .side-head { padding: 6px 10px 2px; }
+.side-foot-look, .side-foot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; }
+.side-foot .side-row { min-height: 30px; font-size: 13px; gap: 8px; }
+.side-seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; padding: 2px; margin: 0 2px 4px; border-radius: 7px; background: var(--header-btn); }
+.side-seg-wrap { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.side-seg button { height: 28px; border-radius: 5px; color: var(--header-fg); font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px; }
+.side-seg button:hover { background: var(--header-btn-hover); }
+.side-seg button[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-fg); }
+.side-check { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 10px; font-size: 13px; cursor: pointer; border-radius: 6px; }
+.side-check:hover { background: var(--header-btn); }
+.side-check input { accent-color: var(--accent); margin: 0; }
+.lane-fold { width: 12px; flex: none; color: var(--header-dim); font-size: 11px; }
+.filter-chips { display: flex; gap: 5px; min-width: 0; max-width: 45%; flex: 0 0 auto !important; overflow-x: auto; scrollbar-width: none; }
+.filter-chip { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 6px 0 10px; border-radius: 13px; background: var(--pressed-bg); color: var(--pressed-fg); font-size: 12px; font-weight: 700; white-space: nowrap; flex: none; }
+.filter-chip .x { opacity: .7; font-size: 11px; }
+.filter-chip:hover .x { opacity: 1; }
+.filter-chip.chip-clear { background: none; color: var(--header-dim); padding: 0 8px; }
 .sidebar[hidden] { display: none; }
 .side-top { display: flex; align-items: center; gap: 6px; padding: 4px 2px 4px 10px; font-size: 15px; font-weight: 700; }
 .side-fold { width: 30px; height: 30px; border-radius: 6px; display: grid; place-items: center; color: var(--header-fg); transform: rotate(90deg); }
@@ -629,19 +649,8 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
   </label>
   <label class="ft-toggle" data-pri="2" title="会話の本文も検索する（3 文字以上）"><input id="fulltext" type="checkbox" /> 本文</label>
   <button id="quickTaskBtn" class="hbtn primary quick-task-trigger" type="button" aria-label="タスクを作成" title="タスクを作成（c）" data-icon="plus"><span class="lbl">作成</span></button>
+  <div id="filterChips" class="filter-chips" role="group" aria-label="有効な絞り込み"></div>
   <span class="spacer"></span>
-  <div class="seg" data-pri="6" role="group" aria-label="AI Apps">
-    <button data-agent="all" aria-pressed="true">すべて</button>
-    <button data-agent="codex" aria-pressed="false">Codex</button>
-    <button data-agent="claude" aria-pressed="false">Claude</button>
-  </div>
-  <select id="days" class="hselect" data-pri="5" aria-label="期間">
-    <option value="7">7日以内</option>
-    <option value="30" selected>30日以内</option>
-    <option value="90">90日以内</option>
-    <option value="0">全期間</option>
-  </select>
-  <button id="optBtn" class="hbtn" data-pri="8" aria-haspopup="true" title="表示（カードの高さ・表示する範囲・レイアウトと色）" data-icon="sliders"><span class="lbl">表示</span></button>
   <button id="moreBtn" class="hbtn icon-only" aria-haspopup="true" title="その他" aria-label="その他" data-icon="more" hidden></button>
   <span class="bar-sep" aria-hidden="true"></span>
   <span id="presenceBar" class="limits presence" hidden></span>
@@ -665,7 +674,6 @@ const T = { category: 'カテゴリ', automation: '自動化', taskCard: 'タス
   const set = (sel, attr, v) => { const el = document.querySelector(sel); if (el) (attr === 'text' ? (el.textContent = v) : el.setAttribute(attr, v)); };
   set('#logo', 'title', `表示する${T.category}を選ぶ（p）`);
   set('#sidebar', 'aria-label', `レーン・${T.category}`);
-  set('.seg[data-pri="6"]', 'aria-label', T.aiApps);
 }
 
 (() => {
@@ -980,13 +988,10 @@ function render() {
   if (state.drag) return; // don't disturb an active drag
 
   // header
-  document.querySelectorAll('.seg button[data-agent]').forEach((btn) => btn.setAttribute('aria-pressed', String(btn.dataset.agent === state.filters.agent)));
-  $('#days').value = String(state.filters.days);
   renderAccountsButton(b);
-  // The app bar names what the board is showing (Trello's board title); pressing it changes the scope.
-  const scope = scopeLabel(b);
-  $('#logo').textContent = `${scope === 'すべて' ? 'すべてのセッション' : scope} ▾`;
-  $('#logo').setAttribute('aria-pressed', String(!!(state.filters.project || state.filters.directory || state.filters.folder || state.filters.section || state.filters.label)));
+  // The app bar names the board (the saved view it matches) and lists the filters in effect as chips.
+  $('#logo').textContent = `${activeView(b)?.name || 'すべてのセッション'} ▾`;
+  renderFilterChips(b);
   $('#logo').title = `表示 ${b.totals.shown} / Codex ${b.totals.codex}・Claude ${b.totals.claude}`;
   renderStatusBar(b);
   $('#seenBtn').hidden = !b.lists.some((l) => l.cards.some((c) => c.unread));
@@ -1461,30 +1466,14 @@ function confirmDeleteList(anchor, list) {
       h('button', { class: 'btn-danger', text: '削除', onclick: () => { closePopover(); act('canban_delete_list', { listId: list.id, moveCardsTo: sel.value }, { okMsg: 'リストを削除しました' }); } }))));
 }
 
-function optionsMenu(anchor) {
+// レイアウトとテーマ: how cards and lists look, a matter of taste. What is shown is the sidebar's 絞り込み.
+function lookMenu(anchor) {
   const f = state.filters;
-  const opt = (key, label) => h('label', { class: 'menu-item row' },
-    h('input', { type: 'checkbox', checked: f[key], onchange: (e) => { f[key] = e.target.checked; saveFilters(); load(); } }), label);
-  const fit = h('div', { class: 'seg-row', role: 'group', 'aria-label': 'カードの高さ', style: { gridTemplateColumns: '1fr 1fr' } }, [['fixed', '揃える'], ['auto', '内容に合わせる']].map(([k, label]) =>
-    h('button', { class: 'seg-btn', 'aria-pressed': String(state.cardFit === k), text: label, onclick: () => { setCardFit(k); optionsMenu(anchor); } })));
-  // One menu for how the board looks: card height, what is shown, lanes, then layout and color.
-  popover(anchor, '表示', h('div', { class: 'view-menu' },
-    h('div', { class: 'field-label', text: 'カードの高さ' }), fit,
-    h('div', { class: 'field-label', text: '表示する範囲' }),
-    opt('includeArchived', 'アーカイブ済みセッションを表示'),
-    opt('includeSubagents', 'サブエージェント／レビュー用スレッドを表示'),
-    opt('pinnedOnly', 'Codex アプリでピン留めしたものだけ（📌）'),
-    opt('includeHidden', 'ボードから隠したカードを表示'),
-    opt('groupBranch', '同じリポジトリ＋ブランチのセッションをまとめる'),
-    h('div', { class: 'field-label', text: 'スイムレーン（行で分ける）' }),
-    pickerButton({ title: 'スイムレーン', value: f.swimlane || '', items: () => Object.entries(LANE_MODES).map(([value, label]) => ({ value, label })),
-      onChange: (v) => { f.swimlane = v; state.soloLane = null; saveFilters(); render(); } }),
-    h('div', { class: 'field-label', text: 'レーン内のリストの高さ' }),
-    h('div', { class: 'seg-row', style: { gridTemplateColumns: '1fr 1fr 1fr' } }, Object.entries(LANE_HEIGHTS).map(([k, [label]]) =>
-      h('button', { class: 'seg-btn', 'aria-pressed': String((f.laneHeight || 'normal') === k), style: (f.laneHeight || 'normal') === k ? { boxShadow: 'inset 0 0 0 2px var(--accent)' } : null, text: label,
-        onclick: () => { f.laneHeight = k; saveFilters(); render(); optionsMenu(anchor); } }))),
-    state.board?.search ? h('p', { class: 'muted', text: `本文検索の索引: ${state.board.search.indexed} / ${state.board.search.total} セッション（直近 90 日、バックグラウンドで更新）` }) : null,
-    h('p', { class: 'muted', text: '期間フィルタは「未配置」のセッションにのみ適用されます。リストへ移動したカードは期間に関係なく表示されます。' }),
+  const seg = (items, on, pick) => h('div', { class: 'seg-row', style: { gridTemplateColumns: `repeat(${items.length}, 1fr)` } }, items.map(([k, label]) =>
+    h('button', { class: 'seg-btn', 'aria-pressed': String(on(k)), text: label, onclick: () => { pick(k); lookMenu(anchor); } })));
+  popover(anchor, 'レイアウトとテーマ', h('div', { class: 'view-menu' },
+    h('div', { class: 'field-label', text: 'カードの高さ' }), seg([['fixed', '揃える'], ['auto', '内容に合わせる']], (k) => state.cardFit === k, setCardFit),
+    h('div', { class: 'field-label', text: 'レーン内のリストの高さ' }), seg(Object.entries(LANE_HEIGHTS).map(([k, [label]]) => [k, label]), (k) => (f.laneHeight || 'normal') === k, (k) => { f.laneHeight = k; saveFilters(); render(); }),
     h('div', { class: 'field-label', text: 'レイアウトと色' }), layoutChooser()), { width: 400 });
 }
 
@@ -2672,7 +2661,7 @@ function jumpToLane(name) {
 // The lane at the top of the viewport, then step to the previous / next one.
 function stepLane(dir) {
   const names = state.lanes.map((l) => l.key);
-  if (!names.length) return toast('スイムレーンが有効ではありません（表示 ▾ から選べます）');
+  if (!names.length) return toast('レーンが有効ではありません（サイドバーの「レーン」で選べます）');
   const top = $('#board').getBoundingClientRect().top;
   const els = [...document.querySelectorAll('#board .lane')];
   let cur = els.findIndex((el) => el.getBoundingClientRect().bottom > top + 48);
@@ -2694,6 +2683,41 @@ function setAllLanes(collapse) {
 // ======================================================================
 // Sidebar: lanes (jump), directories and projects (one-click filters)
 // ======================================================================
+// ---- filters in effect, as chips in the app bar (each ✕ takes one off) ----
+const FILTER_KEYS = ['agent', 'days', 'status', 'directory', 'project', 'folder', 'section', 'label', 'host', 'account', 'includeArchived', 'includeSubagents', 'includeHidden', 'pinnedOnly'];
+const sameFilters = (a, b) => FILTER_KEYS.every((k) => (a[k] ?? DEFAULT_FILTERS[k]) === (b[k] ?? DEFAULT_FILTERS[k]));
+function activeView(b) { return (b?.settings?.views || []).find((v) => sameFilters({ ...DEFAULT_FILTERS, ...v.filters }, state.filters)); }
+// The lane axis is not also a filter: lanes by category already show every category.
+const LANE_FILTER = { directory: 'directory', agent: 'agent', host: 'host', label: 'label', project: 'project', section: 'section', account: 'account' };
+const laneHides = (key) => LANE_FILTER[state.filters.swimlane] === key;
+function filterChips(b) {
+  const f = state.filters, out = [];
+  const add = (text, patch) => out.push({ text, patch });
+  if (f.agent !== 'all' && !laneHides('agent')) add(f.agent === 'codex' ? 'Codex' : 'Claude', { agent: 'all' });
+  if (Number(f.days)) add(`${f.days}日以内`, { days: 0 });
+  if (f.status) add(STATUS_LABELS[f.status] || f.status, { status: '' });
+  if (f.directory && !laneHides('directory')) add(f.directory === '__none' ? 'カテゴリ無し' : b?.directories.find((d) => d.id === f.directory)?.name || f.directory, { directory: '' });
+  if (f.project && !laneHides('project')) add(f.project, { project: '' });
+  if (f.folder) add(`フォルダ ${f.folder}`, { folder: '' });
+  if (f.section && !laneHides('section')) add(`§ ${f.section === '__none' ? 'セクションなし' : b?.codexSections?.find((x) => x.id === f.section)?.name || f.section}`, { section: '' });
+  if (f.label && !laneHides('label')) add(`ラベル: ${f.label === '__none' ? 'なし' : b?.labels.find((l) => l.id === f.label)?.name || f.label}`, { label: '' });
+  if (f.host && !laneHides('host')) { const x = b?.hosts.find((y) => (y.local ? 'local' : y.id) === f.host); add(x?.local ? 'このマシン' : x?.label || f.host, { host: '' }); }
+  if (f.account && !laneHides('account')) add(`アカウント: ${b?.accounts?.accounts?.find((a) => a.key === f.account)?.label || f.account}`, { account: '' });
+  if (f.includeArchived) add('アーカイブ済みも表示', { includeArchived: false });
+  if (f.includeSubagents) add('サブエージェントも表示', { includeSubagents: false });
+  if (f.includeHidden) add('隠したカードも表示', { includeHidden: false });
+  if (f.pinnedOnly) add('ピン留めだけ', { pinnedOnly: false });
+  return out;
+}
+function clearFilters() {
+  const keep = { swimlane: state.filters.swimlane, laneHeight: state.filters.laneHeight, groupBranch: state.filters.groupBranch, fulltext: state.filters.fulltext, q: state.filters.q };
+  setScope({ ...Object.fromEntries(FILTER_KEYS.map((k) => [k, DEFAULT_FILTERS[k]])), days: 0, ...keep });
+}
+function renderFilterChips(b) {
+  const chips = filterChips(b);
+  $('#filterChips').replaceChildren(...chips.map(({ text, patch }) => h('button', { class: 'filter-chip', type: 'button', title: `${text} を外す`, 'aria-label': `${text} を外す`, onclick: () => setScope(patch) }, text, h('span', { class: 'x', text: '✕' }))),
+    ...(chips.length > 1 ? [h('button', { class: 'filter-chip chip-clear', type: 'button', text: 'すべて解除', onclick: clearFilters })] : []));
+}
 function scopeLabel(b) {
   const f = state.filters;
   const dir = f.directory === '__none' ? 'カテゴリ無し' : b?.directories.find((d) => d.id === f.directory)?.name;
@@ -2746,8 +2770,12 @@ function toggleSidebar(open = !state.sideOpen) {
 }
 // Sidebar entries that open something other than a filter: [page, icon, label, key hint].
 // 見る opens a sheet on the overlay; 管理 opens the management panel next to the sidebar. Pressing the open one again closes it.
+// カテゴリ is managed from the ⚙ beside the category list, so it has no entry of its own here.
 const SIDE_LOOK = [['analytics', 'chart', '分析', 'a'], ['usage', 'gauge', 'Agent Usage', '']];
-const SIDE_MANAGE = [['rules', 'zap', T.automation], ['labels', 'tag', 'ラベル'], ['directories', 'folder', T.category], ['views', 'bookmark', '保存ビュー'], ['hosts', 'server', 'マシン'], ['settings', 'gear', '設定']];
+const SIDE_MANAGE = [['rules', 'zap', T.automation], ['labels', 'tag', 'ラベル'], ['views', 'bookmark', '保存ビュー'], ['hosts', 'server', 'マシン'], ['settings', 'gear', '設定']];
+// The axes a lane can follow, in the order the sidebar offers them; the rest sit behind ⋯.
+const LANE_AXES = [['', 'なし'], ['directory', T.category], ['agent', 'AI Apps'], ['host', 'マシン'], ['label', 'ラベル']];
+const LANE_MORE = [['project', 'プロジェクト'], ['section', 'Codex セクション'], ['account', 'アカウント']];
 function sideCount(b, page) {
   return { rules: b.settings?.rules?.length, views: b.settings?.views?.length, labels: b.labels?.length, directories: b.directories?.length,
     hosts: (b.hosts || []).filter((x) => !x.local && x.enabled).length || null }[page] ?? null;
@@ -2759,86 +2787,137 @@ function sideEntry(b, [page, icon, label, key]) {
     h('span', { class: 'side-ic', html: picon(icon, 18) }), h('span', { class: 'grow ellipsis', text: label }),
     n == null ? null : h('span', { class: 'count', text: String(n) }));
 }
+const sideHead = (title, ...extra) => h('div', { class: 'side-head' }, h('span', { class: 'grow', text: title }), ...extra);
+const sideCountEl = (n) => h('span', { class: 'count', text: String(n ?? '') });
+function setLaneAxis(mode) {
+  state.filters.swimlane = mode; state.soloLane = null;
+  // The axis now shown as lanes stops filtering, so every lane has its cards.
+  const key = LANE_FILTER[mode];
+  if (key && (key === 'agent' ? state.filters.agent !== 'all' : state.filters[key])) return setScope({ [key]: key === 'agent' ? 'all' : '' });
+  saveFilters(); render();
+}
+// Running / waiting sessions per category, shown beside the name.
+function liveByDirectory(b) {
+  const by = new Map();
+  for (const c of b.lists.flatMap((l) => l.cards)) {
+    if (c.status !== 'running' && c.status !== 'waiting') continue;
+    const key = c.directory?.id || '__none', v = by.get(key) || { running: 0, waiting: 0 };
+    v[c.status]++; by.set(key, v);
+  }
+  return by;
+}
+function liveBadges(v) {
+  return [v?.running ? h('span', { class: 'dir-live s-run', title: `実行中 ${v.running}`, text: String(v.running) }) : null,
+    v?.waiting ? h('span', { class: 'dir-live s-wait', title: `入力待ち ${v.waiting}`, text: String(v.waiting) }) : null];
+}
+// レーン: the axis, then one row per lane. A row jumps to its lane; ▾ folds it; ⌥ shows it alone.
+function laneSection(b, hit) {
+  const f = state.filters, mode = f.swimlane || '';
+  const more = LANE_MORE.find(([k]) => k === mode);
+  const axes = h('div', { class: 'side-seg side-seg-wrap', role: 'group', 'aria-label': 'レーンの軸' },
+    ...LANE_AXES.map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(mode === k), text: label, onclick: () => setLaneAxis(k) })),
+    h('button', { type: 'button', 'aria-pressed': String(!!more), title: 'ほかの軸（プロジェクト・Codex セクション・アカウント）', text: more ? more[1] : '⋯',
+      onclick: (e) => popover(e.currentTarget, 'レーンの軸', h('div', {}, LANE_MORE.map(([k, label]) => h('button', { class: 'menu-item', text: label, onclick: () => { closePopover(); setLaneAxis(k); } }))), { width: 240 }) }));
+  const tools = mode ? [h('button', { class: 'side-mini', title: 'すべて展開', text: '⊞', onclick: () => setAllLanes(false) }),
+    h('button', { class: 'side-mini', title: 'すべてたたむ', text: '⊟', onclick: () => setAllLanes(true) })] : [];
+  const nodes = [sideHead('レーン', ...tools), axes];
+  if (!mode) nodes.push(h('label', { class: 'side-check' }, h('input', { type: 'checkbox', checked: !!f.groupBranch, onchange: (e) => { f.groupBranch = e.target.checked; saveFilters(); load(); } }), '同じリポジトリ＋ブランチをまとめる'));
+  const live = mode === 'directory' ? liveByDirectory(b) : null;
+  for (const lane of state.lanes.filter((l) => hit(l.name))) {
+    const collapsed = collapsedLanes.has(lane.key) || collapsedLanes.has(lane.name);
+    const status = lane.running ? 'running' : lane.waiting ? 'waiting' : null;
+    const row = h('button', { class: `side-row${state.soloLane === lane.key ? ' active' : ''}`, 'data-lane': lane.key, title: 'クリック: そのレーンへ移動 / ⌥クリック: このレーンだけ表示',
+      onclick: (e) => (e.target.closest('.lane-fold') ? (collapsed ? collapsedLanes.delete(lane.key) : collapsedLanes.add(lane.key), collapsedLanes.delete(lane.name), store.set('collapsedLanes', [...collapsedLanes]), render())
+        : e.altKey ? setSolo(state.soloLane === lane.key ? null : lane.key) : jumpToLane(lane.key)) },
+      h('span', { class: 'lane-fold', title: collapsed ? '開く' : 'たたむ', text: collapsed ? '▸' : '▾' }),
+      lane.color ? h('span', { class: 'dot', style: { background: colorVar(lane.color) } }) : null,
+      h('span', { class: 'grow ellipsis', text: lane.name }),
+      ...(live ? liveBadges(live.get(lane.dirId)) : [status ? h('span', { class: `sdot s-${status}`, title: STATUS_LABELS[status] }) : null]),
+      lane.unread ? h('span', { class: 'side-new', title: '新着', text: lane.unread }) : null,
+      sideCountEl(lane.count));
+    // Lanes by category stay drop targets: dropping a card on one moves it to that category.
+    nodes.push(lane.dirId ? h('div', { class: 'side-item side-dir', 'data-dir-id': lane.dirId }, row,
+      lane.dirId === '__none' ? null : h('button', { class: 'icon-btn', 'aria-label': `${lane.name} の設定`, text: '⋯', onclick: (e) => directoryMenu(e.currentTarget, lane.dirId) })) : row);
+  }
+  if (mode === 'directory') nodes.push(newCategoryInput(b));
+  return h('section', { class: 'side-sec-lanes' }, nodes);
+}
+function newCategoryInput(b) {
+  return h('input', { class: 'side-filter', placeholder: `＋ 新しい${T.category}（Enter）`, 'aria-label': `新しい${T.category}`,
+    onkeydown: (e) => {
+      if (e.key !== 'Enter' || e.isComposing || !e.target.value.trim()) return;
+      act('canban_create_directory', { name: e.target.value.trim(), color: COLORS[(b.directories.length + 1) % COLORS.length] }, { okMsg: `${T.category}を作成しました` }).catch(() => {});
+    } });
+}
+// 絞り込み: nothing chosen shows every card; pressing a value shows only those, pressing it again lifts it.
+function filterSection(b, hit = () => true) {
+  const f = state.filters, nodes = [sideHead('絞り込み', filterChips(b).length ? h('button', { class: 'side-mini', title: '絞り込みをすべて解除', text: '解除', onclick: clearFilters }) : null)];
+  const seg = (label, items, on, pick) => h('div', { class: 'side-seg', role: 'group', 'aria-label': label }, items.map(([k, t]) => h('button', { type: 'button', 'aria-pressed': String(on(k)), text: t, onclick: () => pick(k) })));
+  if (!laneHides('agent')) nodes.push(seg(T.aiApps, [['all', 'すべて'], ['codex', 'Codex'], ['claude', 'Claude']], (k) => f.agent === k, (k) => setScope({ agent: k })));
+  nodes.push(seg('期間', [[7, '7日'], [30, '30日'], [90, '90日'], [0, '全期間']], (k) => Number(f.days) === k, (k) => setScope({ days: k })));
+  const group = (title, rows, extra) => { const shown = rows.filter((r) => r && hit(r.label)); if (shown.length) nodes.push(sideHead(title, extra), ...shown.map((r) => r.el)); };
+  const choice = (label, on, pick, lead, ...tail) => ({ label, el: h('button', { class: `side-row${on ? ' active' : ''}`, 'aria-pressed': String(on), onclick: pick }, lead, h('span', { class: 'grow ellipsis', text: label }), ...tail) });
+  group('状態', ['running', 'waiting', 'completed', 'aborted', 'idle'].filter((k) => b.statusCounts?.[k] || f.status === k).map((k) =>
+    choice(STATUS_LABELS[k], f.status === k, () => setScope({ status: f.status === k ? '' : k }), h('span', { class: `sdot s-${k}` }), sideCountEl(b.statusCounts?.[k] || 0))));
+  if (!laneHides('directory')) {
+    const live = liveByDirectory(b);
+    const dirs = [...b.directories, { id: '__none', name: 'カテゴリ無し', color: null, count: b.uncategorizedCount || 0 }];
+    group(T.category, dirs.map((d) => ({ label: d.name, el: h('div', { class: 'side-item side-dir', 'data-dir-id': d.id },
+      h('button', { class: `side-row${f.directory === d.id ? ' active' : ''}`, 'aria-pressed': String(f.directory === d.id), title: 'クリックで絞り込み（もう一度で解除）。カードをここへドラッグすると所属を変えられます',
+        onclick: () => setScope({ directory: f.directory === d.id ? '' : d.id }) },
+        h('span', { class: 'dot', style: { background: d.color ? colorVar(d.color) : 'var(--header-btn-hover)' } }),
+        h('span', { class: 'dir-av', style: { background: d.color ? colorVar(d.color) : 'var(--header-btn-hover)' }, text: [...d.name][0]?.toUpperCase() || '' }),
+        h('span', { class: 'grow ellipsis', text: d.name }), ...liveBadges(live.get(d.id)), sideCountEl(d.count)),
+      d.id === '__none' ? null : h('button', { class: 'icon-btn', 'aria-label': `${d.name} の設定`, text: '⋯', onclick: (e) => directoryMenu(e.currentTarget, d.id) })) })),
+      h('button', { class: 'side-mini', title: `${T.category}を管理`, 'aria-label': `${T.category}を管理`, html: picon('gear', 14), onclick: () => workspace.toggle('directories') }));
+  }
+  const hosts = (b.hosts || []).filter((x) => x.local || x.enabled);
+  if (!laneHides('host') && hosts.length > 1) group('マシン', hosts.map((x) => { const id = x.local ? 'local' : x.id;
+    return choice(x.local ? 'このマシン' : x.label, f.host === id, () => setScope({ host: f.host === id ? '' : id }), h('span', { class: 'side-ic', html: picon('server', 15) })); }));
+  if (!laneHides('label') && b.labels.length) group('ラベル', [...b.labels.map((l) => ({ id: l.id, name: l.name, color: l.color })), { id: '__none', name: 'ラベルなし', color: null }].map((l) =>
+    choice(l.name, f.label === l.id, () => setScope({ label: f.label === l.id ? '' : l.id }), h('span', { class: 'dot', style: { background: l.color ? colorVar(l.color) : 'var(--header-btn-hover)' } }))));
+  const scope = (key, label) => h('label', { class: 'side-check' }, h('input', { type: 'checkbox', checked: !!f[key], onchange: (e) => setScope({ [key]: e.target.checked }) }), label);
+  nodes.push(sideHead('表示する対象'), scope('includeArchived', 'アーカイブ済みも表示'), scope('includeSubagents', 'サブエージェントも表示'), scope('includeHidden', 'ボードから隠したカードも表示'), scope('pinnedOnly', 'Codex でピン留めしたものだけ'));
+  return h('section', { class: 'side-sec-filters' }, nodes);
+}
+// The foot of the sidebar: the sheets, the management pages and the look of the board.
+function sideFoot(b) {
+  return h('div', { class: 'side-foot' },
+    h('div', { class: 'side-foot-look side-sec-look' }, SIDE_LOOK.map((x) => sideEntry(b, x))),
+    h('div', { class: 'side-head side-sec-manage' }, h('span', { class: 'grow', text: '管理' })),
+    h('div', { class: 'side-foot-grid side-sec-manage' }, SIDE_MANAGE.map((x) => sideEntry(b, x))),
+    h('button', { class: 'side-row side-entry', type: 'button', 'data-look': '', title: 'カードの高さ・レイアウト・色', onclick: (e) => lookMenu(e.currentTarget) },
+      h('span', { class: 'side-ic', html: picon('layout', 18) }), h('span', { class: 'grow ellipsis', text: 'レイアウトとテーマ' })));
+}
 function renderSidebar(b) {
   const el = $('#sidebar');
   $('#sideBtn').setAttribute('aria-pressed', String(state.sideOpen));
   el.hidden = !state.sideOpen;
   document.body.classList.toggle('side-closed', el.hidden);
   if (el.hidden) return;
-  const f = state.filters;
   if (!state.sideInput) {
-    state.sideInput = h('input', { class: 'side-filter', type: 'search', placeholder: '絞り込み…', 'aria-label': 'サイドバーを絞り込み',
+    state.sideInput = h('input', { class: 'side-filter', type: 'search', placeholder: 'サイドバーを絞り込み…', 'aria-label': 'サイドバーを絞り込み',
       oninput: (e) => { state.sideQ = e.target.value; renderSidebar(state.board); },
       onkeydown: (e) => {
         if (e.key === 'Escape') { e.target.value = ''; state.sideQ = ''; renderSidebar(state.board); $('#board .card')?.focus(); }
         if (e.key === 'ArrowDown' || e.key === 'Enter') { e.preventDefault(); const r = $('#sidebar .side-row'); e.key === 'Enter' ? r?.click() : r?.focus(); }
       } });
   }
-  const q = state.sideQ.trim();
-  const hit = matcher(q);
-  const count = (n) => h('span', { class: 'count', text: String(n) });
-  const head = (title, ...extra) => h('div', { class: 'side-head' }, h('span', { class: 'grow', text: title }), ...extra);
+  const hit = matcher(state.sideQ.trim());
+  const scroll = $('.side-scroll', el)?.scrollTop || 0;
   const secs = [h('div', { class: 'side-brand', html: LOGO_SVG }, h('span', { class: 'brand-word', text: 'canban' })),
     h('div', { class: 'side-top' }, h('span', { class: 'grow', text: 'ワークスペース' }),
       h('button', { class: 'side-fold', type: 'button', title: 'サイドバーを畳む（b）', 'aria-label': 'サイドバーを畳む', html: picon('chev', 18), onclick: () => toggleSidebar(false) })),
     state.sideInput];
-  const views = (b.settings?.views || []).map((v, i) => ({ v, i })).filter(({ v }) => hit(v.name));
-  if (views.length) secs.push(h('section', {}, head('ビュー'), views.map(({ v, i }) =>
-    h('button', { class: 'side-row', title: i < 9 ? `${v.name}（${i + 1}）` : v.name, onclick: () => applyView(v) },
+  const views = (b.settings?.views || []).map((v, i) => ({ v, i })).filter(({ v }) => hit(v.name)), current = activeView(b);
+  secs.push(h('section', { class: 'side-sec-views' }, sideHead('ビュー', h('button', { class: 'side-mini', title: '今の絞り込みをビューとして保存', text: '＋ 保存', onclick: () => workspace.toggle('views') })),
+    h('button', { class: `side-row${!current && !filterChips(b).length ? ' active' : ''}`, onclick: clearFilters }, h('span', { class: 'side-ic side-key', text: '0' }), h('span', { class: 'grow ellipsis', text: 'すべてのセッション' })),
+    views.map(({ v, i }) => h('button', { class: `side-row${current === v ? ' active' : ''}`, title: i < 9 ? `${v.name}（${i + 1}）` : v.name, onclick: () => applyView(v) },
       h('span', { class: 'side-ic side-key', text: i < 9 ? String(i + 1) : '' }), h('span', { class: 'grow ellipsis', text: v.name })))));
-
-  // Short fixed entries first; the category list can be long, so it comes last.
-  const entries = (list) => list.filter(([, , label]) => hit(label)).map((x) => sideEntry(b, x));
-  const look = entries(SIDE_LOOK), manage = entries(SIDE_MANAGE);
-  if (look.length) secs.push(h('section', { class: 'side-sec-nav side-sec-look' }, head('見る'), look));
-  if (manage.length) secs.push(h('section', { class: 'side-sec-nav side-sec-manage' }, head('管理'), manage));
-
-  if (f.swimlane) {
-    const rows = state.lanes.filter((l) => hit(l.name)).map((lane) => {
-      const live = lane.running ? 'running' : lane.waiting ? 'waiting' : null;
-      return h('button', { class: `side-row${state.soloLane === lane.key ? ' active' : ''}`, 'data-lane': lane.key, title: 'クリック: そこへ移動 / ⌥クリック: このレーンだけ表示',
-        onclick: (e) => (e.altKey ? setSolo(state.soloLane === lane.key ? null : lane.key) : jumpToLane(lane.key)) },
-        h('span', { class: 'dot', style: { background: lane.color ? colorVar(lane.color) : 'rgba(255,255,255,0.35)' } }),
-        h('span', { class: 'grow ellipsis', text: lane.name }),
-        live ? h('span', { class: `sdot s-${live}`, title: STATUS_LABELS[live] }) : null,
-        lane.unread ? h('span', { class: 'side-new', title: '新着', text: lane.unread }) : null,
-        count(lane.count));
-    });
-    secs.push(h('section', {}, head(`レーン（${LANE_MODES[f.swimlane]}）`,
-      h('button', { class: 'side-mini', title: 'すべて展開', text: '⊞', onclick: () => setAllLanes(false) }),
-      h('button', { class: 'side-mini', title: 'すべてたたむ', text: '⊟', onclick: () => setAllLanes(true) })),
-      rows.length ? rows : h('div', { class: 'side-head', text: '該当なし' })));
-  }
-
-  // Running / waiting sessions per category, shown beside the name (the live HUD layout leans on these).
-  const liveBy = new Map();
-  for (const c of b.lists.flatMap((l) => l.cards)) {
-    if (c.status !== 'running' && c.status !== 'waiting') continue;
-    const key = c.directory?.id || '__none', v = liveBy.get(key) || { running: 0, waiting: 0 };
-    v[c.status]++; liveBy.set(key, v);
-  }
-  const dirRow = (d) => h('div', { class: 'side-item side-dir', 'data-dir-id': d.id },
-    h('button', { class: `side-row${f.directory === d.id ? ' active' : ''}`, title: 'クリックで絞り込み（もう一度で解除）。カードをここへドラッグすると所属を変えられます',
-      onclick: () => setScope({ directory: f.directory === d.id ? '' : d.id }) },
-      h('span', { class: 'dot', style: { background: d.color ? colorVar(d.color) : 'var(--header-btn-hover)' } }),
-      h('span', { class: 'dir-av', style: { background: d.color ? colorVar(d.color) : 'var(--header-btn-hover)' }, text: [...d.name][0]?.toUpperCase() || '' }),
-      h('span', { class: 'grow ellipsis', text: d.name }),
-      liveBy.get(d.id)?.running ? h('span', { class: 'dir-live s-run', title: `実行中 ${liveBy.get(d.id).running}`, text: String(liveBy.get(d.id).running) }) : null,
-      liveBy.get(d.id)?.waiting ? h('span', { class: 'dir-live s-wait', title: `入力待ち ${liveBy.get(d.id).waiting}`, text: String(liveBy.get(d.id).waiting) }) : null,
-      count(d.count)),
-    d.id === '__none' ? null : h('button', { class: 'icon-btn', 'aria-label': `${d.name} の設定`, text: '⋯', onclick: (e) => directoryMenu(e.currentTarget, d.id) }));
-  const dirs = [...b.directories, { id: '__none', name: 'カテゴリ無し', color: null, count: b.uncategorizedCount || 0 }].filter((d) => hit(d.name));
-  const add = h('input', { class: 'side-filter', placeholder: `＋ 新しい${T.category}（Enter）`, 'aria-label': `新しい${T.category}`,
-    onkeydown: (e) => {
-      if (e.key !== 'Enter' || e.isComposing || !e.target.value.trim()) return;
-      act('canban_create_directory', { name: e.target.value.trim(), color: COLORS[(b.directories.length + 1) % COLORS.length] }, { okMsg: `${T.category}を作成しました` }).catch(() => {});
-    } });
-  secs.push(h('section', {}, head(`${T.category}`,
-    f.swimlane !== 'directory' ? h('button', { class: 'side-mini', title: `${T.category}でスイムレーン表示`, text: '≡ レーン', onclick: () => { f.swimlane = 'directory'; saveFilters(); render(); } }) : null),
-    dirs.map(dirRow), q ? null : add));
-
+  secs.push(laneSection(b, hit), filterSection(b, hit));
   const had = document.activeElement === state.sideInput;
-  el.replaceChildren(...secs);
+  el.replaceChildren(h('div', { class: 'side-scroll' }, ...secs), sideFoot(b));
+  $('.side-scroll', el).scrollTop = scroll;
   if (had) state.sideInput.focus();
 }
 
@@ -3887,9 +3966,6 @@ function focusSearch() {
   $('#q').focus();
   $('#q').select();
 }
-document.querySelectorAll('.seg button').forEach((btn) => btn.addEventListener('click', () => {
-  state.filters.agent = btn.dataset.agent; saveFilters(); state.shown = {}; load();
-}));
 // @include task-quick-add-model.js
 // @include task-quick-add.js
 
@@ -3899,8 +3975,6 @@ $('#quickTaskBtn').addEventListener('click', () => taskQuickAdd.open());
 // @include accounts.js
 $('#logo').addEventListener('click', (e) => scopePicker(e.currentTarget));
 $('#sideBtn').addEventListener('click', () => toggleSidebar());
-$('#days').addEventListener('change', (e) => { state.filters.days = Number(e.target.value); saveFilters(); state.shown = {}; load(); });
-$('#optBtn').addEventListener('click', (e) => optionsMenu(e.currentTarget));
 $('#fulltext').checked = !!state.filters.fulltext;
 $('#fulltext').addEventListener('change', (e) => { state.filters.fulltext = e.target.checked; saveFilters(); if (state.filters.q) load(); });
 // Analytics is a sheet on the overlay, over the board (a / the sidebar's 分析 toggle it).
