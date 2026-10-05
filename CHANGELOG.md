@@ -1,10 +1,16 @@
 # Changelog
 
+## 0.23.1 — 2026-10-05
+
+- カード詳細を「カードボード」の表示領域内で横移動する構成にしました。初期の左右余白と表示領域は1:8:1で、左右の境界を別々にドラッグして調整できます。カードが先に続く右端にはフェードを表示します。
+- ショートカットマップを右余白に縦並びで表示し、見出しのドラッグで左右の余白内の任意の場所へ移動できるようにしました。余白と案内の位置を共有UI状態に保存し、カードのスクロールや入力中の文章を保持します。
+- `Alt+[` / `Alt+]`で余白境界、`Alt+m`でキー案内にフォーカスし、矢印で調整できます。`0`で初期比率と位置に戻せます。これらは⌘Kからも操作できます。
+
 ## 0.22.0 — 2026-10-05
 
 - カードを開いたまま、`j` で次のカード、`k` で前のカードへ移れるようにしました。ボードに表示している順（リスト順・レーン順）で進み、端では止まります。閉じたあとは、最後に見ていたカードにフォーカスが戻ります。
-- カードを開いている間のキーを足しました。`[` `]` で横に並んだ隣のカード（タスクと紐付いたセッション）へ、`1` `2` `3` で会話の表示（テキスト・プレビュー・要点）、`i` で指示の入力欄へ、`o` で再開、`l` `g` `m` `h` でラベル・カテゴリ・リスト移動・隠す（ボードで選択中のカードと同じキー）、`?` でキー一覧。
-- その画面で使えるキーを、`Esc` のように小さなキーの形で、操作の隣に表示するようにしました。カードのバー（`j` `k` / `[` `]` / `?` / `Esc`、表示の切り替えの `1` `2` `3`）、カード内のボタン（再開 `o`、ラベル `l`、カテゴリ `g`、リスト `m`、隠す `h`、指示 `i`）、アプリバー（検索 `/` `⌘K`、作成 `c`）です。「キーボードショートカット」の一覧に「カードを開いている間」を追加しました。
+- カードを開いている間のキーを足しました。`[` `]` で横に並んだ隣のカード（タスクと紐付いたセッション）へ、`1` `2` `3` で会話の表示（テキスト・プレビュー・要点）、`i` で指示の入力欄へ、`o` で再開、`l` `g` `Alt+m` `h` でラベル・カテゴリ・リスト移動・隠す（ボードで選択中のカードと同じキー）、`?` でキー一覧。
+- その画面で使えるキーを、`Esc` のように小さなキーの形で、操作の隣に表示するようにしました。カードのバー（`j` `k` / `[` `]` / `?` / `Esc`、表示の切り替えの `1` `2` `3`）、カード内のボタン（再開 `o`、ラベル `l`、カテゴリ `g`、リスト `Alt+m`、隠す `h`、指示 `i`）、アプリバー（検索 `/` `⌘K`、作成 `c`）です。「キーボードショートカット」の一覧に「カードを開いている間」を追加しました。
 
 ## 0.21.0 — 2026-10-05
 
@@ -238,13 +244,13 @@
   - Lists inside a lane have a height cap (compact / normal / all).
   - Collapsed lanes show card counts per list.
   - "Only this lane" focus mode.
-  - `[` / `]` step between lanes.
+  - `Alt+[` / `Alt+]` step between lanes.
 - Keyboard:
   - `/` focuses search (`Esc` clears; `↓` / `Enter` jumps to the first card).
   - ⌘K / Ctrl+K opens a command palette over cards, views, lanes, directories, projects, labels and actions.
   - `?` shows the shortcut overlay.
   - `p` opens the scope filter; `c` adds a card; `a` toggles analytics; `r` reloads.
-  - On a focused card: `l` labels, `g` directory, `m` move to list, `h` hide.
+  - On a focused card: `l` labels, `g` directory, `Alt+m` move to list, `h` hide.
   - Focus returns to the card after a picker or detail dialog closes.
 - Every attribute choice uses a keyword-filterable picker: lists, labels (create inline), directories (create inline), projects, machines, tasks, swimlane mode and rule lists. Matching is multi-word and ignores case, width and katakana/hiragana. Long menus (views, labels, machines, rules) get a filter box.
 

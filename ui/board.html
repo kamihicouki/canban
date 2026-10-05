@@ -853,7 +853,7 @@ const bridge = (() => {
 const PAGE = 40;
 const COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
 const COLOR_NAMES = { gray: 'グレー', blue: '青', green: '緑', yellow: '黄', orange: 'オレンジ', red: '赤', purple: '紫', pink: 'ピンク', sky: '水色', lime: 'ライム' };
-const SHARED_UI_KEYS = ['filters', 'themePref', 'layout', 'cardFit', 'sidebar', 'workspacePage', 'labelsExpanded', 'paneGlobal', 'cardLayouts', 'cardWidths', 'collapsedLanes'];
+const SHARED_UI_KEYS = ['filters', 'themePref', 'layout', 'cardFit', 'sidebar', 'workspacePage', 'labelsExpanded', 'paneGlobal', 'cardLayouts', 'cardWidths', 'cardBoard', 'collapsedLanes'];
 const sharedUi = { revision: null, ready: false, dirty: false, blocked: false, applying: false, inflight: false, generation: 0, timer: null, checkTimer: null };
 const store = {
   get(k, d) { try { const v = localStorage.getItem(`sk:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -1570,10 +1570,10 @@ const paneBar = h('div', { class: 'pane-bar', role: 'toolbar', 'aria-label': '�
 const paneStage = h('div', { class: 'pane-stage' });
 const paneRow = h('div', { class: 'pane-row' });
 paneStage.append(paneRow);
-paneLayer.append(paneBar, paneStage);
+// @include card-board.js
 // Only a press that starts and ends on the backdrop closes the card, and not the same press that just closed a popover.
 let backdropDown = false;
-const onBackdrop = (e) => !e.target.closest('.pane, .pane-bar, .popover');
+const onBackdrop = (e) => !e.target.closest('.pane, .pane-bar, .popover, .shortcut-map, .card-board-margin');
 paneLayer.addEventListener('pointerdown', e => { backdropDown = onBackdrop(e) && Date.now() - popoverClosedAt > 300; });
 paneLayer.addEventListener('click', e => { if (backdropDown && onBackdrop(e) && !sectionGesture && Date.now() - lastSectionDrag > 300) closeCards(); backdropDown = false; });
 document.body.append(paneLayer);
@@ -1587,7 +1587,7 @@ const KIND_LABEL = { session: 'セッションカード', task: T.taskCard };
 function paneMetrics() {
   if (paneLayer.hidden) return;
   paneLayer.style.top = `${Math.max(0, Math.round($('#board')?.getBoundingClientRect().top ?? 0))}px`;
-  paneLayer.classList.toggle('stack', paneStage.clientWidth < 720);
+  layoutCardBoard();
 }
 new ResizeObserver(paneMetrics).observe(paneStage);
 new ResizeObserver(paneMetrics).observe(document.body);
@@ -1603,16 +1603,14 @@ function buildPaneBar() {
   const mode = h('div', { class: 'seg', role: 'group', 'aria-label': '会話の表示' },
     ...PANE_MODES.map(([v, t], i) => h('button', { type: 'button', 'data-v': v, 'aria-pressed': 'false', 'aria-keyshortcuts': String(i + 1), onclick: () => setPaneMode(v) }, t, ' ', ...keycap(String(i + 1)))));
   paneBar.append(h('span', { class: 'pb-title' }), mode,
-    h('button', { class: 'hbtn pb-reset', type: 'button', title: '開いている種類のカードの配置・列幅・高さ・カード幅を初期状態に戻します', onclick: resetCardLayout }, 'レイアウトを初期化'),
-    h('span', { class: 'pb-hint' },
-      keyHint(['j', 'k'], '前後のカード', 'pb-step'), keyHint(['[', ']'], '横のカード', 'pb-pair'), keyHint(['?'], 'キー一覧'), keyHint(['Esc'], '閉じる（背景も可）')));
+    h('button', { class: 'hbtn pb-reset', type: 'button', title: '開いている種類のカードの配置・列幅・高さ・カード幅を初期状態に戻します', onclick: resetCardLayout }, 'レイアウトを初期化'));
 }
 function paintPaneBar() {
   const view = panes[0]?.kind === 'view';
   $('.pb-title', paneBar).textContent = !panes[0] || view ? '' : panes[0].kind === 'task' && panes.length > 1 ? `${T.taskCard}と紐付いたセッション ${panes.length - 1} 件` : KIND_LABEL[panes[0].kind];
-  for (const el of $$('.seg, .pb-reset, .pb-step', paneBar)) el.hidden = view; // a sheet has no conversation, no card layout and no neighbour to step to
-  $('.pb-pair', paneBar).hidden = panes.length < 2; // [ ] move between the cards side by side
+  for (const el of $$('.seg, .pb-reset', paneBar)) el.hidden = view; // a sheet has no conversation, no card layout and no neighbour to step to
   $$('button[data-v]', paneBar).forEach((b) => b.setAttribute('aria-pressed', String(paneGlobal.mode === b.dataset.v)));
+  refreshShortcutHints();
 }
 buildPaneBar();
 function setPaneMode(mode) {
@@ -1650,7 +1648,7 @@ function showCards(ids) {
   for (const p of [...panes]) if (!ids.includes(p.id)) detachPane(p);
   const next = ids.map((id) => { const p = panes.find((x) => x.id === id) || paneCache.get(id) || newPane(id); paneCache.delete(id); return p; });
   panes.splice(0, panes.length, ...next);
-  paneRow.replaceChildren(...panes.map((p) => p.el));
+  paneRow.replaceChildren(...panes.map((p) => p.el), cardBoardEnd);
   paneLayer.hidden = false;
   applyCardWidths(); paneMetrics();
   for (const p of panes) { applyPaneAttrs(p); paintPaneButtons(p); }
@@ -1693,7 +1691,7 @@ function paneWidthHandle(kind) {
     e.preventDefault(); e.stopPropagation(); handle.setPointerCapture(e.pointerId);
     const pane = handle.closest('.pane');
     // The row is centred while it fits, so the right edge moves by half of the width change.
-    const move = ev => { const gain = paneRow.offsetWidth < paneStage.clientWidth - 48 ? .5 : 1; setCardWidth(kind, cardWidths[kind] + (ev.clientX - pane.getBoundingClientRect().right) * gain); };
+    const move = ev => { const gain = paneRow.offsetWidth < paneStage.clientWidth - 24 ? .5 : 1; setCardWidth(kind, cardWidths[kind] + (ev.clientX - pane.getBoundingClientRect().right) * gain); };
     const end = ev => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', end); handle.removeEventListener('pointercancel', end); if (handle.hasPointerCapture(ev.pointerId)) handle.releasePointerCapture(ev.pointerId); saveCardWidths(); };
     handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
   };
@@ -1717,12 +1715,7 @@ const boardCardEl = (id) => $(`#board .card[data-card-id="${CSS.escape(id)}"]`);
 function stepOpenCard(step) {
   const root = panes[0];
   if (!root || root.kind === 'view') return;
-  const cur = boardCardEl(root.id), listEl = cur?.closest('.list');
-  // A list shows its cards a page at a time: stepping past the last one shown brings in the next page first.
-  if (step > 0 && listEl?.querySelector('.more-btn') && cur === [...listEl.querySelectorAll('.card[data-card-id]')].at(-1)) {
-    state.shown[listEl.dataset.listId] = (state.shown[listEl.dataset.listId] || PAGE) + PAGE * 2; render();
-  }
-  const ids = $$('#board .card[data-card-id]').map((el) => el.dataset.cardId);
+  const ids = displayedListCards(root.id).map(el => el.dataset.cardId);
   if (!ids.includes(root.id)) return toast('このカードはボードに表示されていません');
   const next = neighborCardId(ids, root.id, step);
   if (!next) return toast(step > 0 ? '最後のカードです' : '最初のカードです');
@@ -4062,6 +4055,93 @@ function quickAdd() {
   const listId = focused?.closest?.('.list')?.dataset.listId;
   return taskQuickAdd.open({ listId, lane: state.lanes.find(l => l.key === laneName) });
 }
+function shortcutHints(entries, className = '') {
+  return h('div', { class: `shortcut-hints ${className}`, 'aria-label': 'この画面のキー' },
+    ...entries.map(([key, label, disabled = false]) => h('span', { class: 'shortcut-hint', 'aria-disabled': disabled ? 'true' : null },
+      h('kbd', { text: key }), h('span', { text: label }))));
+}
+// Read the rendered list, including its lane and pagination, rather than the unfiltered board data.
+// The originating lane survives a board redraw even when the same card occurs in several label lanes.
+function displayedListCards(id, origin = cardReturn) {
+  const lists = $$('#board .list');
+  const originList = origin?.closest?.('.list');
+  const lane = originList?.closest('.lane')?.dataset.lane;
+  const contains = list => $$('.card', list).some(el => el.dataset.cardId === id);
+  const list = lists.find(el => originList && el.dataset.listId === originList.dataset.listId
+    && el.closest('.lane')?.dataset.lane === lane && contains(el)) || lists.find(contains);
+  return list ? $$('.card', list).filter(el => el.getClientRects().length) : [];
+}
+function stepDisplayedCard(delta) {
+  const overlay = !paneLayer.hidden;
+  if (overlay && panes[0]?.kind === 'view') return;
+  const focused = document.activeElement?.closest?.('#board .card');
+  const id = overlay ? panes[0]?.id : focused?.dataset.cardId;
+  const cards = id ? displayedListCards(id, overlay ? cardReturn : focused) : $$('#board .card').filter(el => el.getClientRects().length);
+  const index = cards.findIndex(el => el.dataset.cardId === id);
+  const next = index < 0 ? cards[delta > 0 ? 0 : cards.length - 1] : cards[index + delta];
+  if (!next) return;
+  if (overlay) {
+    paneStage.scrollLeft = 0;
+    openCard(next.dataset.cardId, { origin: next });
+  } else {
+    next.focus({ preventScroll: true });
+    next.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+}
+function panePromptInput() {
+  const active = document.activeElement?.closest?.('.pane');
+  const ordered = active ? [active, ...panes.map(p => p.el).filter(el => el !== active)] : panes.map(p => p.el);
+  return ordered.map(el => el.querySelector('.psec[data-sec="send"] textarea:not([readonly]):not([disabled])')).find(Boolean);
+}
+function focusPanePrompt() {
+  const input = panePromptInput();
+  if (!input) return;
+  const section = input.closest('.psec');
+  if (section?.classList.contains('collapsed')) toggleSection(section.dataset.sec, section.closest('.pane').dataset.kind);
+  input.focus({ preventScroll: true });
+  input.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+function refreshShortcutHints() {
+  const upper = document.querySelector('.popover, dialog[open]');
+  const input = document.activeElement;
+  const typing = typingIn(input);
+  const modKey = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+  const globalKeys = [['?', 'キー一覧'], [`${modKey}K`, 'コマンド']];
+  let entries;
+  if (!paneLayer.hidden) {
+    if (upper) entries = [];
+    else if (input === shortcutMapGrip) entries = [['← ↑ ↓ →', '案内を移動'], ['Alt+← / →', '左右の余白'], ['Shift', '微調整'], ['Home', '初期位置'], ...globalKeys, ['Esc', '閉じる']];
+    else if (input?.matches('.card-board-margin')) entries = [['← / →', '余白を調整'], ['Shift', '微調整'], ['Home', '10%に戻す'], ['0', 'すべて初期化'], ...globalKeys, ['Esc', '閉じる']];
+    else if (typing) entries = [
+      ...(input.closest('.psec[data-sec="send"]') && input.closest('.prompt-composer') ? [[`${modKey}Enter`, input.closest('.pane').dataset.kind === 'task' ? 'セッション開始' : '送信']]
+        : input.matches('textarea[aria-label="メモ"], .pane[data-kind="task"] textarea[aria-label="説明"]') ? [[`${modKey}Enter`, '保存']] : []),
+      ['Esc', '入力を抜ける'], [`${modKey}K`, 'コマンド'],
+    ];
+    else if (panes[0]?.kind === 'view') entries = [[openViewKind() === 'analytics' ? 'a' : 'u', '閉じる'], ['r', '更新'], ...globalKeys, ['Alt+m', '案内の移動'], ['Alt+[ / ]', '左右余白'], ['0', '余白を初期化'], ['Esc', '閉じる']];
+    else {
+      const cards = displayedListCards(panes[0]?.id), index = cards.findIndex(el => el.dataset.cardId === panes[0]?.id);
+      entries = [['k', '前のカード', index <= 0], ['j', '次のカード', index < 0 || index === cards.length - 1],
+        ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
+        ...(panePromptInput() ? [['i', '指示欄']] : []), ['r', '更新'], ...globalKeys, ['Alt+m', '案内の移動'], ['Alt+[ / ]', '左右余白'], ['0', '余白を初期化'], ['Esc', '閉じる']];
+    }
+    paneHints.replaceChildren(...shortcutHints(entries).childNodes);
+    shortcutMap.hidden = entries.length === 0;
+    positionShortcutMap();
+  }
+  boardKeyHints.hidden = !paneLayer.hidden || !!upper;
+  if (!boardKeyHints.hidden) {
+    if (typing) entries = input.id === 'q' ? [['↓ / Enter', 'カードへ'], ['Esc', '検索をクリア']] : [['⌘K / Ctrl+K', 'コマンド']];
+    else if (workspace.utilityPage()) entries = [...globalKeys, ['Esc', 'パネルを閉じる']];
+    else if (input?.matches('.card')) entries = [['j / k', '次 / 前'], ['Enter', '開く'], ['l', 'ラベル'], ['m', 'リストへ移動'], ...globalKeys];
+    else entries = [['j / k', 'カード選択'], ['/', '検索'], ['c', 'タスク追加'], ['b', 'ナビゲーション'], ['a / u', '分析 / Usage'], ['r', '更新'], ...globalKeys];
+    boardKeyHints.replaceChildren(...shortcutHints(entries).childNodes);
+  }
+}
+const boardKeyHints = shortcutHints([], 'board-shortcuts');
+document.body.append(boardKeyHints);
+document.addEventListener('focusin', refreshShortcutHints);
+document.addEventListener('focusout', () => queueMicrotask(refreshShortcutHints));
+document.addEventListener('click', refreshShortcutHints);
 const SHORTCUTS = [
   ['全体', [
     ['/', '検索にフォーカス（Esc でクリア、↓ / Enter で最初のカードへ）'], ['⌘K / Ctrl+K', `コマンドパレット（カード・ビュー・${T.category}・操作を検索して実行）`],
@@ -4074,8 +4154,13 @@ const SHORTCUTS = [
     ['o', '再開（既定）'], ['d / t', 'デスクトップ / ターミナルで再開'], ['w n s e', 'ターミナル: 新規ウィンドウ / 新規タブ / 分割 / 既存'],
   ]],
   ['カードを開いている間', [
-    ['j / k', 'ボードの次 / 前のカードを開く'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'],
+    ['j / k', '表示リストの次 / 前のカードを開く（端で停止）'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'],
     ['i', '指示の入力欄へ'], ['o', '再開'], ['l g m h', 'ラベル / ' + T.category + ' / リスト移動 / 隠す'], ['c', 'タスクを追加'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
+  ]],
+  ['カードボード（レイヤー2）', [
+    ['Alt+[ / ]', '左 / 右の余白境界にフォーカス。←→で調整、Shiftで微調整、Homeで10%に戻す'],
+    ['Alt+m', 'ショートカットマップにフォーカス。矢印で移動、Shiftで微調整、Alt+←→で左 / 右の余白に移動、Homeで右の初期位置'],
+    ['0', '左右余白とショートカットマップを初期化（1:8:1）'],
   ]],
   ['ピッカー', [['文字を入力', '絞り込み'], ['↑ ↓ / Enter', '選ぶ'], ['Space', '複数選択の切り替え（入力が空のとき）'], ['Esc', '閉じる']]],
 ];
@@ -4091,9 +4176,24 @@ function commandPalette() {
   const f = state.filters;
   const actions = [
     { label: openViewKind() === 'analytics' ? '分析を閉じる' : '分析を開く', run: toggleAnalytics, hint: 'a' },
-    { label: openViewKind() === 'usage' ? 'Agent Usage を閉じる' : 'Agent Usage を開く', run: () => toggleView('usage') },
+    { label: openViewKind() === 'usage' ? 'Agent Usage を閉じる' : 'Agent Usage を開く', run: () => toggleView('usage'), hint: 'u' },
+    ...(paneLayer.hidden || panes[0]?.kind !== 'view' ? [
+      { label: paneLayer.hidden ? '次のカードにフォーカス' : '次のカードを開く', run: () => stepDisplayedCard(1), hint: 'j' },
+      { label: paneLayer.hidden ? '前のカードにフォーカス' : '前のカードを開く', run: () => stepDisplayedCard(-1), hint: 'k' },
+    ] : []),
+    ...(!paneLayer.hidden && panes[0]?.kind !== 'view' ? [
+      ...PANE_MODES.map(([mode, label], i) => ({ label: `会話を${label}で表示`, run: () => setPaneMode(mode), hint: String(i + 1) })),
+      ...(panePromptInput() ? [{ label: '指示欄にフォーカス', run: focusPanePrompt, hint: 'i' }] : []),
+      { label: 'カードを閉じる', run: closeCards, hint: 'Esc' },
+    ] : []),
+    ...(!paneLayer.hidden ? [
+      { label: 'カードボードの左余白を調整', run: () => cardBoardHandles.left.focus(), hint: 'Alt+[' },
+      { label: 'カードボードの右余白を調整', run: () => cardBoardHandles.right.focus(), hint: 'Alt+]' },
+      { label: 'ショートカットマップを移動', run: () => shortcutMapGrip.focus(), hint: 'Alt+m' },
+      { label: 'カードボードの余白とキー案内を初期化', run: resetCardBoard, hint: '0' },
+    ] : []),
     ...DRAWER_PAGES.map((page) => ({ label: `${WORKSPACE_PAGES.find(([id]) => id === page)[1]}を開く`, run: () => workspace.navigate(page) })),
-    { label: '再読み込み', run: () => load({ refresh: true }), hint: 'r' },
+    { label: '再読み込み', run: () => paneLayer.hidden ? load({ refresh: true }) : openCard(panes[0].id), hint: 'r' },
     { label: 'すべて既読にする', run: () => act('canban_mark_all_seen', {}, { okMsg: 'すべて既読にしました' }) },
     { label: state.sideOpen ? 'サイドバーを閉じる' : 'サイドバーを開く', run: () => toggleSidebar(), hint: 'b' },
     { label: 'タスクを追加', run: () => taskQuickAdd.open(), hint: 'c' },
@@ -4125,9 +4225,11 @@ function commandPalette() {
   p.classList.add('palette');
 }
 document.addEventListener('keydown', (e) => {
+  if (e.defaultPrevented || e.isComposing || e.keyCode === 229 || document.querySelector('dialog[open]')) return;
   if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
     e.preventDefault();
-    commandPalette();
+    const palette = document.querySelector('.popover.palette');
+    if (palette) closePopover(palette); else commandPalette();
     return;
   }
   if (e.key === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.isComposing && !typingIn(e.target) && !taskQuickAdd.dialog?.open && !document.querySelector('.popover')) { e.preventDefault(); quickAdd(); return; }
@@ -4135,6 +4237,7 @@ document.addEventListener('keydown', (e) => {
   const onCard = e.target.classList?.contains('card');
   const k = e.key;
   const run = {
+    j: () => stepDisplayedCard(1), k: () => stepDisplayedCard(-1),
     '/': focusSearch, '?': showShortcuts, b: () => toggleSidebar(), '[': () => stepLane(-1), ']': () => stepLane(1),
     r: () => load({ refresh: true }).then(() => toast('最新の状態に更新しました')), a: toggleAnalytics,
     c: quickAdd, p: () => scopePicker($('#logo')),
@@ -4181,7 +4284,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => ap
 function sharedUiSnapshot() {
   return {
     filters: { ...state.filters }, themePref: state.themePref, layout: state.layout, cardFit: state.cardFit, sidebar: state.sideOpen, workspacePage: workspace.page, labelsExpanded: state.labelsExpanded,
-    paneGlobal: { ...paneGlobal }, cardLayouts: structuredClone(cardLayouts), cardWidths: { ...cardWidths }, collapsedLanes: [...collapsedLanes],
+    paneGlobal: { ...paneGlobal }, cardLayouts: structuredClone(cardLayouts), cardWidths: { ...cardWidths }, cardBoard: structuredClone(cardBoardState), collapsedLanes: [...collapsedLanes],
   };
 }
 
@@ -4203,6 +4306,7 @@ function adoptSharedUi(record) {
     // In place: sections already on screen keep their reference to the layout of their kind.
     if (value.cardLayouts) { const next = normalizeCardLayouts(value.cardLayouts, PANE_LAYOUT_DEF, PANE_HEIGHTS); for (const kind of CARD_KINDS) Object.assign(cardLayouts[kind], next[kind]); }
     if (value.cardWidths) Object.assign(cardWidths, normalizeCardWidths(value.cardWidths));
+    if (value.cardBoard) cardBoardState = normalizeCardBoard(value.cardBoard);
     workspace.navigate(workspacePage(value.workspacePage), { save: false, reload: false });
     if (Array.isArray(value.collapsedLanes)) {
       collapsedLanes.clear();
@@ -4231,7 +4335,7 @@ async function applySharedUi(record, { redraw = true } = {}) {
   try { adopted = adoptSharedUi(record); }
   finally { sharedUi.applying = wasApplying; }
   if (!adopted) return;
-  applyCardWidths(); applyPaneLayoutAll(); panes.forEach(applyPaneAttrs); paintPaneBar();
+  applyCardWidths(); layoutCardBoard(); applyPaneLayoutAll(); panes.forEach(applyPaneAttrs); paintPaneBar();
   if (redraw) {
     await load();
     if (state.board) renderSidebar(state.board);

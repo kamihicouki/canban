@@ -21,7 +21,7 @@ test('assembled board: one style, one script, every include inlined, script comp
   new vm.Script(scripts[0][1]); // throws on a syntax error
   const src = fs.readFileSync(path.join(ui, 'board.html'), 'utf8');
   const included = [...src.matchAll(/@include ([\w-]+\.(?:css|js))/g)].map((m) => m[1]).sort();
-  assert.deepEqual(included, ['accounts.css', 'accounts.js', 'card-overlay-model.js', 'card-overlay.css', 'header.css', 'header.js', 'icons.js', 'layouts.css', 'layouts.js', 'prompt-composer.css', 'prompt-composer.js', 'task-quick-add-model.js', 'task-quick-add.css', 'task-quick-add.js', 'workspace-model.js', 'workspace.css', 'workspace.js']);
+  assert.deepEqual(included, ['accounts.css', 'accounts.js', 'card-board.js', 'card-overlay-model.js', 'card-overlay.css', 'header.css', 'header.js', 'icons.js', 'layouts.css', 'layouts.js', 'prompt-composer.css', 'prompt-composer.js', 'task-quick-add-model.js', 'task-quick-add.css', 'task-quick-add.js', 'workspace-model.js', 'workspace.css', 'workspace.js']);
   for (const f of included) assert.ok(html.includes(fs.readFileSync(path.join(ui, f), 'utf8').trimEnd()), f);
 });
 
