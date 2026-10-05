@@ -2,8 +2,10 @@
 // A card is shown on its own layer above the board. Layout (section order, heights, column ratio)
 // and width are kept per kind of card — "session" and "task" — and shared by every card of that kind.
 const CARD_KINDS = ['session', 'task'];
-const CARD_WIDTH_DEF = { session: 720, task: 520 };
-const CARD_WIDTH_MIN = 360, CARD_WIDTH_MAX = 1200;
+const CARD_WIDTH_DEF = { session: 1000, task: 760 };
+const CARD_WIDTH_MIN = 560, CARD_WIDTH_MAX = 1600;
+const CARD_HEIGHT_DEF = { session: 860, task: 860 };
+const CARD_HEIGHT_MIN = 320, CARD_HEIGHT_MAX = 1600;
 const TASK_SESSIONS_MAX = 8;
 const CARD_BOARD_DEF = { left: .1, right: .1, shortcut: { side: 'right', x: 0, y: .1 } };
 const cardBoardClamp = (n, min, max) => Math.min(max, Math.max(min, n));
@@ -43,14 +45,36 @@ function normalizeCardWidths(value) {
   }
   return out;
 }
+function normalizeCardHeights(value) {
+  return Object.fromEntries(CARD_KINDS.map(kind => {
+    const v = value?.[kind];
+    return [kind, typeof v === 'number' && Number.isFinite(v) ? Math.min(CARD_HEIGHT_MAX, Math.max(CARD_HEIGHT_MIN, Math.round(v))) : CARD_HEIGHT_DEF[kind]];
+  }));
+}
 function taskCardLayoutDefaults() {
-  return { main: ['conv', 'memo', 'related', 'send'], heights: { conv: 110, memo: 120, related: 110 } };
+  return { main: ['conv', 'send', 'memo'], ratio: .6, heights: { conv: 160, send: 320, memo: 120 } };
 }
 function normalizeCardLayouts(value, defaults, heightDefaults) {
-  return {
-    session: normalizePaneLayout(value?.session, defaults, heightDefaults),
-    task: normalizePaneLayout(value?.task ?? taskCardLayoutDefaults(), defaults, heightDefaults),
-  };
+  const legacyMain = ['conv', 'progress', 'send', 'labels', 'memo', 'detail', 'pr', 'related', 'first'];
+  const legacySide = ['resume', 'task', 'add', 'prio', 'other'];
+  const legacyHeights = { conv: 180, progress: 64, send: 360, labels: 84, memo: 150, detail: 320, pr: 180, related: 180, first: 150, resume: 290, task: 110, add: 130, prio: 130, other: 190 };
+  const identity = ['breadcrumb', 'title', 'status'].filter(id => defaults.side.includes(id));
+  const result = {};
+  for (const kind of CARD_KINDS) {
+    let stored = value?.[kind];
+    const oldMain = kind === 'task' ? ['conv', 'memo', 'related', 'send', ...legacyMain.filter(id => !['conv', 'memo', 'related', 'send'].includes(id))] : legacyMain;
+    const oldHeights = kind === 'task' ? { ...legacyHeights, conv: 110, memo: 120, related: 110 } : legacyHeights;
+    // Only untouched legacy defaults migrate. User arrangements, sizes and collapsed sections survive.
+    const untouched = stored && JSON.stringify(stored.main) === JSON.stringify(oldMain) && JSON.stringify(stored.side) === JSON.stringify(legacySide)
+      && !stored.collapsed?.length && (stored.ratio == null || stored.ratio === 2 / 3)
+      && Object.entries(stored.heights || {}).every(([id, height]) => oldHeights[id] === height);
+    if (untouched) stored = null;
+    if (stored && ![...(stored.main || []), ...(stored.side || [])].some(id => identity.includes(id)))
+      stored = { ...stored, side: [...identity, ...(stored.side || [])] };
+    const seed = kind === 'task' ? { ...defaults, ...taskCardLayoutDefaults(), collapsed: ['memo', 'other'].filter(id => [...defaults.main, ...defaults.side].includes(id)) } : defaults;
+    result[kind] = normalizePaneLayout(stored ?? seed, defaults, { ...heightDefaults, ...(kind === 'task' ? taskCardLayoutDefaults().heights : {}) });
+  }
+  return result;
 }
 // The task's own card, then its linked sessions (never sub-agents) side by side, at most TASK_SESSIONS_MAX.
 // The order is stable: sessions already shown keep their place, new links go last, removed ones drop out.

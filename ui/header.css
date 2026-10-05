@@ -36,4 +36,9 @@
   .topbar { gap: 6px; padding: 0 8px; }
   .board-name #logo { max-width: 140px; }
 }
-
+.shortcut-hints { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; line-height: 20px; }
+.shortcut-hint { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.shortcut-hints kbd { font: 11px/16px ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px solid currentColor; border-radius: 3px; padding: 0 4px; }
+.shortcut-hint[aria-disabled="true"] { opacity: .4; }
+.board-shortcuts { position: fixed; right: 12px; bottom: 8px; z-index: 10; max-width: calc(100vw - 24px); padding: 2px 8px; border-radius: 4px; background: color-mix(in srgb, var(--board-bg) 94%, transparent); color: var(--on-board); pointer-events: none; }
+.board-shortcuts[hidden] { display: none; }

@@ -11,7 +11,7 @@
 .card-board-viewport { position: absolute; inset: 0 var(--gutter-right, 10%) 0 var(--gutter-left, 10%); overflow: hidden; }
 .pane-stage { height: 100%; min-width: 0; display: flex; overflow-x: auto; overflow-y: hidden; padding: 8px 12px 24px; scroll-snap-type: x proximity; overscroll-behavior: contain; }
 .pane-stage.can-scroll-right { mask-image: linear-gradient(to right, var(--on-scrim) calc(100% - 48px), transparent); }
-.pane-row { position: relative; display: flex; align-items: stretch; gap: 16px; margin: 0 auto; width: max-content; height: 100%; max-height: 960px; }
+.pane-row { position: relative; display: flex; align-items: flex-start; gap: 16px; margin: 0 auto; width: max-content; height: 100%; max-height: 960px; }
 .card-board-end { position: absolute; inset: 0 0 0 auto; width: 1px; pointer-events: none; }
 .card-board-margin { position: absolute; z-index: 2; top: 8px; bottom: 24px; width: 16px; display: flex; align-items: center; justify-content: center; color: var(--on-scrim); opacity: .5; cursor: ew-resize; touch-action: none; }
 .card-board-margin::before { content: ''; position: absolute; inset: 0 auto; border-left: 1px solid var(--scrim-ctl); }
@@ -52,8 +52,6 @@
 .task-parent-actions .task-request { width: 100%; background: color-mix(in srgb, var(--task-accent) 9%, var(--modal-bg)); color: var(--list-fg); }
 .task-related-more { font-size: 12px; margin: 4px 0 0; }
 .pane-layer.stack .pane-stage { padding-inline: 12px; }
-.pane-layer.stack .pane { width: calc(var(--card-board-width, 80vw) - 24px); }
-.pane-layer.stack .pane-b { display: block; overflow-y: auto; }
-.pane-layer.stack .pcol { overflow: visible; height: auto; }
-.pane-layer.stack .column-split, .pane-layer.stack .pane-width { display: none; }
+.pane-layer.stack .pane.sheet { width: calc(var(--card-board-width, 80vw) - 24px); }
+
 @media (prefers-reduced-motion: reduce) { .pane-layer, .pane { transition: none; } }
