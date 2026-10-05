@@ -7,6 +7,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { codexLifecycle } from './session-actions.mjs';
+import { startDesktopBridge } from './codex-desktop-bridge.mjs';
 import { Store } from './store.mjs';
 import { leaderFor } from './leader.mjs';
 import { perf } from './perf.mjs';
@@ -51,6 +52,10 @@ function readManifest(...candidates) {
 }
 
 const store = new Store();
+const desktopBridge = await startDesktopBridge({ dataDir: store.dir }).catch(error => {
+  process.stderr.write(`[canban] Codex連携: ${error.message}\n`);
+  return null;
+});
 // Realtime: watches nothing until a board calls canban_watch (see server/live.mjs).
 const live = process.env.CANBAN_LIVE === '0' ? null : new LiveHub({ dataDir: store.dir, codexHome: codexHome(), claudeProjects: path.join(claudeHome(), 'projects'), claudeDesktop: claudeDesktopSessionsDir(), extraRoots: extraWatchRoots(store) });
 const watch = live ? createWatch(live, { presence: new Presence(store.dir, { app: () => appLabel(client) }) }) : null;
@@ -549,8 +554,9 @@ const TOOLS = [
           for (const s of before) if (affected.has(s.parentId) && !affected.has(s.id)) { affected.add(s.id); added = true; }
         }
       }
-      const result = await codexLifecycle(session, a.action);
-      dropLocalCache();
+      let result;
+      try { result = await codexLifecycle(session, a.action, { dataDir: store.dir }); }
+      finally { dropLocalCache(); }
       if (a.action === 'delete') {
         const remaining = new Set((await allSessions(state, { force: true })).sessions.map(s => s.id));
         for (const id of affected) if (!remaining.has(id)) await store.removeSessionMetadata(id);
@@ -750,11 +756,13 @@ rl.on('line', (line) => {
 rl.on('close', async () => {
   await Promise.allSettled([...pending]);
   await shutdownLogins();
+  await desktopBridge?.close();
   // Exit only after stdout has flushed; large responses are written asynchronously to pipes.
   process.stdout.write('', () => process.exit(0));
 });
 for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, async () => {
   await shutdownLogins();
+  await desktopBridge?.close();
   process.exit(0);
 });
 

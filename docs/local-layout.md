@@ -11,6 +11,7 @@
 | `.local/data/` | 開発用データ、または既存共有データへの参照 |
 | `~/.canban/`（repo外） | 通常ユーザーのSQLite DB、検索索引、実行ログ、アカウントデータ |
 | `<Canban保存先>/prompt-images/` | プロンプトの添付画像・アップロード状態。通常は `~/.canban/prompt-images/`。開発・テストは明示した `.local/` 配下 |
+| `<Canban保存先>/agent-bridges/` | Codex内のCanban MCPへ接続する一時的な探索レコード。会話・認証情報は保存しない |
 | `.local/chrome-main-test/` | 拡張の公開鍵・ID、ビルド記録、更新ロック |
 | `.local/backups/` | 配置移行・設定変更前の控え |
 
@@ -56,6 +57,10 @@ npm run update:local
 完了条件はpackage・MCP manifest・Codex plugin・登録先Chrome manifestのバージョン一致、ソースとビルドの一致、拡張IDとNative Hostの維持。Chromeで再読み込みする。インストール済み旧版MCPプロセスが残る場合は、次回そのホストを再接続したときに更新される。アプリのキャッシュを開発repoとして編集しない。
 
 ## Chrome Native Hostの実行ファイル
+
+Codexが保持中のセッションの履歴操作は、Codexから起動されたCanban MCPがApp Toolsに実行を依頼する。MCPはCodexが指定した署名済みNodeを優先し、`CODEX_APP_TOOLS_PIPE_PATH`・`CODEX_MCP_NODE_PATH`・`CODEX_THREAD_ID`を引き継ぐ。Chrome Native Hostはこの接続口へ直接アクセスせず、同じCanban保存先の`agent-bridges/`から選択したCodex homeと一致するCanban MCPを探す。ブリッジはアーカイブ・復元だけを受け付け、対象を本体で確認して実行中・入力待ちを拒否する。削除は所有者によるアーカイブの後にCodexの削除APIを呼ぶ。
+
+探索レコードは権限600、Unixソケットは権限700の一時ディレクトリに権限600で作り、MCPの終了時に除去する。終了異常による古いレコードは接続確認で無視する。プラグイン再導入後も旧MCPが動作している場合は、CanbanのMCP接続を再接続する。保持されていないセッションと追加アカウントの履歴には、選択したhomeで起動するCodex App Serverを使う。
 
 macOSのDocuments保護により、Chromeの子プロセスはDocuments内のrepoを読み取れない場合がある。ホストはrepoを直接起動せず、macOSでは `~/Library/Application Support/Canban/native-hosts/<host名>/`、Linuxでは `${XDG_DATA_HOME:-~/.local/share}/canban/native-hosts/<host名>/` のアプリ用配布物を起動する。OSのアクセス権を広げる必要はない。
 
