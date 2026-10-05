@@ -71,7 +71,7 @@ function normalizeDispatch(x) {
   };
 }
 
-const VIEW_FILTER_KEYS = ['agent', 'host', 'account', 'status', 'project', 'folder', 'section', 'directory', 'label', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'includeHidden', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
+const VIEW_FILTER_KEYS = ['agent', 'host', 'account', 'status', 'project', 'folder', 'section', 'directory', 'label', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
 function normalizeView(v) {
   if (!v || typeof v.id !== 'string' || !String(v.name || '').trim()) return null;
   const filters = {};
@@ -362,7 +362,6 @@ export class Store {
   moveCard({ cardId, toListId, order }) {
     return this.mutate((s) => {
       if (!s.lists.some((l) => l.id === toListId)) throw new Error('移動先のリストが見つかりません');
-      if (s.cards[cardId]?.deleted) throw new Error('削除済みのカードです');
       const card = (s.cards[cardId] ||= {});
       placeCard(card, toListId, order);
       delete card.movedBy; // a manual move supersedes an automatic one
@@ -370,26 +369,16 @@ export class Store {
     });
   }
 
-  setSessionCardState({ cardId, action }) {
-    if (!/^(codex|claude)(?:@[^:]+)?:.+/.test(cardId) || !['archive', 'restore', 'delete'].includes(action)) throw new Error('セッションカードの操作が不正です');
-    return this.mutate((s) => {
-      if (s.cards[cardId]?.deleted) throw new Error('削除済みのカードです');
-      const card = (s.cards[cardId] ||= {});
-      if (action === 'delete') {
-        // Keep a tombstone so the read-only source scan does not recreate the card.
-        s.cards[cardId] = { deleted: true, deletedAt: new Date().toISOString() };
-        for (const c of Object.values(s.cards)) if (c.kind === 'task') c.links = (c.links || []).filter(id => id !== cardId);
-      } else {
-        card.archived = action === 'archive';
-        card.updatedAt = new Date().toISOString();
-      }
-      return { cardId, action, ...s.cards[cardId] };
+  removeSessionMetadata(cardId) {
+    return this.mutate(s => {
+      delete s.cards[cardId];
+      for (const c of Object.values(s.cards)) if (c.kind === 'task') c.links = (c.links || []).filter(id => id !== cardId);
+      return { cardId };
     });
   }
 
-  updateCard({ cardId, labels, note, priority, due, hidden, directory }) {
+  updateCard({ cardId, labels, note, priority, due, directory }) {
     return this.mutate((s) => {
-      if (s.cards[cardId]?.deleted) throw new Error('削除済みのカードです');
       const card = (s.cards[cardId] ||= {});
       if (labels !== undefined) {
         const valid = new Set(s.labels.map((l) => l.id));
@@ -404,7 +393,6 @@ export class Store {
       if (note !== undefined) card.note = String(note ?? '').slice(0, 20000);
       if (priority !== undefined) card.priority = ['high', 'medium', 'low'].includes(priority) ? priority : null;
       if (due !== undefined) card.due = due && !Number.isNaN(Date.parse(due)) ? due : null;
-      if (hidden !== undefined) card.hidden = !!hidden;
       card.updatedAt = new Date().toISOString();
       return { cardId, ...card };
     });
@@ -480,7 +468,6 @@ export class Store {
     return this.mutate((s) => {
       const task = s.cards[taskId];
       if (task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
-      if (s.cards[sessionId]?.deleted) throw new Error('削除済みのカードです');
       if (sessionId.startsWith('task:')) throw new Error('タスクカード同士は紐付けられません');
       for (const c of Object.values(s.cards)) if (c.kind === 'task') c.links = (c.links || []).filter((x) => x !== sessionId);
       task.links = [...(task.links || []), sessionId];
@@ -614,7 +601,6 @@ export class Store {
 
   markSeen({ cardId }) {
     return this.mutate((s) => {
-      if (s.cards[cardId]?.deleted) throw new Error('削除済みのカードです');
       const card = (s.cards[cardId] ||= {});
       card.seenAt = Date.now();
       return { cardId, seenAt: card.seenAt };

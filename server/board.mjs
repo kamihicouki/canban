@@ -1,3 +1,4 @@
+import { sessionActions } from './session-actions.mjs';
 import { leaderFor } from './leader.mjs';
 // Combines read-only session listings (local + enabled remote hosts) with the
 // Canban store into a board snapshot.
@@ -94,7 +95,7 @@ function matchesDirectory(f, dir) {
 
 
 function sessionCardStates(sessions, state) {
-  return sessions.filter(s => !state.cards[s.id]?.deleted).map(s => ({ ...s, archived: s.archived || !!state.cards[s.id]?.archived }));
+  return sessions; // archive and deletion belong exclusively to the agent
 }
 
 function matches(session, card, f, labelsById, hits, dir) {
@@ -109,7 +110,6 @@ function matches(session, card, f, labelsById, hits, dir) {
   if (f.status && (session.status || 'idle') !== f.status) return false;
   if (!f.includeArchived && session.archived) return false;
   if (!f.includeSubagents && session.subagent) return false;
-  if (!f.includeHidden && card?.hidden) return false;
   if (f.pinnedOnly && !session.pinnedInAgent) return false;
   // Sessions the user placed on the board stay visible regardless of age.
   if (f.days && !card?.listId && (session.updatedAt || 0) < Date.now() - f.days * 86400000) return false;
@@ -126,7 +126,6 @@ function matches(session, card, f, labelsById, hits, dir) {
 }
 
 export function matchesTask(t, links, status, f, labelsById, dir) {
-  if (!f.includeHidden && t.hidden) return false;
   if (!matchesDirectory(f, dir)) return false;
   if (f.label && (f.label === '__none' ? t.labels?.length : !t.labels?.includes(f.label))) return false;
   if (f.status && status !== f.status) return false;
@@ -407,7 +406,6 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       note: card?.note || '',
       priority: card?.priority || null,
       due: card?.due || null,
-      hidden: !!card?.hidden,
       placed: !!card?.listId,
       status: s.status || 'idle',
       activity: s.activity || null,
@@ -430,18 +428,18 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
   const now = Date.now();
   for (const [id, t] of taskEntries(state)) {
     const allLinks = (t.links || []).map((sid) => byId.get(sid)).filter(Boolean);
-    const links = allLinks.filter(s => (filters.includeArchived || !state.cards[s.id]?.archived) && (filters.includeHidden || !state.cards[s.id]?.hidden));
+    const links = allLinks.filter(s => (filters.includeArchived || !s.archived));
     const status = aggregateStatus(links.map((x) => x.status || 'idle'));
     const updatedAt = Math.max(t.createdAt || 0, ...links.map((x) => x.updatedAt || 0));
     const dir = resolveDirectory(state, t, t.target?.cwd || links.find((x) => x.cwd)?.cwd);
     const context = effectiveTaskContext(t, links);
-    if (!t.hidden && t.context?.project) projects.set(context.project, (projects.get(context.project) || 0) + 1);
-    if (!t.hidden && t.context?.folder) folders.set(context.folder, (folders.get(context.folder) || 0) + 1);
-    if (!t.hidden && t.context?.section) {
+    if (t.context?.project) projects.set(context.project, (projects.get(context.project) || 0) + 1);
+    if (t.context?.folder) folders.set(context.folder, (folders.get(context.folder) || 0) + 1);
+    if (t.context?.section) {
       const section = sections.get(context.section) || { id: context.section, name: context.section, count: 0 };
       sections.set(context.section, { ...section, count: section.count + 1 });
     }
-    if (!t.hidden) dirCounts.set(dir?.id || '__none', (dirCounts.get(dir?.id || '__none') || 0) + 1);
+    dirCounts.set(dir?.id || '__none', (dirCounts.get(dir?.id || '__none') || 0) + 1);
     if (!matchesTask(t, links, status, filters, labelsById, dir)) continue;
     const listId = t.listId && listIds.has(t.listId) ? t.listId : state.defaultListId;
     buckets.get(listId).push({
@@ -470,7 +468,6 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       note: t.note || '',
       priority: t.priority || null,
       due: t.due || null,
-      hidden: !!t.hidden,
       placed: true,
       status,
       unread: links.some((x) => (x.updatedAt || 0) > Math.max(seenAll, t.seenAt || 0)),
@@ -585,11 +582,10 @@ function recentFolders(sessions, limit = 60) {
 
 export async function findSession(store, cardId) {
   let state = (await store.load());
-  if (state.cards[cardId]?.deleted) throw new Error(`セッションが見つかりません: ${cardId}`);
   const { sessions, hosts } = await allSessions(state);
-  if (await store.syncSessionCategories(sessions.filter(s => !state.cards[s.id]?.deleted))) state = await store.load();
+  if (await store.syncSessionCategories(sessions)) state = await store.load();
   const s = sessions.find((x) => x.id === cardId);
-  if (!s || state.cards[cardId]?.deleted) throw new Error(`セッションが見つかりません: ${cardId}`);
+  if (!s) throw new Error('セッションが見つかりません');
   return { session: s, state, host: s.host?.local === false ? hosts.find((h) => h.id === s.host.id) : null };
 }
 
@@ -637,9 +633,9 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   const { host: h, ...rest } = s;
   const labels = state.settings.accounts.labels;
   return {
-    session: { ...rest, host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: accountLabel(s.account, labels) },
+    session: { ...rest, actions: sessionActions(s), host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: accountLabel(s.account, labels) },
     card: {
-      listId, labels: card.labels || [], note: card.note || '', priority: card.priority || null, due: card.due || null, hidden: !!card.hidden, archived: !!card.archived,
+      listId, labels: card.labels || [], note: card.note || '', priority: card.priority || null, due: card.due || null, archived: !!s.archived,
       directory: dirView(resolveDirectory(state, card, s.cwd, s)), directoryId: card.directoryId || null,
     },
     list: state.lists.find((l) => l.id === listId),

@@ -121,42 +121,15 @@ test('simultaneous shared view state writes accept only one writer for a revisio
 });
 
 
-test('session card archive preserves attributes; delete persists a tombstone and removes task links', async () => {
-  const dir = tmp(), store = new Store(dir);
-  await store.updateCard({ cardId: 'codex:lifecycle', note: 'keep', labels: ['lbl-bug'], hidden: true });
-  await store.moveCard({ cardId: 'codex:lifecycle', toListId: 'doing', order: 42 });
-  const task = await store.createTask({ title: 'owner' });
-  await store.linkSession({ taskId: task.cardId, sessionId: 'codex:lifecycle' });
-  await store.setSessionCardState({ cardId: 'codex:lifecycle', action: 'archive' });
-  let card = (await new Store(dir).load()).cards['codex:lifecycle'];
-  assert.equal(card.archived, true);
-  assert.equal(card.note, 'keep');
-  assert.equal(card.listId, 'doing');
-  assert.equal(card.order, 42);
-  await store.setSessionCardState({ cardId: 'codex:lifecycle', action: 'restore' });
-  card = (await store.load()).cards['codex:lifecycle'];
-  assert.equal(card.archived, false);
-  assert.equal(card.hidden, true);
-  await store.setSessionCardState({ cardId: 'codex:lifecycle', action: 'delete' });
-  const state = await new Store(dir).load();
-  assert.equal(state.cards['codex:lifecycle'].deleted, true);
-  assert.equal(state.cards['codex:lifecycle'].note, undefined);
-  assert.deepEqual(state.cards[task.cardId].links, []);
-  await assert.rejects(store.updateCard({ cardId: 'codex:lifecycle', hidden: false }), /削除済み/);
-  await assert.rejects(store.moveCard({ cardId: 'codex:lifecycle', toListId: 'inbox' }), /削除済み/);
-  await assert.rejects(store.linkSession({ taskId: task.cardId, sessionId: 'codex:lifecycle' }), /削除済み/);
-  await assert.rejects(store.setSessionCardState({ cardId: task.cardId, action: 'delete' }), /不正/);
-});
-
-
-test('remote session card actions retain host identity and leave same native ID on other hosts intact', async () => {
+test('native deletion removes Canban metadata and links only for the target session', async () => {
   const store = new Store(tmp());
-  for (const cardId of ['codex:shared', 'codex@worker:shared', 'claude@worker:shared']) await store.updateCard({cardId,note:cardId});
-  await store.setSessionCardState({cardId:'codex@worker:shared',action:'archive'});
-  await store.setSessionCardState({cardId:'claude@worker:shared',action:'delete'});
+  await store.updateCard({ cardId: 'codex:one', note: 'one' });
+  await store.updateCard({ cardId: 'codex@remote:one', note: 'remote' });
+  const task = await store.createTask({ title: 'owner' });
+  await store.linkSession({ taskId: task.cardId, sessionId: 'codex:one' });
+  await store.removeSessionMetadata('codex:one');
   const state = await store.load();
-  assert.equal(state.cards['codex@worker:shared'].archived,true);
-  assert.equal(state.cards['claude@worker:shared'].deleted,true);
-  assert.equal(state.cards['codex:shared'].archived,undefined);
-  assert.equal(state.cards['codex:shared'].note,'codex:shared');
+  assert.equal(state.cards['codex:one'], undefined);
+  assert.equal(state.cards['codex@remote:one'].note, 'remote');
+  assert.deepEqual(state.cards[task.cardId].links, []);
 });

@@ -876,7 +876,7 @@ const store = {
   },
   cache(k, v) { try { localStorage.setItem(`sk:${k}`, JSON.stringify(v)); } catch {} },
 };
-const DEFAULT_FILTERS = { agent: 'all', host: '', account: '', status: '', project: '', directory: '', label: '', q: '', days: 30, includeArchived: false, includeSubagents: false, includeHidden: false, groupBranch: false, fulltext: false, swimlane: '', laneHeight: 'normal' };
+const DEFAULT_FILTERS = { agent: 'all', host: '', account: '', status: '', project: '', directory: '', label: '', q: '', days: 30, includeArchived: false, includeSubagents: false, groupBranch: false, fulltext: false, swimlane: '', laneHeight: 'normal' };
 const LANE_HEIGHTS = { compact: ['コンパクト', '240px'], normal: ['標準', '420px'], full: ['すべて', 'none'] };
 const state = {
   board: null,
@@ -964,7 +964,7 @@ function migrateLegacyScope(board) {
 async function load({ refresh = false, throwOnError = false } = {}) {
   const seq = ++loadSeq;
   const f = state.filters;
-  const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, includeHidden: f.includeHidden, pinnedOnly: !!f.pinnedOnly, groupBranch: !!f.groupBranch, fulltext: !!f.fulltext, refresh };
+  const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, pinnedOnly: !!f.pinnedOnly, groupBranch: !!f.groupBranch, fulltext: !!f.fulltext, refresh };
   if (f.project) args.project = f.project;
   if (f.folder) args.folder = f.folder;
   if (f.section) args.section = f.section;
@@ -1183,15 +1183,12 @@ function dirPill(d) {
     h('i', { class: 'dir-dot', style: { background: d.color ? colorVar(d.color) : 'var(--btn-subtle-hover)' } }), d.name);
 }
 
-// Attribute keys on a focused card (Trello-like): l = labels, g = directory, m = move, h = hide.
+// Attribute keys on a focused card (Trello-like): l = labels, g = directory, m = move.
 const CARD_ATTR_KEYS = {
   l: (el, card) => labelPicker(el, card.id, card, () => {}),
   g: (el, card) => directoryPicker(el, card),
   m: (el, card, list) => listPicker(el, card, list.id),
-  h: (el, card) => {
-    act('canban_update_card', { cardId: card.id, hidden: !card.hidden }).then(() =>
-      toastAction(card.hidden ? '再表示しました' : `「${card.title}」を隠しました`, '元に戻す', () => act('canban_update_card', { cardId: card.id, hidden: !!card.hidden }))).catch(() => {});
-  },
+
 };
 function listPicker(anchor, card, fromListId) {
   const lists = state.board.lists;
@@ -2033,7 +2030,7 @@ async function openTaskCard(cardId, { restore = false, shown = null } = {}) {
   let found = findCard(cardId);
   if (!found) {
     try {
-      const all = await bridge.callTool('canban_get_board', { days: 0, includeArchived: true, includeHidden: true });
+      const all = await bridge.callTool('canban_get_board', { days: 0, includeArchived: true });
       for (const list of all.lists) { const card = list.cards.find((c) => c.id === cardId); if (card) { found = { card, list }; break; } }
     } catch (e) { if (!restore) toast(e.message, true); return; }
   }
@@ -2132,21 +2129,23 @@ function renderPaneKeepingDrafts(p, d) {
 
 async function changeSessionCardState(p, action) {
   if (p.cardActionBusy) return;
+  if (!p.d?.session?.actions?.available) { toast(p.d?.session?.actions?.reason || 'この操作は利用できません', true); return; }
   p.cardActionBusy = true;
   try {
-    await act('canban_set_session_card_state', { cardId: p.id, action }, { okMsg: action === 'delete' ? 'Canbanのカードを削除しました' : action === 'archive' ? 'Canbanでアーカイブしました' : 'アーカイブから戻しました' });
+    await act('canban_set_session_card_state', { cardId: p.id, action }, { okMsg: action === 'delete' ? 'Codexのセッションを削除しました' : action === 'archive' ? 'Codexでアーカイブしました' : 'アーカイブから戻しました' });
     closeCards();
   } finally { p.cardActionBusy = false; }
 }
 function confirmSessionCardDelete(p) {
   if (p?.kind !== 'session' || !p.d?.session || p.cardActionBusy || document.querySelector('dialog[open]')) return;
+  if (!p.d.session.actions?.available) { toast(p.d.session.actions?.reason || 'この操作は利用できません', true); return; }
   const cancel = h('button', { class: 'btn', type: 'button', autofocus: true }, 'キャンセル', keycap('Esc'));
   const error = h('p', { class: 'danger-text', role: 'alert' });
-  const remove = h('button', { class: 'btn-danger', type: 'button', text: 'カードを削除' });
+  const remove = h('button', { class: 'btn-danger', type: 'button', text: 'セッションを削除' });
   const dialog = h('dialog', { class: 'session-card-dialog', 'aria-labelledby': 'session-card-delete-title' },
-    h('h2', { id: 'session-card-delete-title', text: 'Canbanのカードを削除しますか？' }),
-    h('p', { text: `「${p.d.session.title}」のメモ・ラベル・配置・タスクへの紐付けを削除します。元に戻せません。` }),
-    h('p', { text: 'Codex・Claudeの会話履歴は残ります。履歴を残して後で戻したい場合は、アーカイブをご利用ください。' }),
+    h('h2', { id: 'session-card-delete-title', text: 'セッションと会話履歴を削除しますか？' }),
+    h('p', { text: `「${p.d.session.title}」の会話履歴と関連情報をCodexから永久に削除します。Canbanのメモ・ラベル・配置・タスクへの紐付けも削除します。元に戻せません。` }),
+    h('p', { text: 'Codexが生成した子セッションも削除対象です。履歴を残して後で戻したい場合は、アーカイブをご利用ください。' }),
     error, h('div', { class: 'row' }, cancel, remove));
   cancel.onclick = () => dialog.close();
   remove.onclick = async () => {
@@ -2161,13 +2160,11 @@ function confirmSessionCardDelete(p) {
 }
 function sessionCardActions(p, card) {
   return [
-    h('button', { class: 'side-btn', 'data-pane-key': 'z', onclick: () => changeSessionCardState(p, card.archived ? 'restore' : 'archive').catch(() => {}) },
-      h('span', { html: picon('box', 14) }), card.archived ? 'アーカイブから戻す' : 'Canbanでアーカイブ', keycap('z')),
-    h('button', { class: 'side-btn', 'data-pane-key': 'h', onclick: async () => { try { await act('canban_update_card', { cardId: p.id, hidden: !card.hidden }, { okMsg: card.hidden ? '再表示しました' : '隠しました' }); closeCards(); } catch {} } },
-      h('span', { html: picon('eye', 14) }), card.hidden ? 'ボードに再表示' : 'ボードから隠す', keycap('h')),
-    h('button', { class: 'side-btn danger-text', 'data-pane-key': 'Delete', onclick: () => confirmSessionCardDelete(p) },
-      h('span', { html: picon('trash', 14) }), 'Canbanのカードを削除…', keycap('Delete')),
-    h('p', { class: 'muted', text: '会話履歴は残ります。アーカイブは「アーカイブ済みも表示」から戻せます。' }),
+    h('button', { class: 'side-btn', disabled: !p.d.session.actions?.available, 'data-pane-key': 'z', onclick: () => changeSessionCardState(p, card.archived ? 'restore' : 'archive').catch(() => {}) },
+      h('span', { html: picon('box', 14) }), card.archived ? 'アーカイブから戻す' : 'アーカイブ', keycap('z')),
+    h('button', { class: 'side-btn danger-text', disabled: !p.d.session.actions?.available, 'data-pane-key': 'Delete', onclick: () => confirmSessionCardDelete(p) },
+      h('span', { html: picon('trash', 14) }), 'セッションを削除…', keycap('Delete')),
+    h('p', { class: 'muted', text: p.d.session.actions?.reason || 'Codex本体に反映します。アーカイブは「アーカイブ済みも表示」から戻せます。' }),
   ];
 }
 
@@ -2279,7 +2276,7 @@ function renderPane(p, d) {
     ...kv('モデル', s.model || '-'),
     ...kv('作成', fmtDate(s.createdAt)),
     ...kv('最終更新', fmtDate(s.updatedAt)),
-    ...kv('状態', [s.agent === 'claude' && !s.desktopKnown ? 'アーカイブ状態は不明（Claude デスクトップの情報がディスクにありません）' : card.archived ? 'Canbanでアーカイブ済' : s.archived ? 'アーカイブ済' : '進行中/未アーカイブ', s.pinnedInAgent ? '📌 Codex でピン留め' : null, s.subagent ? 'サブエージェント' : null, s.automation ? '⏰ Codex オートメーション' : null].filter(Boolean).join(' · ')),
+    ...kv('状態', [s.agent === 'claude' && !s.desktopKnown ? 'アーカイブ状態は不明（Claude デスクトップの情報がディスクにありません）' : s.archived ? 'アーカイブ済' : '進行中/未アーカイブ', s.pinnedInAgent ? '📌 Codex でピン留め' : null, s.subagent ? 'サブエージェント' : null, s.automation ? '⏰ Codex オートメーション' : null].filter(Boolean).join(' · ')),
   )] };
   if (d.pr) secs.pr = { title: d.pr.provider === 'gitlab' ? 'マージリクエスト' : 'プルリクエスト', extra: prPill(d.pr), nodes: [h('div', { class: 'msg' },
     h('button', { class: 'link-btn', text: `${d.pr.title}`, onclick: () => bridge.openLink(d.pr.url).catch(() => copyText(d.pr.url, 'PR の URL')) }),
@@ -2893,7 +2890,7 @@ function setAllLanes(collapse) {
 // Sidebar: lanes (jump), directories and projects (one-click filters)
 // ======================================================================
 // ---- filters in effect, as chips in the app bar (each ✕ takes one off) ----
-const FILTER_KEYS = ['agent', 'days', 'status', 'directory', 'project', 'folder', 'section', 'label', 'host', 'account', 'includeArchived', 'includeSubagents', 'includeHidden', 'pinnedOnly'];
+const FILTER_KEYS = ['agent', 'days', 'status', 'directory', 'project', 'folder', 'section', 'label', 'host', 'account', 'includeArchived', 'includeSubagents', 'pinnedOnly'];
 const sameFilters = (a, b) => FILTER_KEYS.every((k) => (a[k] ?? DEFAULT_FILTERS[k]) === (b[k] ?? DEFAULT_FILTERS[k]));
 function activeView(b) { return (b?.settings?.views || []).find((v) => sameFilters({ ...DEFAULT_FILTERS, ...v.filters }, state.filters)); }
 // The lane axis is not also a filter: lanes by category already show every category.
@@ -2914,7 +2911,6 @@ function filterChips(b) {
   if (f.account && !laneHides('account')) add(`アカウント: ${b?.accounts?.accounts?.find((a) => a.key === f.account)?.label || f.account}`, { account: '' });
   if (f.includeArchived) add('アーカイブ済みも表示', { includeArchived: false });
   if (f.includeSubagents) add('サブエージェントも表示', { includeSubagents: false });
-  if (f.includeHidden) add('隠したカードも表示', { includeHidden: false });
   if (f.pinnedOnly) add('ピン留めだけ', { pinnedOnly: false });
   return out;
 }
@@ -3086,7 +3082,7 @@ function filterSection(b, hit = () => true) {
   if (!laneHides('label') && b.labels.length) group('ラベル', [...b.labels.map((l) => ({ id: l.id, name: l.name, color: l.color })), { id: '__none', name: 'ラベルなし', color: null }].map((l) =>
     choice(l.name, f.label === l.id, () => setScope({ label: f.label === l.id ? '' : l.id }), h('span', { class: 'dot', style: { background: l.color ? colorVar(l.color) : 'var(--header-btn-hover)' } }))));
   const scope = (key, label) => h('label', { class: 'side-check' }, h('input', { type: 'checkbox', checked: !!f[key], onchange: (e) => setScope({ [key]: e.target.checked }) }), label);
-  nodes.push(sideHead('表示する対象'), scope('includeArchived', 'アーカイブ済みも表示'), scope('includeSubagents', 'サブエージェントも表示'), scope('includeHidden', 'ボードから隠したカードも表示'), scope('pinnedOnly', 'Codex でピン留めしたものだけ'));
+  nodes.push(sideHead('表示する対象'), scope('includeArchived', 'アーカイブ済みも表示'), scope('includeSubagents', 'サブエージェントも表示'), scope('pinnedOnly', 'Codex でピン留めしたものだけ'));
   return h('section', { class: 'side-sec-filters' }, nodes);
 }
 // The foot of the sidebar: the sheets, the management pages and the look of the board.
@@ -3390,7 +3386,7 @@ function paintTaskRelated(p, card) {
 async function taskLinkMenu(anchor, taskId) {
   try {
     const linked = findCard(taskId)?.card.linkedSessionIds || [];
-    const board = await bridge.callTool('canban_get_board', { days: 0, includeArchived: true, includeHidden: true });
+    const board = await bridge.callTool('canban_get_board', { days: 0, includeArchived: true });
     const candidates = board.lists.flatMap((l) => l.cards).flatMap((c) => c.kind === 'task' ? c.links.map((x) => ({ ...x, title: `${x.title}（${c.title}から移動）` })) : [c]);
     const cards = [...new Map(candidates.filter((c) => !c.subagent && !linked.includes(c.id)).map((c) => [c.id, c])).values()];
     const rows = cards.map((c) => h('button', { class: 'menu-item', 'data-key': c.title, text: c.title, onclick: async () => {
@@ -3487,8 +3483,7 @@ async function loadTask(p, found) {
       h('button', { class: 'side-btn', text: '所属を変更', onclick: () => taskQuickAdd.edit(card, list) }), h('button', { class: 'side-btn', 'data-pane-key': 'l', onclick: e => labelPicker(e.currentTarget, cardId, labelState, () => {}) }, '🏷 ラベル', keycap('l')),
       h('button', { class: 'side-btn', 'data-pane-key': 'g', onclick: e => directoryPicker(e.currentTarget, card, { cwd: cwd.value.trim() || null, after: () => openCard(cardId) }) }, `📂 カテゴリ: ${card.directory?.name || 'カテゴリ無し'}`, keycap('g'))] },
     prio: { nodes: [prio, due] },
-    other: { nodes: [h('button', { class: 'side-btn', 'data-pane-key': 'h', onclick: async () => { await act('canban_update_card', { cardId, hidden: !card.hidden }); closeCards(); } }, card.hidden ? '👁 ボードに再表示' : '🙈 ボードから隠す', keycap('h')),
-      h('button', { class: 'side-btn danger-text', text: '🗑 カードを削除', onclick: async () => { if (confirmInline(p.el, `この${T.taskCard}を削除します。紐付いたセッション自体は消えません。`)) { await act('canban_delete_task', { cardId }, { okMsg: '削除しました' }); closeCards(); } } })] },
+    other: { nodes: [h('button', { class: 'side-btn danger-text', text: '🗑 カードを削除', onclick: async () => { if (confirmInline(p.el, `この${T.taskCard}を削除します。紐付いたセッション自体は消えません。`)) { await act('canban_delete_task', { cardId }, { okMsg: '削除しました' }); closeCards(); } } })] },
   };
   const cols = { main: h('div', { class: 'pcol', 'data-col': 'main' }), side: h('div', { class: 'pcol', 'data-col': 'side' }) };
   for (const id of Object.keys(PANE_SECS)) {
@@ -4273,7 +4268,7 @@ function refreshShortcutHints() {
       entries = [['k', '前のカード', index <= 0], ['j', '次のカード', index < 0 || index === cards.length - 1],
         ['⇧←', '左のリストへ', !adjacentPaneList(focusedPane(), -1)], ['⇧→', '右のリストへ', !adjacentPaneList(focusedPane(), 1)],
         ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
-        ...(focusedPane()?.kind === 'session' ? [['z', 'アーカイブ / 復元'], ['Delete', 'カード削除']] : []),
+        ...(focusedPane()?.kind === 'session' ? [['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
         ...(panePromptInput() ? [['i', '指示欄']] : []), ['r', '更新'], ...globalKeys, ['Alt+m', '案内の移動'], ['Alt+[ / ]', '左右余白'], ['0', '余白を初期化'], ['Esc', '閉じる']];
     }
     paneHints.replaceChildren(...shortcutHints(entries).childNodes);
@@ -4301,14 +4296,14 @@ const SHORTCUTS = [
     ['c', 'タスクを追加'], ['1〜9', '保存したビューに切り替え'], ['a', '分析を開く / 閉じる'], ['r', '再読み込み'], ['?', 'この一覧'],
   ]],
   ['カードを選択中', [
-    ['Enter', '詳細を開く'], ['l', 'ラベル'], ['g', `${T.category}`], ['m', 'リストへ移動'], ['h', '隠す / 再表示'],
+    ['Enter', '詳細を開く'], ['l', 'ラベル'], ['g', `${T.category}`], ['m', 'リストへ移動'],
     ['← →', '隣のリストへ移動'], ['↑ ↓ / Home End', 'リスト内で移動'], ['⌥ + 矢印', 'フォーカスだけ移動'],
     ['o', '再開（既定）'], ['d / t', 'デスクトップ / ターミナルで再開'], ['w n s e', 'ターミナル: 新規ウィンドウ / 新規タブ / 分割 / 既存'],
   ]],
   ['カードを開いている間', [
     ['Shift+← / →', '左右の隣のリストへ移動（端で停止、入力中・配置調整中は無効）'],
     ['j / k', '表示リストの次 / 前のカードを開く（端で停止）'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'],
-    ['z', 'Canbanでセッションカードをアーカイブ / 復元'], ['Delete', 'Canbanのセッションカードを削除（確認あり）'], ['i', '指示の入力欄へ'], ['o', '再開'], ['l g m h', 'ラベル / ' + T.category + ' / リスト移動 / 隠す'], ['c', 'タスクを追加'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
+    ['z', 'エージェントのセッションをアーカイブ / 復元'], ['Delete', 'セッションと会話履歴を削除（確認あり）'], ['i', '指示の入力欄へ'], ['o', '再開'], ['l g m', 'ラベル / ' + T.category + ' / リスト移動'], ['c', 'タスクを追加'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
   ]],
   ['カードボード（レイヤー2）', [
     ['Alt+[ / ]', '左 / 右の余白境界にフォーカス。←→で調整、Shiftで微調整、Homeで10%に戻す'],
@@ -4358,8 +4353,8 @@ function commandPalette() {
         return { label: `カードを${step < 0 ? '左' : '右'}のリスト「${target.title}」へ移動`, run: () => movePaneAdjacent(p, step), hint: `Shift+${step < 0 ? '←' : '→'}` };
       }),
       ...(sessionPane ? [
-        { label: sessionPane.d?.card.archived ? 'セッションカードをアーカイブから戻す' : 'Canbanでセッションカードをアーカイブ', run: () => sessionPane.el.querySelector('[data-pane-key="z"]')?.click(), hint: 'z' },
-        { label: 'Canbanのセッションカードを削除…', run: () => confirmSessionCardDelete(sessionPane), hint: 'Delete' },
+        { label: sessionPane.d?.card.archived ? 'セッションカードをアーカイブから戻す' : 'セッションをアーカイブ', run: () => sessionPane.el.querySelector('[data-pane-key="z"]')?.click(), hint: 'z' },
+        { label: 'セッションと会話履歴を削除…', run: () => confirmSessionCardDelete(sessionPane), hint: 'Delete' },
       ] : []),
       { label: 'カード: レイアウトとサイズを初期化', run: resetCardLayout },
       ...['breadcrumb', 'title', 'conv', 'send'].map(id => ({ label: `カード: ${secTitle(id)}の移動`, run: () => focusedPane()?.el.querySelector(`.psec[data-sec="${id}"] .grip`)?.focus() })),

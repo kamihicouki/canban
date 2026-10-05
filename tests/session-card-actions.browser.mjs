@@ -8,12 +8,15 @@ import { createRequire } from 'node:module';
 import { makeFixtures } from './helpers.mjs';
 const require = createRequire(process.env.CANBAN_PLAYWRIGHT_PACKAGE || import.meta.url);
 const { chromium } = require('playwright');
-const root = process.cwd(), fx = makeFixtures(), before = fx.snapshot();
+const root = process.cwd(), fx = makeFixtures();
+function writable(dir) { fs.chmodSync(dir,0o755); for (const entry of fs.readdirSync(dir,{withFileTypes:true})) { const target=path.join(dir,entry.name); if(entry.isDirectory()) writable(target); else fs.chmodSync(target,0o644); } }
+writable(fx.codexHome);
+fs.writeFileSync(path.join(fx.codexHome,'.canban-lifecycle-fixture'),'fixture');
 fs.mkdirSync(path.join(root, '.local'), {recursive:true});
 const dataDir = fs.mkdtempSync(path.join(root, '.local/session-actions-data-'));
 const output = path.join(root, '.local/session-actions-screenshots');
 fs.mkdirSync(output, { recursive: true });
-const host = spawn(process.execPath, ['tests/dev-host.mjs', '4598'], { cwd: root, env: { ...process.env, CANBAN_DATA_DIR: dataDir, CANBAN_CODEX_HOME: fx.codexHome, CANBAN_CLAUDE_HOME: fx.claudeHome, CANBAN_CLAUDE_DESKTOP_DIR: fx.desktopDir, CANBAN_LAUNCH_DRYRUN: '1', CANBAN_SEARCH_INDEX: '0', CANBAN_GH: path.join(root, 'tests/fake-gh.sh'), CANBAN_GLAB: path.join(root, 'tests/fake-glab.sh'), FAKE_GH_DATA: '/dev/null' }, stdio: ['ignore', 'pipe', 'pipe'] });
+const host = spawn(process.execPath, ['tests/dev-host.mjs', '4598'], { cwd: root, env: { ...process.env, CANBAN_DATA_DIR: dataDir, CANBAN_CODEX_BIN: path.join(root,'tests/fixtures/codex-lifecycle.mjs'), CANBAN_CODEX_HOME: fx.codexHome, CANBAN_CLAUDE_HOME: fx.claudeHome, CANBAN_CLAUDE_DESKTOP_DIR: fx.desktopDir, CANBAN_LAUNCH_DRYRUN: '1', CANBAN_SEARCH_INDEX: '0', CANBAN_GH: path.join(root, 'tests/fake-gh.sh'), CANBAN_GLAB: path.join(root, 'tests/fake-glab.sh'), FAKE_GH_DATA: '/dev/null' }, stdio: ['ignore', 'pipe', 'pipe'] });
 let hostLog = ''; host.stdout.on('data', b => hostLog += b); host.stderr.on('data', b => hostLog += b);
 let browser;
 try {
@@ -30,7 +33,7 @@ try {
     await page.evaluate(({theme,layout}) => { __test.setThemePref(theme); __test.setLayout(layout); }, {theme,layout});
     await page.waitForTimeout(150);
     const actions = page.locator('.psec[data-sec="actions"]');
-    await assert.doesNotReject(() => actions.getByRole('button', { name: /Canbanでアーカイブ/ }).click({trial:true}));
+    await assert.doesNotReject(() => actions.getByRole('button', { name: /アーカイブ/ }).click({trial:true}));
     await page.screenshot({path: path.join(output, `${layout}-${theme}.png`)});
   }
   await page.evaluate(() => { __test.setThemePref('light'); __test.setLayout('trello'); });
@@ -64,7 +67,7 @@ try {
   await page.locator('.pane[data-kind="session"]').focus();
   await page.keyboard.press('Meta+k');
   const paletteInput = page.locator('.popover.palette input');
-  await paletteInput.fill('Canbanのセッションカードを削除');
+  await paletteInput.fill('セッションと会話履歴を削除');
   await page.keyboard.press('Enter');
   await page.getByRole('dialog').waitFor({state:'visible'});
   assert.match(await page.getByRole('dialog').innerText(), /ログイン修正/);
@@ -73,14 +76,18 @@ try {
     __test.closeCards(); await __test.bridge.callTool('canban_delete_task',{cardId:taskId}); await __test.load();
   }, taskId);
   await page.locator('.card[data-card-id="codex:t1"]').click();
-  await page.getByRole('button', { name: /Canbanのカードを削除/ }).click();
-  await page.getByRole('dialog').getByRole('button', {name:'カードを削除',exact:true}).click();
+  await page.getByRole('button', { name: /セッションを削除/ }).click();
+  await page.getByRole('dialog').getByRole('button', {name:'セッションを削除',exact:true}).click();
   await page.waitForSelector('dialog', {state:'detached'});
   assert.equal(await page.locator('.card[data-card-id="codex:t1"]').count(), 0);
-  await page.evaluate(async () => { __test.state.filters.includeHidden = true; __test.state.filters.includeArchived = true; await __test.load({refresh:true}); });
+  await page.evaluate(async () => { __test.state.filters.includeArchived = true; await __test.load({refresh:true}); });
   assert.equal(await page.locator('.card[data-card-id="codex:t1"]').count(), 0);
-  assert.deepEqual(fx.snapshot(),before);
+  assert.equal(fs.existsSync(path.join(fx.codexHome,'sessions/rollout-a.jsonl')), false);
+  await page.locator('.card[data-card-id="claude:c2"]').click();
+  assert.equal(await page.locator('[data-pane-key="z"]').isDisabled(), true);
+  assert.match(await page.locator('.psec[data-sec="actions"]').innerText(), /Claudeで操作/);
+  assert.equal(await page.getByText('ボードから隠す',{exact:true}).count(), 0);
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({passed:true,screenshots:11,viewport:'1280x800',layouts:5,themes:2,archiveRestore:true,deleteCancelDraft:true,deletePersists:true,sourceHistoryUnchanged:true,browserErrors:errors}));
+  console.log(JSON.stringify({passed:true,screenshots:11,viewport:'1280x800',layouts:5,themes:2,archiveRestore:true,deleteCancelDraft:true,deletePersists:true,nativeFixtureHistoryDeleted:true,claudeUnsupportedIsExplicit:true,browserErrors:errors}));
 } catch(e) { console.error(e); console.error(hostLog.slice(-2000)); process.exitCode=1; }
 finally { await browser?.close(); host.kill('SIGTERM'); fx.cleanup(); fs.rmSync(dataDir, {recursive:true,force:true}); }
