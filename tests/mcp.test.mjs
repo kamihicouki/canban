@@ -292,3 +292,28 @@ test('task dashboards are app-only, retain closed linked panes and reject stale 
   await call('canban_unlink_session',{taskId,sessionId:'codex:t1'});
   assert.deepEqual((await call('canban_get_task_dashboard',{taskId})).structuredContent.state.panes.map(p=>p.id),[taskId]);
 });
+
+
+test('session card lifecycle filters archives, restores links and never recreates deleted cards or writes source history', async () => {
+  const before = fx.snapshot();
+  const cards = async includeArchived => (await call('canban_get_board', { days: 0, includeArchived, includeHidden: true, includeSubagents: true, refresh: true })).structuredContent.lists.flatMap(l => l.cards);
+  const taskId = (await call('canban_create_task', { title: 'Lifecycle' })).structuredContent.cardId;
+  await call('canban_link_session', { taskId, sessionId: 'claude:c2' });
+  assert.equal((await call('canban_set_session_card_state', { cardId: 'claude:c2', action: 'archive' })).isError, undefined);
+  let task = (await cards(false)).find(c => c.id === taskId);
+  assert.deepEqual(task.links, []);
+  assert.equal(task.missingLinks, 0);
+  assert.deepEqual((await cards(true)).find(c => c.id === taskId).links.map(c => c.id), ['claude:c2']);
+  const detail = (await call('canban_get_session', { cardId: 'claude:c2' })).structuredContent;
+  assert.equal(detail.card.archived, true);
+  assert.equal(detail.session.archived, false, 'source archive is separate from Canban archive');
+  await call('canban_set_session_card_state', { cardId: 'claude:c2', action: 'restore' });
+  assert.deepEqual((await cards(false)).find(c => c.id === taskId).links.map(c => c.id), ['claude:c2']);
+  await call('canban_set_session_card_state', { cardId: 'claude:c2', action: 'delete' });
+  await call('canban_delete_task', { cardId: taskId });
+  assert.ok(!(await cards(true)).some(c => c.id === 'claude:c2'));
+  assert.equal((await call('canban_get_session', { cardId: 'claude:c2' })).isError, true);
+  assert.equal((await call('canban_update_card', { cardId: 'claude:c2', hidden: false })).isError, true);
+  assert.equal((await call('canban_set_session_card_state', { cardId: 'missing:x', action: 'archive' })).isError, true);
+  assert.deepEqual(fx.snapshot(), before, 'Codex and Claude source files stay unchanged');
+});

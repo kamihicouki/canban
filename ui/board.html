@@ -1532,14 +1532,14 @@ const paneGlobal = (() => {
 const saveGlobal = () => store.set('paneGlobal', paneGlobal);
 const PANE_SECS = {
   conv: ['main', '会話'], send: ['main', '指示を送る'],
-  breadcrumb: ['side', 'パンくず'], title: ['side', '見出し'], status: ['side', '状態'],
+  breadcrumb: ['side', 'パンくず'], title: ['side', '見出し'], status: ['side', '状態'], actions: ['side', 'カード操作'],
   add: ['side', 'カードに追加'], labels: ['side', 'ラベル'], prio: ['side', '優先度・期限'], related: ['side', '関連'],
   detail: ['side', '詳細'], pr: ['side', 'プルリクエスト'], resume: ['side', '再開'], progress: ['side', '進捗'],
   task: ['side', null], memo: ['side', 'メモ'], first: ['side', '最初の依頼'], other: ['side', 'その他'],
 };
 const secTitle = (id) => (id === 'task' ? T.taskCard : PANE_SECS[id][1]);
 const PANE_LAYOUT_DEF = { main: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'main'), side: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'side'), collapsed: ['memo', 'first', 'other', 'progress', 'task'] };
-const PANE_HEIGHTS = { conv: 440, send: 230, breadcrumb: 64, title: 64, status: 64, add: 96, labels: 64, prio: 80, related: 160, detail: 280, pr: 180, resume: 240, progress: 80, task: 64, memo: 150, first: 150, other: 160 };
+const PANE_HEIGHTS = { conv: 440, send: 230, breadcrumb: 64, title: 64, status: 64, actions: 180, add: 96, labels: 64, prio: 80, related: 160, detail: 280, pr: 180, resume: 240, progress: 80, task: 64, memo: 150, first: 150, other: 160 };
 let cardLayouts = normalizeCardLayouts(store.get('cardLayouts', null), PANE_LAYOUT_DEF, PANE_HEIGHTS);
 let cardWidths = normalizeCardWidths(store.get('cardWidths', null));
 let cardHeights = normalizeCardHeights(store.get('cardHeights', null));
@@ -1857,6 +1857,7 @@ document.addEventListener('keydown', e => {
     else if (k === '[' || k === ']') run = () => stepPane(k === ']' ? 1 : -1);
     else if (/^[1-9]$/.test(k) && PANE_MODES[k - 1]) run = () => setPaneMode(PANE_MODES[k - 1][0]);
     else if (k === 'i') run = () => focusPrompt(p);
+    else if (p.kind === 'session' && (k === 'z' || k === 'Delete')) run = () => p.el.querySelector(`[data-pane-key="${k}"]`)?.click();
     else if (/^[olgmh]$/.test(k)) run = () => p.el.querySelector(`[data-pane-key="${k}"]`)?.click();
   }
   if (run) { e.preventDefault(); run(); }
@@ -2129,6 +2130,47 @@ function renderPaneKeepingDrafts(p, d) {
   }
 }
 
+async function changeSessionCardState(p, action) {
+  if (p.cardActionBusy) return;
+  p.cardActionBusy = true;
+  try {
+    await act('canban_set_session_card_state', { cardId: p.id, action }, { okMsg: action === 'delete' ? 'Canbanのカードを削除しました' : action === 'archive' ? 'Canbanでアーカイブしました' : 'アーカイブから戻しました' });
+    closeCards();
+  } finally { p.cardActionBusy = false; }
+}
+function confirmSessionCardDelete(p) {
+  if (p?.kind !== 'session' || !p.d?.session || p.cardActionBusy || document.querySelector('dialog[open]')) return;
+  const cancel = h('button', { class: 'btn', type: 'button', autofocus: true }, 'キャンセル', keycap('Esc'));
+  const error = h('p', { class: 'danger-text', role: 'alert' });
+  const remove = h('button', { class: 'btn-danger', type: 'button', text: 'カードを削除' });
+  const dialog = h('dialog', { class: 'session-card-dialog', 'aria-labelledby': 'session-card-delete-title' },
+    h('h2', { id: 'session-card-delete-title', text: 'Canbanのカードを削除しますか？' }),
+    h('p', { text: `「${p.d.session.title}」のメモ・ラベル・配置・タスクへの紐付けを削除します。元に戻せません。` }),
+    h('p', { text: 'Codex・Claudeの会話履歴は残ります。履歴を残して後で戻したい場合は、アーカイブをご利用ください。' }),
+    error, h('div', { class: 'row' }, cancel, remove));
+  cancel.onclick = () => dialog.close();
+  remove.onclick = async () => {
+    remove.disabled = true; cancel.disabled = true;
+    try { await changeSessionCardState(p, 'delete'); dialog.close(); }
+    catch (e) { error.textContent = e.message; remove.disabled = false; cancel.disabled = false; cancel.focus(); }
+  };
+  dialog.addEventListener('cancel', e => { if (remove.disabled) e.preventDefault(); });
+  dialog.addEventListener('click', e => { if (e.target === dialog && !remove.disabled) { const r = dialog.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close(); } });
+  dialog.addEventListener('close', () => { dialog.remove(); if (p.el.isConnected) p.el.querySelector('[data-pane-key="Delete"]')?.focus({ preventScroll: true }); }, { once: true });
+  document.body.append(dialog); dialog.showModal();
+}
+function sessionCardActions(p, card) {
+  return [
+    h('button', { class: 'side-btn', 'data-pane-key': 'z', onclick: () => changeSessionCardState(p, card.archived ? 'restore' : 'archive').catch(() => {}) },
+      h('span', { html: picon('box', 14) }), card.archived ? 'アーカイブから戻す' : 'Canbanでアーカイブ', keycap('z')),
+    h('button', { class: 'side-btn', 'data-pane-key': 'h', onclick: async () => { try { await act('canban_update_card', { cardId: p.id, hidden: !card.hidden }, { okMsg: card.hidden ? '再表示しました' : '隠しました' }); closeCards(); } catch {} } },
+      h('span', { html: picon('eye', 14) }), card.hidden ? 'ボードに再表示' : 'ボードから隠す', keycap('h')),
+    h('button', { class: 'side-btn danger-text', 'data-pane-key': 'Delete', onclick: () => confirmSessionCardDelete(p) },
+      h('span', { html: picon('trash', 14) }), 'Canbanのカードを削除…', keycap('Delete')),
+    h('p', { class: 'muted', text: '会話履歴は残ります。アーカイブは「アーカイブ済みも表示」から戻せます。' }),
+  ];
+}
+
 function renderPane(p, d) {
   const el = p.el;
   const s = d.session;
@@ -2219,6 +2261,7 @@ function renderPane(p, d) {
   secs.status = { nodes: [h('div', { class: 'sub row' }, h('span', { class: `badge ${s.agent}`, text: s.agent === 'codex' ? 'Codex' : 'Claude' }),
     s.host ? h('span', { class: 'host-chip', text: s.host.label }) : null,
     h('span', { class: 'row pane-status' }, h('span', { class: `sdot s-${s.status || 'idle'}` }), STATUS_LABELS[s.status || 'idle']), h('span', { class: 'pill viewer-pill viewers', hidden: true }))] };
+  secs.actions = { nodes: sessionCardActions(p, card) };
   secs.conv = { title: d.feed ? '会話' : '直近のやりとり', nodes: d.feed ? [renderFeed(d, p)] : msgs,
     extra: d.feed ? h('span', { class: `live-badge${live.on ? ' on' : ''}`, title: live.on ? 'セッションの変化をそのまま表示します' : '', text: live.on ? 'ライブ' : '' }) : null };
   if (d.feed) secs.progress = { nodes: [renderSignals(s.signals, d.git)] };
@@ -2236,7 +2279,7 @@ function renderPane(p, d) {
     ...kv('モデル', s.model || '-'),
     ...kv('作成', fmtDate(s.createdAt)),
     ...kv('最終更新', fmtDate(s.updatedAt)),
-    ...kv('状態', [s.agent === 'claude' && !s.desktopKnown ? 'アーカイブ状態は不明（Claude デスクトップの情報がディスクにありません）' : s.archived ? 'アーカイブ済' : '進行中/未アーカイブ', s.pinnedInAgent ? '📌 Codex でピン留め' : null, s.subagent ? 'サブエージェント' : null, s.automation ? '⏰ Codex オートメーション' : null].filter(Boolean).join(' · ')),
+    ...kv('状態', [s.agent === 'claude' && !s.desktopKnown ? 'アーカイブ状態は不明（Claude デスクトップの情報がディスクにありません）' : card.archived ? 'Canbanでアーカイブ済' : s.archived ? 'アーカイブ済' : '進行中/未アーカイブ', s.pinnedInAgent ? '📌 Codex でピン留め' : null, s.subagent ? 'サブエージェント' : null, s.automation ? '⏰ Codex オートメーション' : null].filter(Boolean).join(' · ')),
   )] };
   if (d.pr) secs.pr = { title: d.pr.provider === 'gitlab' ? 'マージリクエスト' : 'プルリクエスト', extra: prPill(d.pr), nodes: [h('div', { class: 'msg' },
     h('button', { class: 'link-btn', text: `${d.pr.title}`, onclick: () => bridge.openLink(d.pr.url).catch(() => copyText(d.pr.url, 'PR の URL')) }),
@@ -2252,8 +2295,6 @@ function renderPane(p, d) {
     s.prUrl ? h('button', { class: 'side-btn', text: '↗ PR を開く', onclick: () => bridge.openLink(s.prUrl).catch(() => copyText(s.prUrl, 'PR URL')) }) : null,
     h('button', { class: 'side-btn', text: '⧉ セッション ID をコピー', onclick: () => copyText(s.nativeId, 'セッション ID') }),
     s.sourcePath ? h('button', { class: 'side-btn', text: '⧉ ログのパスをコピー', onclick: () => copyText(s.sourcePath, 'パス') }) : null,
-    h('button', { class: 'side-btn', 'data-pane-key': 'h',
-      onclick: async () => { await act('canban_update_card', { cardId: s.id, hidden: !card.hidden }, { okMsg: card.hidden ? '再表示しました' : '隠しました' }); closeCards(); } }, card.hidden ? '👁 ボードに再表示' : '🙈 ボードから隠す', keycap('h')),
   ].filter(Boolean) };
 
   const cols = { main: h('div', { class: 'pcol', 'data-col': 'main' }), side: h('div', { class: 'pcol', 'data-col': 'side' }) };
@@ -4232,6 +4273,7 @@ function refreshShortcutHints() {
       entries = [['k', '前のカード', index <= 0], ['j', '次のカード', index < 0 || index === cards.length - 1],
         ['⇧←', '左のリストへ', !adjacentPaneList(focusedPane(), -1)], ['⇧→', '右のリストへ', !adjacentPaneList(focusedPane(), 1)],
         ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
+        ...(focusedPane()?.kind === 'session' ? [['z', 'アーカイブ / 復元'], ['Delete', 'カード削除']] : []),
         ...(panePromptInput() ? [['i', '指示欄']] : []), ['r', '更新'], ...globalKeys, ['Alt+m', '案内の移動'], ['Alt+[ / ]', '左右余白'], ['0', '余白を初期化'], ['Esc', '閉じる']];
     }
     paneHints.replaceChildren(...shortcutHints(entries).childNodes);
@@ -4266,7 +4308,7 @@ const SHORTCUTS = [
   ['カードを開いている間', [
     ['Shift+← / →', '左右の隣のリストへ移動（端で停止、入力中・配置調整中は無効）'],
     ['j / k', '表示リストの次 / 前のカードを開く（端で停止）'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'],
-    ['i', '指示の入力欄へ'], ['o', '再開'], ['l g m h', 'ラベル / ' + T.category + ' / リスト移動 / 隠す'], ['c', 'タスクを追加'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
+    ['z', 'Canbanでセッションカードをアーカイブ / 復元'], ['Delete', 'Canbanのセッションカードを削除（確認あり）'], ['i', '指示の入力欄へ'], ['o', '再開'], ['l g m h', 'ラベル / ' + T.category + ' / リスト移動 / 隠す'], ['c', 'タスクを追加'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
   ]],
   ['カードボード（レイヤー2）', [
     ['Alt+[ / ]', '左 / 右の余白境界にフォーカス。←→で調整、Shiftで微調整、Homeで10%に戻す'],
@@ -4283,6 +4325,7 @@ function showShortcuts() {
   p.querySelector('.close').focus();
 }
 function commandPalette() {
+  const sessionPane = !paneLayer.hidden && focusedPane()?.kind === 'session' && focusedPane()?.d?.session ? focusedPane() : null;
   const b = state.board;
   if (!b) return;
   const f = state.filters;
@@ -4314,6 +4357,10 @@ function commandPalette() {
         const p = focusedPane(), target = adjacentPaneList(p, step);
         return { label: `カードを${step < 0 ? '左' : '右'}のリスト「${target.title}」へ移動`, run: () => movePaneAdjacent(p, step), hint: `Shift+${step < 0 ? '←' : '→'}` };
       }),
+      ...(sessionPane ? [
+        { label: sessionPane.d?.card.archived ? 'セッションカードをアーカイブから戻す' : 'Canbanでセッションカードをアーカイブ', run: () => sessionPane.el.querySelector('[data-pane-key="z"]')?.click(), hint: 'z' },
+        { label: 'Canbanのセッションカードを削除…', run: () => confirmSessionCardDelete(sessionPane), hint: 'Delete' },
+      ] : []),
       { label: 'カード: レイアウトとサイズを初期化', run: resetCardLayout },
       ...['breadcrumb', 'title', 'conv', 'send'].map(id => ({ label: `カード: ${secTitle(id)}の移動`, run: () => focusedPane()?.el.querySelector(`.psec[data-sec="${id}"] .grip`)?.focus() })),
       { label: 'カード: 列幅を変更', run: () => focusedPane()?.el.querySelector('.column-split')?.focus() },

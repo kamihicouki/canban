@@ -71,6 +71,11 @@ function normalizeCardLayouts(value, defaults, heightDefaults) {
     if (untouched) stored = null;
     if (stored && ![...(stored.main || []), ...(stored.side || [])].some(id => identity.includes(id)))
       stored = { ...stored, side: [...identity, ...(stored.side || [])] };
+    if (stored && defaults.side.includes('actions') && ![...(stored.main || []), ...(stored.side || [])].includes('actions')) {
+      const side = [...(stored.side || [])], at = side.indexOf('status');
+      side.splice(at < 0 ? 0 : at + 1, 0, 'actions');
+      stored = { ...stored, side };
+    }
     const seed = kind === 'task' ? { ...defaults, ...taskCardLayoutDefaults(), collapsed: ['memo', 'other'].filter(id => [...defaults.main, ...defaults.side].includes(id)) } : defaults;
     result[kind] = normalizePaneLayout(stored ?? seed, defaults, { ...heightDefaults, ...(kind === 'task' ? taskCardLayoutDefaults().heights : {}) });
   }

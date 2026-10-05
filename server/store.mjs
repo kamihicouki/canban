@@ -362,6 +362,7 @@ export class Store {
   moveCard({ cardId, toListId, order }) {
     return this.mutate((s) => {
       if (!s.lists.some((l) => l.id === toListId)) throw new Error('移動先のリストが見つかりません');
+      if (s.cards[cardId]?.deleted) throw new Error('削除済みのカードです');
       const card = (s.cards[cardId] ||= {});
       placeCard(card, toListId, order);
       delete card.movedBy; // a manual move supersedes an automatic one
@@ -369,8 +370,26 @@ export class Store {
     });
   }
 
+  setSessionCardState({ cardId, action }) {
+    if (!/^(codex|claude)(?:@[^:]+)?:.+/.test(cardId) || !['archive', 'restore', 'delete'].includes(action)) throw new Error('セッションカードの操作が不正です');
+    return this.mutate((s) => {
+      if (s.cards[cardId]?.deleted) throw new Error('削除済みのカードです');
+      const card = (s.cards[cardId] ||= {});
+      if (action === 'delete') {
+        // Keep a tombstone so the read-only source scan does not recreate the card.
+        s.cards[cardId] = { deleted: true, deletedAt: new Date().toISOString() };
+        for (const c of Object.values(s.cards)) if (c.kind === 'task') c.links = (c.links || []).filter(id => id !== cardId);
+      } else {
+        card.archived = action === 'archive';
+        card.updatedAt = new Date().toISOString();
+      }
+      return { cardId, action, ...s.cards[cardId] };
+    });
+  }
+
   updateCard({ cardId, labels, note, priority, due, hidden, directory }) {
     return this.mutate((s) => {
+      if (s.cards[cardId]?.deleted) throw new Error('削除済みのカードです');
       const card = (s.cards[cardId] ||= {});
       if (labels !== undefined) {
         const valid = new Set(s.labels.map((l) => l.id));
@@ -461,6 +480,7 @@ export class Store {
     return this.mutate((s) => {
       const task = s.cards[taskId];
       if (task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
+      if (s.cards[sessionId]?.deleted) throw new Error('削除済みのカードです');
       if (sessionId.startsWith('task:')) throw new Error('タスクカード同士は紐付けられません');
       for (const c of Object.values(s.cards)) if (c.kind === 'task') c.links = (c.links || []).filter((x) => x !== sessionId);
       task.links = [...(task.links || []), sessionId];
@@ -594,6 +614,7 @@ export class Store {
 
   markSeen({ cardId }) {
     return this.mutate((s) => {
+      if (s.cards[cardId]?.deleted) throw new Error('削除済みのカードです');
       const card = (s.cards[cardId] ||= {});
       card.seenAt = Date.now();
       return { cardId, seenAt: card.seenAt };
