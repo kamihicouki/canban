@@ -32,6 +32,9 @@
 .card-crumb { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; font-size: 12px; color: var(--list-muted); }
 .card-crumb .picker-btn { font-size: 12px; height: 24px; background: transparent; padding: 0 4px; }
 .card-crumb .link-btn { text-align: left; overflow-wrap: anywhere; }
+.card-list-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.card-list-step { padding: 0 4px; min-height: 24px; }
+.card-list-step:disabled { opacity: .4; cursor: default; }
 .card-actions { position: absolute; top: 10px; right: 10px; z-index: 2; }
 .pane:not(.sheet) .pane-close { width: 28px; height: 28px; border-radius: 6px; background: transparent; color: var(--card-fg); }
 .pane:not(.sheet) .grip { width: 22px; height: 24px; opacity: .22; margin-left: -5px; }

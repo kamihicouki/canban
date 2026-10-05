@@ -6,6 +6,7 @@ import path from 'node:path';
 import { Store } from '../server/store.mjs';
 import { accountActions, accountActionTools } from '../server/account-actions.mjs';
 import { normalizeAccounts } from '../server/accounts-settings.mjs';
+import { CLAUDE_AUTH_OVERRIDES } from '../server/claude-auth-env.mjs';
 import { configureAccounts, refreshAccounts, accountsView, resetAccountsForTest } from '../server/accounts.mjs';
 
 let root, home, store, oldEnv, time = Date.now();
@@ -91,7 +92,9 @@ test('normalization persists only whitelisted snapshot fields and strips credent
 test('Claude relocation preserves the current credential securely and rolls back on settings failure', async () => {
   const credential = { claudeAiOauth: { accessToken: 'PRIVATE-CURRENT', refreshToken: 'PRIVATE-REFRESH' } };
   const actions = accountActions({ store, allSessions, bin: () => '/fake/claude', launch: async () => {}, getClaudeCredentials: async () => credential, dryRun: true });
-  const p = (await actions.startLogin({ agent: 'claude' })).profile;
+  const login = await actions.startLogin({ agent: 'claude' });
+  for (const key of CLAUDE_AUTH_OVERRIDES) assert(login.command.includes(`-u ${key} `));
+  const p = login.profile;
   await write(path.join(p.dir, '.claude.json'), { oauthAccount: { accountUuid: 'c' } });
   await write(path.join(p.dir, '.credentials.json'), { claudeAiOauth: { accessToken: 'PRIVATE-OLD' } });
   assert.equal((await actions.checkLogin({ id: p.id })).complete, true);

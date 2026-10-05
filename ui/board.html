@@ -156,7 +156,6 @@ button { cursor: pointer; border: 0; background: none; }
 .count.over { color: #fff; background: var(--danger); border-radius: 10px; padding: 0 8px; }
 .icon-btn { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; color: var(--list-muted); }
 .icon-btn:hover { background: var(--btn-subtle-hover); }
-.default-tag { font-size: 11px; color: var(--list-muted); padding: 0 12px 4px; }
 .cards { flex: 1; overflow-y: auto; padding: 2px 8px 8px; display: flex; flex-direction: column; gap: 8px; min-height: 12px; }
 .list.over-wip { box-shadow: inset 0 0 0 2px var(--danger); }
 .more-btn { margin: 0 8px 8px; padding: 6px 8px; border-radius: 8px; text-align: left; color: var(--list-muted); }
@@ -981,6 +980,8 @@ async function load({ refresh = false, throwOnError = false } = {}) {
     if (migrateLegacyScope(board)) return load();
     render();
     reconcileCards(board);
+    for (const p of panes) paintCardListControls(p);
+    refreshShortcutHints();
     refreshViews();
   } catch (e) {
     if (seq !== loadSeq) return;
@@ -1052,10 +1053,11 @@ function render() {
 
 function renderList(list, { inLane = false, lane = null } = {}) {
   const over = list.wipLimit && list.count > list.wipLimit;
-  const el = h('section', { class: `list${over ? ' over-wip' : ''}`, 'data-list-id': list.id, 'aria-label': list.title });
+  const defaultHint = list.isDefault && !inLane ? '新しいセッションはここに入ります' : null;
+  const el = h('section', { class: `list${over ? ' over-wip' : ''}`, 'data-list-id': list.id, 'aria-label': list.title, 'aria-description': defaultHint });
   const head = h('div', { class: 'list-head' },
     h('span', { class: 'stripe', style: { background: colorVar(list.color) } }),
-    h('div', { class: 'list-title', tabindex: 0, title: 'クリックして名前を変更', text: list.title,
+    h('div', { class: 'list-title', tabindex: 0, title: [defaultHint, 'クリックして名前を変更'].filter(Boolean).join('\n'), text: list.title,
       onclick: (e) => editListTitle(e.currentTarget, list),
       onkeydown: (e) => { if (e.key === 'Enter') editListTitle(e.currentTarget, list); } }),
     h('span', { class: `count${over ? ' over' : ''}`, text: list.wipLimit ? `${list.count} / ${list.wipLimit}` : String(list.count) }),
@@ -1064,7 +1066,6 @@ function renderList(list, { inLane = false, lane = null } = {}) {
   );
   head.addEventListener('pointerdown', (e) => startListDrag(e, list, el));
   el.append(head);
-  if (list.isDefault && !inLane) el.append(h('div', { class: 'default-tag', text: '新しいセッションはここに入ります' }));
 
   const cardsEl = h('div', { class: 'cards', 'data-list-id': list.id });
   const n = state.shown[list.id] || PAGE;
@@ -1735,6 +1736,62 @@ function paneSizeHandle(kind, axis) {
 }
 const paneWidthHandle = kind => paneSizeHandle(kind, 'width');
 const paneSizeHandles = kind => [paneWidthHandle(kind), paneSizeHandle(kind, 'height'), paneSizeHandle(kind, 'corner')];
+function paneListId(p) {
+  if (!p) return null;
+  // Linked sessions may be grouped under a task; that task's list is not theirs.
+  for (const list of state.board?.lists || []) if (list.cards.some(c => c.id === p.id)) return list.id;
+  return p.d?.card?.listId || p.taskCard?.listId;
+}
+function adjacentPaneList(p, step) {
+  const lists = state.board?.lists || [], index = lists.findIndex(l => l.id === paneListId(p));
+  return index < 0 ? null : lists[index + step] || null;
+}
+async function movePaneToList(p, toList) {
+  if (!p || p.kind === 'view' || p.movingList || toList === paneListId(p)) return;
+  const target = state.board?.lists.find(l => l.id === toList);
+  if (!target) return;
+  p.movingList = true;
+  paintCardListControls(p);
+  try {
+    await act('canban_move_card', { cardId: p.id, toList, position: 'top' }, { reload: false });
+    if (p.d?.card) p.d.card.listId = toList;
+    if (p.taskCard) p.taskCard.listId = toList;
+    await load();
+    toast(`「${target.title}」へ移動しました`);
+  } catch { /* act reports the failure and reloads the actual placement. */ }
+  finally { p.movingList = false; paintCardListControls(p); refreshShortcutHints(); }
+}
+function movePaneAdjacent(p, step) {
+  const target = adjacentPaneList(p, step);
+  if (target) return movePaneToList(p, target.id);
+}
+function paintCardListControls(p) {
+  if (!p.listControls) return;
+  const { picker: listSel, buttons } = p.listControls;
+  const id = paneListId(p), list = state.board?.lists.find(l => l.id === id);
+  listSel.value = id;
+  listSel.textContent = `${list?.title || '—'} ▾`;
+  listSel.disabled = !!p.movingList;
+  for (const [step, button] of buttons) {
+    const target = adjacentPaneList(p, step), direction = step < 0 ? '左' : '右', key = step < 0 ? '←' : '→';
+    button.disabled = !!p.movingList || !target;
+    const label = target ? `${direction}のリスト「${target.title}」へ移動` : `${direction}にリストはありません`;
+    button.setAttribute('aria-label', label);
+    button.title = `${label}（Shift+${key}）`;
+  }
+}
+function cardListControls(p, listId) {
+  const listSel = pickerButton({ title: 'リストへ移動', value: listId, stack: false, className: 'btn picker-btn',
+    items: () => state.board.lists.map(l => ({ value: l.id, label: l.title, color: l.color, hint: l.count })),
+    onChange: v => movePaneToList(p, v) });
+  listSel.dataset.paneKey = 'm';
+  const buttons = [-1, 1].map(step => [step, h('button', { class: 'btn card-list-step', type: 'button',
+    'aria-keyshortcuts': `Shift+Arrow${step < 0 ? 'Left' : 'Right'}`, 'data-list-step': step,
+    onclick: () => movePaneAdjacent(p, step) }, keycap(`⇧${step < 0 ? '←' : '→'}`))]);
+  p.listControls = { picker: listSel, buttons };
+  paintCardListControls(p);
+  return h('span', { class: 'card-list-controls' }, listSel, ...buttons.map(([, button]) => button));
+}
 function cardCrumb(listSel, task = null) {
   return h('nav', { class: 'card-crumb', 'aria-label': 'パンくず' }, listSel,
     task ? [h('span', { class: 'muted', text: ' / ' }), h('button', { class: 'link-btn', text: task.title, onclick: () => openCard(task.id) })] : null);
@@ -1783,10 +1840,16 @@ function focusPrompt(p) {
   if (ta) ta.focus(); else toast('指示を入力できるカードではありません');
 }
 document.addEventListener('keydown', e => {
-  if (paneLayer.hidden || e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey || e.altKey || typingIn(e.target) || e.target.closest?.('.card') || document.querySelector('.popover, dialog[open]')) return;
+  if (paneLayer.hidden || e.defaultPrevented || e.isComposing || e.keyCode === 229 || e.metaKey || e.ctrlKey || e.altKey || typingIn(e.target) || e.target.closest?.('.card') || document.querySelector('.popover, dialog[open]')) return;
   const k = e.key, p = focusedPane();
   let run = null;
-  if (k === '?') run = showShortcuts;
+  if (e.shiftKey && (k === 'ArrowLeft' || k === 'ArrowRight') && p && p.kind !== 'view'
+    && !e.target.closest?.('.grip, [role="separator"], .card-board-margin, .shortcut-map-grip')) {
+    if (e.repeat) return;
+    const step = k === 'ArrowLeft' ? -1 : 1;
+    if (adjacentPaneList(p, step)) run = () => movePaneAdjacent(p, step);
+  }
+  else if (k === '?') run = showShortcuts;
   else if (k === 'r') run = () => openCard(panes[0].id);
   else if (k === 'a' || k === 'u') run = () => toggleView(k === 'a' ? 'analytics' : 'usage');
   else if (p && p.kind !== 'view') {
@@ -2074,10 +2137,7 @@ function renderPane(p, d) {
   const labelsById = new Map(b.labels.map((l) => [l.id, l]));
   const card = { ...d.card };
 
-  const listSel = pickerButton({ title: 'リスト', value: card.listId, stack: false, className: 'btn picker-btn',
-    items: () => b.lists.map((l) => ({ value: l.id, label: l.title, color: l.color, hint: l.count })),
-    onChange: (v) => act('canban_move_card', { cardId: s.id, toList: v, position: 'top' }, { okMsg: 'カードを移動しました' }) });
-  listSel.dataset.paneKey = 'm';
+  const listSel = cardListControls(p, card.listId);
   const dirBtn = h('button', { class: 'side-btn', 'data-pane-key': 'g', onclick: (e) => directoryPicker(e.currentTarget, { id: s.id, cwd: s.cwd, directory: card.directory }, { explicit: card.directoryId, after: () => openCard(s.id) }) },
     h('span', { html: picon('folder', 14) }), `${card.directory ? card.directory.name : 'カテゴリ無し'}${card.directoryId ? '' : card.directory ? '（自動）' : ''}`, keycap('g'));
 
@@ -3313,10 +3373,7 @@ async function loadTask(p, found) {
   desc.defaultValue = card.description;
   desc.onblur = () => desc.value !== desc.defaultValue && workspace.saveField(desc, value => act('canban_update_task', { cardId, description: value }, { okMsg: '保存しました' }));
 
-  const listSel = pickerButton({ title: 'リスト', value: list.id, stack: false, className: 'btn picker-btn',
-    items: () => b.lists.map((l) => ({ value: l.id, label: l.title, color: l.color, hint: l.count })),
-    onChange: (v) => act('canban_move_card', { cardId, toList: v, position: 'top' }, { okMsg: 'カードを移動しました' }) });
-  listSel.dataset.paneKey = 'm';
+  const listSel = cardListControls(p, list.id);
 
   const memo = h('textarea', { class: 'note', 'aria-label': 'メモ', placeholder: 'タスクのメモ' });
   memo.value = memo.defaultValue = card.note || '';
@@ -4173,6 +4230,7 @@ function refreshShortcutHints() {
     else {
       const cards = displayedListCards(panes[0]?.id), index = cards.findIndex(el => el.dataset.cardId === panes[0]?.id);
       entries = [['k', '前のカード', index <= 0], ['j', '次のカード', index < 0 || index === cards.length - 1],
+        ['⇧←', '左のリストへ', !adjacentPaneList(focusedPane(), -1)], ['⇧→', '右のリストへ', !adjacentPaneList(focusedPane(), 1)],
         ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
         ...(panePromptInput() ? [['i', '指示欄']] : []), ['r', '更新'], ...globalKeys, ['Alt+m', '案内の移動'], ['Alt+[ / ]', '左右余白'], ['0', '余白を初期化'], ['Esc', '閉じる']];
     }
@@ -4206,6 +4264,7 @@ const SHORTCUTS = [
     ['o', '再開（既定）'], ['d / t', 'デスクトップ / ターミナルで再開'], ['w n s e', 'ターミナル: 新規ウィンドウ / 新規タブ / 分割 / 既存'],
   ]],
   ['カードを開いている間', [
+    ['Shift+← / →', '左右の隣のリストへ移動（端で停止、入力中・配置調整中は無効）'],
     ['j / k', '表示リストの次 / 前のカードを開く（端で停止）'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'],
     ['i', '指示の入力欄へ'], ['o', '再開'], ['l g m h', 'ラベル / ' + T.category + ' / リスト移動 / 隠す'], ['c', 'タスクを追加'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
   ]],
@@ -4251,6 +4310,10 @@ function commandPalette() {
     { label: state.sideOpen ? 'サイドバーを閉じる' : 'サイドバーを開く', run: () => toggleSidebar(), hint: 'b' },
     { label: 'タスクを追加', run: () => taskQuickAdd.open(), hint: 'c' },
     ...(!paneLayer.hidden && focusedPane()?.kind !== 'view' ? [
+      ...[-1, 1].filter(step => adjacentPaneList(focusedPane(), step)).map(step => {
+        const p = focusedPane(), target = adjacentPaneList(p, step);
+        return { label: `カードを${step < 0 ? '左' : '右'}のリスト「${target.title}」へ移動`, run: () => movePaneAdjacent(p, step), hint: `Shift+${step < 0 ? '←' : '→'}` };
+      }),
       { label: 'カード: レイアウトとサイズを初期化', run: resetCardLayout },
       ...['breadcrumb', 'title', 'conv', 'send'].map(id => ({ label: `カード: ${secTitle(id)}の移動`, run: () => focusedPane()?.el.querySelector(`.psec[data-sec="${id}"] .grip`)?.focus() })),
       { label: 'カード: 列幅を変更', run: () => focusedPane()?.el.querySelector('.column-split')?.focus() },
