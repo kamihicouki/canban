@@ -13,6 +13,7 @@ import { shq } from './agents.mjs';
 import { runInTerminal } from './launcher.mjs';
 import { managedLogins, loginPreference } from './login.mjs';
 import { loginTarget } from './login-browsers.mjs';
+import { claudeAuthOverrides } from './claude-auth-env.mjs';
 
 export function accountActions({ store, allSessions, getLive = () => null, providers = { codex: codexUsage, claude: claudeUsage }, launch = runInTerminal, bin = resolveBin, loginManager = null, getClaudeCredentials = claudeCredentials, now = Date.now, dryRun = process.env.CANBAN_LAUNCH_DRYRUN === '1' }) {
   const db = database(store.dir);
@@ -74,7 +75,7 @@ export function accountActions({ store, allSessions, getLive = () => null, provi
   const loginCommand = (p, executable) => {
     const removed = ['CODEX_THREAD_ID', 'CLAUDECODE', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CODE_OAUTH_CLIENT_ID', 'CLAUDE_CODE_CUSTOM_OAUTH_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', 'CLAUDE_CODE_ACCOUNT_UUID', 'CLAUDE_CODE_ORGANIZATION_UUID', 'CLAUDE_CODE_USER_EMAIL', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'BROWSER', 'CANBAN_AUTH_SOCKET', 'CANBAN_AUTH_NONCE', 'CANBAN_AUTH_NODE', 'CANBAN_AUTH_HELPER'];
     const inherited = Object.keys(process.env).filter(k => /^(CLAUDE_(BG|PTY)_|CLAUDE_CODE_|CODEX_SANDBOX|CODEX_MANAGED_)/.test(k));
-    const env = [...new Set([...removed, ...inherited])].map(name => `-u ${shq(name)}`).join(' ');
+    const env = [...new Set([...removed, ...inherited, ...(p.agent === 'claude' ? claudeAuthOverrides() : [])])].map(name => `-u ${shq(name)}`).join(' ');
     return `cd ${shq(p.dir)} && env ${env} ${p.agent === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR'}=${shq(p.dir)} ${shq(executable)} ${p.agent === 'codex' ? 'login -c '+shq('cli_auth_credentials_store="file"') : 'auth login --claudeai'}`;
   };
   const profile = async (id) => {

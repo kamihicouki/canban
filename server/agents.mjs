@@ -1,6 +1,8 @@
 // Agent adapters: how to reopen a session in the agent's desktop app, and the
 // shell command that resumes it in a terminal. Add an entry here to support a new agent.
 
+import { claudeAuthOverrides } from './claude-auth-env.mjs';
+
 export function shq(s) {
   const v = String(s ?? '');
   return /^[\w@%+=:,./~-]+$/.test(v) ? v : `'${v.replace(/'/g, `'\\''`)}'`;
@@ -82,7 +84,8 @@ export function headlessArgs(s, permission, { images = [] } = {}) {
 
 // A session from another config folder (CLAUDE_CONFIG_DIR / CODEX_HOME profile) resumes there.
 export function homePrefix(s) {
-  if (!s.homeDir || (s.host && !s.host.local)) return '';
+ if (!s.homeDir || (s.host && !s.host.local)) return '';
+ if (s.agent === 'claude') return `env ${claudeAuthOverrides().map(key => `-u ${shq(key)}`).join(' ')} CLAUDE_CONFIG_DIR=${shq(s.homeDir)} `;
   return `${s.agent === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR'}=${shq(s.homeDir)} `;
 }
 

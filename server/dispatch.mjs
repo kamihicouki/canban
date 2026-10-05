@@ -28,6 +28,7 @@ import { codexAppState, annotateCodexApp } from './sources/codex-app.mjs';
 import { pool, hostsWithState } from './board.mjs';
 import { perf } from './perf.mjs';
 import { homeEnv, configureAccounts } from './accounts.mjs';
+import { isolatedClaudeEnvironment } from './claude-auth-env.mjs';
 import { promptImages, withSkills, claudeImageInput, remoteImages } from './prompt-input.mjs';
 
 export const QUIET_MS = Number(process.env.CANBAN_DISPATCH_QUIET_MS) || 20e3;
@@ -334,7 +335,8 @@ export class Dispatcher {
     try {
       fs.mkdirSync(this.requests.runsDir, { recursive: true });
       fd = fs.openSync(logPath, 'a', 0o600);
-      child = spawner(bin, h.args, { cwd: session.cwd, env: { ...cleanEnv(), ...homeEnv(session) }, stdio: ['pipe', fd, fd], detached: true });
+      const env = { ...cleanEnv(), ...homeEnv(session) };
+      child = spawner(bin, h.args, { cwd: session.cwd, env: session.agent === 'claude' && session.homeDir ? isolatedClaudeEnvironment(env, session.homeDir) : env, stdio: ['pipe', fd, fd], detached: true });
     } catch (error) {
       throw Object.assign(error, {code:'pre_spawn'});
     } finally {

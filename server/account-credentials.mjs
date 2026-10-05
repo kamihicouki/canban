@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
+import { withClaudeAuthLock } from './claude-auth-lock.mjs';
 
 export async function readJson(file) {
   try { return JSON.parse(await fs.readFile(file, 'utf8')); } catch { return null; }
@@ -35,29 +36,34 @@ export async function claudeCredentials(home, { platform = process.platform, key
 
 // Keep refreshed credentials in the same vendor store, never in board settings.
 // Recheck immediately before writing so another CLI login cannot be overwritten.
-export async function updateClaudeCredentials(home, expected, next, { platform = process.platform, keychain = readKeychain, writeKeychain: persistKeychain = writeKeychain } = {}) {
-  const service = claudeKeychainService(home);
-  const secured = platform === 'darwin' ? await keychain(service) : null;
-  const file = path.join(home.dir, '.credentials.json');
-  const current = secured?.claudeAiOauth?.accessToken ? secured : await readJson(file);
-  const same = current?.claudeAiOauth?.accessToken === expected?.claudeAiOauth?.accessToken &&
-    current?.claudeAiOauth?.refreshToken === expected?.claudeAiOauth?.refreshToken;
-  if (!current || !same) return false;
-  const value = { ...current, claudeAiOauth: next.claudeAiOauth };
-  if (secured?.claudeAiOauth?.accessToken) {
-    await persistKeychain(service, value);
-    const persisted = await keychain(service);
-    if (persisted?.claudeAiOauth?.accessToken !== value.claudeAiOauth.accessToken ||
-        persisted?.claudeAiOauth?.refreshToken !== value.claudeAiOauth.refreshToken) throw new Error('credential_store_unavailable');
-  } else {
-    const target = await fs.realpath(file);
-    const tmp = `${target}.${crypto.randomUUID()}.tmp`;
-    try {
-      await fs.writeFile(tmp, JSON.stringify(value), { mode: 0o600, flag: 'wx' });
-      await fs.rename(tmp, target);
-    } finally { await fs.unlink(tmp).catch(() => {}); }
-  }
-  return true;
+export async function updateClaudeCredentials(home, expected, next, { platform = process.platform, keychain = readKeychain, writeKeychain: persistKeychain = writeKeychain, assertOwner = async () => {} } = {}) {
+  return withClaudeAuthLock(home, async (assertHeld) => {
+    await assertOwner();
+    const service = claudeKeychainService(home);
+    const secured = platform === 'darwin' ? await keychain(service) : null;
+    const file = path.join(home.dir, '.credentials.json');
+    const current = secured?.claudeAiOauth?.accessToken ? secured : await readJson(file);
+    const same = current?.claudeAiOauth?.accessToken === expected?.claudeAiOauth?.accessToken &&
+      current?.claudeAiOauth?.refreshToken === expected?.claudeAiOauth?.refreshToken;
+    if (!current || !same) return false;
+    await assertHeld();
+    await assertOwner();
+    const value = { ...current, claudeAiOauth: next.claudeAiOauth };
+    if (secured?.claudeAiOauth?.accessToken) {
+      await persistKeychain(service, value);
+      const persisted = await keychain(service);
+      if (persisted?.claudeAiOauth?.accessToken !== value.claudeAiOauth.accessToken ||
+          persisted?.claudeAiOauth?.refreshToken !== value.claudeAiOauth.refreshToken) throw new Error('credential_store_unavailable');
+    } else {
+      const target = await fs.realpath(file);
+      const tmp = `${target}.${crypto.randomUUID()}.tmp`;
+      try {
+        await fs.writeFile(tmp, JSON.stringify(value), { mode: 0o600, flag: 'wx' });
+        await fs.rename(tmp, target);
+      } finally { await fs.unlink(tmp).catch(() => {}); }
+    }
+    return true;
+  }, { kind: 'storage' });
 }
 
 const writeKeychain = (service, value) => new Promise((resolve, reject) => {
