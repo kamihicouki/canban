@@ -156,7 +156,6 @@ button { cursor: pointer; border: 0; background: none; }
 .count.over { color: #fff; background: var(--danger); border-radius: 10px; padding: 0 8px; }
 .icon-btn { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; color: var(--list-muted); }
 .icon-btn:hover { background: var(--btn-subtle-hover); }
-.default-tag { font-size: 11px; color: var(--list-muted); padding: 0 12px 4px; }
 .cards { flex: 1; overflow-y: auto; padding: 2px 8px 8px; display: flex; flex-direction: column; gap: 8px; min-height: 12px; }
 .list.over-wip { box-shadow: inset 0 0 0 2px var(--danger); }
 .more-btn { margin: 0 8px 8px; padding: 6px 8px; border-radius: 8px; text-align: left; color: var(--list-muted); }
@@ -1052,10 +1051,11 @@ function render() {
 
 function renderList(list, { inLane = false, lane = null } = {}) {
   const over = list.wipLimit && list.count > list.wipLimit;
-  const el = h('section', { class: `list${over ? ' over-wip' : ''}`, 'data-list-id': list.id, 'aria-label': list.title });
+  const defaultHint = list.isDefault && !inLane ? '新しいセッションはここに入ります' : null;
+  const el = h('section', { class: `list${over ? ' over-wip' : ''}`, 'data-list-id': list.id, 'aria-label': list.title, 'aria-description': defaultHint });
   const head = h('div', { class: 'list-head' },
     h('span', { class: 'stripe', style: { background: colorVar(list.color) } }),
-    h('div', { class: 'list-title', tabindex: 0, title: 'クリックして名前を変更', text: list.title,
+    h('div', { class: 'list-title', tabindex: 0, title: [defaultHint, 'クリックして名前を変更'].filter(Boolean).join('\n'), text: list.title,
       onclick: (e) => editListTitle(e.currentTarget, list),
       onkeydown: (e) => { if (e.key === 'Enter') editListTitle(e.currentTarget, list); } }),
     h('span', { class: `count${over ? ' over' : ''}`, text: list.wipLimit ? `${list.count} / ${list.wipLimit}` : String(list.count) }),
@@ -1064,7 +1064,6 @@ function renderList(list, { inLane = false, lane = null } = {}) {
   );
   head.addEventListener('pointerdown', (e) => startListDrag(e, list, el));
   el.append(head);
-  if (list.isDefault && !inLane) el.append(h('div', { class: 'default-tag', text: '新しいセッションはここに入ります' }));
 
   const cardsEl = h('div', { class: 'cards', 'data-list-id': list.id });
   const n = state.shown[list.id] || PAGE;

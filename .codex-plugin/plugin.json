@@ -1,6 +1,6 @@
 {
   "name": "canban",
-  "version": "0.23.1",
+  "version": "0.23.2",
   "description": "Codex / Claude Code のセッション（ローカルと SSH リモート）を集約して Trello 風カンバンで管理し、既存セッションへの指示の送信・キューもできる Codex アプリ。",
   "author": {
     "name": "kamihicouki",
