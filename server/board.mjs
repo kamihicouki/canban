@@ -1,3 +1,4 @@
+import { sessionActions } from './session-actions.mjs';
 import { leaderFor } from './leader.mjs';
 // Combines read-only session listings (local + enabled remote hosts) with the
 // Canban store into a board snapshot.
@@ -93,6 +94,10 @@ function matchesDirectory(f, dir) {
 }
 
 
+function sessionCardStates(sessions, state) {
+  return sessions; // archive and deletion belong exclusively to the agent
+}
+
 function matches(session, card, f, labelsById, hits, dir) {
   if (f.agent && f.agent !== 'all' && session.agent !== f.agent) return false;
   if (f.host && (session.host?.id || 'local') !== f.host) return false;
@@ -105,7 +110,6 @@ function matches(session, card, f, labelsById, hits, dir) {
   if (f.status && (session.status || 'idle') !== f.status) return false;
   if (!f.includeArchived && session.archived) return false;
   if (!f.includeSubagents && session.subagent) return false;
-  if (!f.includeHidden && card?.hidden) return false;
   if (f.pinnedOnly && !session.pinnedInAgent) return false;
   // Sessions the user placed on the board stay visible regardless of age.
   if (f.days && !card?.listId && (session.updatedAt || 0) < Date.now() - f.days * 86400000) return false;
@@ -122,7 +126,6 @@ function matches(session, card, f, labelsById, hits, dir) {
 }
 
 export function matchesTask(t, links, status, f, labelsById, dir) {
-  if (!f.includeHidden && t.hidden) return false;
   if (!matchesDirectory(f, dir)) return false;
   if (f.label && (f.label === '__none' ? t.labels?.length : !t.labels?.includes(f.label))) return false;
   if (f.status && status !== f.status) return false;
@@ -269,6 +272,7 @@ export async function runRules(store, state, sessions, now = Date.now(), { ruleI
 
 async function runRulesOwned(store, state, sessions, now, ruleId) {
   state = await store.load();
+  sessions = sessionCardStates(sessions, state);
   const rule = ruleId === undefined ? null : state.settings.rules.find((r) => r.id === ruleId);
   if (ruleId !== undefined && !rule) throw new Error('自動化が見つかりません');
   if (rule && !state.lists.some((l) => l.id === rule.toListId)) throw new Error('移動先のリストが見つかりません');
@@ -318,7 +322,8 @@ async function tickRulesImpl(store) {
   let state = (await store.load());
   const pendingTasks = taskEntries(state).some(([, t]) => t.pending?.length);
   if (!pendingTasks && !state.settings.rules.some((r) => r.enabled)) return [];
-  const { sessions } = await allSessions(state);
+  const { sessions: sourceSessions } = await allSessions(state);
+  const sessions = sessionCardStates(sourceSessions, state);
   if ((await store.resolvePending(matchPending(state, sessions))).length) state = (await store.load());
   return runRules(store, state, sessions);
 }
@@ -330,7 +335,8 @@ export function buildBoard(...args) {
 async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
   const filters = normalizeFilters(rawFilters);
   let state = (await store.load());
-  const { sessions, errors, hosts, app } = await allSessions(state, { force });
+  const { sessions: sourceSessions, errors, hosts, app } = await allSessions(state, { force });
+  const sessions = sessionCardStates(sourceSessions, state);
   if (await store.syncSessionCategories(sessions)) state = await store.load();
   if ((await store.resolvePending(matchPending(state, sessions))).length) state = (await store.load());
   if ((await runRules(store, state, sessions)).length) state = (await store.load());
@@ -387,7 +393,8 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       model: s.model,
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
-      archived: s.archived,
+      archived: !!s.archived,
+      canbanArchived: !!card?.archived,
       subagent: s.subagent,
       automation: s.automation,
       preview: s.preview,
@@ -399,7 +406,6 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       note: card?.note || '',
       priority: card?.priority || null,
       due: card?.due || null,
-      hidden: !!card?.hidden,
       placed: !!card?.listId,
       status: s.status || 'idle',
       activity: s.activity || null,
@@ -421,18 +427,19 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
   // Task cards: user-created cards that may have sessions linked to them.
   const now = Date.now();
   for (const [id, t] of taskEntries(state)) {
-    const links = (t.links || []).map((sid) => byId.get(sid)).filter(Boolean);
+    const allLinks = (t.links || []).map((sid) => byId.get(sid)).filter(Boolean);
+    const links = allLinks.filter(s => (filters.includeArchived || !s.archived));
     const status = aggregateStatus(links.map((x) => x.status || 'idle'));
     const updatedAt = Math.max(t.createdAt || 0, ...links.map((x) => x.updatedAt || 0));
     const dir = resolveDirectory(state, t, t.target?.cwd || links.find((x) => x.cwd)?.cwd);
     const context = effectiveTaskContext(t, links);
-    if (!t.hidden && t.context?.project) projects.set(context.project, (projects.get(context.project) || 0) + 1);
-    if (!t.hidden && t.context?.folder) folders.set(context.folder, (folders.get(context.folder) || 0) + 1);
-    if (!t.hidden && t.context?.section) {
+    if (t.context?.project) projects.set(context.project, (projects.get(context.project) || 0) + 1);
+    if (t.context?.folder) folders.set(context.folder, (folders.get(context.folder) || 0) + 1);
+    if (t.context?.section) {
       const section = sections.get(context.section) || { id: context.section, name: context.section, count: 0 };
       sections.set(context.section, { ...section, count: section.count + 1 });
     }
-    if (!t.hidden) dirCounts.set(dir?.id || '__none', (dirCounts.get(dir?.id || '__none') || 0) + 1);
+    dirCounts.set(dir?.id || '__none', (dirCounts.get(dir?.id || '__none') || 0) + 1);
     if (!matchesTask(t, links, status, filters, labelsById, dir)) continue;
     const listId = t.listId && listIds.has(t.listId) ? t.listId : state.defaultListId;
     buckets.get(listId).push({
@@ -452,7 +459,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       target: t.target || null,
       links: links.map((x) => ({ id: x.id, agent: x.agent, account: x.account || null, title: x.title, status: x.status || 'idle', subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, updatedAt: x.updatedAt })),
       linkedSessionIds: [...(t.links || [])],
-      missingLinks: (t.links || []).length - links.length,
+      missingLinks: (t.links || []).length - allLinks.length,
       pending: (t.pending || []).map((p) => ({ agent: p.agent, startedAt: p.startedAt, expired: now - p.startedAt > PENDING_MS })),
       createdAt: t.createdAt,
       updatedAt,
@@ -461,7 +468,6 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       note: t.note || '',
       priority: t.priority || null,
       due: t.due || null,
-      hidden: !!t.hidden,
       placed: true,
       status,
       unread: links.some((x) => (x.updatedAt || 0) > Math.max(seenAll, t.seenAt || 0)),
@@ -579,7 +585,7 @@ export async function findSession(store, cardId) {
   const { sessions, hosts } = await allSessions(state);
   if (await store.syncSessionCategories(sessions)) state = await store.load();
   const s = sessions.find((x) => x.id === cardId);
-  if (!s) throw new Error(`セッションが見つかりません: ${cardId}`);
+  if (!s) throw new Error('セッションが見つかりません');
   return { session: s, state, host: s.host?.local === false ? hosts.find((h) => h.id === s.host.id) : null };
 }
 
@@ -614,7 +620,8 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   const taskId = toTask.get(cardId) || null;
   const listCard = taskId ? state.cards[taskId] : card;
   const listId = listCard.listId && state.lists.some((l) => l.id === listCard.listId) ? listCard.listId : state.defaultListId;
-  const { sessions: all } = await allSessions(state);
+  const { sessions: relatedSource } = await allSessions(state);
+  const all = sessionCardStates(relatedSource, state);
   const byId = new Map(all.map((x) => [x.id, x]));
   const key = branchKey(s);
   const sameBranch = key
@@ -626,9 +633,9 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   const { host: h, ...rest } = s;
   const labels = state.settings.accounts.labels;
   return {
-    session: { ...rest, host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: accountLabel(s.account, labels) },
+    session: { ...rest, actions: sessionActions(s), host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: accountLabel(s.account, labels) },
     card: {
-      listId, labels: card.labels || [], note: card.note || '', priority: card.priority || null, due: card.due || null, hidden: !!card.hidden,
+      listId, labels: card.labels || [], note: card.note || '', priority: card.priority || null, due: card.due || null, archived: !!s.archived,
       directory: dirView(resolveDirectory(state, card, s.cwd, s)), directoryId: card.directoryId || null,
     },
     list: state.lists.find((l) => l.id === listId),

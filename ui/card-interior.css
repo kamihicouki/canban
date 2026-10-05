@@ -76,3 +76,9 @@
 .task-related-copy > .link-btn { display: block; width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; line-height: 1.5; }
 .task-related-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; font-size: 11px; }
 .task-related-actions { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none; }
+
+.session-card-dialog { width: 480px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); margin: auto; padding: 24px; border: 1px solid var(--btn-subtle-hover); border-radius: 12px; background: var(--modal-bg); color: var(--list-fg); box-shadow: var(--card-shadow); }
+.session-card-dialog::backdrop { background: var(--overlay); }
+.session-card-dialog h2 { font-size: 18px; margin: 0 0 16px; }
+.session-card-dialog p { line-height: 1.6; overflow-wrap: anywhere; }
+.session-card-dialog .row { justify-content: flex-end; margin-top: 20px; }

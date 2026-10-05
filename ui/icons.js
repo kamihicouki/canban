@@ -1,6 +1,9 @@
 // Canban's one icon language: 24px line icons, stroke 1.8, round caps (AGENTS.md「見た目」).
 // Header/board-bar buttons name an icon with data-icon; fillIcons() puts the SVG in.
 const PIC = {
+  box: '<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v12h14V8M10 12h4"/>',
+  eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  trash: '<path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/>',
   grip: '<g fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></g>',
   chev: '<path d="M6 9l6 6 6-6"/>', close: '<path d="M6 6l12 12M18 6L6 18"/>', note: '<path d="M5 5h14v9l-5 5H5z"/><path d="M14 19v-5h5"/>',
   lock: '<path d="M8 11V8a4 4 0 018 0v3"/><rect x="5" y="11" width="14" height="9" rx="2"/>',

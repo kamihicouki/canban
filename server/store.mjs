@@ -71,7 +71,7 @@ function normalizeDispatch(x) {
   };
 }
 
-const VIEW_FILTER_KEYS = ['agent', 'host', 'account', 'status', 'project', 'folder', 'section', 'directory', 'label', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'includeHidden', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
+const VIEW_FILTER_KEYS = ['agent', 'host', 'account', 'status', 'project', 'folder', 'section', 'directory', 'label', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
 function normalizeView(v) {
   if (!v || typeof v.id !== 'string' || !String(v.name || '').trim()) return null;
   const filters = {};
@@ -369,7 +369,15 @@ export class Store {
     });
   }
 
-  updateCard({ cardId, labels, note, priority, due, hidden, directory }) {
+  removeSessionMetadata(cardId) {
+    return this.mutate(s => {
+      delete s.cards[cardId];
+      for (const c of Object.values(s.cards)) if (c.kind === 'task') c.links = (c.links || []).filter(id => id !== cardId);
+      return { cardId };
+    });
+  }
+
+  updateCard({ cardId, labels, note, priority, due, directory }) {
     return this.mutate((s) => {
       const card = (s.cards[cardId] ||= {});
       if (labels !== undefined) {
@@ -385,7 +393,6 @@ export class Store {
       if (note !== undefined) card.note = String(note ?? '').slice(0, 20000);
       if (priority !== undefined) card.priority = ['high', 'medium', 'low'].includes(priority) ? priority : null;
       if (due !== undefined) card.due = due && !Number.isNaN(Date.parse(due)) ? due : null;
-      if (hidden !== undefined) card.hidden = !!hidden;
       card.updatedAt = new Date().toISOString();
       return { cardId, ...card };
     });

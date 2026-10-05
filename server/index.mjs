@@ -6,11 +6,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import { codexLifecycle } from './session-actions.mjs';
 import { Store } from './store.mjs';
 import { leaderFor } from './leader.mjs';
 import { perf } from './perf.mjs';
 import { dispatcherFor, tickDispatch, setSpawner, dryRunSpawner } from './dispatch.mjs';
-import { buildBoard, sessionDetail, allSessions, findSession, hostsWithState, effectiveOrder, runRules, tickRules, tickSearch, pool } from './board.mjs';
+import { buildBoard, sessionDetail, allSessions, findSession, hostsWithState, effectiveOrder, dropLocalCache, runRules, tickRules, tickSearch, pool } from './board.mjs';
 import { RULE_TRIGGERS } from './store.mjs';
 import { computeStats } from './stats.mjs';
 import { desktopLink, resumeCommand, newSessionLink, newSessionCommand } from './agents.mjs';
@@ -80,7 +81,6 @@ const filterProps = {
   q: { type: 'string', description: 'タイトル・最初の依頼・メモ・ラベルの部分一致検索' },
   includeArchived: { type: 'boolean' },
   includeSubagents: { type: 'boolean' },
-  includeHidden: { type: 'boolean' },
   pinnedOnly: { type: 'boolean', description: 'Codex アプリでピン留めしたスレッドだけ' },
   groupBranch: { type: 'boolean', description: '同じリポジトリ＋ブランチのセッションをまとめる' },
   fulltext: { type: 'boolean', description: 'q を会話の本文でも検索する（3 文字以上）' },
@@ -242,7 +242,6 @@ const TOOLS = [
         note: { type: 'string' },
         priority: { type: ['string', 'null'], enum: ['high', 'medium', 'low', null] },
         due: { type: ['string', 'null'] },
-        hidden: { type: 'boolean' },
       },
       required: ['cardId'],
       additionalProperties: false,
@@ -534,6 +533,31 @@ const TOOLS = [
   },
   appTool('canban_unlink_session', 'セッションの紐付けを解除', { taskId: { type: 'string' }, sessionId: { type: 'string' } }, ['taskId', 'sessionId'], (a) => store.unlinkSession(a)),
   appTool('canban_update_task', 'タスクカードを更新', { cardId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, context: taskContextSchema, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } } }, ['cardId'], (a) => store.updateTask(a)),
+  {
+    name: 'canban_set_session_card_state',
+    title: 'セッションカードを整理',
+    description: 'エージェント本体のセッションをアーカイブ・復元・削除する。削除は会話履歴と関連情報も永久に削除する。対応するAPIがない場合は失敗し、Canbanだけの状態変更は行わない。',
+    inputSchema: { type: 'object', properties: { cardId: { type: 'string' }, action: { type: 'string', enum: ['archive', 'restore', 'delete'] } }, required: ['cardId', 'action'], additionalProperties: false },
+    _meta: appAndModel,
+    handler: async (a) => {
+      const { session, state } = await findSession(store, a.cardId);
+      const before = a.action === 'delete' ? (await allSessions(state)).sessions : [];
+      const affected = new Set([a.cardId]);
+      if (a.action === 'delete') {
+        for (let added = true; added;) {
+          added = false;
+          for (const s of before) if (affected.has(s.parentId) && !affected.has(s.id)) { affected.add(s.id); added = true; }
+        }
+      }
+      const result = await codexLifecycle(session, a.action);
+      dropLocalCache();
+      if (a.action === 'delete') {
+        const remaining = new Set((await allSessions(state, { force: true })).sessions.map(s => s.id));
+        for (const id of affected) if (!remaining.has(id)) await store.removeSessionMetadata(id);
+      }
+      return { text: 'エージェントのセッションを操作しました', structured: result };
+    },
+  },
   appTool('canban_delete_task', 'タスクカードを削除', { cardId: { type: 'string' } }, ['cardId'], (a) => store.deleteTask(a)),
   appTool('canban_clear_pending', '開始待ちを取り消す', { taskId: { type: 'string' } }, ['taskId'], (a) => store.clearPending(a)),
   {

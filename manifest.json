@@ -3,7 +3,7 @@
   "manifest_version": "0.3",
   "name": "canban",
   "display_name": "Canban",
-  "version": "0.23.5",
+  "version": "0.23.7",
   "description": "Codex / Claude Code のセッションを Trello 風カンバンで管理します。チャットで「Canban を開いて」と頼むと会話内にボードが開きます。",
   "long_description": "Codex と Claude Code のセッション（このマシンと、Codex に登録済みの SSH リモート）を一覧化し、Trello のようにリストを自由に追加してドラッグ＆ドロップで整理できます。デスクトップアプリやターミナルからワンクリックで再開でき、既存のセッションに指示を送ったりキューに積んだりもできます（エージェント公式 CLI で 1 ターンずつ、権限はセッションの設定のまま）。リスト・ラベル・メモなどは設定されたCanban専用の保存先に保存され、Canban がセッションのファイルを直接書き換えることはありません。Codex アプリと同じ保存先を使うので、両方に入れると同じボードが見えます。Node.js 22.13 以上が必要です。",
   "author": {
