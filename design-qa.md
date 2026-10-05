@@ -11,7 +11,7 @@ final result: passed
 - 部分比較: [comparison-detail.png](docs/design/card-interior-0.23.0/comparison-detail.png)。右側の見出し・属性の文字と余白を比較。
 - 状態比較: [matrix.png](docs/design/card-interior-0.23.0/matrix.png)。Trello・定番・レール・オムニバー・ライブHUDのライト／ダーク。個別の原寸画像も同じフォルダに保存。
 - タスク: [task-pair-light.png](docs/design/card-interior-0.23.0/task-pair-light.png)。ボードから開き、タスクを先頭に3枚が並ぶ状態。
-- 狭い画面: [narrow-session.png](docs/design/card-interior-0.23.0/narrow-session.png)。390×844、ライブHUD・ダークで2列を維持し横スクロール。デスクトップより表示密度が高く、全列の同時表示には横移動が必要。
+- 狭い画面: [narrow-session.png](docs/design/card-interior-0.23.0/narrow-session.png)。390×844、Trello・ライトで2列を維持し横スクロール。デスクトップより表示密度が高く、全列の同時表示には横移動が必要。
 
 ## 比較履歴と修正
 
