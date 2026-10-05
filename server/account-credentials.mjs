@@ -32,3 +32,40 @@ export async function claudeCredentials(home, { platform = process.platform, key
   const secured = platform === 'darwin' ? await keychain(claudeKeychainService(home)) : null;
   return secured?.claudeAiOauth?.accessToken ? secured : await readJson(path.join(home.dir, '.credentials.json'));
 }
+
+// Keep refreshed credentials in the same vendor store, never in board settings.
+// Recheck immediately before writing so another CLI login cannot be overwritten.
+export async function updateClaudeCredentials(home, expected, next, { platform = process.platform, keychain = readKeychain, writeKeychain: persistKeychain = writeKeychain } = {}) {
+  const service = claudeKeychainService(home);
+  const secured = platform === 'darwin' ? await keychain(service) : null;
+  const file = path.join(home.dir, '.credentials.json');
+  const current = secured?.claudeAiOauth?.accessToken ? secured : await readJson(file);
+  const same = current?.claudeAiOauth?.accessToken === expected?.claudeAiOauth?.accessToken &&
+    current?.claudeAiOauth?.refreshToken === expected?.claudeAiOauth?.refreshToken;
+  if (!current || !same) return false;
+  const value = { ...current, claudeAiOauth: next.claudeAiOauth };
+  if (secured?.claudeAiOauth?.accessToken) {
+    await persistKeychain(service, value);
+    const persisted = await keychain(service);
+    if (persisted?.claudeAiOauth?.accessToken !== value.claudeAiOauth.accessToken ||
+        persisted?.claudeAiOauth?.refreshToken !== value.claudeAiOauth.refreshToken) throw new Error('credential_store_unavailable');
+  } else {
+    const target = await fs.realpath(file);
+    const tmp = `${target}.${crypto.randomUUID()}.tmp`;
+    try {
+      await fs.writeFile(tmp, JSON.stringify(value), { mode: 0o600, flag: 'wx' });
+      await fs.rename(tmp, target);
+    } finally { await fs.unlink(tmp).catch(() => {}); }
+  }
+  return true;
+}
+
+const writeKeychain = (service, value) => new Promise((resolve, reject) => {
+  // security's interactive input avoids putting tokens in process arguments.
+  const quote = (v) => `"${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  const child = execFile('/usr/bin/security', ['-i'], { timeout: 5000, maxBuffer: 256 * 1024 }, (error) => {
+    if (error) reject(new Error('credential_store_unavailable')); else resolve();
+  });
+  child.stdin.on('error', () => {});
+  child.stdin.end(`add-generic-password -U -a ${quote(process.env.USER || os.userInfo().username)} -s ${quote(service)} -w ${quote(JSON.stringify(value))}\n`);
+});
