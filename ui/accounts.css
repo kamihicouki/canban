@@ -115,3 +115,17 @@
 
 .acct-login-actions, .acct-pending .row { flex-wrap: wrap; }
 .acct-login-actions button { flex: 1 1 140px; }
+
+/* Weekly usage and the elapsed-time target share the same 0–100% scale. */
+.acct-usage-grid.has-week { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.acct-week .acct-meter { position: relative; height: 8px; overflow: visible; }
+.acct-week .acct-meter i { border-radius: 3px; }
+.acct-target { position: absolute; top: -3px; bottom: -3px; border-left: 2px solid var(--list-fg); transform: translateX(-1px); }
+.acct-meter i.pace-steady { background: var(--c-green); }
+.acct-meter i.pace-ahead { background: var(--c-orange); }
+.acct-meter i.pace-room { background: var(--c-blue); }
+.acct-meter i.neutral { background: var(--list-muted); }
+.acct-pace { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 3px 8px; margin: 7px 0 4px; font-size: 12px; }
+.acct-pace > .muted { flex-basis: 100%; }
+.acct-pace strong { color: var(--list-fg); }
+.acct-pace.unavailable { color: var(--list-muted); }
