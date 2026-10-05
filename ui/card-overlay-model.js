@@ -37,3 +37,8 @@ function taskOverlayIds(taskId, links, shown = [], max = TASK_SESSIONS_MAX) {
 function taskRequestText(title, description, note) {
   return [title, description, note].map((s) => String(s || '').trim()).filter(Boolean).join('\n\n');
 }
+// The card to open when j / k step through the cards on the board (in the order they are shown). The ends do not wrap around.
+function neighborCardId(ids, current, step) {
+  const i = ids.indexOf(current);
+  return i < 0 ? null : ids[i + step] ?? null;
+}

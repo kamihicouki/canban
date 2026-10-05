@@ -335,7 +335,8 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .card-resume:hover { background: var(--accent); color: #fff; }
 .host-chip { display: inline-flex; align-items: center; border-radius: 3px; padding: 0 4px; background: var(--btn-subtle-hover); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .resume-box { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
-.resume-main { width: 100%; padding: 8px 12px; display: flex; flex-direction: column; align-items: flex-start; line-height: 18px; }
+.resume-main { width: 100%; padding: 8px 12px; display: flex; align-items: center; gap: 6px; line-height: 18px; }
+.resume-main .keycap { margin-left: auto; }
 .resume-main small { opacity: 0.85; font-size: 11px; font-weight: 400; }
 .seg-row { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 .seg-btn { white-space: nowrap; padding: 5px 6px; border-radius: 4px; background: var(--btn-subtle); font-size: 12px; }
@@ -419,6 +420,12 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .ft-toggle { display: inline-flex; align-items: center; gap: 4px; color: var(--header-fg); font-size: 12px; margin-left: -4px; }
 .snippet { margin-top: 6px; font-size: 12px; color: var(--card-muted); line-height: 17px; word-break: break-word; }
 .snippet mark { background: #ffe58f; color: #172b4d; border-radius: 2px; padding: 0 1px; }
+/* A key that works on this screen, shown small next to what it does (like Esc on the card overlay). */
+.keycap { display: inline-block; min-width: 18px; padding: 0 5px; font: 600 11px/16px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; vertical-align: 1px; color: inherit; opacity: .8;
+  background: color-mix(in srgb, currentColor 10%, transparent); border: 1px solid color-mix(in srgb, currentColor 32%, transparent); border-bottom-width: 2px; border-radius: 4px; }
+.keycap + .keycap { margin-left: 2px; }
+.key-hint { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.side-btn .keycap { margin-left: auto; }
 .kbd { display: inline-block; min-width: 16px; font-size: 11px; color: var(--list-muted); border: 1px solid var(--btn-subtle-hover); border-radius: 3px; text-align: center; }
 .board.with-lanes { flex-direction: column; align-items: stretch; overflow: auto; gap: 6px; padding-top: 0; }
 .lane { flex: none; width: max-content; min-width: 100%; scroll-margin-top: 0; }
@@ -645,10 +652,11 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
   <span id="brand" class="brand" title="Canban"><span class="brand-word">canban</span></span>
   <h1 class="board-name"><button id="logo" type="button" aria-haspopup="listbox" title="表示するカテゴリを選ぶ（p）">すべてのセッション</button></h1>
   <label class="hsearch-wrap" data-icon="search" data-icon-size="16">
-    <input id="q" class="hsearch" type="search" placeholder="検索・コマンド（/・⌘K）" aria-label="検索" aria-keyshortcuts="/" />
+    <input id="q" class="hsearch" type="search" placeholder="検索・コマンド" aria-label="検索" aria-keyshortcuts="/" />
+    <span class="hsearch-keys" aria-hidden="true"><kbd class="keycap">/</kbd><kbd class="keycap">⌘K</kbd></span>
   </label>
   <label class="ft-toggle" data-pri="2" title="会話の本文も検索する（3 文字以上）"><input id="fulltext" type="checkbox" /> 本文</label>
-  <button id="quickTaskBtn" class="hbtn primary quick-task-trigger" type="button" aria-label="タスクを作成" title="タスクを作成（c）" data-icon="plus"><span class="lbl">作成</span></button>
+  <button id="quickTaskBtn" class="hbtn primary quick-task-trigger" type="button" aria-label="タスクを作成" title="タスクを作成（c）" data-icon="plus"><span class="lbl">作成 <kbd class="keycap">c</kbd></span></button>
   <div id="filterChips" class="filter-chips" role="group" aria-label="有効な絞り込み"></div>
   <span class="spacer"></span>
   <button id="moreBtn" class="hbtn icon-only" aria-haspopup="true" title="その他" aria-label="その他" data-icon="more" hidden></button>
@@ -1506,6 +1514,9 @@ function labelsManager(anchor) {
 //   a card is the same parts everywhere: two columns, the order inside a column is yours
 //   the layout and the width are kept per kind of card (session / task) and shared by every card of that kind
 // ======================================================================
+// Small key caps: keycap('j', 'k') for the keys alone, keyHint(['Esc'], '閉じる') for keys with what they do.
+const keycap = (...keys) => keys.map((k) => h('kbd', { class: 'keycap', text: k }));
+const keyHint = (keys, label, cls = '') => h('span', { class: `key-hint ${cls}`.trim() }, ...keycap(...keys), label);
 const PANE_MODES = [['text', 'テキスト'], ['preview', 'プレビュー'], ['digest', '要点']];
 const PANE_DEF = { mode: 'preview' };
 const oneOf = (v, list, d) => (list.some(([k]) => k === v) ? v : d);
@@ -1590,15 +1601,17 @@ function applyPaneAttrs(p) {
 // ---- the bar over the cards: how the conversation is shown, reset layout, close ----
 function buildPaneBar() {
   const mode = h('div', { class: 'seg', role: 'group', 'aria-label': '会話の表示' },
-    ...PANE_MODES.map(([v, t]) => h('button', { type: 'button', 'data-v': v, 'aria-pressed': 'false', onclick: () => setPaneMode(v) }, t)));
+    ...PANE_MODES.map(([v, t], i) => h('button', { type: 'button', 'data-v': v, 'aria-pressed': 'false', 'aria-keyshortcuts': String(i + 1), onclick: () => setPaneMode(v) }, t, ' ', ...keycap(String(i + 1)))));
   paneBar.append(h('span', { class: 'pb-title' }), mode,
     h('button', { class: 'hbtn pb-reset', type: 'button', title: '開いている種類のカードの配置・列幅・高さ・カード幅を初期状態に戻します', onclick: resetCardLayout }, 'レイアウトを初期化'),
-    h('span', { class: 'pb-hint', text: 'Esc・背景で閉じる' }));
+    h('span', { class: 'pb-hint' },
+      keyHint(['j', 'k'], '前後のカード', 'pb-step'), keyHint(['[', ']'], '横のカード', 'pb-pair'), keyHint(['?'], 'キー一覧'), keyHint(['Esc'], '閉じる（背景も可）')));
 }
 function paintPaneBar() {
   const view = panes[0]?.kind === 'view';
   $('.pb-title', paneBar).textContent = !panes[0] || view ? '' : panes[0].kind === 'task' && panes.length > 1 ? `${T.taskCard}と紐付いたセッション ${panes.length - 1} 件` : KIND_LABEL[panes[0].kind];
-  for (const el of $$('.seg, .pb-reset', paneBar)) el.hidden = view; // a sheet has no conversation and no card layout
+  for (const el of $$('.seg, .pb-reset, .pb-step', paneBar)) el.hidden = view; // a sheet has no conversation, no card layout and no neighbour to step to
+  $('.pb-pair', paneBar).hidden = panes.length < 2; // [ ] move between the cards side by side
   $$('button[data-v]', paneBar).forEach((b) => b.setAttribute('aria-pressed', String(paneGlobal.mode === b.dataset.v)));
 }
 buildPaneBar();
@@ -1695,6 +1708,52 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
   if (typingIn(e.target)) { e.target.blur(); return; } // the first Esc leaves the field, the next one closes the card
   closeCards();
+});
+
+// ---- keys in the overlay: the same letters as on a focused card, plus j / k to walk through the board ----
+// j / k open the next / previous card on the board in the order it is shown; [ ] move between the cards side by side;
+// 1–3 change how the conversation is shown; i writes to the session; o l g m h do what the buttons beside them do.
+const boardCardEl = (id) => $(`#board .card[data-card-id="${CSS.escape(id)}"]`);
+function stepOpenCard(step) {
+  const root = panes[0];
+  if (!root || root.kind === 'view') return;
+  const cur = boardCardEl(root.id), listEl = cur?.closest('.list');
+  // A list shows its cards a page at a time: stepping past the last one shown brings in the next page first.
+  if (step > 0 && listEl?.querySelector('.more-btn') && cur === [...listEl.querySelectorAll('.card[data-card-id]')].at(-1)) {
+    state.shown[listEl.dataset.listId] = (state.shown[listEl.dataset.listId] || PAGE) + PAGE * 2; render();
+  }
+  const ids = $$('#board .card[data-card-id]').map((el) => el.dataset.cardId);
+  if (!ids.includes(root.id)) return toast('このカードはボードに表示されていません');
+  const next = neighborCardId(ids, root.id, step);
+  if (!next) return toast(step > 0 ? '最後のカードです' : '最初のカードです');
+  const el = boardCardEl(next);
+  cardReturn = el; // Esc gives the focus back to the card that is open now
+  el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  openCard(next);
+}
+const focusedPane = () => { const el = document.activeElement?.closest?.('.pane'); return panes.find((p) => p.el === el) || panes[0]; };
+function stepPane(step) {
+  const i = panes.indexOf(focusedPane()), target = panes[i + step];
+  if (target) revealPane(target.id);
+}
+function focusPrompt(p) {
+  const field = (x) => x.el.querySelector('.psec[data-sec="send"] textarea');
+  const ta = field(p) || panes.map(field).find(Boolean);
+  if (ta) ta.focus(); else toast('指示を入力できるカードではありません');
+}
+document.addEventListener('keydown', e => {
+  if (paneLayer.hidden || e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey || e.altKey || typingIn(e.target) || e.target.closest?.('.card') || document.querySelector('.popover, dialog[open]')) return;
+  const k = e.key, p = focusedPane();
+  let run = null;
+  if (k === '?') run = showShortcuts;
+  else if (p && p.kind !== 'view') {
+    if (k === 'j' || k === 'k') run = () => stepOpenCard(k === 'j' ? 1 : -1);
+    else if (k === '[' || k === ']') run = () => stepPane(k === ']' ? 1 : -1);
+    else if (/^[1-9]$/.test(k) && PANE_MODES[k - 1]) run = () => setPaneMode(PANE_MODES[k - 1][0]);
+    else if (k === 'i') run = () => focusPrompt(p);
+    else if (/^[olgmh]$/.test(k)) run = () => p.el.querySelector(`[data-pane-key="${k}"]`)?.click();
+  }
+  if (run) { e.preventDefault(); run(); }
 });
 
 // ---- Sections share placement, column width and content height across all cards. ----
@@ -1967,8 +2026,9 @@ function renderPane(p, d) {
   const listSel = pickerButton({ title: 'リスト', value: card.listId, stack: false, className: 'btn picker-btn',
     items: () => b.lists.map((l) => ({ value: l.id, label: l.title, color: l.color, hint: l.count })),
     onChange: (v) => act('canban_move_card', { cardId: s.id, toList: v, position: 'top' }, { okMsg: 'カードを移動しました' }) });
-  const dirBtn = h('button', { class: 'side-btn', text: `📂 ${T.category}: ${card.directory ? card.directory.name : 'カテゴリ無し'}${card.directoryId ? '' : card.directory ? '（自動）' : ''}`,
-    onclick: (e) => directoryPicker(e.currentTarget, { id: s.id, cwd: s.cwd, directory: card.directory }, { explicit: card.directoryId, after: () => openCard(s.id) }) });
+  listSel.dataset.paneKey = 'm';
+  const dirBtn = h('button', { class: 'side-btn', 'data-pane-key': 'g', onclick: (e) => directoryPicker(e.currentTarget, { id: s.id, cwd: s.cwd, directory: card.directory }, { explicit: card.directoryId, after: () => openCard(s.id) }) },
+    `📂 ${T.category}: ${card.directory ? card.directory.name : 'カテゴリ無し'}${card.directoryId ? '' : card.directory ? '（自動）' : ''}`, keycap('g'));
 
   const labelWrap = h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '4px' } });
   const paintLabels = () => labelWrap.replaceChildren(...(card.labels.length ? card.labels.map((id) => labelsById.get(id)).filter(Boolean).map((l) =>
@@ -1998,8 +2058,8 @@ function renderPane(p, d) {
       onclick: () => resume(s.id, { route: 'terminal', target }) });
   };
   const resumeBox = h('div', { class: 'resume-box' },
-    h('button', { class: 'btn-primary resume-main', title: `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`, onclick: (e) => resume(s.id, optsFromEvent(e)) },
-      h('span', { text: '▶ 再開' })),
+    h('button', { class: 'btn-primary resume-main', 'data-pane-key': 'o', title: `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`, onclick: (e) => resume(s.id, optsFromEvent(e)) },
+      h('span', { text: '▶ 再開' }), ...keycap('o')),
     h('div', { class: 'field-label', text: 'デスクトップアプリ' }),
     L.desktop
       ? h('button', { class: 'side-btn', text: `↗ ${L.desktop.label}`, title: L.desktop.url, onclick: () => resume(s.id, { route: 'desktop' }) })
@@ -2046,7 +2106,7 @@ function renderPane(p, d) {
   secs.conv = { title: d.feed ? '会話' : '直近のやりとり', nodes: d.feed ? [renderFeed(d, p)] : msgs,
     extra: d.feed ? h('span', { class: `live-badge${live.on ? ' on' : ''}`, title: live.on ? 'セッションの変化をそのまま表示します' : '', text: live.on ? 'ライブ' : '' }) : null };
   if (d.feed) secs.progress = { nodes: [renderSignals(s.signals, d.git)] };
-  secs.send = { nodes: [renderDispatch(d)] };
+  secs.send = { nodes: [renderDispatch(d)], extra: d.dispatch.settings.enabled ? keycap('i') : null };
   secs.labels = { nodes: [labelWrap] };
   secs.memo = { nodes: [note] };
   secs.detail = { nodes: [h('dl', { class: 'kv' },
@@ -2070,14 +2130,14 @@ function renderPane(p, d) {
   secs.first = { nodes: [h('div', { class: 'msg user', text: s.preview || '-' })] };
   secs.resume = { nodes: [resumeBox] };
   secs.task = { nodes: [taskSel] };
-  secs.add = { nodes: [h('button', { class: 'side-btn', text: '🏷 ラベル', title: 'ボード上では l キー', onclick: (e) => labelPicker(e.currentTarget, s.id, card, paintLabels) }), dirBtn] };
+  secs.add = { nodes: [h('button', { class: 'side-btn', 'data-pane-key': 'l', onclick: (e) => labelPicker(e.currentTarget, s.id, card, paintLabels) }, '🏷 ラベル', keycap('l')), dirBtn] };
   secs.prio = { nodes: [prio, due] };
   secs.other = { nodes: [
     s.prUrl ? h('button', { class: 'side-btn', text: '↗ PR を開く', onclick: () => bridge.openLink(s.prUrl).catch(() => copyText(s.prUrl, 'PR URL')) }) : null,
     h('button', { class: 'side-btn', text: '⧉ セッション ID をコピー', onclick: () => copyText(s.nativeId, 'セッション ID') }),
     s.sourcePath ? h('button', { class: 'side-btn', text: '⧉ ログのパスをコピー', onclick: () => copyText(s.sourcePath, 'パス') }) : null,
-    h('button', { class: 'side-btn', text: card.hidden ? '👁 ボードに再表示' : '🙈 ボードから隠す',
-      onclick: async () => { await act('canban_update_card', { cardId: s.id, hidden: !card.hidden }, { okMsg: card.hidden ? '再表示しました' : '隠しました' }); closeCards(); } }),
+    h('button', { class: 'side-btn', 'data-pane-key': 'h',
+      onclick: async () => { await act('canban_update_card', { cardId: s.id, hidden: !card.hidden }, { okMsg: card.hidden ? '再表示しました' : '隠しました' }); closeCards(); } }, card.hidden ? '👁 ボードに再表示' : '🙈 ボードから隠す', keycap('h')),
   ].filter(Boolean) };
 
   const cols = { main: h('div', { class: 'pcol', 'data-col': 'main' }), side: h('div', { class: 'pcol', 'data-col': 'side' }) };
@@ -2097,7 +2157,7 @@ function renderPane(p, d) {
       h('div', { class: 'sub row' }, h('span', { class: `badge ${s.agent}`, text: s.agent === 'codex' ? 'Codex' : 'Claude' }),
         s.host ? h('span', { class: 'host-chip', text: `⌂ ${s.host.label}` }) : null,
         h('span', { class: 'row pane-status', style: { gap: '0' } }, h('span', { class: `sdot s-${p.status}` }), STATUS_LABELS[p.status]),
-        'リスト:', listSel, h('span', { class: 'pill viewer-pill viewers', hidden: true }))),
+        'リスト:', listSel, keycap('m'), h('span', { class: 'pill viewer-pill viewers', hidden: true }))),
     h('div', { class: 'pane-b' }, cols.main, columnSplit('session'), cols.side), paneWidthHandle('session'));
   applyPaneLayoutTo(el);
   cols.main.scrollTop = scroll[0];
@@ -3205,6 +3265,7 @@ async function loadTask(p, found) {
   const listSel = pickerButton({ title: 'リスト', value: list.id, stack: false, className: 'btn picker-btn',
     items: () => b.lists.map((l) => ({ value: l.id, label: l.title, color: l.color, hint: l.count })),
     onChange: (v) => act('canban_move_card', { cardId, toList: v, position: 'top' }, { okMsg: 'カードを移動しました' }) });
+  listSel.dataset.paneKey = 'm';
 
   const memo = h('textarea', { class: 'note', 'aria-label': 'メモ', placeholder: 'タスクのメモ' });
   memo.value = memo.defaultValue = card.note || '';
@@ -3261,7 +3322,7 @@ async function loadTask(p, found) {
     conv: { title: '説明', nodes: [desc], hint: '説明は Canban に保存します。新しいセッションの依頼文にも使います。' },
     memo: { title: 'メモ', nodes: [memo] },
     related: { title: taskRelatedTitle(card), extra: taskLinkButton(cardId), nodes: taskRelatedNodes(card), hint: 'ホームのセッションをこのカードへドラッグして紐付けることもできます。' },
-    send: { title: '新しいセッションを開始', nodes: [h('div', { class: 'start-grid' }, agentSel, hostSel, cwd, dl),
+    send: { title: '新しいセッションを開始', extra: keycap('i'), nodes: [h('div', { class: 'start-grid' }, agentSel, hostSel, cwd, dl),
       h('button', { class: 'btn', text: '説明・メモを依頼文に取り込む', onclick: () => {
         if (prompt.value !== prompt.defaultValue && prompt.value.trim()) return toast('入力中の依頼文があります。先に内容を確認してください', true);
         prompt.value = taskRequestText(title.value, desc.value, memo.value);
@@ -3271,10 +3332,10 @@ async function loadTask(p, found) {
       h('div', { class: 'row', style: { marginTop: '8px', flexWrap: 'wrap' } },
         ...startButtons)], hint: '開始したセッションは、AI App・マシン・フォルダ・依頼文が一致すると自動でこのカードに紐付きます。' },
     add: { nodes: [taskQuickAdd.summary(card),
-      h('button', { class: 'side-btn', text: '所属を変更', onclick: () => taskQuickAdd.edit(card, list) }), h('button', { class: 'side-btn', text: '🏷 ラベル', onclick: e => labelPicker(e.currentTarget, cardId, labelState, () => {}) }),
-      h('button', { class: 'side-btn', text: `📂 カテゴリ: ${card.directory?.name || 'カテゴリ無し'}`, onclick: e => directoryPicker(e.currentTarget, card, { cwd: cwd.value.trim() || null, after: () => openCard(cardId) }) })] },
+      h('button', { class: 'side-btn', text: '所属を変更', onclick: () => taskQuickAdd.edit(card, list) }), h('button', { class: 'side-btn', 'data-pane-key': 'l', onclick: e => labelPicker(e.currentTarget, cardId, labelState, () => {}) }, '🏷 ラベル', keycap('l')),
+      h('button', { class: 'side-btn', 'data-pane-key': 'g', onclick: e => directoryPicker(e.currentTarget, card, { cwd: cwd.value.trim() || null, after: () => openCard(cardId) }) }, `📂 カテゴリ: ${card.directory?.name || 'カテゴリ無し'}`, keycap('g'))] },
     prio: { nodes: [prio, due] },
-    other: { nodes: [h('button', { class: 'side-btn', text: card.hidden ? '👁 ボードに再表示' : '🙈 ボードから隠す', onclick: async () => { await act('canban_update_card', { cardId, hidden: !card.hidden }); closeCards(); } }),
+    other: { nodes: [h('button', { class: 'side-btn', 'data-pane-key': 'h', onclick: async () => { await act('canban_update_card', { cardId, hidden: !card.hidden }); closeCards(); } }, card.hidden ? '👁 ボードに再表示' : '🙈 ボードから隠す', keycap('h')),
       h('button', { class: 'side-btn danger-text', text: '🗑 カードを削除', onclick: async () => { if (confirmInline(p.el, `この${T.taskCard}を削除します。紐付いたセッション自体は消えません。`)) { await act('canban_delete_task', { cardId }, { okMsg: '削除しました' }); closeCards(); } } })] },
   };
   const cols = { main: h('div', { class: 'pcol', 'data-col': 'main' }), side: h('div', { class: 'pcol', 'data-col': 'side' }) };
@@ -3288,7 +3349,7 @@ async function loadTask(p, found) {
   p.el.setAttribute('aria-label', `タスクカード詳細: ${card.title}`);
   p.el.replaceChildren(h('div', { class: 'pane-h' }, top,
     h('div', { class: 'sub row' }, taskQuickAdd.button(), h('span', { class: 'badge task-badge', text: T.taskCard }),
-      h('span', { class: 'row pane-status', style: { gap: '0' } }, h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]), 'リスト:', listSel)),
+      h('span', { class: 'row pane-status', style: { gap: '0' } }, h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]), 'リスト:', listSel, keycap('m'))),
     h('div', { class: 'pane-b' }, cols.main, columnSplit('task'), cols.side), paneWidthHandle('task'));
   applyPaneLayoutTo(p.el); paintPaneButtons(p); applyPaneAttrs(p);
   p.rendered = true;
@@ -4011,6 +4072,10 @@ const SHORTCUTS = [
     ['Enter', '詳細を開く'], ['l', 'ラベル'], ['g', `${T.category}`], ['m', 'リストへ移動'], ['h', '隠す / 再表示'],
     ['← →', '隣のリストへ移動'], ['↑ ↓ / Home End', 'リスト内で移動'], ['⌥ + 矢印', 'フォーカスだけ移動'],
     ['o', '再開（既定）'], ['d / t', 'デスクトップ / ターミナルで再開'], ['w n s e', 'ターミナル: 新規ウィンドウ / 新規タブ / 分割 / 既存'],
+  ]],
+  ['カードを開いている間', [
+    ['j / k', 'ボードの次 / 前のカードを開く'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'],
+    ['i', '指示の入力欄へ'], ['o', '再開'], ['l g m h', 'ラベル / ' + T.category + ' / リスト移動 / 隠す'], ['c', 'タスクを追加'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
   ]],
   ['ピッカー', [['文字を入力', '絞り込み'], ['↑ ↓ / Enter', '選ぶ'], ['Space', '複数選択の切り替え（入力が空のとき）'], ['Esc', '閉じる']]],
 ];

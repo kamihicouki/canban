@@ -13,7 +13,11 @@
 .hsearch-wrap { position: relative; display: inline-flex; align-items: center; flex: 0 1 320px !important; min-width: 160px; }
 .hsearch-wrap > svg { position: absolute; left: 10px; color: var(--header-dim); pointer-events: none; }
 .hsearch-wrap:focus-within > svg { color: var(--list-muted); }
-.topbar .hsearch { width: 100%; padding-left: 32px; }
+.topbar .hsearch { width: 100%; padding-left: 32px; padding-right: 64px; }
+.hsearch-keys { position: absolute; right: 8px; display: flex; gap: 2px; color: var(--header-dim); pointer-events: none; }
+.hsearch-wrap:focus-within .hsearch-keys, .hsearch-wrap:has(.hsearch:not(:placeholder-shown)) .hsearch-keys { display: none; }
+.topbar .quick-task-trigger .keycap { margin-left: 2px; }
+@media (max-width: 760px) { .hsearch-keys { display: none; } .topbar .hsearch { padding-right: 12px; } }
 .hbtn { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .hbtn.icon-only { width: 32px; padding: 0; justify-content: center; }
 .hbtn.primary { background: var(--primary-bg); color: var(--primary-fg); }

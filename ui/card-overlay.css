@@ -3,7 +3,11 @@
 .pane-layer[hidden] { display: none; }
 .pane-bar { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 0; padding: 8px 20px 0; min-height: 44px; background: none; color: var(--on-scrim); border-radius: 0; backdrop-filter: none; }
 .pane-bar .pb-title { margin-right: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; opacity: .9; }
-.pane-bar .pb-hint { font-size: 12px; opacity: .75; }
+.pane-bar .pb-hint { display: flex; align-items: center; gap: 12px; font-size: 12px; }
+.pane-bar .pb-hint .key-hint { opacity: .85; }
+.pane-bar .pb-hint .key-hint[hidden], .pane-bar .pb-reset[hidden] { display: none; }
+.pane-bar .seg .keycap { margin-left: 3px; opacity: .65; }
+@media (max-width: 960px) { .pane-bar .pb-hint .key-hint:not(:last-child) { display: none; } }
 .pane-bar .hbtn { height: 30px; font-size: 12px; background: var(--scrim-ctl); color: var(--on-scrim); }
 .pane-bar .hbtn:hover { background: var(--scrim-ctl-hover); }
 .pane-bar .seg button { height: 26px; padding: 0 10px; font-size: 12px; color: var(--on-scrim); }
