@@ -1,0 +1,75 @@
+/* Card interiors share one structure across all five board layouts. */
+.pane[data-kind="session"], .pane[data-kind="task"] {
+  width: var(--pw); height: min(var(--ph), 100%); max-height: 100%;
+  background: var(--card-bg); color: var(--card-fg); border-radius: 12px;
+  --ph: var(--h-session, 860px);
+}
+.pane[data-kind="task"] { --ph: var(--h-task, 860px); }
+.pane:not(.sheet) .pane-b { padding: 18px 12px 16px; grid-template-columns: minmax(0,var(--main-track,2fr)) 12px minmax(0,var(--side-track,1fr)); }
+.pane:not(.sheet) .pcol { padding: 0 12px; }
+.pane:not(.sheet) .pcol[data-col="side"] { padding-top: 32px; }
+.pane:not(.sheet) .psec { position: relative; margin-bottom: 18px; }
+.pane:not(.sheet) .psec-h { height: 28px; padding: 0; gap: 6px; }
+.pane:not(.sheet) .psec-h h3 { font-size: 13px; font-weight: 650; color: var(--card-fg); }
+.pane:not(.sheet) .psec-b { padding: 8px 0 0; }
+.pane:not(.sheet) .psec[data-auto-height="true"] .psec-b { height: auto; max-height: 300px; }
+/* Default reading area grows with the card. Explicit module heights take precedence. */
+.pane[data-kind="session"] .psec[data-sec="conv"][data-auto-height="true"] .psec-b {
+  height: clamp(180px, calc(var(--card-visible-height, 680px) - 360px), 900px); max-height: none;
+}
+.pane:not(.sheet) .psec[data-sec="send"][data-auto-height="true"] .psec-b { max-height: none; }
+.pane:not(.sheet) .psec[data-sec="conv"] .psec-b > .feed-wrap { height: 100%; }
+.pane:not(.sheet) .psec[data-sec="conv"] .psec-b .feed { background: transparent; border-radius: 0; padding: 8px 0; gap: 18px; }
+.pane:not(.sheet) .psec-identity { margin-bottom: 2px; }
+.pane:not(.sheet) .psec-identity .section-resize { height: 5px; }
+.pane:not(.sheet) .identity-row { display: flex; align-items: flex-start; gap: 6px; }
+.pane:not(.sheet) .psec-identity .psec-b { padding: 0; min-width: 0; flex: 1; }
+.pane:not(.sheet) .psec-identity[data-auto-height="true"] .psec-b { max-height: none; }
+.pane:not(.sheet) .psec-identity .grip { margin-top: 2px; flex: none; }
+.pane:not(.sheet) .psec[data-sec="title"] h2 { white-space: normal; font-size: 21px; line-height: 1.4; font-weight: 700; }
+.pane:not(.sheet) .title-input { height: auto; width: 100%; min-height: 34px; font-size: 21px; line-height: 1.4; font-weight: 700; padding: 0; }
+.pane:not(.sheet) .sub { flex-wrap: wrap; white-space: normal; gap: 6px 8px; }
+.card-crumb { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; font-size: 12px; color: var(--list-muted); }
+.card-crumb .picker-btn { font-size: 12px; height: 24px; background: transparent; padding: 0 4px; }
+.card-crumb .link-btn { text-align: left; overflow-wrap: anywhere; }
+.card-actions { position: absolute; top: 10px; right: 10px; z-index: 2; }
+.pane:not(.sheet) .pane-close { width: 28px; height: 28px; border-radius: 6px; background: transparent; color: var(--card-fg); }
+.pane:not(.sheet) .grip { width: 22px; height: 24px; opacity: .22; margin-left: -5px; }
+.pane:not(.sheet) .grip svg { width: 10px; height: 10px; }
+.pane:not(.sheet) .psec:hover .grip { opacity: .4; }
+.pane:not(.sheet) .grip:hover, .pane:not(.sheet) .grip:focus-visible { opacity: 1; background: var(--btn-subtle); }
+.pane:not(.sheet) .pchev { opacity: .35; }
+.pane:not(.sheet) .pchev:hover, .pane:not(.sheet) .pchev:focus-visible { opacity: 1; }
+.pane:not(.sheet) .section-resize { height: 8px; }
+.pane:not(.sheet) .section-resize::after { width: 20px; opacity: .12; }
+.pane:not(.sheet) .section-resize:hover::after, .pane:not(.sheet) .section-resize:focus-visible::after { opacity: .8; }
+.pane:not(.sheet) .column-split::after { left: 5px; width: 1px; background: var(--btn-subtle); }
+.pane:not(.sheet) .column-split:hover::after, .pane:not(.sheet) .column-split:focus-visible::after { background: var(--accent); }
+.pane:not(.sheet) .kv { grid-template-columns: minmax(72px,.7fr) minmax(0,1.3fr); gap: 6px 12px; font-size: 12px; margin: 0; }
+.pane:not(.sheet) .kv dd { overflow-wrap: anywhere; word-break: normal; }
+.pane:not(.sheet) .side-btn { background: transparent; padding: 7px 4px; margin: 0; }
+.pane:not(.sheet) .side-btn:hover { background: var(--btn-subtle); }
+.pane:not(.sheet) .msg { background: var(--btn-subtle); border-radius: 10px; }
+.pane:not(.sheet) .psec[data-sec="conv"] .msg.user { margin-left: 10%; background: var(--chat-human-bg); border-left: 0; }
+.pane:not(.sheet) .psec[data-sec="conv"] .msg.assistant { margin-right: 10%; background: var(--chat-agent-bg); }
+.pane-height { position: absolute; left: 0; right: 16px; bottom: 0; height: 7px; cursor: ns-resize; touch-action: none; z-index: 2; }
+.pane-height:hover, .pane-height:focus-visible { background: color-mix(in srgb,var(--accent) 35%, transparent); }
+.pane-corner { position: absolute; right: 0; bottom: 0; width: 22px; height: 22px; cursor: nwse-resize; touch-action: none; z-index: 3; color: var(--list-muted); display: grid; place-items: center; opacity: .3; }
+.pane-corner:hover, .pane-corner:focus-visible { opacity: 1; color: var(--accent); }
+
+/* In the default main column the conversation receives all space left by the composer. */
+.pane[data-kind="session"] .pcol[data-col="main"]:has(> .psec[data-sec="conv"][data-auto-height="true"]:not(.collapsed)) { display: flex; flex-direction: column; }
+.pane[data-kind="session"] .pcol[data-col="main"] > .psec { flex: none; }
+.pane[data-kind="session"] .pcol[data-col="main"] > .psec[data-sec="conv"][data-auto-height="true"]:not(.collapsed) { display: flex; flex-direction: column; flex: 1; min-height: 220px; }
+.pane[data-kind="session"] .pcol[data-col="main"] > .psec[data-sec="conv"][data-auto-height="true"] .psec-b { height: auto; flex: 1; min-height: 0; }
+.pane:not(.sheet) .send-box { padding: 0; background: transparent; margin-bottom: 0; }
+
+.pane[data-kind="session"] .send-box textarea { min-height: 64px; height: 64px; border-radius: 8px; }
+
+.pane:not(.sheet) textarea.title-input { field-sizing: content; font-family: inherit; resize: none; min-height: 1.4em; max-height: 200px; }
+.pane:not(.sheet) .task-related-row { align-items: flex-start; gap: 6px; padding: 8px 0; background: transparent; }
+.pane:not(.sheet) .task-related-row .sdot { margin-top: 5px; margin-right: 0; }
+.task-related-copy { min-width: 0; }
+.task-related-copy > .link-btn { display: block; width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; line-height: 1.5; }
+.task-related-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; font-size: 11px; }
+.task-related-actions { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none; }

@@ -13,7 +13,7 @@
 .pane-bar .seg button { height: 26px; padding: 0 10px; font-size: 12px; color: var(--on-scrim); }
 .pane-bar .seg button[aria-pressed="true"] { background: var(--modal-bg); color: var(--list-fg); }
 .pane-stage { flex: 1; min-height: 0; display: flex; overflow-x: auto; overflow-y: hidden; padding: 8px 24px 24px; scroll-snap-type: x proximity; overscroll-behavior: contain; }
-.pane-row { display: flex; align-items: stretch; gap: 16px; margin: 0 auto; width: max-content; height: 100%; max-height: 960px; }
+.pane-row { display: flex; align-items: flex-start; gap: 16px; margin: 0 auto; width: max-content; height: 100%; max-height: 960px; }
 .pane { --fs: 13px; --pw: var(--w-session, 720px); position: relative; flex: none; display: flex; flex-direction: column; scroll-snap-align: center;
   width: min(var(--pw), calc(100vw - 48px)); background: var(--modal-bg); color: var(--list-fg); border-radius: 12px; overflow: hidden; font-size: var(--fs); line-height: 1.55;
   box-shadow: var(--lift-shadow); }
@@ -37,8 +37,6 @@
 .task-parent-actions .task-request { width: 100%; background: color-mix(in srgb, var(--task-accent) 9%, var(--modal-bg)); color: var(--list-fg); }
 .task-related-more { font-size: 12px; margin: 4px 0 0; }
 .pane-layer.stack .pane-stage { padding-inline: 12px; }
-.pane-layer.stack .pane { width: calc(100vw - 24px); }
-.pane-layer.stack .pane-b { display: block; overflow-y: auto; }
-.pane-layer.stack .pcol { overflow: visible; height: auto; }
-.pane-layer.stack .column-split, .pane-layer.stack .pane-width { display: none; }
+.pane-layer.stack .pane.sheet { width: calc(100vw - 24px); }
+
 @media (prefers-reduced-motion: reduce) { .pane-layer, .pane { transition: none; } }

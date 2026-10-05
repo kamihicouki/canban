@@ -27,6 +27,7 @@
   --list-fg: #172b4d;
   --list-muted: #44546f;
   --card-bg: #fff;
+  --chat-human-bg: #e9f2ff; --chat-agent-bg: #f1f2f4;
   --card-fg: #172b4d;
   --card-muted: #626f86;
   --card-shadow: 0 1px 1px #091e4240, 0 0 1px #091e424f;
@@ -76,6 +77,7 @@
   --list-fg: #b6c2cf;
   --list-muted: #8c9bab;
   --card-bg: #22272b;
+  --chat-human-bg: #09326c; --chat-agent-bg: #282e33;
   --card-fg: #b6c2cf;
   --card-muted: #8c9bab;
   --card-shadow: 0 1px 1px #03040480, 0 0 1px #03040480;
@@ -304,8 +306,9 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .feed-wrap { position: relative; margin-bottom: 8px; }
 .feed { max-height: min(460px, 55vh); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 8px; background: var(--modal-panel); font-size: 13px; }
 .fi { white-space: pre-wrap; word-break: break-word; line-height: 19px; }
-.fi-user { align-self: flex-end; max-width: 85%; background: var(--accent); color: #fff; border-radius: 12px 12px 4px 12px; padding: 6px 10px; }
-.fi-asst { padding: 2px 4px; }
+.fi-user { align-self: flex-end; max-width: 88%; background: var(--chat-human-bg); color: var(--card-fg); border-radius: 12px 12px 3px 12px; padding: 12px 16px; }
+.fi-asst { align-self: flex-start; max-width: 92%; padding: 12px 16px; background: var(--chat-agent-bg); border-radius: 12px 12px 12px 3px; }
+.fi-who { font-size: 11px; font-weight: 650; color: var(--list-muted); margin-bottom: 6px; }
 .fi-note { padding: 0 4px; color: var(--list-muted); font-size: 12px; }
 .fi-think, .fi-tool { font-size: 12px; color: var(--list-muted); padding: 0 4px; }
 .fi-think summary, .fi-tool summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -643,6 +646,7 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
 }
 /* @include workspace.css */
 /* @include card-overlay.css */
+/* @include card-interior.css */
 /* @include layouts.css */
 </style>
 </head>
@@ -853,7 +857,7 @@ const bridge = (() => {
 const PAGE = 40;
 const COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
 const COLOR_NAMES = { gray: 'グレー', blue: '青', green: '緑', yellow: '黄', orange: 'オレンジ', red: '赤', purple: '紫', pink: 'ピンク', sky: '水色', lime: 'ライム' };
-const SHARED_UI_KEYS = ['filters', 'themePref', 'layout', 'cardFit', 'sidebar', 'workspacePage', 'labelsExpanded', 'paneGlobal', 'cardLayouts', 'cardWidths', 'collapsedLanes'];
+const SHARED_UI_KEYS = ['filters', 'themePref', 'layout', 'cardFit', 'sidebar', 'workspacePage', 'labelsExpanded', 'paneGlobal', 'cardLayouts', 'cardWidths', 'cardHeights', 'collapsedLanes'];
 const sharedUi = { revision: null, ready: false, dirty: false, blocked: false, applying: false, inflight: false, generation: 0, timer: null, checkTimer: null };
 const store = {
   get(k, d) { try { const v = localStorage.getItem(`sk:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -1526,15 +1530,19 @@ const paneGlobal = (() => {
 })();
 const saveGlobal = () => store.set('paneGlobal', paneGlobal);
 const PANE_SECS = {
-  conv: ['main', '会話'], progress: ['main', '進捗'], send: ['main', '指示を送る'], labels: ['main', 'ラベル'], memo: ['main', 'メモ'], detail: ['main', '詳細'],
-  pr: ['main', 'プルリクエスト'], related: ['main', '関連'], first: ['main', '最初の依頼'],
-  resume: ['side', '再開'], task: ['side', null], add: ['side', 'カードに追加'], prio: ['side', '優先度・期限'], other: ['side', 'その他'],
+  conv: ['main', '会話'], send: ['main', '指示を送る'],
+  breadcrumb: ['side', 'パンくず'], title: ['side', '見出し'], status: ['side', '状態'],
+  add: ['side', 'カードに追加'], labels: ['side', 'ラベル'], prio: ['side', '優先度・期限'], related: ['side', '関連'],
+  detail: ['side', '詳細'], pr: ['side', 'プルリクエスト'], resume: ['side', '再開'], progress: ['side', '進捗'],
+  task: ['side', null], memo: ['side', 'メモ'], first: ['side', '最初の依頼'], other: ['side', 'その他'],
 };
 const secTitle = (id) => (id === 'task' ? T.taskCard : PANE_SECS[id][1]);
-const PANE_LAYOUT_DEF = { main: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'main'), side: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'side'), collapsed: [] };
-const PANE_HEIGHTS = { conv: 180, progress: 64, send: 360, labels: 84, memo: 150, detail: 320, pr: 180, related: 180, first: 150, resume: 290, task: 110, add: 130, prio: 130, other: 190 };
+const PANE_LAYOUT_DEF = { main: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'main'), side: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'side'), collapsed: ['memo', 'first', 'other', 'progress', 'task'] };
+const PANE_HEIGHTS = { conv: 440, send: 230, breadcrumb: 64, title: 64, status: 64, add: 96, labels: 64, prio: 80, related: 160, detail: 280, pr: 180, resume: 240, progress: 80, task: 64, memo: 150, first: 150, other: 160 };
 let cardLayouts = normalizeCardLayouts(store.get('cardLayouts', null), PANE_LAYOUT_DEF, PANE_HEIGHTS);
 let cardWidths = normalizeCardWidths(store.get('cardWidths', null));
+let cardHeights = normalizeCardHeights(store.get('cardHeights', null));
+const saveCardHeights = () => store.set('cardHeights', cardHeights);
 const cardLayoutOf = (kind) => cardLayouts[kind];
 const saveCardLayouts = () => store.set('cardLayouts', cardLayouts);
 const saveCardWidths = () => store.set('cardWidths', cardWidths);
@@ -1592,7 +1600,15 @@ function paneMetrics() {
 new ResizeObserver(paneMetrics).observe(paneStage);
 new ResizeObserver(paneMetrics).observe(document.body);
 new ResizeObserver(paneMetrics).observe($('#board'));
-const applyCardWidths = () => { for (const kind of CARD_KINDS) paneLayer.style.setProperty(`--w-${kind}`, `${cardWidths[kind]}px`); };
+const cardSizeObserver = new ResizeObserver(entries => {
+  for (const { target, contentRect } of entries) {
+    const p = panes.find(p => p.el === target), feed = p && live.feeds.get(p.id);
+    const following = feed && atFeedEnd(feed.list);
+    target.style.setProperty('--card-visible-height', `${Math.round(contentRect.height)}px`);
+    if (following) requestAnimationFrame(() => { if (target.isConnected && live.feeds.get(p.id) === feed) scrollFeedToEnd(feed); });
+  }
+});
+const applyCardWidths = () => { for (const kind of CARD_KINDS) { paneLayer.style.setProperty(`--w-${kind}`, `${cardWidths[kind]}px`); paneLayer.style.setProperty(`--h-${kind}`, `${cardHeights[kind]}px`); } };
 function applyPaneAttrs(p) {
   p.el.dataset.mode = paneGlobal.mode;
   p.el.dataset.kind = p.kind;
@@ -1603,7 +1619,7 @@ function buildPaneBar() {
   const mode = h('div', { class: 'seg', role: 'group', 'aria-label': '会話の表示' },
     ...PANE_MODES.map(([v, t], i) => h('button', { type: 'button', 'data-v': v, 'aria-pressed': 'false', 'aria-keyshortcuts': String(i + 1), onclick: () => setPaneMode(v) }, t, ' ', ...keycap(String(i + 1)))));
   paneBar.append(h('span', { class: 'pb-title' }), mode,
-    h('button', { class: 'hbtn pb-reset', type: 'button', title: '開いている種類のカードの配置・列幅・高さ・カード幅を初期状態に戻します', onclick: resetCardLayout }, 'レイアウトを初期化'),
+    h('button', { class: 'hbtn pb-reset', type: 'button', title: '開いている種類のカードの配置・列幅・部品の高さ・カードのサイズを初期状態に戻します', onclick: resetCardLayout }, 'レイアウトを初期化'),
     h('span', { class: 'pb-hint' },
       keyHint(['j', 'k'], '前後のカード', 'pb-step'), keyHint(['[', ']'], '横のカード', 'pb-pair'), keyHint(['?'], 'キー一覧'), keyHint(['Esc'], '閉じる（背景も可）')));
 }
@@ -1626,6 +1642,7 @@ function detachPane(p) {
   if (i >= 0) panes.splice(i, 1);
   clearInterval(p.el._reqTimer);
   live.feeds.delete(p.id);
+  cardSizeObserver.unobserve(p.el);
   p.el.remove();
   paneCache.delete(p.id); paneCache.set(p.id, p);
   for (const [id, old] of paneCache) { if (paneCache.size <= PANE_CACHE_MAX) break; if (!workspace.hasDrafts(old.el)) paneCache.delete(id); }
@@ -1653,7 +1670,7 @@ function showCards(ids) {
   paneRow.replaceChildren(...panes.map((p) => p.el));
   paneLayer.hidden = false;
   applyCardWidths(); paneMetrics();
-  for (const p of panes) { applyPaneAttrs(p); paintPaneButtons(p); }
+  for (const p of panes) { applyPaneAttrs(p); paintPaneButtons(p); if (p.kind !== 'view') cardSizeObserver.observe(p.el); }
   paintPaneBar();
   if (!restoringPanes) store.set('openCard', ids[0]);
   workspace.syncShell(); kickLive();
@@ -1672,11 +1689,12 @@ function closeCards() {
 // Every card of the same kind shares one width and one layout.
 function resetCardLayout() {
   for (const kind of new Set(panes.map((p) => p.kind).filter((k) => CARD_KINDS.includes(k)))) {
-    Object.assign(cardLayouts[kind], normalizePaneLayout(kind === 'task' ? taskCardLayoutDefaults() : null, PANE_LAYOUT_DEF, PANE_HEIGHTS)); // in place: open sections keep their reference
+    Object.assign(cardLayouts[kind], normalizeCardLayouts(null, PANE_LAYOUT_DEF, PANE_HEIGHTS)[kind]); // in place: open sections keep their reference
     cardWidths[kind] = CARD_WIDTH_DEF[kind];
+    cardHeights[kind] = CARD_HEIGHT_DEF[kind];
   }
-  saveCardLayouts(); saveCardWidths(); applyCardWidths(); applyPaneLayoutAll();
-  toast('配置・列幅・高さ・カード幅を初期化しました');
+  saveCardLayouts(); saveCardWidths(); saveCardHeights(); applyCardWidths(); applyPaneLayoutAll();
+  toast('配置・列幅・部品の高さ・カードのサイズを初期化しました');
 }
 function setCardWidth(kind, width, save = false) {
   cardWidths[kind] = Math.min(CARD_WIDTH_MAX, Math.max(CARD_WIDTH_MIN, Math.round(width)));
@@ -1684,20 +1702,44 @@ function setCardWidth(kind, width, save = false) {
   $$(`.pane[data-kind="${kind}"] .pane-width`).forEach((x) => x.setAttribute('aria-valuenow', cardWidths[kind]));
   if (save) saveCardWidths();
 }
-function paneWidthHandle(kind) {
-  const handle = h('div', { class: 'pane-width', role: 'separator', tabindex: 0, 'aria-orientation': 'vertical', 'aria-label': `${KIND_LABEL[kind]}の幅（同じ種類のカードで共通）`, 'aria-valuemin': CARD_WIDTH_MIN, 'aria-valuemax': CARD_WIDTH_MAX, 'aria-valuenow': cardWidths[kind],
-    title: '左右にドラッグしてカード幅を変更（同じ種類のカードで共通）。←→キーでも変更できます',
-    onkeydown: e => { if (['ArrowLeft', 'ArrowRight'].includes(e.key)) { e.preventDefault(); setCardWidth(kind, cardWidths[kind] + (e.key === 'ArrowLeft' ? -24 : 24), true); } } });
+function setCardHeight(kind, height, save = false) {
+  cardHeights[kind] = Math.min(CARD_HEIGHT_MAX, Math.max(CARD_HEIGHT_MIN, Math.round(height)));
+  applyCardWidths();
+  $$(`.pane[data-kind="${kind}"] .pane-height`).forEach(x => x.setAttribute('aria-valuenow', cardHeights[kind]));
+  if (save) saveCardHeights();
+}
+function paneSizeHandle(kind, axis) {
+  const horizontal = axis === 'width', corner = axis === 'corner';
+  const label = corner ? 'サイズ' : horizontal ? '幅' : '高さ';
+  const handle = h('div', { class: `pane-${axis}`, role: corner ? 'button' : 'separator', tabindex: 0,
+    'aria-label': `${KIND_LABEL[kind]}の${label}（同じ種類のカードで共通）`,
+    ...(corner ? {} : { 'aria-orientation': horizontal ? 'vertical' : 'horizontal', 'aria-valuemin': horizontal ? CARD_WIDTH_MIN : CARD_HEIGHT_MIN, 'aria-valuemax': horizontal ? CARD_WIDTH_MAX : CARD_HEIGHT_MAX, 'aria-valuenow': horizontal ? cardWidths[kind] : cardHeights[kind] }),
+    title: 'ドラッグまたは矢印キーでカードのサイズを変更。Homeで既定値（同じ種類のカードで共通）',
+    ...(corner ? { html: picon('grip', 14) } : {}),
+    onkeydown: e => {
+      if (e.key === 'Home') { e.preventDefault(); if (horizontal || corner) setCardWidth(kind, CARD_WIDTH_DEF[kind], true); if (!horizontal) setCardHeight(kind, CARD_HEIGHT_DEF[kind], true); }
+      if ((horizontal || corner) && ['ArrowLeft', 'ArrowRight'].includes(e.key)) { e.preventDefault(); setCardWidth(kind, cardWidths[kind] + (e.key === 'ArrowLeft' ? -24 : 24), true); }
+      if ((!horizontal || corner) && ['ArrowUp', 'ArrowDown'].includes(e.key)) { e.preventDefault(); const actual = handle.closest('.pane').clientHeight; setCardHeight(kind, actual + (e.key === 'ArrowUp' ? -24 : 24), true); }
+    } });
   handle.onpointerdown = e => {
     if (e.button !== 0) return;
     e.preventDefault(); e.stopPropagation(); handle.setPointerCapture(e.pointerId);
-    const pane = handle.closest('.pane');
-    // The row is centred while it fits, so the right edge moves by half of the width change.
-    const move = ev => { const gain = paneRow.offsetWidth < paneStage.clientWidth - 48 ? .5 : 1; setCardWidth(kind, cardWidths[kind] + (ev.clientX - pane.getBoundingClientRect().right) * gain); };
-    const end = ev => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', end); handle.removeEventListener('pointercancel', end); if (handle.hasPointerCapture(ev.pointerId)) handle.releasePointerCapture(ev.pointerId); saveCardWidths(); };
+    const pane = handle.closest('.pane'), initialWidth = cardWidths[kind], initialHeight = pane.clientHeight;
+    const centered = paneRow.offsetWidth < paneStage.clientWidth - 48;
+    const move = ev => {
+      if (horizontal || corner) setCardWidth(kind, initialWidth + (ev.clientX - e.clientX) * (centered ? 2 : 1));
+      if (!horizontal) setCardHeight(kind, initialHeight + ev.clientY - e.clientY);
+    };
+    const end = ev => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', end); handle.removeEventListener('pointercancel', end); if (handle.hasPointerCapture(ev.pointerId)) handle.releasePointerCapture(ev.pointerId); saveCardWidths(); saveCardHeights(); };
     handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
   };
   return handle;
+}
+const paneWidthHandle = kind => paneSizeHandle(kind, 'width');
+const paneSizeHandles = kind => [paneWidthHandle(kind), paneSizeHandle(kind, 'height'), paneSizeHandle(kind, 'corner')];
+function cardCrumb(listSel, task = null) {
+  return h('nav', { class: 'card-crumb', 'aria-label': 'パンくず' }, listSel,
+    task ? [h('span', { class: 'muted', text: ' / ' }), h('button', { class: 'link-btn', text: task.title, onclick: () => openCard(task.id) })] : null);
 }
 function paneButtons(p) {
   return [h('button', { class: 'pane-close', type: 'button', title: 'カードを閉じる（Esc）', 'aria-label': '閉じる', onclick: () => closeCards() }, h('span', { html: picon('close', 14) }))];
@@ -1774,7 +1816,11 @@ function applyPaneLayoutTo(el) {
       const section = sections.get(id);
       if (section) {
         section.dataset.col = col;
-        if (section !== cursor) c.insertBefore(section, cursor);
+        if (section !== cursor) {
+          const active = document.activeElement, focused = section.contains(active);
+          if (c.moveBefore && section.isConnected) c.moveBefore(section, cursor); else c.insertBefore(section, cursor);
+          if (focused && document.activeElement !== active) active.focus({ preventScroll: true });
+        }
         cursor = section.nextElementSibling;
       }
     }
@@ -1782,6 +1828,8 @@ function applyPaneLayoutTo(el) {
   for (const [id, section] of sections) {
     section.classList.toggle('collapsed', layout.collapsed.includes(id));
     section.style.setProperty('--section-height', `${layout.heights[id]}px`);
+    const defaultHeight = el.dataset.kind === 'task' ? taskCardLayoutDefaults().heights[id] ?? PANE_HEIGHTS[id] : PANE_HEIGHTS[id];
+    section.dataset.autoHeight = String(layout.heights[id] === defaultHeight);
     const handle = $('.section-resize', section);
     if (handle) handle.setAttribute('aria-valuenow', layout.heights[id]);
   }
@@ -1821,7 +1869,7 @@ function sectionEl(id, nodes, { kind = 'session', extra = null, title = secTitle
         e.preventDefault(); const list = paneLayout[col], i = list.indexOf(id), j = i + (e.key === 'ArrowUp' ? -1 : 1);
         if (j >= 0 && j < list.length) moveSection(id, col, e.key === 'ArrowUp' ? list[j] : list[j + 1], kind);
       }
-      requestAnimationFrame(() => grip.focus());
+      grip.focus({ preventScroll: true });
     } });
   grip.onpointerdown = e => {
     if (e.button !== 0) return;
@@ -1859,11 +1907,13 @@ function sectionEl(id, nodes, { kind = 'session', extra = null, title = secTitle
   resize.onpointerdown = e => {
     if (e.button !== 0) return;
     e.preventDefault(); e.stopPropagation(); resize.setPointerCapture(e.pointerId);
-    const initial = paneLayout.heights[id];
+    const initial = $('.psec-b', resize.closest('.psec')).getBoundingClientRect().height;
     const move = ev => setSectionHeight(id, initial + ev.clientY - e.clientY, kind);
     const end = ev => { resize.removeEventListener('pointermove', move); resize.removeEventListener('pointerup', end); resize.removeEventListener('pointercancel', end); if (resize.hasPointerCapture(ev.pointerId)) resize.releasePointerCapture(ev.pointerId); saveCardLayouts(); };
     resize.addEventListener('pointermove', move); resize.addEventListener('pointerup', end); resize.addEventListener('pointercancel', end);
   };
+  if (['breadcrumb', 'title', 'status'].includes(id)) return h('section', { class: 'psec psec-identity', 'data-sec': id },
+    h('div', { class: 'identity-row' }, grip, h('div', { class: 'psec-b' }, ...nodes)), resize);
   return h('section', { class: 'psec', 'data-sec': id },
     h('div', { class: 'psec-h' }, grip, h('h3', {}, title, extra), hint ? helpTip(hint) : null, h('span', { class: 'sp' }),
       h('button', { class: 'pchev', type: 'button', 'aria-label': `${title}を開閉`, html: picon('chev', 14), onclick: () => toggleSection(id, kind) })),
@@ -2028,11 +2078,11 @@ function renderPane(p, d) {
     onChange: (v) => act('canban_move_card', { cardId: s.id, toList: v, position: 'top' }, { okMsg: 'カードを移動しました' }) });
   listSel.dataset.paneKey = 'm';
   const dirBtn = h('button', { class: 'side-btn', 'data-pane-key': 'g', onclick: (e) => directoryPicker(e.currentTarget, { id: s.id, cwd: s.cwd, directory: card.directory }, { explicit: card.directoryId, after: () => openCard(s.id) }) },
-    `📂 ${T.category}: ${card.directory ? card.directory.name : 'カテゴリ無し'}${card.directoryId ? '' : card.directory ? '（自動）' : ''}`, keycap('g'));
+    h('span', { html: picon('folder', 14) }), `${card.directory ? card.directory.name : 'カテゴリ無し'}${card.directoryId ? '' : card.directory ? '（自動）' : ''}`, keycap('g'));
 
   const labelWrap = h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '4px' } });
   const paintLabels = () => labelWrap.replaceChildren(...(card.labels.length ? card.labels.map((id) => labelsById.get(id)).filter(Boolean).map((l) =>
-    h('span', { class: 'chip', style: { background: colorVar(l.color), height: '24px', lineHeight: '24px', padding: '0 10px', color: '#172b4d', fontWeight: 600 }, text: l.name })) : [h('span', { class: 'muted', text: 'なし' })]));
+    h('span', { class: 'chip', style: { background: colorVar(l.color), height: '24px', lineHeight: '24px', padding: '0 10px', color: 'var(--list-fg)', fontWeight: 600 }, text: l.name })) : [h('span', { class: 'muted', text: 'なし' })]));
   paintLabels();
 
   const note = h('textarea', { class: 'note', placeholder: 'メモを追加（このカンバンにだけ保存されます）', 'aria-label': 'メモ' });
@@ -2101,13 +2151,18 @@ function renderPane(p, d) {
       h('span', { class: 'ellipsis grow', text: c.title }), h('span', { class: 'muted', text: relTime(c.updatedAt) }))),
   ].filter(Boolean);
 
-  // The parts of the card. Which column each belongs to is fixed (PANE_SECS); the order inside a column is the user's (paneLayout).
+  // PANE_SECS supplies defaults; paneLayout controls the user's columns, order and sizes.
   const secs = {};
+  secs.breadcrumb = { nodes: [cardCrumb(listSel, d.task)] };
+  secs.title = { nodes: [h('h2', { text: s.title, title: s.title })] };
+  secs.status = { nodes: [h('div', { class: 'sub row' }, h('span', { class: `badge ${s.agent}`, text: s.agent === 'codex' ? 'Codex' : 'Claude' }),
+    s.host ? h('span', { class: 'host-chip', text: s.host.label }) : null,
+    h('span', { class: 'row pane-status' }, h('span', { class: `sdot s-${s.status || 'idle'}` }), STATUS_LABELS[s.status || 'idle']), h('span', { class: 'pill viewer-pill viewers', hidden: true }))] };
   secs.conv = { title: d.feed ? '会話' : '直近のやりとり', nodes: d.feed ? [renderFeed(d, p)] : msgs,
     extra: d.feed ? h('span', { class: `live-badge${live.on ? ' on' : ''}`, title: live.on ? 'セッションの変化をそのまま表示します' : '', text: live.on ? 'ライブ' : '' }) : null };
   if (d.feed) secs.progress = { nodes: [renderSignals(s.signals, d.git)] };
   secs.send = { nodes: [renderDispatch(d)], extra: d.dispatch.settings.enabled ? keycap('i') : null };
-  secs.labels = { nodes: [labelWrap] };
+  secs.labels = { nodes: [labelWrap], extra: h('button', { class: 'link-btn', 'data-pane-key': 'l', text: '編集', onclick: e => labelPicker(e.currentTarget, s.id, card, paintLabels) }) };
   secs.memo = { nodes: [note] };
   secs.detail = { nodes: [h('dl', { class: 'kv' },
     ...kv('AI App', s.agent === 'codex' ? 'Codex' : 'Claude Code'),
@@ -2130,7 +2185,7 @@ function renderPane(p, d) {
   secs.first = { nodes: [h('div', { class: 'msg user', text: s.preview || '-' })] };
   secs.resume = { nodes: [resumeBox] };
   secs.task = { nodes: [taskSel] };
-  secs.add = { nodes: [h('button', { class: 'side-btn', 'data-pane-key': 'l', onclick: (e) => labelPicker(e.currentTarget, s.id, card, paintLabels) }, '🏷 ラベル', keycap('l')), dirBtn] };
+  secs.add = { title: T.category, nodes: [dirBtn] };
   secs.prio = { nodes: [prio, due] };
   secs.other = { nodes: [
     s.prUrl ? h('button', { class: 'side-btn', text: '↗ PR を開く', onclick: () => bridge.openLink(s.prUrl).catch(() => copyText(s.prUrl, 'PR URL')) }) : null,
@@ -2150,15 +2205,9 @@ function renderPane(p, d) {
   p.status = s.status || 'idle';
   p.activity = activityText(s.activity, p.status, s.signals);
   if (!d.feed) p.lastText = s.preview || '';
-  const top = h('div', { class: 'ph-top' }, h('h2', { text: s.title, title: s.title }), h('span', { class: 'ph-btns' }));
   el.setAttribute('aria-label', `セッション詳細: ${s.title}`);
-  el.replaceChildren(
-    h('div', { class: 'pane-h' }, top,
-      h('div', { class: 'sub row' }, h('span', { class: `badge ${s.agent}`, text: s.agent === 'codex' ? 'Codex' : 'Claude' }),
-        s.host ? h('span', { class: 'host-chip', text: `⌂ ${s.host.label}` }) : null,
-        h('span', { class: 'row pane-status', style: { gap: '0' } }, h('span', { class: `sdot s-${p.status}` }), STATUS_LABELS[p.status]),
-        'リスト:', listSel, keycap('m'), h('span', { class: 'pill viewer-pill viewers', hidden: true }))),
-    h('div', { class: 'pane-b' }, cols.main, columnSplit('session'), cols.side), paneWidthHandle('session'));
+  el.replaceChildren(h('span', { class: 'ph-btns card-actions' }),
+    h('div', { class: 'pane-b' }, cols.main, columnSplit('session'), cols.side), ...paneSizeHandles('session'));
   applyPaneLayoutTo(el);
   cols.main.scrollTop = scroll[0];
   cols.side.scrollTop = scroll[1];
@@ -2248,16 +2297,14 @@ function renderDispatch(d) {
     D.paused ? h('div', { class: 'paused-bar' }, h('span', { class: 'grow', text: `⏸ キュー一時停止: ${D.paused.reason}` }),
       h('button', { class: 'link-btn', text: '再開', onclick: () => act('canban_resume_queue', { cardId: s.id }, { okMsg: 'キューを再開しました' }).then(() => openCard(s.id)) })) : null,
     h('div', { class: 'send-box' },
-      h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap', marginBottom: '6px' } }, permChip),
       composer.root,
       ack ? h('label', { class: 'send-note row', style: { gap: '6px' } }, ack, 'このセッションはサンドボックス／確認なしで動いています。そのまま実行されることを確認しました') : null,
       busy ? h('div', { class: 'muted', style: { marginTop: '6px' }, text: s.codexFollowUps
         ? `Codex アプリのキューにフォローアップが ${s.codexFollowUps} 件あります。二重に送らないよう、アプリ側で送るか消すまで Canban からは送りません。`
         : `セッションが${s.status === 'running' ? '実行中' : '入力待ち'}のため、今すぐは送れません。入力を保持します。状態を確認してから再操作してください。` }) : null,
       h('div', { class: 'send-actions' },
-        ...sendButtons,
-        helpTip('1 ターンずつ公式 CLI で実行します')),
-      appNote),
+        permChip, ...sendButtons,
+        helpTip('1 ターンずつ公式 CLI で実行します'), appNote)),
     ...D.active.map((r) => requestRow(s, r)),
     D.queue.length ? h('div', { class: 'field-label', text: `キュー（${D.queue.length}）` }) : null,
     ...D.queue.map((r, i) => requestRow(s, r, { index: i, queue: D.queue })),
@@ -2338,8 +2385,8 @@ const TOOL_ICONS = { ok: '✓', error: '✗' };
 const fmtClock = (at) => (at ? new Date(at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '');
 
 function feedItem(it, f) {
-  if (it.k === 'user') return h('div', { class: 'fi fi-user', title: fmtDate(Date.parse(it.at)), text: it.text });
-  if (it.k === 'assistant') return h('div', { class: 'fi fi-asst' }, h('span', { class: 'raw', text: it.text }), h('div', { class: 'md', html: mdHtml(it.text) }));
+  if (it.k === 'user') return h('div', { class: 'fi fi-user', title: fmtDate(Date.parse(it.at)) }, h('div', { class: 'fi-who', text: 'あなた' }), h('div', { text: it.text }));
+  if (it.k === 'assistant') return h('div', { class: 'fi fi-asst' }, h('div', { class: 'fi-who', text: f.pane.d?.session?.agent === 'claude' ? 'Claude' : 'Codex' }), h('span', { class: 'raw', text: it.text }), h('div', { class: 'md', html: mdHtml(it.text) }));
   if (it.k === 'commentary') return h('div', { class: 'fi fi-note', text: it.text });
   if (it.k === 'thinking') {
     if (!it.text) return null;
@@ -3211,15 +3258,17 @@ function taskLinkButton(taskId) {
 }
 function taskRelatedNodes(card) {
   const cardId = card.id, { total } = taskOverlayIds(cardId, card.links);
-  const rows = card.links.map((l) => h('div', { class: 'sub-row', 'data-session-id': l.id },
+  const rows = card.links.map((l) => h('div', { class: 'sub-row task-related-row', 'data-session-id': l.id },
     h('span', { class: `sdot s-${l.status}` }),
-    h('span', { class: `badge ${l.agent}`, text: l.agent === 'codex' ? 'Codex' : 'Claude' }),
-    l.host ? h('span', { class: 'host-chip', text: `⌂ ${l.host.label}` }) : null,
-    h('button', { class: 'link-btn ellipsis grow', text: l.title, title: '詳細を見る', onclick: () => revealPane(l.id) }),
-    h('span', { class: 'muted', text: `${STATUS_LABELS[l.status]}・${relTime(l.updatedAt)}` }),
-    h('button', { class: 'seg-btn', title: shortcutHelp(), text: '▶ 再開', onclick: (e) => resume(l.id, optsFromEvent(e)) }),
-    h('button', { class: 'icon-btn', 'aria-label': '紐付けを解除', title: '紐付けを解除', text: '✕',
-      onclick: () => act('canban_unlink_session', { taskId: cardId, sessionId: l.id }, { okMsg: '紐付けを解除しました' }).then(() => openCard(cardId)) })));
+    h('div', { class: 'task-related-copy grow' },
+      h('button', { class: 'link-btn', text: l.title, title: '詳細を見る', onclick: () => revealPane(l.id) }),
+      h('div', { class: 'task-related-meta' }, h('span', { class: `badge ${l.agent}`, text: l.agent === 'codex' ? 'Codex' : 'Claude' }),
+        l.host ? h('span', { class: 'host-chip', text: l.host.label }) : null,
+        h('span', { class: 'muted', text: `${STATUS_LABELS[l.status]}・${relTime(l.updatedAt)}` }))),
+    h('div', { class: 'task-related-actions' },
+      h('button', { class: 'seg-btn', title: shortcutHelp(), text: '再開', onclick: e => resume(l.id, optsFromEvent(e)) }),
+      h('button', { class: 'icon-btn', 'aria-label': '紐付けを解除', title: '紐付けを解除', html: picon('close', 12),
+        onclick: () => act('canban_unlink_session', { taskId: cardId, sessionId: l.id }, { okMsg: '紐付けを解除しました' }).then(() => openCard(cardId)) }))));
   const pending = card.pending.length ? [h('div', { class: 'msg' },
     card.pending.map((x) => `${x.expired ? '⚠ 見つかりません' : '⏳ 開始待ち'}: ${x.agent === 'codex' ? 'Codex' : 'Claude'}（${relTime(x.startedAt)}）`).join(' / '), ' ',
     h('button', { class: 'link-btn', text: '取り消す', onclick: () => act('canban_clear_pending', { taskId: cardId }).then(() => openCard(cardId)) }))] : [];
@@ -3255,7 +3304,8 @@ async function loadTask(p, found) {
   const { card, list } = found;
   p.taskCard = card;
   const b = state.board;
-  const title = h('input', { class: 'title-input', value: card.title, maxlength: 300, 'aria-label': 'タイトル' });
+  const title = h('textarea', { class: 'title-input', rows: 2, maxlength: 300, 'aria-label': 'タイトル' });
+  title.value = card.title; title.defaultValue = card.title;
   title.onchange = () => title.value.trim() && workspace.saveField(title, value => act('canban_update_task', { cardId, title: value }));
   const desc = h('textarea', { class: 'note', placeholder: '説明（新しいセッションへの依頼文にも使われます）', 'aria-label': '説明' });
   desc.value = card.description;
@@ -3319,6 +3369,9 @@ async function loadTask(p, found) {
   const labelState = { labels: [...card.labels] };
 
   const secs = {
+    breadcrumb: { nodes: [cardCrumb(listSel)] },
+    title: { nodes: [title] },
+    status: { nodes: [h('div', { class: 'sub row' }, taskQuickAdd.button(), h('span', { class: 'badge task-badge', text: T.taskCard }), h('span', { class: 'row pane-status' }, h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]))] },
     conv: { title: '説明', nodes: [desc], hint: '説明は Canban に保存します。新しいセッションの依頼文にも使います。' },
     memo: { title: 'メモ', nodes: [memo] },
     related: { title: taskRelatedTitle(card), extra: taskLinkButton(cardId), nodes: taskRelatedNodes(card), hint: 'ホームのセッションをこのカードへドラッグして紐付けることもできます。' },
@@ -3344,13 +3397,10 @@ async function loadTask(p, found) {
     if (!sc) continue;
     cols[PANE_SECS[id][0]].append(sectionEl(id, sc?.nodes || [h('span', { class: 'muted', text: 'なし' })], { kind: 'task', extra: sc?.extra, title: sc?.title ?? secTitle(id), hint: sc?.hint }));
   }
-  const top = h('div', { class: 'ph-top' }, title, h('span', { class: 'ph-btns' }));
   p.status = card.status;
   p.el.setAttribute('aria-label', `タスクカード詳細: ${card.title}`);
-  p.el.replaceChildren(h('div', { class: 'pane-h' }, top,
-    h('div', { class: 'sub row' }, taskQuickAdd.button(), h('span', { class: 'badge task-badge', text: T.taskCard }),
-      h('span', { class: 'row pane-status', style: { gap: '0' } }, h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]), 'リスト:', listSel, keycap('m'))),
-    h('div', { class: 'pane-b' }, cols.main, columnSplit('task'), cols.side), paneWidthHandle('task'));
+  p.el.replaceChildren(h('span', { class: 'ph-btns card-actions' }),
+    h('div', { class: 'pane-b' }, cols.main, columnSplit('task'), cols.side), ...paneSizeHandles('task'));
   applyPaneLayoutTo(p.el); paintPaneButtons(p); applyPaneAttrs(p);
   p.rendered = true;
   workspace.trackDrafts(p.el);
@@ -4077,6 +4127,7 @@ const SHORTCUTS = [
     ['j / k', 'ボードの次 / 前のカードを開く'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'],
     ['i', '指示の入力欄へ'], ['o', '再開'], ['l g m h', 'ラベル / ' + T.category + ' / リスト移動 / 隠す'], ['c', 'タスクを追加'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
   ]],
+  ['カード内の配置・サイズ', [['つまみ + ← →', '部品を左 / 右列へ移動'], ['つまみ + ↑ ↓', '部品を並べ替え'], ['境界 + 矢印', '列幅・部品の高さ・カードの幅と高さを調整'], ['境界 + Home', 'カードサイズを既定値へ戻す']]],
   ['ピッカー', [['文字を入力', '絞り込み'], ['↑ ↓ / Enter', '選ぶ'], ['Space', '複数選択の切り替え（入力が空のとき）'], ['Esc', '閉じる']]],
 ];
 function showShortcuts() {
@@ -4097,6 +4148,12 @@ function commandPalette() {
     { label: 'すべて既読にする', run: () => act('canban_mark_all_seen', {}, { okMsg: 'すべて既読にしました' }) },
     { label: state.sideOpen ? 'サイドバーを閉じる' : 'サイドバーを開く', run: () => toggleSidebar(), hint: 'b' },
     { label: 'タスクを追加', run: () => taskQuickAdd.open(), hint: 'c' },
+    ...(!paneLayer.hidden && focusedPane()?.kind !== 'view' ? [
+      { label: 'カード: レイアウトとサイズを初期化', run: resetCardLayout },
+      ...['breadcrumb', 'title', 'conv', 'send'].map(id => ({ label: `カード: ${secTitle(id)}の移動`, run: () => focusedPane()?.el.querySelector(`.psec[data-sec="${id}"] .grip`)?.focus() })),
+      { label: 'カード: 列幅を変更', run: () => focusedPane()?.el.querySelector('.column-split')?.focus() },
+      { label: 'カード: サイズを変更', run: () => focusedPane()?.el.querySelector('.pane-corner')?.focus() },
+    ] : []),
     { label: '絞り込みをすべて解除', run: () => { $('#q').value = ''; setScope({ directory: '', project: '', q: '', status: '', host: '' }); } },
     ...Object.entries(LANE_MODES).map(([v, t]) => ({ label: `スイムレーン: ${t}`, run: () => { f.swimlane = v; state.soloLane = null; saveFilters(); render(); } })),
     ...Object.entries(LANE_HEIGHTS).map(([v, [t]]) => ({ label: `レーンの高さ: ${t}`, run: () => { f.laneHeight = v; saveFilters(); render(); } })),
@@ -4181,7 +4238,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => ap
 function sharedUiSnapshot() {
   return {
     filters: { ...state.filters }, themePref: state.themePref, layout: state.layout, cardFit: state.cardFit, sidebar: state.sideOpen, workspacePage: workspace.page, labelsExpanded: state.labelsExpanded,
-    paneGlobal: { ...paneGlobal }, cardLayouts: structuredClone(cardLayouts), cardWidths: { ...cardWidths }, collapsedLanes: [...collapsedLanes],
+    paneGlobal: { ...paneGlobal }, cardLayouts: structuredClone(cardLayouts), cardWidths: { ...cardWidths }, cardHeights: { ...cardHeights }, collapsedLanes: [...collapsedLanes],
   };
 }
 
@@ -4203,6 +4260,7 @@ function adoptSharedUi(record) {
     // In place: sections already on screen keep their reference to the layout of their kind.
     if (value.cardLayouts) { const next = normalizeCardLayouts(value.cardLayouts, PANE_LAYOUT_DEF, PANE_HEIGHTS); for (const kind of CARD_KINDS) Object.assign(cardLayouts[kind], next[kind]); }
     if (value.cardWidths) Object.assign(cardWidths, normalizeCardWidths(value.cardWidths));
+    if (value.cardHeights) Object.assign(cardHeights, normalizeCardHeights(value.cardHeights));
     workspace.navigate(workspacePage(value.workspacePage), { save: false, reload: false });
     if (Array.isArray(value.collapsedLanes)) {
       collapsedLanes.clear();
