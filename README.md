@@ -524,3 +524,7 @@ production に作られたマージ履歴は main に取り込み、次のリリ
 main と PR では検証と ZIP 作成までを実行します。production の更新では、同じコミットの Ubuntu/macOS × Node 22/24 のテストと ZIP 検証が成功した後、Chrome Web Store へアップロード・審査申請します。タグからの公開は行いません。軽微な修正を含め、変更ごとに `x.y.z` のバージョンを上げ、package・MCP manifest・Codex plugin・Chrome build の番号と CHANGELOG を揃えてください。ローカル main に取り込んだ変更は、Chrome に登録済みの固定フォルダーへ再ビルドしてから拡張を再読み込みします。ストアへのリリース時は公開済みより新しい番号を使用します。緊急修正も main に統合してから production へ取り込みます。
 
 認証設定、手動実行、申請の証拠は [CHROMEWEBSTORE.md](CHROMEWEBSTORE.md) を参照してください。審査申請の成功と実際の公開は別の状態です。
+
+## 個人用Slackからの取り込み
+
+ボードのSlackタイムラインから、メッセージ・返信をタスクにしたり、既存のタスク・セッションカードへ資料として追加できます。複数ワークスペースに対応し、紐づけた本文の観測した編集・削除は履歴に残します。接続には自分用の読み取り専用Slackアプリが必要です。[設定手順](docs/slack-setup.md)を参照してください。

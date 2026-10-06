@@ -4,6 +4,7 @@ const WORKSPACE_PAGES = [
   ['rules', '自動化', 'zap'], ['views', '保存ビュー', 'bookmark'],
   ['labels', 'ラベル', 'tags'], ['directories', 'カテゴリ', 'folder'],
   ['hosts', 'マシン', 'monitor'], ['settings', '設定', 'settings'],
+  ['slack', 'Slack接続', 'message'],
 ];
 function workspacePage(value, fallback = 'home') {
   return WORKSPACE_PAGES.some(([id]) => id === value) ? value : fallback;

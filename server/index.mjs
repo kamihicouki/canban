@@ -28,6 +28,7 @@ import { boardHtml } from './ui.mjs';
 import { taskContextSchema } from './task-context.mjs';
 import { uploadImage, promptImages, listSkills, withSkills, withImagePaths, remoteImages } from './prompt-input.mjs';
 import { resolveSession } from './dispatch.mjs';
+import { SlackService, slackTools } from './slack.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // The Codex plugin manifest is absent when installed another way (Claude Desktop extension, a bare copy).
@@ -50,6 +51,7 @@ function readManifest(...candidates) {
 }
 
 const store = new Store();
+const slack = new SlackService(store);
 // Realtime: watches nothing until a board calls canban_watch (see server/live.mjs).
 const live = process.env.CANBAN_LIVE === '0' ? null : new LiveHub({ dataDir: store.dir, codexHome: codexHome(), claudeProjects: path.join(claudeHome(), 'projects'), claudeDesktop: claudeDesktopSessionsDir(), extraRoots: extraWatchRoots(store) });
 const watch = live ? createWatch(live, { presence: new Presence(store.dir, { app: () => appLabel(client) }) }) : null;
@@ -88,6 +90,10 @@ const filterProps = {
 };
 
 const TOOLS = [
+  ...slackTools({ service: slack, store, appTool, validateCard: async cardId => {
+    if (cardId.startsWith('task:')) { const card = (await store.load()).cards[cardId]; if (card?.kind !== 'task') throw new Error('タスクカードが見つかりません'); return card.title; }
+    else return (await findSession(store, cardId)).session.title;
+  } }),
   appTool('canban_upload_prompt_image', 'プロンプトに画像を添付', {
     id: { type: 'string' }, offset: { type: 'integer' }, data: { type: 'string' },
     name: { type: 'string' }, mime: { type: 'string' }, size: { type: 'integer' },
@@ -450,11 +456,11 @@ const TOOLS = [
     name: 'canban_create_task',
     title: 'タスクカードを追加',
     description: 'セッションに紐づかないタスクカードを作る（Trello のカードと同じ）。list はリスト ID か名前（省略時は既定のリスト）。',
-    inputSchema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, list: { type: 'string' }, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } }, context: taskContextSchema, clientRequestId: { type: 'string', maxLength: 128 } }, required: ['title'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, list: { type: 'string' }, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } }, context: taskContextSchema, clientRequestId: { type: 'string', maxLength: 128 }, slackSource: { type: 'string', maxLength: 120 } }, required: ['title'], additionalProperties: false },
     _meta: appAndModel,
-    handler: async ({ title, description, list, directory, labels, context, clientRequestId }) => {
+    handler: async ({ title, description, list, directory, labels, context, clientRequestId, slackSource }) => {
       const l = list ? resolveList((await store.load()).lists, list) : null;
-      const res = await store.createTask({ title, description, listId: l?.id || list, directory, labels, context, clientRequestId });
+      const res = await store.createTask({ title, description, listId: l?.id || list, directory, labels, context, clientRequestId, slackSource });
       return { text: `タスクカード「${res.title}」を作成しました（${res.cardId}）`, structured: res };
     },
   },
@@ -724,12 +730,14 @@ rl.on('line', (line) => {
   pending.add(p);
 });
 rl.on('close', async () => {
+  slack.stop();
   await Promise.allSettled([...pending]);
   await shutdownLogins();
   // Exit only after stdout has flushed; large responses are written asynchronously to pipes.
   process.stdout.write('', () => process.exit(0));
 });
 for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, async () => {
+  slack.stop();
   await shutdownLogins();
   process.exit(0);
 });
@@ -762,6 +770,7 @@ const background = [];
 const leader = leaderFor(store.dir, {
   mode: bgMode,
   onChange(isLeader) {
+    if (!isLeader) slack.closeSockets();
     for (const t of background.splice(0)) clearTimeout(t); // clears intervals too
     if (!isLeader) return;
     log('background leader');
@@ -780,5 +789,6 @@ const leader = leaderFor(store.dir, {
 });
 perf.startLoopMonitor();
 await leader.start();
+await slack.start(leader);
 
 log(`started v${PKG.version}`);

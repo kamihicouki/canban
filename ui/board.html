@@ -647,6 +647,7 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
 /* @include card-overlay.css */
 /* @include card-interior.css */
 /* @include layouts.css */
+/* @include slack.css */
 </style>
 </head>
 <body>
@@ -1040,7 +1041,10 @@ function render() {
     for (const list of b.lists) frag.append(renderList(list));
     frag.append(renderAddList());
   }
-  boardEl.replaceChildren(frag);
+  if (state.filters.swimlane && slackUi.visible) { const lanes = h('div', { class: 'slack-lanes' }, frag); boardEl.replaceChildren(lanes); }
+  else boardEl.replaceChildren(frag);
+  boardEl.classList.toggle('with-slack', slackUi.visible);
+  const slackNode = slackUi.boardNode(); if (slackNode) boardEl.prepend(slackNode);
   renderSidebar(b);
   paintLayoutChrome();
   if (focused && focused !== document.body && boardEl.contains(focused)) focused.focus({ preventScroll: true });
@@ -1237,6 +1241,7 @@ function cardLabels(card) {
 }
 
 function planMeta(meta, card) {
+  if (card.slackRefs?.length) meta.append(h('span', { class: 'pill', text: `Slack ${card.slackRefs.length}`, title: 'Slackからの資料' }));
   if (card.priority) meta.append(h('span', { class: `pill prio-${card.priority}`, text: { high: '優先度 高', medium: '優先度 中', low: '優先度 低' }[card.priority] }));
   if (card.due) {
     const overdue = Date.parse(card.due) < Date.now() - 86400000;
@@ -1531,7 +1536,7 @@ const paneGlobal = (() => {
 })();
 const saveGlobal = () => store.set('paneGlobal', paneGlobal);
 const PANE_SECS = {
-  conv: ['main', '会話'], send: ['main', '指示を送る'],
+  conv: ['main', '会話'], send: ['main', '指示を送る'], slack: ['main', 'Slack資料'],
   breadcrumb: ['side', 'パンくず'], title: ['side', '見出し'], status: ['side', '状態'],
   add: ['side', 'カードに追加'], labels: ['side', 'ラベル'], prio: ['side', '優先度・期限'], related: ['side', '関連'],
   detail: ['side', '詳細'], pr: ['side', 'プルリクエスト'], resume: ['side', '再開'], progress: ['side', '進捗'],
@@ -2223,6 +2228,7 @@ function renderPane(p, d) {
     extra: d.feed ? h('span', { class: `live-badge${live.on ? ' on' : ''}`, title: live.on ? 'セッションの変化をそのまま表示します' : '', text: live.on ? 'ライブ' : '' }) : null };
   if (d.feed) secs.progress = { nodes: [renderSignals(s.signals, d.git)] };
   secs.send = { nodes: [renderDispatch(d)], extra: d.dispatch.settings.enabled ? keycap('i') : null };
+  if (card.slackRefs?.length) secs.slack = { nodes: [slackUi.sources(s.id, secs.send.nodes[0].querySelector('textarea'))] };
   secs.labels = { nodes: [labelWrap], extra: h('button', { class: 'link-btn', 'data-pane-key': 'l', text: '編集', onclick: e => labelPicker(e.currentTarget, s.id, card, paintLabels) }) };
   secs.memo = { nodes: [note] };
   secs.detail = { nodes: [h('dl', { class: 'kv' },
@@ -2940,7 +2946,7 @@ function toggleSidebar(open = !state.sideOpen) {
 // 見る opens a sheet on the overlay; 管理 opens the management panel next to the sidebar. Pressing the open one again closes it.
 // カテゴリ is managed from the ⚙ beside the category list, so it has no entry of its own here.
 const SIDE_LOOK = [['analytics', 'chart', '分析', 'a'], ['usage', 'gauge', 'Agent Usage', '']];
-const SIDE_MANAGE = [['rules', 'zap', T.automation], ['labels', 'tag', 'ラベル'], ['views', 'bookmark', '保存ビュー'], ['hosts', 'server', 'マシン'], ['settings', 'gear', '設定']];
+const SIDE_MANAGE = [['rules', 'zap', T.automation], ['labels', 'tag', 'ラベル'], ['views', 'bookmark', '保存ビュー'], ['hosts', 'server', 'マシン'], ['slack', 'message', 'Slack接続'], ['settings', 'gear', '設定']];
 // The axes a lane can follow, in the order the sidebar offers them; the rest sit behind ⋯.
 const LANE_AXES = [['', 'なし'], ['directory', T.category], ['agent', 'AI Apps'], ['host', 'マシン'], ['label', 'ラベル']];
 const LANE_MORE = [['project', 'プロジェクト'], ['section', 'Codex セクション'], ['account', 'アカウント']];
@@ -3045,6 +3051,7 @@ function filterSection(b, hit = () => true) {
   if (!laneHides('label') && b.labels.length) group('ラベル', [...b.labels.map((l) => ({ id: l.id, name: l.name, color: l.color })), { id: '__none', name: 'ラベルなし', color: null }].map((l) =>
     choice(l.name, f.label === l.id, () => setScope({ label: f.label === l.id ? '' : l.id }), h('span', { class: 'dot', style: { background: l.color ? colorVar(l.color) : 'var(--header-btn-hover)' } }))));
   const scope = (key, label) => h('label', { class: 'side-check' }, h('input', { type: 'checkbox', checked: !!f[key], onchange: (e) => setScope({ [key]: e.target.checked }) }), label);
+  if (!['rail','omni'].includes(state.layout)) nodes.push(h('label', { class: 'side-check' }, h('input', { type: 'checkbox', checked: slackUi.visible, onchange: e => slackUi.toggle(e.target.checked) }), 'Slackタイムライン ', keycap('v')));
   nodes.push(sideHead('表示する対象'), scope('includeArchived', 'アーカイブ済みも表示'), scope('includeSubagents', 'サブエージェントも表示'), scope('includeHidden', 'ボードから隠したカードも表示'), scope('pinnedOnly', 'Codex でピン留めしたものだけ'));
   return h('section', { class: 'side-sec-filters' }, nodes);
 }
@@ -3449,6 +3456,7 @@ async function loadTask(p, found) {
     other: { nodes: [h('button', { class: 'side-btn', 'data-pane-key': 'h', onclick: async () => { await act('canban_update_card', { cardId, hidden: !card.hidden }); closeCards(); } }, card.hidden ? '👁 ボードに再表示' : '🙈 ボードから隠す', keycap('h')),
       h('button', { class: 'side-btn danger-text', text: '🗑 カードを削除', onclick: async () => { if (confirmInline(p.el, `この${T.taskCard}を削除します。紐付いたセッション自体は消えません。`)) { await act('canban_delete_task', { cardId }, { okMsg: '削除しました' }); closeCards(); } } })] },
   };
+  if (card.slackRefs?.length) secs.slack = { nodes: [slackUi.sources(cardId, prompt)] };
   const cols = { main: h('div', { class: 'pcol', 'data-col': 'main' }), side: h('div', { class: 'pcol', 'data-col': 'side' }) };
   for (const id of Object.keys(PANE_SECS)) {
     const sc = secs[id];
@@ -4258,6 +4266,7 @@ const SHORTCUTS = [
     ['p', `${T.category}・プロジェクトで絞り込み`], ['b', 'サイドバーの開閉'], ['[ / ]', '前 / 次のスイムレーンへ'],
     ['c', 'タスクを追加'], ['1〜9', '保存したビューに切り替え'], ['a', '分析を開く / 閉じる'], ['r', '再読み込み'], ['?', 'この一覧'],
   ]],
+  ['Slack', [['v', 'タイムラインの表示 / 非表示（ボード）'], ['c / l / t', 'メッセージ上: タスク作成 / カードへ追加 / 返信'], ['Alt+s', 'カード内: Slack資料の追加ボタンへ'], ['Esc', 'タイムライン内: 非表示']]],
   ['カードを選択中', [
     ['Enter', '詳細を開く'], ['l', 'ラベル'], ['g', `${T.category}`], ['m', 'リストへ移動'], ['h', '隠す / 再表示'],
     ['← →', '隣のリストへ移動'], ['↑ ↓ / Home End', 'リスト内で移動'], ['⌥ + 矢印', 'フォーカスだけ移動'],
@@ -4309,6 +4318,13 @@ function commandPalette() {
     { label: 'すべて既読にする', run: () => act('canban_mark_all_seen', {}, { okMsg: 'すべて既読にしました' }) },
     { label: state.sideOpen ? 'サイドバーを閉じる' : 'サイドバーを開く', run: () => toggleSidebar(), hint: 'b' },
     { label: 'タスクを追加', run: () => taskQuickAdd.open(), hint: 'c' },
+    { label: slackUi.visible ? 'Slackタイムラインを隠す' : 'Slackタイムラインを表示', run: () => slackUi.toggle(), hint: 'v' },
+    ...((slackUi.selected && slackUi.visible) ? [
+      { label: '選択したSlackメッセージをタスクにする', run: () => slackUi.create(slackUi.selected), hint: 'c' },
+      { label: '選択したSlackメッセージをカードに追加', run: () => slackUi.link(slackUi.el,slackUi.selected), hint: 'l' },
+      { label: '選択したSlackメッセージの返信を読む', run: () => { const node = [...slackUi.el.querySelectorAll('[data-slack-key]')].find(n => n.dataset.slackKey === slackUi.selected.key); if (node) slackUi.thread(node,slackUi.selected); }, hint: 't' },
+    ] : []),
+    { label: 'Slack資料の追加ボタンへ', run: () => focusedPane()?.el.querySelector('.slack-add-prompt')?.focus(), hint: 'Alt+s' },
     ...(!paneLayer.hidden && focusedPane()?.kind !== 'view' ? [
       ...[-1, 1].filter(step => adjacentPaneList(focusedPane(), step)).map(step => {
         const p = focusedPane(), target = adjacentPaneList(p, step);
@@ -4362,7 +4378,7 @@ document.addEventListener('keydown', (e) => {
     j: () => stepDisplayedCard(1), k: () => stepDisplayedCard(-1),
     '/': focusSearch, '?': showShortcuts, b: () => toggleSidebar(), '[': () => stepLane(-1), ']': () => stepLane(1),
     r: () => load({ refresh: true }).then(() => toast('最新の状態に更新しました')), a: toggleAnalytics, u: () => toggleView('usage'),
-    c: quickAdd, p: () => scopePicker($('#logo')),
+    c: quickAdd, v: () => slackUi.toggle(), p: () => scopePicker($('#logo')),
   }[k];
   if (run) { e.preventDefault(); return run(); }
   // 1–9: switch saved views
@@ -4383,6 +4399,7 @@ $('#board').addEventListener('wheel', (e) => {
 
 // ======================================================================
 // @include layouts.js
+// @include slack.js
 // @include workspace.js
 
 // Theme & lifecycle
@@ -4405,7 +4422,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => ap
 
 function sharedUiSnapshot() {
   return {
-    filters: { ...state.filters }, themePref: state.themePref, layout: state.layout, cardFit: state.cardFit, sidebar: state.sideOpen, workspacePage: workspace.page, labelsExpanded: state.labelsExpanded,
+    slackVisible: slackUi.visible, filters: { ...state.filters }, themePref: state.themePref, layout: state.layout, cardFit: state.cardFit, sidebar: state.sideOpen, workspacePage: workspace.page, labelsExpanded: state.labelsExpanded,
     paneGlobal: { ...paneGlobal }, cardLayouts: structuredClone(cardLayouts), cardWidths: { ...cardWidths }, cardBoard: structuredClone(cardBoardState), cardHeights: { ...cardHeights }, collapsedLanes: [...collapsedLanes],
   };
 }
@@ -4420,6 +4437,7 @@ function adoptSharedUi(record) {
     for (const key of SHARED_UI_KEYS) if (Object.hasOwn(value, key)) store.cache(key, value[key]);
     if (value.filters && typeof value.filters === 'object' && !Array.isArray(value.filters)) state.filters = { ...DEFAULT_FILTERS, ...value.filters };
     if (typeof value.sidebar === 'boolean') state.sideOpen = value.sidebar;
+    if (typeof value.slackVisible === 'boolean') { slackUi.visible = value.slackVisible; if (slackUi.visible) slackUi.refresh(); }
     if (typeof value.themePref === 'string') { state.themePref = value.themePref; applyTheme(); }
     if (typeof value.layout === 'string') { state.layout = layoutOf(value.layout); applyLayout(); }
     if (value.cardFit === 'auto' || value.cardFit === 'fixed') state.cardFit = value.cardFit;

@@ -62,3 +62,7 @@ macOSのDocuments保護により、Chromeの子プロセスはDocuments内のrep
 Main Testの更新はcommit済みmainを `git archive` でコミット別ディレクトリへ配布し、そのランチャーを登録する。`.git`、`.local`、未追跡資料は配布しない。旧コミットの実行ファイルは起動中プロセスのため保持する。拡張の登録先は引き続きrepoの `dist/chrome`。ビルド記録に実行ファイルの保存先も記録する。
 
 ストア版は既存の `com.kamihicouki.canban` を使い、Main Testとは別の実行ファイル・登録を持つ。通常版の `npm run install:chrome-native-host -- --extension-id <拡張ID>` も実行ファイルを配布し、以降の更新時は再実行する。Gitのない連携ソフトではプログラムに必要なファイルだけをコピーする。両ホストのデータは同じ `~/.canban/` を参照し、Main Testへの明示した保存先は維持する。追加の旧テストホストは有効なworktreeを参照する限り保持する。
+
+## 個人用Slackの認証情報
+
+0.24.0以降、個人用Slackの認証情報は同じCanban保存先の `slack/credentials.json` に保管する（0600、親ディレクトリ0700）。通常Chromeは `~/.canban/slack/credentials.json`、明示した `CANBAN_DATA_DIR` がある場合はその配下を使う。SQLiteには認証情報を入れない。ビルド・Git管理ファイル・共有UI状態に含めない。開発・テストは `.local/` またはテスト用の隔離ディレクトリに保存し、通常利用の認証情報をコピーしない。設定は [Slack接続手順](slack-setup.md)を参照する。
