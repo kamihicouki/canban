@@ -16,13 +16,15 @@ const PLACES = {
   home: ['board', 'ボード'], analytics: ['chart', '分析'], usage: ['gauge', 'Agent Usage'], rules: ['zap', T.automation],
   labels: ['tag', 'ラベル'], directories: ['folder', T.category], views: ['bookmark', '保存ビュー'], hosts: ['server', 'マシン'], settings: ['gear', '設定'],
   look: ['layout', 'テーマ'],
+  slack: ['message', 'Slack接続'], slackTimeline: ['message', 'Slack'],
 };
-const MANAGE_PLACES = ['rules', 'labels', 'directories', 'views', 'hosts', 'settings'];
+const MANAGE_PLACES = ['rules', 'labels', 'directories', 'views', 'hosts', 'slack', 'settings'];
 const layoutParts = {};
 
 function currentPlace() { return workspace.current(); }
 function goPlace(page, anchor) {
   if (page === 'look') return lookMenu(anchor);
+  if (page === 'slackTimeline') return slackUi.toggle();
   if (VIEW_SHEETS[page]) return toggleView(page);
   if (page === 'home') { closeCards(); return workspace.navigate('home'); }
   workspace.toggle(page);
@@ -35,11 +37,11 @@ function buildLayouts() {
   // B: the rail lists every place; the column next to it shows views and categories, or the management page.
   layoutParts.rail = h('nav', { class: 'layout-rail', 'aria-label': '場所' },
     h('span', { class: 'rail-logo', html: LOGO_SVG }),
-    ...['home', 'analytics', 'usage'].map((p) => placeBtn(p, 'rail-item', { size: 21 })), h('span', { class: 'rail-sep' }),
+    ...['home', 'analytics', 'usage', 'slackTimeline'].map((p) => placeBtn(p, 'rail-item', { size: 21 })), h('span', { class: 'rail-sep' }),
     ...MANAGE_PLACES.map((p) => placeBtn(p, 'rail-item', { size: 21 })), h('span', { class: 'rail-sep' }), placeBtn('look', 'rail-item', { size: 21 }));
   // C: the dock, floating over the bottom of the board: the only navigation of a layout without a sidebar.
   layoutParts.dock = h('nav', { class: 'layout-dock', 'aria-label': '場所' },
-    ...['home', 'analytics', 'usage'].map((p) => placeBtn(p, 'dock-item', { size: 22 })), h('span', { class: 'dock-sep' }),
+    ...['home', 'analytics', 'usage', 'slackTimeline'].map((p) => placeBtn(p, 'dock-item', { size: 22 })), h('span', { class: 'dock-sep' }),
     ...MANAGE_PLACES.map((p) => placeBtn(p, 'dock-item', { size: 22 })), h('span', { class: 'dock-sep' }), placeBtn('look', 'dock-item', { size: 22 }));
   // C: without a sidebar, the lane axis and the filters open from the app bar.
   layoutParts.filterBtn = h('button', { class: 'hbtn omni-filter', type: 'button', 'aria-haspopup': 'dialog', onclick: (e) => {
@@ -77,6 +79,7 @@ function setLayout(id) {
 // Called after every board render and page change.
 function paintLayoutChrome() {
   if (!layoutParts.rail) return;
+  for (const button of $$('[data-place=slackTimeline]')) button.setAttribute('aria-pressed', String(slackUi.visible));
   const here = currentPlace();
   for (const b of $$('[data-place]')) b.setAttribute('aria-current', String(b.dataset.place === here));
   const b = state.board;

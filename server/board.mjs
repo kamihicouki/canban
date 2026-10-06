@@ -404,6 +404,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       order: effectiveOrder(s, card),
       labels: card?.labels || [],
       note: card?.note || '',
+      slackRefs: card?.slackRefs || [],
       priority: card?.priority || null,
       due: card?.due || null,
       placed: !!card?.listId,
@@ -447,6 +448,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       kind: 'task',
       title: t.title,
       description: t.description || '',
+      slackRefs: t.slackRefs || [],
       directory: dirView(dir),
       context: t.context || {},
       directoryId: t.directoryId || null,
@@ -635,6 +637,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   return {
     session: { ...rest, actions: sessionActions(s), host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: accountLabel(s.account, labels) },
     card: {
+      slackRefs: card.slackRefs || [],
       listId, labels: card.labels || [], note: card.note || '', priority: card.priority || null, due: card.due || null, archived: !!s.archived,
       directory: dirView(resolveDirectory(state, card, s.cwd, s)), directoryId: card.directoryId || null,
     },
