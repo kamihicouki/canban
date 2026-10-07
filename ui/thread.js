@@ -190,7 +190,7 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
   const main = h('div', { class: 'th-main' },
     h('div', { class: 'th-conv', 'data-sec': 'conv' }, ...secs.conv.nodes),
     h('div', { class: 'th-dock', 'data-sec': 'send' }, ...secs.send.nodes));
-  el.replaceChildren(head, threadStrip(p, d), title, h('div', { class: 'th-meta' }, ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('session'));
+  el.replaceChildren(...[head, threadStrip(p, d), title].filter(Boolean), h('div', { class: 'th-meta' }, ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('session'));
   paintThreadStat(p, git);
   paintThreadSide(p);
 }
