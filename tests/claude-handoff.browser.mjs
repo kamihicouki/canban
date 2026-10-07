@@ -19,7 +19,9 @@ const writable = dir => {
 writable(fx.claudeHome);
 const cwd = path.join(fx.root, 'unchanged-worktree'); fs.mkdirSync(cwd);
 const second = path.join(fx.root, 'second-account'); fs.mkdirSync(second);
+const duplicate = path.join(fx.root, 'second-copy'); fs.mkdirSync(duplicate);
 for (const [dir, account] of [[fx.claudeHome, 'first'], [second, 'second']]) fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: account, emailAddress: `${account}@example.test` } }));
+fs.copyFileSync(path.join(second, '.claude.json'), path.join(duplicate, '.claude.json'));
 const transcript = path.join(fx.claudeHome, 'projects', '-r-web', 'c2.jsonl');
 fs.writeFileSync(transcript, [
   { type: 'user', sessionId: 'c2', cwd, gitBranch: 'codex/unchanged', permissionMode: 'acceptEdits', timestamp: '2026-09-01T00:00:00Z', message: { content: 'Continue the same work' } },
@@ -31,7 +33,7 @@ fs.mkdirSync(path.join(root, '.local'), { recursive: true });
 const dataDir = fs.mkdtempSync(path.join(root, '.local/claude-handoff-data-'));
 const output = path.join(root, '.local/claude-handoff-screenshots'); fs.mkdirSync(output, { recursive: true });
 const agentLog = path.join(dataDir, 'fake-agent.jsonl');
-await new Store(dataDir).updateAccountSettings({ claudeHomes: [second], discover: false });
+await new Store(dataDir).updateAccountSettings({ claudeHomes: [second, duplicate], discover: false });
 const host = spawn(process.execPath, ['tests/dev-host.mjs', '4599'], { cwd: root, env: { ...process.env, CANBAN_DATA_DIR: dataDir, CANBAN_CODEX_HOME: fx.codexHome, CANBAN_CLAUDE_HOME: fx.claudeHome, CANBAN_CLAUDE_DESKTOP_DIR: fx.desktopDir, CANBAN_CLAUDE_BIN: path.join(root, 'tests/fake-claude.sh'), CANBAN_LAUNCH_DRYRUN: '1', CANBAN_SEARCH_INDEX: '0', CANBAN_GH: path.join(root, 'tests/fake-gh.sh'), CANBAN_GLAB: path.join(root, 'tests/fake-glab.sh'), FAKE_GH_DATA: '/dev/null', FAKE_AGENT_LOG: agentLog } });
 let hostLog = '', browser;
 host.stdout.on('data', b => { hostLog += b; }); host.stderr.on('data', b => { hostLog += b; });
@@ -54,12 +56,17 @@ try {
   const prompt = page.getByRole('textbox', { name: '送るプロンプト', exact: true });
   await prompt.fill('Keep this draft while selecting the account');
   await picker.click();
-  await page.getByRole('textbox', { name: /検索|絞り込み/ }).last().fill('second');
+  assert.equal(await page.getByText('second@example.test', { exact: true }).count(), 2);
+  await page.getByRole('textbox', { name: /検索|絞り込み/ }).last().fill('Claude Code 追加設定 second');
+  assert.equal(await page.locator('.picker-row').count(), 2);
+  await page.getByRole('textbox', { name: /検索|絞り込み/ }).last().fill('Claude Code 追加設定 second-account');
+  assert.match(await page.locator('.picker-row').innerText(), /Claude Code CLI · 追加設定 second-account/);
   const saved = page.waitForResponse(r => r.url().endsWith('/rpc') && r.request().postDataJSON()?.name === 'canban_set_claude_execution');
-  await page.getByText('second@example.test (second-account)', { exact: true }).click();
+  await page.getByText('second@example.test', { exact: true }).click();
   assert.equal((await (await saved).json()).result.isError, undefined);
   await page.waitForFunction(() => !document.querySelector('.claude-account-picker').disabled);
   assert.equal(await prompt.inputValue(), 'Keep this draft while selecting the account');
+  assert.match(await picker.innerText(), /Claude Code CLI · 追加設定 second-account/);
   assert.equal(await page.locator('[data-resume-desktop]').isDisabled(), true);
   assert.match(await page.locator('.claude-execution-note').innerText(), /second@example.test/);
 
@@ -111,6 +118,10 @@ try {
     assert.equal(await picker.isVisible(), true);
     await page.locator('.resume-box').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(output, `${layout}-${theme}.png`) });
+    await picker.click();
+    assert.equal(await page.getByText('second@example.test', { exact: true }).count(), 3);
+    await page.screenshot({ path: path.join(output, `${layout}-${theme}-picker.png`) });
+    await page.keyboard.press('Escape');
   }
   await page.evaluate(() => { __test.setLayout('trello'); __test.setThemePref('light'); });
   const sent = page.waitForResponse(r => r.url().endsWith('/rpc') && r.request().postDataJSON()?.name === 'canban_dispatch');
@@ -121,6 +132,6 @@ try {
   assert.equal(calls.filter(c => c.name === 'canban_dispatch').at(-1).arguments.claudeHome, undefined);
   assert.deepEqual(fs.readFileSync(transcript), original);
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: true, screenshots: 10, viewport: '1280x800', layouts: 5, themes: 2, accountSelection: true, selectionPersisted: true, terminalResume: true, headlessResume: true, dryRun: true, keyboard: true, palette: true, draftPreserved: true, desktopSwitchRejected: true, freshTranscriptRejected: true, browserErrors: errors }));
+  console.log(JSON.stringify({ passed: true, screenshots: 20, viewport: '1280x800', layouts: 5, themes: 2, accountSelection: true, duplicateProfiles: true, selectionPersisted: true, terminalResume: true, headlessResume: true, dryRun: true, keyboard: true, palette: true, draftPreserved: true, desktopSwitchRejected: true, freshTranscriptRejected: true, browserErrors: errors }));
 } catch (error) { console.error(error); console.error(hostLog.slice(-3000)); process.exitCode = 1; }
 finally { await browser?.close(); host.kill('SIGTERM'); fx.cleanup(); fs.rmSync(dataDir, { recursive: true, force: true }); }

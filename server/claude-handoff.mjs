@@ -2,29 +2,40 @@
 // transcript files are copied, and the worktree/session identity stays intact.
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { refreshAccounts, accountLabel } from './accounts.mjs';
 import { resumeCommand } from './agents.mjs';
 import { CLAUDE_AUTH_OVERRIDES } from './claude-auth-env.mjs';
 import { desktopProfilePlan, desktopExecutionLink } from './claude-desktop-profile.mjs';
+import { assertClaudeAccount } from './claude-auth-status.mjs';
 
 const localClaude = s => s?.agent === 'claude' && s.host?.local !== false;
+const nativeConfig = home => home.default && path.resolve(home.dir) === path.join(os.homedir(), '.claude') && !process.env.CLAUDE_CONFIG_DIR;
 
 export async function claudeResumeAccounts(session, labels = {}) {
   if (!localClaude(session) || !session.sourcePath || !path.isAbsolute(session.sourcePath)) return [];
   const registry = await refreshAccounts();
-  return Promise.all(registry.homes.claude.filter(home => home.account).map(async home => ({
-    id: home.id,
-    account: home.account,
-    label: `${accountLabel(home.account, labels)} (${home.id})`,
-    command: resumeCommand({ ...session, homeDir: home.dir, resumePath: session.sourcePath }),
-    desktop: await claudeDesktopChoice(session, home.account),
-  })));
+  return Promise.all(registry.homes.claude.filter(home => home.account).map(async home => {
+    const desktop = await claudeDesktopChoice(session, home.account);
+    const marker = await fs.readFile(path.join(home.dir, '.canban-account-profile'), 'utf8').catch(() => null);
+    const homeLabel = /^[0-9a-f-]{36}$/i.test(home.id) ? home.id.slice(0, 8) : home.id;
+    const profile = home.default ? '標準' : marker?.trim() === home.id ? `Canban追加 ${homeLabel}` : `${home.source === 'discovered' ? '自動検出' : '追加設定'} ${homeLabel}`;
+    const sameAccount = home.account === session.account;
+    const description = `Claude Code CLI · ${profile}${desktop.profile ? ` · Desktop: ${desktop.profile}` : ''}${sameAccount ? ' · 元と同じアカウント' : ''}`;
+    return {
+      id: home.id, account: home.account, agent: 'claude', profile,
+      label: accountLabel(home.account, labels), description, sameAccount,
+      keywords: `${home.id} ${home.account} ${home.dir} Claude Code CLI ${desktop.profile || ''}`,
+      command: resumeCommand({ ...session, homeDir: home.dir, claudeDefaultConfig: nativeConfig(home), resumePath: session.sourcePath }),
+      desktop,
+    };
+  }));
 }
 
 export async function claudeDesktopChoice(session, account) {
   const plan = await desktopProfilePlan(account);
   const link = plan.available ? await desktopExecutionLink(session, account) : null;
-  return { maintainable: plan.available, change: !!plan.change, link, reason: plan.available ? link ? null : 'Desktop からこの会話を取り込めません。同じ会話はターミナルで再開できます。通常起動のアカウントは維持します' : plan.reason };
+  return { maintainable: plan.available, profile: plan.profile || null, change: !!plan.change, link, reason: plan.available ? link ? null : 'Desktop からこの会話を取り込めません。同じ会話はターミナルで再開できます。通常起動のアカウントは維持します' : plan.reason };
 }
 
 export async function claudeExecutionSession(session, homeId, expectedAccount) {
@@ -50,7 +61,8 @@ export async function claudeExecutionSession(session, homeId, expectedAccount) {
       throw new Error('Claude の設定に API 認証の上書きがあります。CLI アカウントで実行する設定にしてから再開してください');
     }
   }
-  return { ...session, home: home.id, homeDir: home.dir, resumePath: session.sourcePath, executionAccount: home.account };
+  await assertClaudeAccount({ ...home, configDir: nativeConfig(home) ? null : home.dir }, registry.accounts.get(home.account));
+  return { ...session, home: home.id, homeDir: home.dir, claudeDefaultConfig: nativeConfig(home), resumePath: session.sourcePath, executionAccount: home.account };
 }
 
 // Undefined uses the saved choice. Null/empty means the source profile, so

@@ -512,6 +512,11 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .picker-badge { font-size: 10px; font-weight: 700; color: var(--list-muted); border: 1px solid var(--btn-subtle-hover); border-radius: 3px; padding: 0 4px; flex: none; }
 .picker-empty { padding: 6px 8px; }
 .picker-btn { text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.picker-text > .picker-label { max-width: none; }
+.picker-description { font-size: 11px; line-height: 1.4; color: var(--list-muted); white-space: normal; overflow-wrap: anywhere; }
+.picker-row[aria-selected="true"] .picker-label { font-weight: 700; }
+.picker-btn.rich { display: flex; align-items: center; gap: 6px; min-height: 46px; white-space: normal; }
 .popover.palette { left: 50% !important; top: 8% !important; transform: translateX(-50%); width: min(560px, calc(100vw - 32px)) !important; max-height: 84vh; overflow-y: auto; }
 .popover.palette .picker-list { max-height: 55vh; }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
@@ -1383,7 +1388,7 @@ function picker(anchor, { title, items, multi = false, selected = [], onPick, on
   const paint = () => {
     const raw = input.value.trim();
     const hit = matcher(raw);
-    rows = items.filter((it) => hit(`${it.group || ''} ${it.label} ${it.hint ?? ''} ${it.keywords || ''} ${it.badge || ''}`)).slice(0, limit).map((it) => ({ it }));
+    rows = items.filter((it) => hit(`${it.group || ''} ${it.label} ${it.description || ''} ${it.hint ?? ''} ${it.keywords || ''} ${it.badge || ''}`)).slice(0, limit).map((it) => ({ it }));
     if (onCreate && raw && !items.some((it) => norm(it.label) === norm(raw))) rows.push({ create: raw });
     active = Math.max(0, Math.min(active, rows.length - 1));
     let group;
@@ -1398,7 +1403,9 @@ function picker(anchor, { title, items, multi = false, selected = [], onPick, on
           r.it.badge ? h('span', { class: 'picker-badge', text: r.it.badge }) : null,
           r.it.color ? h('span', { class: 'sdot', style: { background: colorVar(r.it.color) } }) : null,
           r.it.dot ? h('span', { class: `sdot s-${r.it.dot}` }) : null,
-          h('span', { class: 'grow ellipsis', text: r.it.label }),
+          r.it.description ? h('span', { class: 'grow picker-text', title: r.it.keywords || r.it.description },
+            h('span', { class: 'picker-label ellipsis', text: r.it.label }), h('span', { class: 'picker-description', text: r.it.description }))
+            : h('span', { class: 'grow ellipsis', text: r.it.label }),
           r.it.hint != null && r.it.hint !== '' ? h('span', { class: 'muted', text: String(r.it.hint) }) : null]));
     });
     if (!rows.length) out.push(h('div', { class: 'muted picker-empty', text: '一致する項目はありません' }));
@@ -1437,7 +1444,15 @@ function picker(anchor, { title, items, multi = false, selected = [], onPick, on
 // A button that behaves like a <select> but opens the picker. `.value` holds the choice.
 function pickerButton({ title, items, value, onChange, stack = true, className = 'text-input picker-btn', label = 'aria-label' }) {
   const btn = h('button', { class: className, type: 'button', 'aria-haspopup': 'listbox', [label]: title });
-  const paint = () => { const it = items().find((i) => i.value === btn.value); btn.textContent = `${it ? it.label : '—'} ▾`; };
+  const paint = () => {
+    const it = items().find((i) => i.value === btn.value);
+    btn.classList.toggle('rich', !!it?.description);
+    btn.title = it?.keywords || it?.description || it?.label || '';
+    if (it?.description) btn.replaceChildren(h('span', { class: 'grow picker-text' },
+      h('span', { class: 'picker-label ellipsis', text: it.label }), h('span', { class: 'picker-description', text: it.description })), h('span', { text: '▾', 'aria-hidden': 'true' }));
+    else btn.textContent = `${it ? it.label : '—'} ▾`;
+  };
+  btn.repaint = paint;
   btn.value = value;
   btn.onclick = () => picker(btn, { title, items: items(), selected: [btn.value], stack, onPick: (v) => { btn.value = v; paint(); onChange?.(v); } });
   paint();
@@ -2214,7 +2229,8 @@ function renderPane(p, d) {
     return selected ? executionAccounts.find(a => a.id === selected)?.command : L.terminal.command;
   };
   const accountPicker = executionAccounts.length ? pickerButton({ title: 'Claude の実行アカウント', value: claudeExecutionHomes.get(s.id) || '', stack: false,
-    items: () => [{ value: '', label: '元の CLI 設定' }, ...executionAccounts.map(a => ({ value: a.id, label: a.label }))],
+    items: () => [{ value: '', label: '元の CLI 設定', description: `Claude Code CLI · ${s.accountLabel || '元のアカウント'} · ${s.home || '標準'}` },
+      ...executionAccounts.map(a => ({ value: a.id, label: a.label, description: a.description, keywords: a.keywords }))],
     onChange: value => {
       const save = (async () => {
         accountPicker.disabled = true;
@@ -2227,7 +2243,7 @@ function renderPane(p, d) {
         } catch (error) {
           toast(error.message, true);
           accountPicker.value = claudeExecutionHomes.get(s.id) || '';
-          accountPicker.textContent = `${executionAccounts.find(a => a.id === accountPicker.value)?.label || '元の CLI 設定'} ▾`;
+          accountPicker.repaint();
           throw error;
         } finally { accountPicker.disabled = false; updateExecutionChoice(); }
       })();
@@ -2270,7 +2286,7 @@ function renderPane(p, d) {
     if (desktopNote) desktopNote.textContent = selected ? option?.desktop?.reason || 'Desktop の通常起動も選択したアカウントを使います。他のカードでの切替は全体に適用されます' : '';
     resumeBox.querySelector('.resume-main').title = selected ? '選択した Claude CLI アカウントで再開' : `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`;
     const note = p.el.querySelector('.claude-execution-note');
-    if (note) note.textContent = selected ? `実行アカウント: ${executionAccounts.find(a => a.id === selected)?.label || '選択したアカウント（利用できません）'}` : `実行アカウント: ${s.accountLabel || '元のアカウント'}`;
+    if (note) note.textContent = selected ? `実行アカウント: ${option?.label || '選択したアカウント（利用できません）'}${option?.profile ? ` · ${option.profile}` : ''}` : `実行アカウント: ${s.accountLabel || '元のアカウント'}`;
   }
   updateExecutionChoice();
 

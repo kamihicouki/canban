@@ -1,5 +1,14 @@
 #!/bin/sh
 # Fake `claude -p --resume` for tests (see fake-codex.sh). Prints one --output-format json result.
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  node -e '
+    const fs = require("fs"), path = require("path"), os = require("os");
+    const file = process.env.CLAUDE_CONFIG_DIR ? path.join(process.env.CLAUDE_CONFIG_DIR, ".claude.json") : path.join(os.homedir(), ".claude.json");
+    let a; try { a = JSON.parse(fs.readFileSync(file)).oauthAccount; } catch {}
+    console.log(JSON.stringify({ loggedIn: !!a && process.env.FAKE_AUTH_LOGGED_IN !== "0", authMethod: "claude.ai", email: process.env.FAKE_AUTH_EMAIL || a?.emailAddress, orgId: a?.organizationUuid, accountUuid: a?.accountUuid }));
+  '
+  exit 0
+fi
 prompt="$(cat)"
 [ -n "$FAKE_AGENT_SLEEP" ] && sleep "$FAKE_AGENT_SLEEP"
 node -e '

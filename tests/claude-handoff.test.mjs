@@ -58,6 +58,10 @@ test('registered CLI profiles offer explicit transcript commands without exposin
   const options = await claudeResumeAccounts(session);
   assert.deepEqual(options.map(o => o.account), ['claude:first', 'claude:second']);
   assert.equal(options[1].id, homeId);
+  assert.equal(options[1].label, 'second@example.test');
+  assert.match(options[1].description, /Claude Code CLI · 追加設定 second-account/);
+  assert.equal(options[0].sameAccount, true);
+  assert.equal(options[1].sameAccount, false);
   assert.match(options[1].command, /CLAUDE_CONFIG_DIR=/);
   assert.ok(options[1].command.includes(transcript));
   assert.doesNotMatch(JSON.stringify(options), /CREDENTIAL-FIXTURE|INHERITED-FIXTURE/);
@@ -90,6 +94,15 @@ test('unregistered, remote, missing transcripts and API auth overrides fail expl
   fs.writeFileSync(settings, JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: 'do-not-use' } }));
   await assert.rejects(claudeExecutionSession(session, homeId), /API 認証/);
   fs.unlinkSync(settings);
+});
+
+test('stale login metadata cannot resume with no login or another effective account', async () => {
+  process.env.FAKE_AUTH_LOGGED_IN = '0';
+  await assert.rejects(claudeExecutionSession(session, homeId), /ログインしていません/);
+  delete process.env.FAKE_AUTH_LOGGED_IN;
+  process.env.FAKE_AUTH_EMAIL = 'another@example.test';
+  await assert.rejects(claudeExecutionSession(session, homeId), /実際の認証先/);
+  delete process.env.FAKE_AUTH_EMAIL;
 });
 
 test('headless handoff runs a fake CLI in the same worktree under only the selected profile', async () => {

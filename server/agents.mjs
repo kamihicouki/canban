@@ -85,7 +85,7 @@ export function headlessArgs(s, permission, { images = [] } = {}) {
 // A session from another config folder (CLAUDE_CONFIG_DIR / CODEX_HOME profile) resumes there.
 export function homePrefix(s) {
  if (!s.homeDir || (s.host && !s.host.local)) return '';
- if (s.agent === 'claude') return `env ${claudeAuthOverrides().map(key => `-u ${shq(key)}`).join(' ')} CLAUDE_CONFIG_DIR=${shq(s.homeDir)} `;
+ if (s.agent === 'claude') return `env ${[...new Set([...claudeAuthOverrides(), 'CLAUDE_CONFIG_DIR'])].map(key => `-u ${shq(key)}`).join(' ')} ${s.claudeDefaultConfig ? '' : `CLAUDE_CONFIG_DIR=${shq(s.homeDir)} `}`;
   return `${s.agent === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR'}=${shq(s.homeDir)} `;
 }
 

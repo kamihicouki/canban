@@ -340,7 +340,7 @@ export class Dispatcher {
       fs.mkdirSync(this.requests.runsDir, { recursive: true });
       fd = fs.openSync(logPath, 'a', 0o600);
       const env = { ...cleanEnv(), ...homeEnv(session) };
-      child = spawner(bin, h.args, { cwd: session.cwd, env: session.agent === 'claude' && session.homeDir ? isolatedClaudeEnvironment(env, session.homeDir) : env, stdio: ['pipe', fd, fd], detached: true });
+      child = spawner(bin, h.args, { cwd: session.cwd, env: session.agent === 'claude' && session.homeDir ? isolatedClaudeEnvironment(env, session.claudeDefaultConfig ? null : session.homeDir) : env, stdio: ['pipe', fd, fd], detached: true });
     } catch (error) {
       throw Object.assign(error, {code:'pre_spawn'});
     } finally {

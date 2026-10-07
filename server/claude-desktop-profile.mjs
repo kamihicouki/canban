@@ -27,19 +27,24 @@ export async function desktopProfilePlan(account, { platform = process.platform 
   const roots = await claudeDesktopRoots();
   const current = roots.find(r => r.default);
   const currentDir = await fs.realpath(current.dir).catch(() => null);
-  if (currentDir && await identity(currentDir) === account) return { available: true, account, dir: currentDir, defaultDir: current.dir, change: false };
+  if (currentDir && await identity(currentDir) === account) return { available: true, account, dir: currentDir, profile: current.name || '標準', defaultDir: current.dir, change: false };
   const candidates = [];
   for (const root of roots.filter(r => !r.default)) {
     const dir = await fs.realpath(root.dir).catch(() => null);
     if (dir && await identity(dir) === account) candidates.push(dir);
   }
-  if (candidates.length !== 1) return { available: false, reason: candidates.length ? '同じアカウントの Desktop プロフィールが複数あります。通常起動するプロフィールを先に選んでください' : 'このアカウントでログイン済みの Desktop プロフィールがありません。Desktop のプロフィールを用意してから選んでください' };
+  // The active switcher already identifies its profile family. A legacy
+  // Claude-* backup outside that family must not make its unique match ambiguous.
+  const family = currentDir && path.dirname(currentDir);
+  const inFamily = path.basename(family || '') === 'Claude-Profiles' ? candidates.filter(dir => path.dirname(dir) === family) : [];
+  const choices = inFamily.length ? inFamily : candidates;
+  if (choices.length !== 1) return { available: false, reason: choices.length ? '同じアカウントの Desktop プロフィールが複数あります。通常起動するプロフィールを先に選んでください' : 'このアカウントでログイン済みの Desktop プロフィールがありません。Desktop のプロフィールを用意してから選んでください' };
   const stat = await fs.lstat(current.dir).catch(() => null);
   if (!stat?.isSymbolicLink()) return { available: false, reason: 'Desktop の保存先がプロフィール切替用のリンクになっていません。既存データを移動せずに切り替えるため、先に Desktop のプロフィール構成を用意してください' };
   const support = await fs.realpath(path.dirname(current.dir));
   const known = currentDir && (path.dirname(currentDir) === path.join(support, 'Claude-Profiles') || (path.dirname(currentDir) === support && /^Claude-/.test(path.basename(currentDir))));
   if (!known) return { available: false, reason: 'Desktop の現在の保存先が既知のプロフィールではありません。リンクを変更せず、CLI の選択だけを保存します' };
-  return { available: true, account, dir: candidates[0], defaultDir: current.dir, change: true };
+  return { available: true, account, dir: choices[0], profile: path.basename(choices[0]).replace(/^Claude-/, ''), defaultDir: current.dir, change: true };
 }
 
 // Hold the filesystem lock through the caller's DB commit/open. Atomic rename

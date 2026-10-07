@@ -105,3 +105,12 @@ test('profile login, session execution and terminal resume discard inherited aut
   assert.match(command, /CLAUDE_CONFIG_DIR=\/account-b claude --resume session-b$/);
   assert.doesNotMatch(command, /PRIVATE/);
 });
+
+test('native default resume preserves the normal CLI credential namespace', () => {
+  const env = isolatedClaudeEnvironment({ CLAUDE_CONFIG_DIR: '/another-profile', KEEP: 'yes' }, null);
+  assert.equal(Object.hasOwn(env, 'CLAUDE_CONFIG_DIR'), false);
+  assert.equal(env.KEEP, 'yes');
+  const command = resumeCommand({ agent: 'claude', nativeId: 'same-session', homeDir: '/Users/example/.claude', claudeDefaultConfig: true });
+  assert.match(command, /-u CLAUDE_CONFIG_DIR /);
+  assert.doesNotMatch(command, /CLAUDE_CONFIG_DIR=/);
+});

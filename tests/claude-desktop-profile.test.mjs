@@ -62,6 +62,21 @@ test('unknown account and a regular data directory are never replaced or migrate
   assert.equal((await fs.lstat(app)).isDirectory(), true);
 });
 
+test('a legacy duplicate does not prevent selecting the current switcher family', async () => {
+  const legacy = path.join(root, 'Claude-second');
+  await fs.mkdir(legacy);
+  await fs.writeFile(path.join(legacy, 'config.json'), JSON.stringify({ lastKnownAccountUuid: 'second' }));
+  const plan = await desktopProfilePlan('claude:second', options);
+  assert.equal(plan.available, true);
+  assert.equal(plan.dir, await fs.realpath(second));
+  assert.equal(plan.profile, 'second');
+  // Two matching profiles in the active family remain ambiguous.
+  const duplicate = path.join(root, 'Claude-Profiles', 'second-copy');
+  await fs.mkdir(duplicate);
+  await fs.writeFile(path.join(duplicate, 'config.json'), JSON.stringify({ lastKnownAccountUuid: 'second' }));
+  assert.equal((await desktopProfilePlan('claude:second', options)).available, false);
+});
+
 test('continue requires matching metadata reachable from the selected account; CLI imports require the real transcript', async () => {
   const session = { agent: 'claude', nativeId: id, desktopSessionId: 'local_kept', cwd: root };
   const cliHome = path.join(root, 'cli'), projects = path.join(cliHome, 'projects', 'worktree');

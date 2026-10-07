@@ -13,6 +13,7 @@ export const claudeAuthOverrides = (env = process.env) => [...new Set([
 export function isolatedClaudeEnvironment(env, homeDir) {
   const out = { ...env };
   for (const key of claudeAuthOverrides(env)) delete out[key];
-  out.CLAUDE_CONFIG_DIR = homeDir;
+  delete out.CLAUDE_CONFIG_DIR;
+  if (homeDir) out.CLAUDE_CONFIG_DIR = homeDir;
   return out;
 }
