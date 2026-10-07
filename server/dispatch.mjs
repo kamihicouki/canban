@@ -12,6 +12,7 @@
 // by one from the listing caches (never a full board), and only their log tails are read.
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import { claudeExecutionSession } from './claude-handoff.mjs';
 import { leaderFor } from './leader.mjs';
 import { executionContext } from './sqlite-client.mjs';
 import os from 'node:os';
@@ -153,7 +154,7 @@ function readTail(file, bytes = RESULT_BYTES) {
 // ---- sessions (resolved one at a time) -------------------------------------
 const KEY = /^(codex|claude)(?:@([^:]+))?:(.+)$/;
 
-export async function resolveSession(store, cardId) {
+export async function resolveSession(store, cardId, claudeHome) {
   const m = KEY.exec(String(cardId || ''));
   if (!m) throw new Error(String(cardId).startsWith('task:') ? 'タスクカードには送れません。紐付いたセッションに送ってください' : `セッションが見つかりません: ${cardId}`);
   const [, agent, alias, nativeId] = m;
@@ -162,7 +163,7 @@ export async function resolveSession(store, cardId) {
     const s = agent === 'codex' ? await findCodexSession(nativeId) : (await listClaudeSessions()).sessions.find((x) => x.nativeId === nativeId);
     if (!s) throw new Error(`セッションが見つかりません: ${cardId}`);
     annotateCodexApp([s], await codexAppState());
-    return { session: s, host: null };
+    return { session: await claudeExecutionSession(s, claudeHome), host: null };
   }
   const host = (await hostsWithState((await store.load()))).find((h) => h.alias === alias);
   if (!host) throw new Error('Codex に登録されていない接続です');
@@ -170,7 +171,7 @@ export async function resolveSession(store, cardId) {
   const s = (await pool.sessions([host])).find((x) => x.id === cardId);
   if (!s) throw new Error(`セッションが見つかりません: ${cardId}`);
   annotateCodexApp([s], await codexAppState());
-  return { session: s, host };
+  return { session: await claudeExecutionSession(s, claudeHome), host };
 }
 
 // Tail of the session log (status + permissions) and when it was last written.
@@ -242,7 +243,7 @@ export class Dispatcher {
   }
 
   // Validate and record a request; "now" starts it immediately or fails with the reason.
-  async submit({ cardId, prompt, imageIds = [], skills = [], when = 'queue', origin = 'ui', expectedUpdatedAt = null, allowElevated = false, now = Date.now() }) {
+  async submit({ cardId, prompt, imageIds = [], skills = [], when = 'queue', origin = 'ui', expectedUpdatedAt = null, allowElevated = false, claudeHome, now = Date.now() }) {
     const cfg = (await this.settings());
     if (!cfg.enabled) throw new Error('指示の送信は設定でオフになっています');
     if (origin === 'model' && !cfg.allowModel) throw new Error('モデルからの送信は設定でオフになっています');
@@ -254,7 +255,7 @@ export class Dispatcher {
       const recent = (await this.requests.list({ cardId })).filter((r) => r.origin === 'model' && now - r.createdAt < 3600e3).length;
       if (recent >= cfg.modelPerHour) throw new Error(`このセッションへのモデルからの送信は 1 時間 ${cfg.modelPerHour} 件までです`);
     }
-    const { session, host } = await resolveSession(this.store, cardId);
+    const { session, host } = await resolveSession(this.store, cardId, claudeHome);
     const problem = staticProblem(session);
     if (problem) throw new Error(problem);
     const insp = await inspect(session, host);
@@ -273,6 +274,8 @@ export class Dispatcher {
       agent: session.agent,
       hostId: host ? host.id : 'local',
       nativeId: session.nativeId,
+      claudeHome: claudeHome || null,
+      executionAccount: session.executionAccount || null,
       cwd: session.cwd,
       title: session.title,
       prompt: text,
@@ -304,7 +307,8 @@ export class Dispatcher {
     if (!claim.ok) return claim;
     let preflight = true;
     try {
-      const fresh = await resolveSession(this.store,req.cardId);
+      const fresh = await resolveSession(this.store,req.cardId,req.claudeHome);
+      if (req.executionAccount && fresh.session.executionAccount !== req.executionAccount) throw new Error('キュー追加後に Claude アカウントが変わりました。実行先を選び直してください');
       const checked = await inspect(fresh.session,fresh.host);
       const reason = !checked.mtimeMs ? 'セッションの状態を確認できません' : timingProblem(fresh.session,checked) || ((fresh.session.updatedAt || 0) !== (session.updatedAt || 0) || checked.mtimeMs !== insp.mtimeMs ? '確認中にセッションが更新されました' : null);
       if (reason) {
@@ -457,7 +461,7 @@ export class Dispatcher {
     const started = [];
     for (const head of heads) {
       try {
-        const { session, host } = await resolveSession(this.store, head.cardId);
+        const { session, host } = await resolveSession(this.store, head.cardId, head.claudeHome);
         const problem = staticProblem(session);
         if (problem) {
           (await this.requests.transition(head.id, ['queued'], { state: 'failed', endedAt: now, error: problem }));

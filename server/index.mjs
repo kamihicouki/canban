@@ -29,7 +29,8 @@ import { shutdownLogins } from './login.mjs';
 import { boardHtml } from './ui.mjs';
 import { taskContextSchema } from './task-context.mjs';
 import { uploadImage, promptImages, listSkills, withSkills, withImagePaths, remoteImages } from './prompt-input.mjs';
-import { resolveSession } from './dispatch.mjs';
+import { resolveSession, inspect, timingProblem } from './dispatch.mjs';
+import { claudeExecutionSession } from './claude-handoff.mjs';
 import { SlackService, slackTools } from './slack.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -273,16 +274,25 @@ const TOOLS = [
         route: { type: 'string', enum: ['desktop', 'terminal'] },
         terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
         target: { type: 'string', enum: ['new-window', 'new-tab', 'split', 'current'] },
+        claudeHome: { type: 'string', description: 'Claude の実行アカウント。canban_get_session の launch.claudeAccounts にある ID。選択時はターミナルで元の会話を再開する' },
       },
       required: ['cardId'],
       additionalProperties: false,
     },
     _meta: appAndModel,
-    handler: async ({ cardId, route, terminal, target }) => {
-      const { session, state } = await findSession(store, cardId);
+    handler: async ({ cardId, route, terminal, target, claudeHome }) => {
+      const { session: source, state } = await findSession(store, cardId);
+      const session = await claudeExecutionSession(source, claudeHome);
+      if (claudeHome) {
+        if (route === 'desktop') throw new Error('アカウントを選んだ再開はターミナルを使ってください');
+        const problem = timingProblem(source, await inspect(source, null));
+        if (problem) throw new Error(`${problem}。停止してからアカウントを選んで再開してください`);
+        const requests = await dispatcherFor(store).requests.list({ cardId });
+        if (requests.some(r => ['queued', 'starting', 'running'].includes(r.state))) throw new Error('このセッションには待機中または実行中の指示があります。完了または取消後に再開してください');
+      }
       await store.markSeen({ cardId });
       const prefs = state.settings.launch;
-      let useRoute = route || prefs.route;
+      let useRoute = claudeHome ? 'terminal' : route || prefs.route;
       const link = desktopLink(session);
       if (useRoute === 'desktop' && !link) {
         if (route === 'desktop') throw new Error('このセッションはデスクトップアプリでは開けません。ターミナルで再開してください。');
@@ -301,7 +311,7 @@ const TOOLS = [
       if (!installedTerminals().some((t) => t.id === term)) throw new Error(`${TERMINAL_LABELS[term] || term} が見つかりません。設定でターミナルを選んでください。`);
       const command = resumeCommand(session);
       const res = await runInTerminal({ terminal: term, target: target || prefs.target, command });
-      return { text: `${TERMINAL_LABELS[term]} で再開: ${command}`, structured: { route: 'terminal', command, ...res } };
+      return { text: `${TERMINAL_LABELS[term]} で再開: ${command}`, structured: { route: 'terminal', command, executionAccount: session.executionAccount || null, ...res } };
     },
   },
   {
@@ -315,14 +325,15 @@ const TOOLS = [
         cardId: { type: 'string', description: 'canban_search で調べたセッションの cardId' },
         prompt: { type: 'string' },
         when: { type: 'string', enum: ['now', 'queue'], description: '既定 queue' },
+        claudeHome: { type: 'string', description: 'Claude の実行アカウント（launch.claudeAccounts の ID）' },
       },
       required: ['cardId', 'prompt'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     _meta: appAndModel,
-    handler: async ({ cardId, prompt, when = 'queue' }) => {
-      const r = await dispatcherFor(store).submit({ cardId, prompt, when, origin: 'model' });
+    handler: async ({ cardId, prompt, when = 'queue', claudeHome }) => {
+      const r = await dispatcherFor(store).submit({ cardId, prompt, when, claudeHome, origin: 'model' });
       return { text: `${r.state === 'queued' ? 'キューに追加しました' : '送信しました'}（${r.id}）`, structured: requestView(r) };
     },
   },
@@ -363,6 +374,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         cardId: { type: 'string' },
+        claudeHome: { type: 'string' },
         prompt: { type: 'string' },
         imageIds: { type: 'array', items: { type: 'string' }, maxItems: 8 },
         skills: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, path: { type: 'string' } }, required: ['name', 'path'], additionalProperties: false }, maxItems: 20 },

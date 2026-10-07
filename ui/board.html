@@ -2206,6 +2206,16 @@ function renderPane(p, d) {
   due.onchange = () => act('canban_update_card', { cardId: s.id, due: due.value || null });
 
   const L = d.launch;
+  const executionAccounts = L.claudeAccounts || [];
+  const executionCommand = () => {
+    const selected = claudeExecutionHomes.get(s.id);
+    return selected ? executionAccounts.find(a => a.id === selected)?.command : L.terminal.command;
+  };
+  const accountPicker = executionAccounts.length ? pickerButton({ title: 'Claude の実行アカウント', value: claudeExecutionHomes.get(s.id) || '', stack: false,
+    items: () => [{ value: '', label: `元のアカウント（${s.accountLabel || '既定'}）` }, ...executionAccounts.map(a => ({ value: a.id, label: a.label }))],
+    onChange: value => { if (value) claudeExecutionHomes.set(s.id, value); else claudeExecutionHomes.delete(s.id); updateExecutionChoice(); },
+  }) : null;
+  if (accountPicker) accountPicker.classList.add('claude-account-picker');
   const term = currentTerminal(d.terminals, d.settings);
   const targetBtn = (target, label) => {
     const ok = !!term && term.targets.includes(target);
@@ -2213,18 +2223,31 @@ function renderPane(p, d) {
       onclick: () => resume(s.id, { route: 'terminal', target }) });
   };
   const resumeBox = h('div', { class: 'resume-box' },
+    accountPicker ? h('div', { class: 'field-label' }, h('span', { text: '実行アカウント' }), ...keycap('Alt+a')) : null,
+    accountPicker,
+    accountPicker ? h('div', { class: 'muted', text: '会話・作業フォルダ・ブランチを維持し、再開と指示の送信に使います。選択時はターミナルで再開します。' }) : null,
     h('button', { class: 'btn-primary resume-main', 'data-pane-key': 'o', title: `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`, onclick: (e) => resume(s.id, optsFromEvent(e)) },
       h('span', { text: '▶ 再開' }), ...keycap('o')),
     h('div', { class: 'field-label', text: 'デスクトップアプリ' }),
     L.desktop
-      ? h('button', { class: 'side-btn', text: `↗ ${L.desktop.label}`, title: L.desktop.url, onclick: () => resume(s.id, { route: 'desktop' }) })
+      ? h('button', { class: 'side-btn', 'data-resume-desktop': '', text: `↗ ${L.desktop.label}`, title: L.desktop.url, onclick: () => resume(s.id, { route: 'desktop' }) })
       : h('div', { class: 'muted', text: s.host ? 'リモートのセッションはターミナルで再開します' : 'このセッションはデスクトップアプリでは開けません' }),
     L.desktop && L.desktop.note ? h('div', { class: 'muted', text: `${L.desktop.accountMismatch ? '⚠ ' : ''}${L.desktop.note}` }) : null,
     h('div', { class: 'field-label', text: `ターミナル${term ? `（${term.label}）` : ''}` }),
     term ? h('div', { class: 'seg-row' }, targetBtn('new-window', '新規ウィンドウ'), targetBtn('new-tab', '新規タブ'), targetBtn('split', '分割'), targetBtn('current', '既存ウィンドウ'))
       : h('div', { class: 'muted', text: '対応ターミナルが見つかりません' }),
-    h('button', { class: 'side-btn', text: '⧉ 再開コマンドをコピー', title: L.terminal.command, onclick: () => copyText(L.terminal.command, '再開コマンド') }),
+    h('button', { class: 'side-btn', text: '⧉ 再開コマンドをコピー', onclick: () => { const command = executionCommand(); if (command) copyText(command, '再開コマンド'); else toast('選択したアカウントが見つかりません。実行先を選び直してください', true); } }),
   );
+
+  function updateExecutionChoice() {
+    const selected = claudeExecutionHomes.get(s.id);
+    const desktop = resumeBox.querySelector('[data-resume-desktop]');
+    if (desktop) { desktop.disabled = !!selected; desktop.title = selected ? '選択したアカウントでの再開はターミナルを使います' : L.desktop.url; }
+    resumeBox.querySelector('.resume-main').title = selected ? '選択した Claude CLI アカウントで再開' : `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`;
+    const note = p.el.querySelector('.claude-execution-note');
+    if (note) note.textContent = selected ? `実行アカウント: ${executionAccounts.find(a => a.id === selected)?.label || '選択したアカウント（利用できません）'}` : `実行アカウント: ${s.accountLabel || '元のアカウント'}`;
+  }
+  updateExecutionChoice();
 
   const taskSel = pickerButton({ title: `${T.taskCard}に紐付け`, value: '', stack: false,
     items: () => [
@@ -2380,7 +2403,7 @@ function renderDispatch(d) {
     try {
       const payload = composer.payload();
       composer.setSending(true); sendButtons.forEach(b => { b.disabled = true; });
-      await bridge.callTool('canban_dispatch', { cardId: s.id, prompt, ...payload, when, expectedUpdatedAt: s.updatedAt || null, allowElevated: !!ack?.checked });
+      await bridge.callTool('canban_dispatch', { cardId: s.id, prompt, ...payload, ...claudeExecutionOptions(s.id), when, expectedUpdatedAt: s.updatedAt || null, allowElevated: !!ack?.checked });
       composer.clear();
       toast(when === 'now' ? '送信しました' : 'キューに追加しました');
       openCard(s.id);
@@ -2402,6 +2425,7 @@ function renderDispatch(d) {
     D.paused ? h('div', { class: 'paused-bar' }, h('span', { class: 'grow', text: `⏸ キュー一時停止: ${D.paused.reason}` }),
       h('button', { class: 'link-btn', text: '再開', onclick: () => act('canban_resume_queue', { cardId: s.id }, { okMsg: 'キューを再開しました' }).then(() => openCard(s.id)) })) : null,
     h('div', { class: 'send-box' },
+      s.agent === 'claude' && s.host?.local !== false ? h('div', { class: 'muted claude-execution-note', text: `実行アカウント: ${claudeExecutionHomes.has(s.id) ? d.launch.claudeAccounts.find(a => a.id === claudeExecutionHomes.get(s.id))?.label || '選択したアカウント（利用できません）' : s.accountLabel || '元のアカウント'}` }) : null,
       composer.root,
       ack ? h('label', { class: 'send-note row', style: { gap: '6px' } }, ack, 'このセッションはサンドボックス／確認なしで動いています。そのまま実行されることを確認しました') : null,
       busy ? h('div', { class: 'muted', style: { marginTop: '6px' }, text: s.codexFollowUps
@@ -3740,6 +3764,11 @@ function optsFromEvent(e) {
   return {};
 }
 // Keys on a focused card.
+const claudeExecutionHomes = new Map();
+function claudeExecutionOptions(cardId) {
+  const claudeHome = claudeExecutionHomes.get(cardId);
+  return claudeHome ? { claudeHome } : {};
+}
 const CARD_KEYS = {
   o: {},
   d: { route: 'desktop' },
@@ -3754,7 +3783,9 @@ function shortcutHelp() {
 }
 async function resume(cardId, opts = {}) {
   try {
-    const r = await bridge.callTool('canban_open_session', { cardId, ...opts });
+    const execution = claudeExecutionOptions(cardId);
+    if (execution.claudeHome && opts?.route === 'desktop') throw new Error('選択したアカウントでの再開はターミナルを使います');
+    const r = await bridge.callTool('canban_open_session', { cardId, ...opts, ...execution, ...(execution.claudeHome ? { route: 'terminal' } : {}) });
     if (r.route === 'desktop') toast(r.exact ? 'デスクトップアプリで開きました' : 'フォルダを開きました（続きはターミナルで再開できます）');
     else toast(`${TERMINAL_NAMES[r.terminal] || 'ターミナル'}で再開しました（${TARGET_LABELS[r.target] || r.target}${r.fellBack ? '・未対応のため新規ウィンドウ' : ''}）`);
   } catch (e) {
@@ -4204,6 +4235,12 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document
 // Keyboard: global shortcuts, command palette (⌘K) and the ? overlay
 // ======================================================================
 const typingIn = (t) => t?.closest?.('input, textarea, select, [contenteditable]');
+document.addEventListener('keydown', e => {
+  if (e.altKey && !e.metaKey && !e.ctrlKey && !e.isComposing && e.code === 'KeyA' && !typingIn(e.target) && !document.querySelector('.popover')) {
+    const picker = focusedPane()?.el.querySelector('.claude-account-picker');
+    if (picker) { e.preventDefault(); picker.click(); }
+  }
+});
 function focusedListId() {
   const a = document.activeElement;
   return a?.closest?.('.list')?.dataset.listId || state.board?.defaultListId;
@@ -4310,6 +4347,7 @@ const SHORTCUTS = [
     ['o', '再開（既定）'], ['d / t', 'デスクトップ / ターミナルで再開'], ['w n s e', 'ターミナル: 新規ウィンドウ / 新規タブ / 分割 / 既存'],
   ]],
   ['カードを開いている間', [
+    ['Alt+a', 'Claude の実行アカウントを選ぶ（このマシンのセッション）'],
     ['Shift+← / →', '左右の隣のリストへ移動（端で停止、入力中・配置調整中は無効）'],
     ['j / k', '表示リストの次 / 前のカードを開く（端で停止）'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'],
     ['z', 'エージェントのセッションをアーカイブ / 復元'], ['Delete', 'セッションと会話履歴を削除（確認あり）'], ['i', '指示の入力欄へ'], ['o', '再開'], ['l g m', 'ラベル / ' + T.category + ' / リスト移動'], ['c', 'タスクを追加'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
@@ -4370,6 +4408,7 @@ function commandPalette() {
       }),
       ...(sessionPane ? [
         { label: sessionPane.d?.card.archived ? 'セッションカードをアーカイブから戻す' : 'セッションをアーカイブ', run: () => sessionPane.el.querySelector('[data-pane-key="z"]')?.click(), hint: 'z' },
+        ...(sessionPane.d?.launch?.claudeAccounts?.length ? [{ label: 'Claude の実行アカウントを選ぶ', run: () => sessionPane.el.querySelector('.claude-account-picker')?.click(), hint: 'Alt+a' }] : []),
         { label: 'セッションと会話履歴を削除…', run: () => confirmSessionCardDelete(sessionPane), hint: 'Delete' },
       ] : []),
       { label: 'カード: レイアウトとサイズを初期化', run: resetCardLayout },

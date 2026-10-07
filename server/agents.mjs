@@ -25,7 +25,7 @@ export const AGENTS = {
   claude: {
     label: 'Claude Code',
     app: 'Claude',
-    cli: (s) => `claude --resume ${shq(s.nativeId)}`,
+    cli: (s) => `claude --resume ${shq(s.resumePath || s.nativeId)}`,
     desktop(s) {
       if (s.host && !s.host.local) return null; // the desktop app cannot attach to a remote CLI transcript
       if (s.desktopSessionId && CLAUDE_DESKTOP_ID.test(s.desktopSessionId) && !s.archived) {
@@ -66,7 +66,7 @@ export const HEADLESS = {
   claude: {
     bin: 'claude',
     // `json` prints one result object at the end, which keeps run logs small.
-    args: (s, p) => ['-p', '--resume', s.nativeId, '--output-format', 'json', '--permission-mode', p.mode],
+    args: (s, p) => ['-p', '--resume', s.resumePath || s.nativeId, '--output-format', 'json', '--permission-mode', p.mode],
   },
 };
 
@@ -92,7 +92,7 @@ export function homePrefix(s) {
 export function resumeCommand(s) {
   const agent = AGENTS[s.agent];
   if (!agent) return null;
-  const inner = `${s.cwd ? `cd ${shq(s.cwd)} 2>/dev/null; ` : ''}${homePrefix(s)}${agent.cli(s)}`;
+  const inner = `${s.cwd ? `cd ${shq(s.cwd)} 2>/dev/null${s.resumePath ? ' &&' : ';'} ` : ''}${homePrefix(s)}${agent.cli(s)}`;
   return s.host && !s.host.local ? `ssh -t ${shq(s.host.alias)} ${shq(inner)}` : inner;
 }
 

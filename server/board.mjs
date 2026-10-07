@@ -13,6 +13,7 @@ import { codexAppState, annotateCodexApp, codexProjectList } from './sources/cod
 import { LOCAL_HOST } from './sources/util.mjs';
 import { RemotePool } from './remote/pool.mjs';
 import { launchInfo } from './agents.mjs';
+import { claudeResumeAccounts } from './claude-handoff.mjs';
 import { installedTerminals } from './launcher.mjs';
 import { annotateStatus, STATUSES } from './status.mjs';
 import { currentLimits, cardSignals, limitsByAccount } from './signals.mjs';
@@ -649,7 +650,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     repo: s.repo || null,
     parentId: s.parentId || null,
     tasks: taskEntries(state).map(([id, t]) => ({ id, title: t.title })),
-    launch: withAccountNote(launchInfo(s), s, labels),
+    launch: { ...withAccountNote(launchInfo(s), s, labels), claudeAccounts: await claudeResumeAccounts(s, labels) },
     settings: state.settings,
     terminals: installedTerminals(),
     recentMessages: recent,
