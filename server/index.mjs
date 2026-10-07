@@ -31,6 +31,7 @@ import { taskContextSchema } from './task-context.mjs';
 import { uploadImage, promptImages, listSkills, withSkills, withImagePaths, remoteImages } from './prompt-input.mjs';
 import { resolveSession } from './dispatch.mjs';
 import { SlackService, slackTools } from './slack.mjs';
+import { listChanges, fileDiff } from './changes.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // The Codex plugin manifest is absent when installed another way (Claude Desktop extension, a bare copy).
@@ -120,6 +121,12 @@ const TOOLS = [
     const result = await pool.dispatch(host, { mode: 'prompt_skills', agent: context.agent || 'codex', cwd: context.cwd || '', homeDir: context.homeDir });
     if (!result.ok) throw new Error(result.error || '接続先のスキルを取得できません');
     return { skills: result.skills || [] };
+  }),
+  appTool('canban_get_changes', '作業フォルダの変更を取得', { cardId: { type: 'string' }, path: { type: 'string' } }, ['cardId'], async ({ cardId, path: file }) => {
+    const { session, host } = await findSession(store, cardId);
+    if (host) return { available: false, reason: 'リモートのセッションの変更はまだ表示できません' };
+    if (file) return { available: true, diff: await fileDiff(session.cwd, file) };
+    return listChanges(session.cwd);
   }),
   {
     name: 'open_canban',

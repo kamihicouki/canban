@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>07 コンポーザー · Canban カード案</title>
+<link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="shared.css">
+<style>
+.pane { width: min(820px, 100%); }
+.hd { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--btn-subtle); flex: none; } .hd h2 { margin: 0; font-size: 15px; }
+.scroll { flex: 1; overflow: auto; padding: 22px 24px 20px; } .col { max-width: 700px; margin: 0 auto; }
+.dock { padding: 0 24px 16px; } .dock > * { max-width: 700px; margin: 0 auto; }
+.att { display: flex; gap: 8px; flex-wrap: wrap; margin-left: -4px; } .att:empty { display: none; }
+.at { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 4px 0 8px; border-radius: 8px; background: var(--btn-subtle); font-size: 12.5px; } .at .x { width: 20px; height: 20px; border-radius: 5px; display: grid; place-items: center; color: var(--card-muted); } .at .x:hover { background: var(--btn-subtle-hover); }
+.im { width: 40px; height: 40px; border-radius: 8px; background: repeating-linear-gradient(45deg, var(--btn-subtle-hover) 0 4px, transparent 4px 8px), var(--card-bg); border: 1px solid var(--btn-subtle-hover); position: relative; }
+.im .x { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; background: var(--card-fg); color: var(--card-bg); display: grid; place-items: center; }
+.qbox { border: 1px solid var(--btn-subtle-hover); border-radius: 14px 14px 0 0; border-bottom: 0; margin: 0 14px -10px; padding: 8px 12px 18px; background: var(--btn-subtle); font-size: 13px; display: none; } .qbox.has { display: block; }
+.qbox .qi { display: flex; align-items: center; gap: 8px; padding: 3px 0; } .qbox .qi span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.state { display: flex; align-items: center; gap: 10px; margin: 0 4px 10px; font-size: 12.5px; color: var(--card-muted); }
+#sug { left: 0; right: 0; bottom: calc(100% + 6px); max-height: 280px; overflow: auto; }
+.tgl { display: inline-flex; align-items: center; gap: 8px; } .sw { width: 30px; height: 18px; border-radius: 9px; background: var(--btn-subtle-hover); position: relative; } .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px #0004; } [aria-pressed=true] > .sw { background: var(--accent); } [aria-pressed=true] > .sw::after { transform: translateX(12px); }
+</style></head>
+<body>
+<script src="shared.js"></script>
+<script>
+const stage = shell('07 コンポーザー');
+stage.insertAdjacentHTML('beforeend', `<div class="scrim"><section class="pane"><div class="hd"><span class="ag ag-codex">Codex</span><h2>${SAMPLE.title}</h2><span class="grow"></span><button class="tgl chipx" id="runT" aria-pressed="true"><span class="sw"></span>実行中のデモ</button><button class="iconbtn">${ic('close', 17)}</button></div>
+<div class="scroll"><div class="col"><div class="thread"><div class="msg-agent"><p>月境界の目印を追加しました。ほかに直す点があれば、続けて指示してください。</p></div></div>
+<div style="margin-top:22px;font-size:13px;line-height:1.9" class="dim"><b style="color:var(--card-fg)">試してみてください</b><br>${kc('/')} コマンド　${kc('@')} ファイル参照　${kc('$')} スキル　${kc('⌥ Enter')} キューへ追加　${kc('⌘ Enter')} 送信 / 割り込み　${kc('Esc')} メニューを閉じる<br>画像のドロップ・貼り付けはチップになります（下の「画像を追加」でも試せます）。</div></div></div>
+<div class="dock"><div class="qbox" id="qbox"></div><div class="state" id="state"></div><div id="host"></div></div></section></div>`);
+let running = true; const queue = [];
+const host = $('#host');
+function build() {
+  host.innerHTML = composer({ running, id: 'c7', placeholder: running ? '実行中です。指示を入力するとキューに追加されます' : 'このセッションに指示を送る', extra: '<div class="att" id="att"></div>' });
+  const cmp = $('.cmp', host), ta = $('textarea', cmp);
+  $$('.menu', cmp).slice(0, 3).forEach(() => {});
+  wireComposer(cmp, (v) => { if (running) { queue.push(v); drawQ(); } }); fillIc(cmp);
+  const m = document.createElement('div'); m.className = 'menu'; m.id = 'sug'; cmp.append(m);
+  const SL = [['/model', 'モデルを切り替える', 'cpu'], ['/permissions', '権限を変更する', 'shield'], ['/plan', '計画だけ作る（実行しない）', 'checklist'], ['/compact', '会話を要約してコンテキストを空ける', 'rewind'], ['/review', '変更をレビューする', 'diff'], ['/undo', '直前の変更を元に戻す', 'undo']];
+  const FL = ['nuxt-app/components/CalendarGrid.vue', 'nuxt-app/composables/useInfiniteWeeks.ts', 'nuxt-app/assets/css/cal-neumorph.css', 'DESIGN.md'];
+  const SK = [['$product-design', 'UI プレビューを作ってから実装する'], ['$simplify', '変更を整理する'], ['$code-review', '差分をレビューする']];
+  let items = [], sel = 0;
+  const show = () => { if (!items.length) { m.classList.remove('open'); return; } m.innerHTML = items.map((x, i) => `<button class="it${i === sel ? ' on' : ''}" data-v="${x[0]}">${ic(x[2] || 'file', 15)}<span class="mono" style="font-size:12.5px">${x[0]}</span><small>${x[1] || ''}</small></button>`).join(''); m.classList.add('open'); };
+  ta.addEventListener('input', () => {
+    const w = ta.value.split(/\s/).pop(), t = ta.value;
+    if (/^\/\S*$/.test(t)) items = SL.filter((x) => x[0].startsWith(t)); else if (w.startsWith('@')) items = FL.filter((f) => f.toLowerCase().includes(w.slice(1).toLowerCase())).map((f) => ['@' + f, '', 'file']); else if (w.startsWith('$')) items = SK.filter((x) => x[0].startsWith(w)).map((x) => [x[0], x[1], 'spark']); else items = [];
+    sel = 0; show();
+  });
+  ta.addEventListener('keydown', (e) => {
+    if (m.classList.contains('open')) { if (e.key === 'ArrowDown') { sel = (sel + 1) % items.length; show(); e.preventDefault(); } if (e.key === 'ArrowUp') { sel = (sel - 1 + items.length) % items.length; show(); e.preventDefault(); } if (e.key === 'Escape') { m.classList.remove('open'); e.stopPropagation(); } if (e.key === 'Enter' || e.key === 'Tab') { pick(items[sel][0]); e.preventDefault(); } }
+    if (e.key === 'Enter' && e.altKey && ta.value.trim()) { queue.push(ta.value.trim()); ta.value = ''; drawQ(); }
+  });
+  const pick = (v) => { const parts = ta.value.split(/(\s)/); parts[parts.length - 1] = v + ' '; if (v.startsWith('@')) { addAt(v.slice(1)); parts.pop(); } ta.value = parts.join(''); m.classList.remove('open'); ta.focus(); };
+  m.addEventListener('mousedown', (e) => { const b = e.target.closest('.it'); if (b) { e.preventDefault(); pick(b.dataset.v); } });
+  $$('.menu .it', cmp).forEach((b) => { if (/画像を追加/.test(b.textContent)) b.addEventListener('click', () => { $('#att').insertAdjacentHTML('beforeend', `<span class="im"><span class="x">${ic('close', 10)}</span></span>`); }); });
+  cmp.addEventListener('click', (e) => { const x = e.target.closest('.x'); if (x) (x.closest('.at, .im')).remove(); });
+  statusLine();
+}
+function addAt(f) { $('#att').insertAdjacentHTML('beforeend', `<span class="at">${ic('file', 13)}<span class="mono" style="font-size:12px">${f.split('/').pop()}</span><span class="x">${ic('close', 11)}</span></span>`); }
+function drawQ() {
+  const q = $('#qbox'); q.classList.toggle('has', queue.length > 0);
+  q.innerHTML = queue.map((t, i) => `<div class="qi">${ic('queue', 14)}<span>${t}</span>${kc(i + 1)}<button class="iconbtn" style="width:22px;height:22px" data-qi="${i}">${ic('close', 12)}</button></div>`).join('');
+  fillIc();
+}
+function statusLine() { $('#state').innerHTML = running ? `<span class="spinner"></span><span class="shimmer">作業中 · 7m 24s</span><span class="grow" style="flex:1"></span>${kc('⌘ Enter')} 割り込んで送信　${kc('⌥ Enter')} キューへ　${kc('Esc')} 停止` : `<span>待機中</span><span style="flex:1"></span>${kc('⌘ Enter')} 送信`; }
+$('#qbox').onclick = (e) => { const b = e.target.closest('[data-qi]'); if (b) { queue.splice(+b.dataset.qi, 1); drawQ(); } };
+$('#runT').onclick = (e) => { running = !running; e.currentTarget.setAttribute('aria-pressed', running); build(); };
+build(); wireMenus();
+</script></body></html>

@@ -1,0 +1,5 @@
+/* Component style chooser (レイアウトとテーマ). */
+.cs-chooser { display: grid; gap: 10px; margin-bottom: 4px; }
+.cs-row { display: grid; gap: 4px; }
+.cs-name { font-size: 12.5px; font-weight: 650; }
+.cs-desc { font-size: 12px; line-height: 1.5; }

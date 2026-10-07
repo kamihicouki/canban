@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>06 会話の部品 · Canban カード案</title>
+<link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="shared.css">
+<style>
+.pane { width: min(1000px, 100%); }
+.hd { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--btn-subtle); flex: none; } .hd h2 { margin: 0; font-size: 15px; }
+.scroll { flex: 1; overflow: auto; padding: 22px 24px 40px; }
+.wrap { max-width: 860px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 150px; column-gap: 20px; row-gap: 16px; align-items: start; }
+.wrap > .a { font-size: 11.5px; color: var(--card-muted); line-height: 1.5; padding-top: 6px; border-top: 1px solid var(--btn-subtle-hover); } .wrap > .a b { display: block; color: var(--card-fg); font-size: 12px; }
+.blk { border: 1px solid var(--btn-subtle-hover); border-radius: 12px; overflow: hidden; background: var(--card-bg); }
+.blk .h { display: flex; align-items: center; gap: 10px; padding: 11px 14px; } .blk .h .ico { width: 32px; height: 32px; border-radius: 9px; background: var(--btn-subtle); display: grid; place-items: center; color: var(--card-muted); flex: none; }
+.blk .h small { display: block; color: var(--card-muted); font-size: 12px; } .blk .p { padding: 0 14px 12px; }
+.blk.warn { border-color: var(--tone-wait); } .blk.warn .ico { background: var(--tone-wait-bg); color: var(--tone-wait); }
+.blk.err { border-color: var(--tone-err); } .blk.err .ico { background: var(--tone-err-bg); color: var(--tone-err); }
+.cmd { font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--txt-bg); color: var(--txt-fg); border-radius: 8px; padding: 8px 10px; margin: 0 14px 10px; }
+.acts { display: flex; gap: 6px; padding: 0 14px 12px; flex-wrap: wrap; }
+.step { display: flex; align-items: center; gap: 10px; padding: 7px 14px; font-size: 13.5px; border-top: 1px solid var(--btn-subtle); }
+.step .c { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--input-border); display: grid; place-items: center; flex: none; } .step.done .c { background: var(--tone-run); border-color: var(--tone-run); color: #fff; } .step.done > span:last-child { color: var(--card-muted); }
+.step.now .c { border-color: var(--tone-run); border-top-color: transparent; animation: spin .9s linear infinite; }
+.test { display: flex; gap: 14px; padding: 0 14px 12px; font-size: 13px; } .test .k { display: flex; align-items: center; gap: 6px; }
+.q .opt { display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--btn-subtle-hover); margin-bottom: 6px; font-size: 13.5px; } .q .opt:hover { border-color: var(--accent); background: var(--btn-subtle); }
+.q .opt[aria-pressed=true] { border-color: var(--accent); background: var(--tone-done-bg); } .q .opt small { display: block; color: var(--card-muted); font-size: 12px; } .q .opt .keycap { margin-top: 1px; }
+.queue { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: var(--btn-subtle); font-size: 13px; }
+.sub { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-top: 1px solid var(--btn-subtle); font-size: 13px; }
+</style></head>
+<body>
+<script src="shared.js"></script>
+<script>
+const stage = shell('06 会話の部品');
+const A = (t, d) => `<div class="a"><b>${t}</b>${d}</div>`;
+const row = (main, note) => main + note;
+stage.insertAdjacentHTML('beforeend', `<div class="scrim"><section class="pane"><div class="hd"><span class="ag ag-claude">Claude</span><h2>APIのレート制限を調査して、再試行ロジックを入れる</h2><span class="st st-wait"><i></i>入力待ち</span><span class="grow"></span><button class="iconbtn">${ic('close', 17)}</button></div>
+<div class="scroll"><div class="wrap">
+${row(`<div class="blk warn" id="perm"><div class="h"><span class="ico">${ic('shield', 17)}</span><div class="grow"><b>コマンドの実行を求めています</b><small>ワークスペース内 · 外部ネットワークに接続</small></div><span class="st st-wait"><i></i>承認待ち</span></div><div class="cmd">npm run test:integration -- --maxWorkers=2</div><div class="acts"><button class="btn pri" data-a="ok">許可 ${kc('y')}</button><button class="btn" data-a="ok">このセッションで常に許可</button><button class="btn line" data-a="no">拒否 ${kc('n')}</button><button class="btn line" style="margin-left:auto">理由を添えて拒否</button></div></div>`, A('承認カード', 'Claude / Codex の権限確認。カードの状態は「入力待ち」のまま、ボードからも y / n で答えられる'))}
+${row(`<div class="blk"><div class="h"><span class="ico">${ic('checklist', 17)}</span><div class="grow"><b>計画</b><small id="planN">3 / 5 完了</small></div><button class="iconbtn">${ic('chev', 15)}</button></div><div id="steps"></div></div>`, A('計画チェックリスト', 'Claude の TodoWrite / Codex の計画。カードの進捗バーにも反映'))}
+${row(`<div class="tools open"><button><span class="chev">${ic('right', 13)}</span><span class="sum">ファイルを 6 件読み込みました · コマンドを 3 件実行しました</span></button><ul><li>${ic('file', 14)}<span class="mono">src/http/retry.ts</span><time>0.1s</time></li><li>${ic('file', 14)}<span class="mono">src/http/client.ts</span><time>0.1s</time></li><li>${ic('terminal', 14)}<span class="mono">rg "429" src/ -n</span><time>0.3s</time></li><li>${ic('terminal', 14)}<span class="mono">npm run test -- retry</span><time>8.4s</time></li></ul></div>`, A('ツール使用の折りたたみ', '既定は1行に要約。開くと各ステップ。長い出力は開かない限り読まない'))}
+${row(editCard([['src/http/', 'retry.ts', 14, 1], ['src/http/', 'client.ts', 4, 1], ['test/', 'retry.test.ts', 36, 0]], { max: 2 }), A('編集サマリー', 'Codex の「N件のファイルを編集 +/−」。元に戻す・変更内容を表示'))}
+${row(`<div class="blk"><div class="h"><span class="ico">${ic('check', 17)}</span><div class="grow"><b>テスト結果</b><small>retry.test.ts · 11.2s</small></div><button class="btn line">再実行</button></div><div class="test"><span class="k"><span class="add">●</span> 成功 21</span><span class="k"><span class="del">●</span> 失敗 1</span><span class="k dim">● スキップ 0</span></div><div class="cmd" style="color:var(--tone-err)">✕ retry › 429 の後は待ってから再試行する\n  Expected: 1000  Received: 0</div></div>`, A('テスト・実行結果', '失敗だけを前面に。全文は ターミナル（案02）で'))}
+${row(`<div class="blk err"><div class="h"><span class="ico">${ic('alert', 17)}</span><div class="grow"><b>実行が止まりました</b><small>ENOSPC: 書き込み先の空きがありません</small></div><button class="btn">再開</button><button class="btn line">ログ</button></div></div>`, A('エラー', 'カードの状態と同じ色。再開は1クリック'))}
+${row(`<div class="blk q"><div class="h"><span class="ico">${ic('message', 17)}</span><div class="grow"><b>どちらの方式で進めますか？</b><small>Claude からの質問 · 1 つ選択</small></div></div><div class="p"><button class="opt" aria-pressed="false">${kc('1')}<span><b>指数バックオフ（推奨）</b><small>1s → 2s → 4s、最大 5 回。ジッターあり</small></span></button><button class="opt" aria-pressed="false">${kc('2')}<span><b>固定間隔</b><small>実装は最小。負荷が高いと再び 429 になりやすい</small></span></button></div></div>`, A('質問カード', 'Claude の選択式質問。数字キーで答える。カードは「入力待ち」'))}
+${row(`<div class="queue">${ic('queue', 15)}<span class="grow">キュー 2 件: 「テストも追加して」「CHANGELOG を更新」</span><button class="iconbtn" style="width:24px;height:24px">${ic('close', 13)}</button></div>`, A('キュー', '実行中に送った指示。順序の入れ替え・取り消し'))}
+${row(`<div class="blk"><div class="h"><span class="ico">${ic('branch', 17)}</span><div class="grow"><b>サブエージェント</b><small>2 件が並行して作業中</small></div></div><div class="sub"><span class="spinner"></span><span class="grow">調査: 429 を返す外部 API の一覧</span><span class="dim num">1m 12s</span></div><div class="sub">${ic('check', 14)}<span class="grow">レビュー: 既存の再試行との重複</span><span class="dim num">48s</span></div></div>`, A('サブエージェント', 'Codex のサブエージェント親子関係をカード内で見せる'))}
+</div></div></section></div>`);
+const steps = [['done', '429 を返す箇所を洗い出す'], ['done', '現行の再試行を調べる'], ['done', '指数バックオフを実装する'], ['now', '統合テストで確認する'], ['', 'CHANGELOG を更新する']];
+$('#steps').innerHTML = steps.map(([k, t]) => `<div class="step ${k}"><span class="c">${k === 'done' ? ic('check', 11) : ''}</span><span>${t}</span></div>`).join('');
+fillIc();
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('[data-a]'); if (a) { const b = $('#perm'); b.classList.remove('warn'); b.innerHTML = `<div class="h"><span class="ico" style="background:var(--tone-run-bg);color:var(--tone-run)">${ic(a.dataset.a === 'ok' ? 'check' : 'close', 17)}</span><div class="grow"><b>${a.dataset.a === 'ok' ? '許可しました' : '拒否しました'}</b><small class="mono">npm run test:integration</small></div></div>`; }
+  const o = e.target.closest('.q .opt'); if (o) $$('.q .opt').forEach((x) => x.setAttribute('aria-pressed', x === o));
+});
+addEventListener('keydown', (e) => { if (e.key === 'y') $('[data-a=ok]')?.click(); if (e.key === 'n') $('[data-a=no]')?.click(); if (e.key === '1' || e.key === '2') $$('.q .opt')[+e.key - 1].click(); });
+</script></body></html>

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>03 ボードのカード · Canban カード案</title>
+<link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="cards.css">
+<style>
+.dens { position: absolute; right: 16px; bottom: 56px; background: var(--modal-panel); color: var(--card-fg); border-radius: 12px; padding: 10px; box-shadow: var(--lift-shadow); font-size: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 5; }
+.seg { display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--btn-subtle); } .seg button { height: 28px; padding: 0 11px; border-radius: 7px; font-size: 13px; color: var(--card-muted); } .seg button[aria-selected=true] { background: var(--card-bg); color: var(--card-fg); font-weight: 600; box-shadow: var(--card-shadow); }
+</style></head>
+<body>
+<script src="shared.js"></script>
+<script>
+const stage = shell('03 ボードのカード', { backdrop: false });
+const L = (c) => `<span class="lbl" style="background:var(--c-${c});width:40px;height:8px;border-radius:4px"></span>`;
+const LISTS = [
+  ['未着手', [
+    { t: 'Slack取り込みのスレッド展開を直す', a: 'claude', st: 'idle', cat: 'canban', br: 'fix/slack-thread', tm: '昨日', lb: ['orange'], last: 'まだ開始していません。依頼文を書いて開始できます。', now: '' },
+    { t: 'リリース手順をREADMEへまとめる', a: 'task', st: 'idle', cat: 'docs', br: '', tm: '3日前', lb: ['gray'], last: '', now: '子セッション 0 件 · 依頼を準備中' }]],
+  ['進行中', [
+    { t: 'カレンダーをインフィニティスクロールに', a: 'codex', st: 'run', cat: 'nuxt-app', br: 'feat/calendar-infinite', tm: '7分', lb: ['blue', 'purple'], now: '変更前を同じ412px幅で確認', diff: [74, 5], plan: [3, 5], last: '月ごとのカード切り替えを、重複のない週の連続表示に変えます。曜日は上に固定し…' },
+    { t: 'APIのレート制限を調査して、再試行ロジックを入れる', a: 'claude', st: 'wait', cat: 'api', br: 'fix/retry-429', tm: '2分', lb: ['red'], now: '承認待ち: npm run test:integration', diff: [18, 2], ask: true, last: '統合テストを実行してよいですか？ 外部APIへの接続が発生します。' },
+    { t: 'ダークテーマのコントラスト修正', a: 'codex', st: 'run', cat: 'canban', br: 'fix/dark-contrast', tm: '12分', lb: ['green'], now: 'ui/board.html を読み込み中', diff: [9, 4], plan: [1, 4], last: 'トークンの組み合わせを洗い出しています。' }]],
+  ['レビュー', [
+    { t: '設定画面のキーボード操作', a: 'claude', st: 'done', cat: 'canban', br: 'feat/settings-keys', tm: '1時間', lb: ['blue'], now: '完了 · テスト 24 件が成功', diff: [112, 38], last: 'j/k で項目を移動し、Enter で編集できるようにしました。' },
+    { t: 'ビルドが落ちる原因の調査', a: 'codex', st: 'err', cat: 'ci', br: 'main', tm: '3時間', lb: ['red'], now: 'エラー: ENOSPC 書き込み先の空きがありません', diff: [0, 0], last: '' }]],
+];
+const glyph = (s) => `<span class="g ${s}">${s === 'done' ? ic('check', 12) : s === 'err' ? ic('alert', 11) : ''}</span>`;
+const whoN = { codex: 'Codex', claude: 'Claude', task: 'タスク' };
+const stN = { idle: '待機', run: '実行中', wait: '入力待ち', err: 'エラー', done: '完了' };
+const quick = `<div class="q"><button class="iconbtn" title="返信 (r)">${ic('message', 15)}</button><button class="iconbtn" title="開く (Enter)">${ic('expand', 15)}</button><button class="iconbtn" title="その他">${ic('more', 15)}</button></div>`;
+const diffStat = (c) => c.diff && (c.diff[0] || c.diff[1]) ? `<span class="stat num"><span class="add">+${c.diff[0]}</span><span class="del">−${c.diff[1]}</span></span>` : '';
+const R = {
+  now(c) {
+    const m = c.lb.map((x) => `<i style="background:var(--c-${x})"></i>`).join('');
+    return `<article class="card" tabindex="0"><div class="bars">${m}</div><div class="top"><span class="st st-${c.st}"><i></i>${stN[c.st]}</span><span class="ag ag-${c.a}">${whoN[c.a]}</span></div><div class="title">${c.t}</div>${c.now ? `<div class="act ${c.st === 'wait' ? 'wait' : c.st === 'err' ? 'err' : ''}">${c.now}</div>` : ''}<div class="meta"><span>${ic('folder', 12)} ${c.cat}</span>${c.br ? `<span class="mono">${c.br}</span>` : ''}<span style="margin-left:auto">${c.tm}</span></div></article>`;
+  },
+  c1(c) { return `<article class="card n c1" tabindex="0"><div class="row1">${glyph(c.st)}<div class="title">${c.t}</div><span class="who ${c.a}">${whoN[c.a][0] === 'タ' ? 'タスク' : whoN[c.a]}</span><span class="dim" style="font-size:12px">${c.tm}</span></div>${quick}</article>`; },
+  c2(c) {
+    return `<article class="card n" tabindex="0"><div class="row1">${glyph(c.st)}<div class="title">${c.t}</div></div>
+    ${c.now ? `<div class="now ${c.st === 'wait' ? 'wait' : c.st === 'err' ? 'err' : ''}">${c.st === 'run' ? `<span class="shimmer">${c.now}</span>` : `<span>${c.now}</span>`}</div>` : ''}
+    <div class="foot"><span class="who ${c.a}">${whoN[c.a]}</span>${diffStat(c)}${c.br ? `<span class="mono">${c.br}</span>` : ''}<span class="tm">${c.tm}</span></div>${quick}</article>`;
+  },
+  c3(c) {
+    return `<article class="card n" tabindex="0"><div class="row1">${glyph(c.st)}<div class="title">${c.t}</div></div>
+    ${c.last ? `<div class="quote">${c.last}</div>` : ''}${c.plan ? `<div class="prog"><span class="num">${c.plan[0]}/${c.plan[1]}</span><span class="b"><i style="width:${c.plan[0] / c.plan[1] * 100}%"></i></span></div>` : ''}
+    ${c.ask ? `<div class="ask"><button class="btn pri">許可 ${kc('y')}</button><button class="btn">常に許可</button><button class="btn line">拒否 ${kc('n')}</button></div>` : c.now ? `<div class="now ${c.st === 'err' ? 'err' : ''}">${c.st === 'run' ? `<span class="shimmer">${c.now}</span>` : `<span>${c.now}</span>`}</div>` : ''}
+    <div class="foot"><span class="who ${c.a}">${whoN[c.a]}</span>${diffStat(c)}${c.lb.map((x) => `<span class="lbl" style="background:var(--c-${x});width:16px"></span>`).join('')}<span class="tm">${c.tm}</span></div>${quick}</article>`;
+  },
+};
+let mode = 'c2';
+function render() {
+  $('#bd').innerHTML = LISTS.map(([n, cs]) => `<section class="list"><h3>${n}<span class="n">${cs.length}</span><span class="grow"></span><span class="iconbtn" style="width:24px;height:24px">${ic('more', 15)}</span></h3>${cs.map((c) => R[mode](c)).join('')}</section>`).join('');
+  $$('#seg button').forEach((b) => b.setAttribute('aria-selected', b.dataset.m === mode));
+}
+stage.insertAdjacentHTML('beforeend', `<div class="board" id="bd"></div><div class="dens"><b>カードの見え方</b><div class="seg" id="seg"><button data-m="now">現行</button><button data-m="c1">コンパクト</button><button data-m="c2">標準</button><button data-m="c3">リッチ</button></div><div class="hint">${kc('j')} ${kc('k')} 移動 ${kc('r')} 返信 ${kc('Enter')} 開く</div></div>`);
+$('#seg').onclick = (e) => { const b = e.target.closest('button'); if (b) { mode = b.dataset.m; render(); fillIc(); } };
+const q = new URLSearchParams(location.search).get('mode'); if (q) mode = q;
+render(); fillIc();
+let idx = -1;
+addEventListener('keydown', (e) => { if (e.key !== 'j' && e.key !== 'k') return; const cs = $$('.card'); idx = Math.max(0, Math.min(cs.length - 1, idx + (e.key === 'j' ? 1 : -1))); cs.forEach((c, i) => c.classList.toggle('sel', i === idx)); cs[idx].scrollIntoView({ block: 'nearest' }); });
+</script></body></html>

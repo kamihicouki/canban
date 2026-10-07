@@ -646,6 +646,9 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
 /* @include workspace.css */
 /* @include card-overlay.css */
 /* @include card-interior.css */
+/* @include card-face.css */
+/* @include thread.css */
+/* @include component-styles.css */
 /* @include layouts.css */
 /* @include slack.css */
 </style>
@@ -854,10 +857,11 @@ const bridge = (() => {
 // @include workspace-model.js
 // @include card-overlay-model.js
 // @include prompt-composer.js
+// @include component-styles-model.js
 const PAGE = 40;
 const COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
 const COLOR_NAMES = { gray: 'グレー', blue: '青', green: '緑', yellow: '黄', orange: 'オレンジ', red: '赤', purple: '紫', pink: 'ピンク', sky: '水色', lime: 'ライム' };
-const SHARED_UI_KEYS = ['filters', 'themePref', 'layout', 'cardFit', 'sidebar', 'workspacePage', 'labelsExpanded', 'paneGlobal', 'cardLayouts', 'cardWidths', 'cardBoard', 'cardHeights', 'collapsedLanes'];
+const SHARED_UI_KEYS = ['filters', 'themePref', 'layout', 'cardFit', 'sidebar', 'workspacePage', 'labelsExpanded', 'paneGlobal', 'cardLayouts', 'cardWidths', 'cardBoard', 'cardHeights', 'collapsedLanes', 'componentStyles'];
 const sharedUi = { revision: null, ready: false, dirty: false, blocked: false, applying: false, inflight: false, generation: 0, timer: null, checkTimer: null };
 const store = {
   get(k, d) { try { const v = localStorage.getItem(`sk:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -886,6 +890,7 @@ const state = {
   themePref: store.get('themePref', 'system'),
   layout: store.get('layout', 'trello'),
   cardFit: store.get('cardFit', 'fixed') === 'auto' ? 'auto' : 'fixed',
+  styles: normalizeComponentStyles(store.get('componentStyles', null)),
   sideQ: '',
   soloLane: null,
   lanes: [],
@@ -1099,7 +1104,7 @@ const agentTag = (agent) => h('span', { class: `ag ag-${agent}`, text: agent ===
 const flag = (text, title, cls = '') => h('span', { class: `flag ${cls}`, title, text });
 function cardShell(card, extraClass) {
   return h('article', {
-    class: `card${extraClass}${card.archived ? ' is-archived' : ''}${card.unread ? ' unread' : ''}${state.cardFit === 'fixed' ? ' fixed' : ''}`, tabindex: 0, 'data-card-id': card.id,
+    class: `card${extraClass}${card.archived ? ' is-archived' : ''}${card.unread ? ' unread' : ''}${state.cardFit === 'fixed' && !isFace() ? ' fixed' : ''}`, tabindex: 0, 'data-card-id': card.id,
     'aria-label': `${card.title}（${card.kind === 'task' ? `${T.taskCard}・` : ''}${STATUS_LABELS[card.status]}${card.unread ? '・新着' : ''}）`, title: card.title,
   });
 }
@@ -1114,6 +1119,7 @@ function cardMeta(...nodes) {
 }
 
 function renderCard(card, list) {
+  if (isFace()) return renderFaceCard(card, list);
   if (card.kind === 'task') return renderTaskCard(card, list);
   const el = cardShell(card, '');
   const viewers = live.viewers.get(card.id);
@@ -1154,7 +1160,7 @@ function renderCard(card, list) {
   if (card.codexFollowUps) meta.append(h('span', { class: 'pill', title: 'Codex アプリのキューにフォローアップが待機しています（Canban からは送りません）', text: `Codex キュー ${card.codexFollowUps}` }));
   meta.append(h('span', { class: 'meta-end', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }));
   el.append(meta);
-  return attachCardBehavior(el, card, list, (opts) => resume(card.id, opts));
+  return withPeek(attachCardBehavior(el, card, list, (opts) => resume(card.id, opts)), card);
 }
 
 // Shared by session and task cards: drag, click to open (the card floats above the board), ▶ resume, keyboard.
@@ -1170,6 +1176,8 @@ function attachCardBehavior(el, card, list, onResume) {
     if (e.target !== el) return;
     if (e.key === 'Enter') openCard(card.id);
     const plain = !e.metaKey && !e.ctrlKey && !e.altKey;
+    if (e.key === 'Escape' && state.peek?.id === card.id) { e.preventDefault(); e.stopPropagation(); return closePeek(); }
+    if (plain && !e.shiftKey && card.kind !== 'task' && state.styles.peek === 'on' && (e.key === ' ' || e.key === 'r')) { e.preventDefault(); e.stopPropagation(); return togglePeek(card, { focusInput: e.key === 'r' }); }
     if (plain && CARD_ATTR_KEYS[e.key]) { e.preventDefault(); e.stopPropagation(); return CARD_ATTR_KEYS[e.key](el, card, list); }
     const k = onResume && !e.metaKey && !e.ctrlKey && !e.altKey && CARD_KEYS[e.key.toLowerCase()];
     if (k) { e.preventDefault(); onResume(k); }
@@ -1489,7 +1497,8 @@ function lookMenu(anchor) {
   popover(anchor, 'レイアウトとテーマ', h('div', { class: 'view-menu' },
     h('div', { class: 'field-label', text: 'カードの高さ' }), seg([['fixed', '揃える'], ['auto', '内容に合わせる']], (k) => state.cardFit === k, setCardFit),
     h('div', { class: 'field-label', text: 'レーン内のリストの高さ' }), seg(Object.entries(LANE_HEIGHTS).map(([k, [label]]) => [k, label]), (k) => (f.laneHeight || 'normal') === k, (k) => { f.laneHeight = k; saveFilters(); render(); }),
-    h('div', { class: 'field-label', text: 'レイアウトと色' }), layoutChooser()), { width: 400 });
+    h('div', { class: 'field-label', text: 'コンポーネントのスタイル' }), componentStyleChooser(),
+    h('div', { class: 'field-label', text: 'レイアウトと色' }), layoutChooser()), { width: 440 });
 }
 
 function labelsManager(anchor) {
@@ -1582,6 +1591,8 @@ const paneStage = h('div', { class: 'pane-stage' });
 const paneRow = h('div', { class: 'pane-row' });
 paneStage.append(paneRow);
 // @include card-board.js
+// @include card-face.js
+// @include thread.js
 // Only a press that starts and ends on the backdrop closes the card, and not the same press that just closed a popover.
 let backdropDown = false;
 const onBackdrop = (e) => !e.target.closest('.pane, .pane-bar, .popover, .shortcut-map, .card-board-margin');
@@ -1615,6 +1626,7 @@ const applyCardWidths = () => { for (const kind of CARD_KINDS) { paneLayer.style
 function applyPaneAttrs(p) {
   p.el.dataset.mode = paneGlobal.mode;
   p.el.dataset.kind = p.kind;
+  p.el.dataset.detail = state.styles.detail;
 }
 
 // ---- the bar over the cards: how the conversation is shown, reset layout, close ----
@@ -1836,8 +1848,14 @@ function stepPane(step) {
   const i = panes.indexOf(focusedPane()), target = panes[i + step];
   if (target) revealPane(target.id);
 }
+// The button behind a pane key. In the thread layout the buttons sit in the details panel: open it first.
+function paneKeyButton(p, k) {
+  const find = () => p.el.querySelector(`[data-pane-key="${k}"]`);
+  if (!find() && p.detailNodes) openThreadSide(p, 'details');
+  return find();
+}
 function focusPrompt(p) {
-  const field = (x) => x.el.querySelector('.psec[data-sec="send"] textarea');
+  const field = (x) => x.el.querySelector('[data-sec="send"] textarea');
   const ta = field(p) || panes.map(field).find(Boolean);
   if (ta) ta.focus(); else toast('指示を入力できるカードではありません');
 }
@@ -1859,8 +1877,9 @@ document.addEventListener('keydown', e => {
     else if (k === '[' || k === ']') run = () => stepPane(k === ']' ? 1 : -1);
     else if (/^[1-9]$/.test(k) && PANE_MODES[k - 1]) run = () => setPaneMode(PANE_MODES[k - 1][0]);
     else if (k === 'i') run = () => focusPrompt(p);
-    else if (p.kind === 'session' && (k === 'z' || k === 'Delete')) run = () => p.el.querySelector(`[data-pane-key="${k}"]`)?.click();
-    else if (/^[olgmh]$/.test(k)) run = () => p.el.querySelector(`[data-pane-key="${k}"]`)?.click();
+    else if (p.kind === 'session' && p.el.dataset.detail === 'thread' && (k === 'd' || (k === 'f' && state.styles.review === 'on' && !p.d?.session?.host))) run = () => toggleThreadSide(p, k === 'd' ? 'details' : 'changes');
+    else if (p.kind === 'session' && (k === 'z' || k === 'Delete')) run = () => paneKeyButton(p, k)?.click();
+    else if (/^[olgmh]$/.test(k)) run = () => paneKeyButton(p, k)?.click();
   }
   if (run) { e.preventDefault(); run(); }
 });
@@ -2111,7 +2130,7 @@ function renderPaneKeepingDrafts(p, d) {
   if (el.querySelector('.req-row textarea')) {
     // Keep the request editor while rebuilding a reset conversation cursor.
     p.d = d;
-    const conversation = $('.psec[data-sec="conv"] .psec-b', el);
+    const conversation = $('.psec[data-sec="conv"] .psec-b', el) || $('.th-conv', el);
     if (conversation && d.feed) conversation.replaceChildren(renderFeed(d, p));
     return;
   }
@@ -2300,8 +2319,9 @@ function renderPane(p, d) {
     s.sourcePath ? h('button', { class: 'side-btn', text: '⧉ ログのパスをコピー', onclick: () => copyText(s.sourcePath, 'パス') }) : null,
   ].filter(Boolean) };
 
+  const thread = state.styles.detail === 'thread';
   const cols = { main: h('div', { class: 'pcol', 'data-col': 'main' }), side: h('div', { class: 'pcol', 'data-col': 'side' }) };
-  for (const id of Object.keys(PANE_SECS)) {
+  if (!thread) for (const id of Object.keys(PANE_SECS)) {
     const sc = secs[id];
     if (!sc) continue;
     cols[PANE_SECS[id][0]].append(sectionEl(id, sc?.nodes || [h('span', { class: 'muted', text: 'なし' })], { kind: 'session', extra: sc?.extra, title: sc?.title ?? secTitle(id), hint: id === 'conv' ? '会話内容は読み取り専用です。下端をドラッグすると、すべてのカードで高さが揃います。' : id === 'memo' ? 'メモは Canban に保存します。セッションの内容は書き換えません。' : null }));
@@ -2311,13 +2331,17 @@ function renderPane(p, d) {
   p.activity = activityText(s.activity, p.status, s.signals);
   if (!d.feed) p.lastText = s.preview || '';
   el.setAttribute('aria-label', `セッション詳細: ${s.title}`);
-  el.replaceChildren(h('span', { class: 'ph-btns card-actions' }),
-    h('div', { class: 'pane-b' }, cols.main, columnSplit('session'), cols.side), ...paneSizeHandles('session'));
-  applyPaneLayoutTo(el);
-  cols.main.scrollTop = scroll[0];
-  cols.side.scrollTop = scroll[1];
+  applyPaneAttrs(p);
+  if (thread) renderThreadPane(p, d, secs, { card, listSel });
+  else {
+    el.replaceChildren(h('span', { class: 'ph-btns card-actions' }),
+      h('div', { class: 'pane-b' }, cols.main, columnSplit('session'), cols.side), ...paneSizeHandles('session'));
+    applyPaneLayoutTo(el);
+    cols.main.scrollTop = scroll[0];
+    cols.side.scrollTop = scroll[1];
+  }
   const prog = $('[data-sec="progress"]', el);
-  if (prog && $('.sig-box', prog)?.hidden) $('.psec-b', prog).append(h('span', { class: 'muted empty-progress', text: 'なし' }));
+  if (prog && $('.sig-box', prog)?.hidden) $('.psec-b, .dsec-b', prog).append(h('span', { class: 'muted empty-progress', text: 'なし' }));
   paintPaneButtons(p);
   applyPaneAttrs(p);
   paintViewers(p);
@@ -2371,7 +2395,8 @@ function renderDispatch(d) {
   const ta = h('textarea', { placeholder: 'このセッションに送るプロンプト（⌘/Ctrl + Enter で今すぐ送信）', 'aria-label': '送るプロンプト' });
   const ack = p?.elevated ? h('input', { type: 'checkbox', 'aria-label': '制限なしで実行されることを確認しました' }) : null;
   const busy = s.status === 'running' || s.status === 'waiting' || !!s.codexFollowUps;
-  const composer = promptComposer(ta, { key: `dispatch:${s.id}`, context: () => ({ cardId: s.id }), submit: () => send('now') });
+  const chips = styleIs('composer', 'chips');
+  const composer = promptComposer(ta, { key: `dispatch:${s.id}`, context: () => ({ cardId: s.id }), submit: () => send(busy ? 'queue' : 'now'), chips });
   const sendButtons = [];
   const send = async (when) => {
     const prompt = ta.value.trim();
@@ -2394,10 +2419,33 @@ function renderDispatch(d) {
       composer.setSending(false); sendButtons.forEach(b => { b.disabled = busy; });
     }
   };
-  sendButtons.push(h('button', { class: 'btn-primary', disabled: busy, text: '▶ 今すぐ送信', onclick: () => send('now') }),
+  if (chips) {
+    // One round button sends; while the session is busy it queues instead. Alt+Enter always queues.
+    const round = h('button', { class: 'send-round', type: 'button', title: busy ? 'キューに追加（⌘Enter）' : '今すぐ送信（⌘Enter）', 'aria-label': busy ? 'キューに追加' : '今すぐ送信', html: picon(busy ? 'queue' : 'send', 15), onclick: () => send(busy ? 'queue' : 'now') });
+    sendButtons.push(round);
+    if (!busy) sendButtons.unshift(h('button', { class: 'cx-ico', type: 'button', title: 'キューに追加（⌥Enter）', 'aria-label': 'キューに追加', html: picon('queue', 16), onclick: () => send('queue') }));
+    ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.altKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send('queue'); } });
+  } else sendButtons.push(h('button', { class: 'btn-primary', disabled: busy, text: '▶ 今すぐ送信', onclick: () => send('now') }),
     h('button', { class:'side-btn',disabled:busy,style:{width:'auto',marginBottom:0},text:'＋ キューに追加', onclick: () => send('queue') }));
   const appNote = s.agent === 'codex' || s.desktopSessionId || s.entrypoint === 'claude-desktop'
     ? helpTip(`${s.agent === 'codex' ? 'Codex' : 'Claude'} アプリでこのセッションを開いている場合は、閉じてから送ってください（アプリ側の表示と履歴がずれることがあります）。`) : null;
+  if (chips) {
+    composer.toolbar.append(permChip, h('span', { class: 'grow' }), appNote, ...sendButtons);
+    box.append(...[
+      D.paused ? h('div', { class: 'paused-bar' }, h('span', { class: 'grow', text: `⏸ キュー一時停止: ${D.paused.reason}` }),
+        h('button', { class: 'link-btn', text: '再開', onclick: () => act('canban_resume_queue', { cardId: s.id }, { okMsg: 'キューを再開しました' }).then(() => openCard(s.id)) })) : null,
+      D.active.length || D.queue.length ? h('div', { class: 'cx-reqs' }, ...D.active.map((r) => requestRow(s, r)), ...D.queue.map((r, i) => requestRow(s, r, { index: i, queue: D.queue }))) : null,
+      h('div', { class: 'send-box cx' }, composer.root,
+        ack ? h('label', { class: 'send-note row', style: { gap: '6px' } }, ack, 'このセッションはサンドボックス／確認なしで動いています。そのまま実行されることを確認しました') : null,
+        busy ? h('div', { class: 'muted cx-busy', text: s.codexFollowUps
+          ? `Codex アプリのキューにフォローアップが ${s.codexFollowUps} 件あります。二重に送らないよう、アプリ側で送るか消すまで Canban からは送りません。`
+          : `セッションが${s.status === 'running' ? '実行中' : '入力待ち'}です。送ると順番待ちに入ります。` }) : null),
+      h('div', { class: 'cx-keys' }, keyHint(['⌘', 'Enter'], busy ? 'キューへ' : '送信'), keyHint(['⌥', 'Enter'], 'キューへ'), keyHint(['$'], 'スキル')),
+      D.history.length ? h('details', { class: 'cx-hist' }, h('summary', { text: `依頼の履歴（${D.history.length}）` }),
+        ...D.history.map((r) => requestRow(s, r, { review: () => { try { composer.restore(r); toast('実行状況を確認し、内容を確認してから送信してください。'); } catch (e) { toast(e.message, true); } } }))) : null,
+    ].filter(Boolean));
+    return box;
+  }
   box.append(...[title,
     D.paused ? h('div', { class: 'paused-bar' }, h('span', { class: 'grow', text: `⏸ キュー一時停止: ${D.paused.reason}` }),
       h('button', { class: 'link-btn', text: '再開', onclick: () => act('canban_resume_queue', { cardId: s.id }, { okMsg: 'キューを再開しました' }).then(() => openCard(s.id)) })) : null,
@@ -2515,7 +2563,9 @@ function renderFeed(d, p) {
   const newBtn = h('button', { class: 'feed-new', text: '↓ 新着', hidden: true, onclick: () => scrollFeedToEnd(f) });
   const f = { pane: p, cardId: d.session.id, offset: d.feed.offset, size: d.feed.size, codexItems: d.feed.codexItems, list, foot, newBtn, tools: new Map(), status: d.session.status || 'idle', activity: d.session.activity || null, signals: d.session.signals || null, git: d.git || null };
   list.addEventListener('scroll', () => { if (atFeedEnd(list)) newBtn.hidden = true; });
-  for (const it of d.feed.items) { const el = feedItem(it, f); if (el) list.append(el); }
+  if (folded()) list.append(editSummary(f).el);
+  for (const it of d.feed.items) feedPush(f, it);
+  f.edits?.paint();
   const lastSaid = [...d.feed.items].reverse().find((it) => it.k === 'assistant');
   p.lastText = lastSaid ? lastSaid.text : d.session.preview || '';
   if (!d.feed.items.length) list.append(h('div', { class: 'muted', text: 'まだやりとりはありません' }));
@@ -2534,7 +2584,7 @@ function scrollFeedToEnd(f) {
 
 function paintFeedFoot(f) {
   const st = f.status;
-  if (st === 'running') f.foot.replaceChildren(h('span', { class: 'sdot s-running' }), h('span', { class: 'grow', title: f.activity || '' }, h('span', { class: 'dots', text: '作業中' }), f.activity ? `  ${f.activity}` : ''));
+  if (st === 'running') f.foot.replaceChildren(h('span', { class: 'sdot s-running' }), h('span', { class: 'grow', title: f.activity || '' }, h('span', { class: 'dots', text: '作業中' }), h('span', { class: 'elapsed num', text: f.turnStart ? ` ${fmtElapsed(Date.now() - f.turnStart)}` : '' }), f.activity ? `  ${f.activity}` : ''));
   else if (st === 'waiting') f.foot.replaceChildren(h('span', { class: 'sdot s-waiting' }), h('span', { class: 'grow', text: `${WAIT_TEXT[f.signals?.wait] || '入力待ち'}${f.activity ? `  ${f.activity}` : ''}（アプリで答えてください）` }));
   else f.foot.replaceChildren(h('span', { class: `sdot s-${st}` }), h('span', { class: 'grow', text: STATUS_LABELS[st] || '' }));
   const p = f.pane;
@@ -2559,8 +2609,7 @@ function applyFeed(f, feed) {
       continue;
     }
     if (it.k === 'assistant') f.pane.lastText = it.text;
-    const el = feedItem(it, f);
-    if (el) { f.list.append(el); added++; }
+    if (feedPush(f, it)) added++;
   }
   // Keep the DOM bounded on long runs.
   while (f.list.childElementCount > 400) f.list.firstElementChild.remove();
@@ -2572,16 +2621,17 @@ function applyFeed(f, feed) {
     f.status = feed.status;
     f.activity = feed.activity || null;
     f.signals = feed.signals || null;
-    if (feed.git) f.git = feed.git;
+    if (feed.git) { f.git = feed.git; paintThreadStat(f.pane, f.git); }
     paintFeedFoot(f);
+    f.edits?.paint();
     const box = f.pane.el.querySelector('.sig-box');
     if (box) {
       const next = renderSignals(f.signals, f.git);
       box.replaceWith(next);
-      const sec = next.closest('.psec');
+      const sec = next.closest('.psec, .dsec');
       if (sec) {
         let empty = $('.empty-progress', sec);
-        if (!empty) { empty = h('span', { class: 'muted empty-progress', text: 'なし' }); $('.psec-b', sec).append(empty); }
+        if (!empty) { empty = h('span', { class: 'muted empty-progress', text: 'なし' }); $('.psec-b, .dsec-b', sec).append(empty); }
         empty.hidden = !next.hidden;
       }
     }
@@ -2592,7 +2642,7 @@ function applyFeed(f, feed) {
 // ---- the long poll ----
 const live = { on: false, seq: null, feeds: new Map(), mode: 'long', inflight: 0, lastLoad: 0, loadTimer: null, dirty: false, ownActAt: 0, lastWatchEnd: 0, presence: [], viewers: new Map() };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const liveIdle = () => !state.drag && !document.querySelector('.popover, .list-title-input, .composer');
+const liveIdle = () => !state.drag && !document.querySelector('.popover, .list-title-input, .composer, .peek-input:focus');
 
 // Rebuild the board soon (coalesced, at most once every 1.5 s), when nothing is being edited.
 function scheduleLoad(delay = 0) {
@@ -2631,7 +2681,7 @@ function applyPatches(patches) {
     card.signals = p.signals || null;
     card.git = p.git || null;
     const el = document.querySelector(`.card[data-card-id="${CSS.escape(p.id)}"]`);
-    if (el && !state.drag) {
+    if (el && !state.drag && !el.querySelector('.peek-input:focus')) {
       const focused = el.contains(document.activeElement);
       const next = renderCard(card, list);
       el.replaceWith(next);
@@ -2668,7 +2718,7 @@ function applyPresence(list) {
     if (JSON.stringify(before.get(id)) === JSON.stringify(live.viewers.get(id))) continue;
     const hit = findCard(id);
     const el = document.querySelector(`.card[data-card-id="${CSS.escape(id)}"]`);
-    if (hit && !hit.link && el && !state.drag) {
+    if (hit && !hit.link && el && !state.drag && !el.querySelector('.peek-input:focus')) {
       const focused = el.contains(document.activeElement);
       const next = renderCard(hit.card, hit.list);
       el.replaceWith(next);
@@ -4245,7 +4295,7 @@ function stepDisplayedCard(delta) {
 function panePromptInput() {
   const active = document.activeElement?.closest?.('.pane');
   const ordered = active ? [active, ...panes.map(p => p.el).filter(el => el !== active)] : panes.map(p => p.el);
-  return ordered.map(el => el.querySelector('.psec[data-sec="send"] textarea:not([readonly]):not([disabled])')).find(Boolean);
+  return ordered.map(el => el.querySelector('[data-sec="send"] textarea:not([readonly]):not([disabled])')).find(Boolean);
 }
 function focusPanePrompt() {
   const input = panePromptInput();
@@ -4267,7 +4317,7 @@ function refreshShortcutHints() {
     else if (input === shortcutMapGrip) entries = [['← ↑ ↓ →', '案内を移動'], ['Alt+← / →', '左右の余白'], ['Shift', '微調整'], ['Home', '初期位置'], ...globalKeys, ['Esc', '閉じる']];
     else if (input?.matches('.card-board-margin')) entries = [['← / →', '余白を調整'], ['Shift', '微調整'], ['Home', '10%に戻す'], ['0', 'すべて初期化'], ...globalKeys, ['Esc', '閉じる']];
     else if (typing) entries = [
-      ...(input.closest('.psec[data-sec="send"]') && input.closest('.prompt-composer') ? [[`${modKey}Enter`, input.closest('.pane').dataset.kind === 'task' ? 'セッション開始' : '送信']] : []),
+      ...(input.closest('[data-sec="send"]') && input.closest('.prompt-composer') ? [[`${modKey}Enter`, input.closest('.pane').dataset.kind === 'task' ? 'セッション開始' : '送信']] : []),
       ['Esc', '入力を抜ける'], [`${modKey}K`, 'コマンド'],
     ];
     else if (panes[0]?.kind === 'view') entries = [[openViewKind() === 'analytics' ? 'a' : 'u', '閉じる'], ['r', '更新'], ...globalKeys, ['Alt+m', '案内の移動'], ['Alt+[ / ]', '左右余白'], ['0', '余白を初期化'], ['Esc', '閉じる']];
@@ -4287,7 +4337,7 @@ function refreshShortcutHints() {
   if (!boardKeyHints.hidden) {
     if (typing) entries = input.id === 'q' ? [['↓ / Enter', 'カードへ'], ['Esc', '検索をクリア']] : [['⌘K / Ctrl+K', 'コマンド']];
     else if (workspace.utilityPage()) entries = [...globalKeys, ['Esc', 'パネルを閉じる']];
-    else if (input?.matches('.card')) entries = [['j / k', '次 / 前'], ['Enter', '開く'], ['l', 'ラベル'], ['m', 'リストへ移動'], ...globalKeys];
+    else if (input?.matches('.card')) entries = [['j / k', '次 / 前'], ['Enter', '開く'], ['Space', 'その場で返信'], ['l', 'ラベル'], ['m', 'リストへ移動'], ...globalKeys];
     else entries = [['j / k', 'カード選択'], ['/', '検索'], ['c', 'タスク追加'], ['b', 'ナビゲーション'], ['a / u', '分析 / Usage'], ['r', '更新'], ...globalKeys];
     boardKeyHints.replaceChildren(...shortcutHints(entries).childNodes);
   }
@@ -4305,7 +4355,7 @@ const SHORTCUTS = [
   ]],
   ['Slack', [['v', 'タイムラインの表示 / 非表示（ボード）'], ['c / l / t', 'メッセージ上: タスク作成 / カードへ追加 / 返信'], ['Alt+s', 'カード内: Slack資料の追加ボタンへ'], ['Esc', 'タイムライン内: 非表示']]],
   ['カードを選択中', [
-    ['Enter', '詳細を開く'], ['l', 'ラベル'], ['g', `${T.category}`], ['m', 'リストへ移動'],
+    ['Enter', '詳細を開く'], ['Space / r', 'その場で読んで返信（r は入力欄へ）'], ['l', 'ラベル'], ['g', `${T.category}`], ['m', 'リストへ移動'],
     ['← →', '隣のリストへ移動'], ['↑ ↓ / Home End', 'リスト内で移動'], ['⌥ + 矢印', 'フォーカスだけ移動'],
     ['o', '再開（既定）'], ['d / t', 'デスクトップ / ターミナルで再開'], ['w n s e', 'ターミナル: 新規ウィンドウ / 新規タブ / 分割 / 既存'],
   ]],
@@ -4369,7 +4419,7 @@ function commandPalette() {
         return { label: `カードを${step < 0 ? '左' : '右'}のリスト「${target.title}」へ移動`, run: () => movePaneAdjacent(p, step), hint: `Shift+${step < 0 ? '←' : '→'}` };
       }),
       ...(sessionPane ? [
-        { label: sessionPane.d?.card.archived ? 'セッションカードをアーカイブから戻す' : 'セッションをアーカイブ', run: () => sessionPane.el.querySelector('[data-pane-key="z"]')?.click(), hint: 'z' },
+        { label: sessionPane.d?.card.archived ? 'セッションカードをアーカイブから戻す' : 'セッションをアーカイブ', run: () => paneKeyButton(sessionPane, 'z')?.click(), hint: 'z' },
         { label: 'セッションと会話履歴を削除…', run: () => confirmSessionCardDelete(sessionPane), hint: 'Delete' },
       ] : []),
       { label: 'カード: レイアウトとサイズを初期化', run: resetCardLayout },
@@ -4381,6 +4431,7 @@ function commandPalette() {
     ...Object.entries(LANE_MODES).map(([v, t]) => ({ label: `スイムレーン: ${t}`, run: () => { f.swimlane = v; state.soloLane = null; saveFilters(); render(); } })),
     ...Object.entries(LANE_HEIGHTS).map(([v, [t]]) => ({ label: `レーンの高さ: ${t}`, run: () => { f.laneHeight = v; saveFilters(); render(); } })),
     { label: 'キーボードショートカット', run: showShortcuts, hint: '?' },
+    ...COMPONENT_STYLE_KEYS.flatMap((key) => COMPONENT_STYLES[key][2].filter(([v]) => v !== state.styles[key]).map(([v, name]) => ({ label: `スタイル: ${COMPONENT_STYLES[key][0]} → ${name}`, run: () => setComponentStyle(key, v) }))),
     ...LAYOUTS.map(([id, name]) => ({ label: `レイアウト: ${name}`, run: () => setLayout(id) })),
     ...[['light', 'ライト'], ['dark', 'ダーク'], ['system', 'システム']].map(([k, n]) => ({ label: `色: ${n}`, run: () => { setThemePref(k); paintLayoutChrome(); } })),
   ];
@@ -4440,6 +4491,7 @@ $('#board').addEventListener('wheel', (e) => {
 }, { passive: false });
 
 // ======================================================================
+// @include component-styles.js
 // @include layouts.js
 // @include slack.js
 // @include workspace.js
@@ -4465,7 +4517,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => ap
 function sharedUiSnapshot() {
   return {
     slackVisible: slackUi.visible, filters: { ...state.filters }, themePref: state.themePref, layout: state.layout, cardFit: state.cardFit, sidebar: state.sideOpen, workspacePage: workspace.page, labelsExpanded: state.labelsExpanded,
-    paneGlobal: { ...paneGlobal }, cardLayouts: structuredClone(cardLayouts), cardWidths: { ...cardWidths }, cardBoard: structuredClone(cardBoardState), cardHeights: { ...cardHeights }, collapsedLanes: [...collapsedLanes],
+    paneGlobal: { ...paneGlobal }, cardLayouts: structuredClone(cardLayouts), cardWidths: { ...cardWidths }, cardBoard: structuredClone(cardBoardState), cardHeights: { ...cardHeights }, collapsedLanes: [...collapsedLanes], componentStyles: { ...state.styles },
   };
 }
 
@@ -4483,6 +4535,7 @@ function adoptSharedUi(record) {
     if (typeof value.themePref === 'string') { state.themePref = value.themePref; applyTheme(); }
     if (typeof value.layout === 'string') { state.layout = layoutOf(value.layout); applyLayout(); }
     if (value.cardFit === 'auto' || value.cardFit === 'fixed') state.cardFit = value.cardFit;
+    if (value.componentStyles) { state.styles = normalizeComponentStyles(value.componentStyles); applyComponentStyles(); }
     if (typeof value.labelsExpanded === 'boolean') state.labelsExpanded = value.labelsExpanded;
     if (value.paneGlobal && typeof value.paneGlobal === 'object') Object.assign(paneGlobal, { mode: oneOf(value.paneGlobal.mode, PANE_MODES, PANE_DEF.mode) });
     // In place: sections already on screen keep their reference to the layout of their kind.
@@ -4641,7 +4694,7 @@ function scheduleSharedUiCheck() {
   sharedUi.checkTimer = setTimeout(checkSharedUiOnReturn, 150);
 }
 
-function idle() { return !state.drag && !document.querySelector('.popover, .list-title-input, .composer'); }
+function idle() { return !state.drag && !document.querySelector('.popover, .list-title-input, .composer, .peek-input:focus'); }
 let lastPoll = 0;
 setInterval(() => {
   // With the live watch on, this is only a safety net (remote hosts, missed events).
@@ -4658,6 +4711,7 @@ window.addEventListener('resize', () => bridge.reportSize());
   const ctx = await bridge.init();
   state.hostTheme = ctx.theme;
   applyTheme(ctx.theme);
+  applyComponentStyles();
   if (ctx.displayMode === 'inline') {
     $('#refresh').after(h('button', { class: 'hbtn', title: '全画面で開く', 'aria-label': '全画面で開く', text: '⤢', onclick: () => bridge.requestFullscreen() }));
   }
