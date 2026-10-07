@@ -36,7 +36,7 @@ function toolGroup() {
 function paintToolGroup(g) {
   const parts = [...g._kinds].map(([k, n]) => TOOL_KINDS.find(([id]) => id === k)?.[2]?.(n) ?? toolKindOf(k)[2](n));
   const running = $$('.fi-tool .ti:not(.ok):not(.error)', g._list).length;
-  g._label.replaceChildren(h('span', { text: parts.join(' · ') || '考えています…' }), running ? h('span', { class: 'tg-run', title: '実行中' }) : null);
+  g._label.replaceChildren(...[h('span', { text: parts.join(' · ') || '考えています…' }), running ? h('span', { class: 'tg-run', title: '実行中' }) : null].filter(Boolean));
   g.classList.toggle('has-error', !!$('.fi-tool .ti.error', g._list));
 }
 // Put one item into the feed: folded mode groups tool calls and ends a turn with its working time.
