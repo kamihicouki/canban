@@ -2325,6 +2325,7 @@ function renderPane(p, d) {
     accountPicker ? h('div', { class: 'field-label' }, h('span', { text: '実行アカウント' }), ...keycap('Alt+a')) : null,
     accountPicker,
     accountPicker ? h('div', { class: 'muted', text: '選択は保存され、再開と指示に使います。Desktop の切替が必要な場合はアプリを終了してください。' }) : null,
+    accountPicker ? h('div', { class: 'muted claude-thinking-note', text: '別アカウントでは過去の思考を再計算します。組織の思考に関する通知が出ても、会話履歴は引き継がれます。' }) : null,
     accountPicker ? h('div', { class: 'muted claude-desktop-account-note' }) : null,
     h('button', { class: 'btn-primary resume-main', 'data-pane-key': 'o', title: `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`, onclick: (e) => resume(s.id, optsFromEvent(e)) },
       h('span', { text: '▶ 再開' }), ...keycap('o')),

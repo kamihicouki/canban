@@ -26,8 +26,8 @@ before(async () => {
   fs.mkdirSync(path.join(target, 'projects'), { recursive: true });
   fs.mkdirSync(cwd);
   fs.writeFileSync(transcript, [
-    { type: 'user', sessionId: 'kept-id', cwd, gitBranch: session.branch, permissionMode: 'acceptEdits', timestamp: '2026-09-01T00:00:00Z', message: { content: 'keep this conversation' } },
-    { type: 'assistant', timestamp: '2026-09-01T00:00:01Z', message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'existing reply' }] } },
+  { type: 'user', sessionId: 'kept-id', cwd: '/old/main-checkout', gitBranch: 'main', permissionMode: 'acceptEdits', timestamp: '2026-09-01T00:00:00Z', message: { content: 'keep this conversation' } },
+  { type: 'assistant', cwd, gitBranch: session.branch, timestamp: '2026-09-01T00:00:01Z', message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'existing reply' }] } },
   ].map(o => JSON.stringify(o) + '\n').join(''));
   fs.utimesSync(transcript, 1, 1);
   identity(source, 'first'); identity(target, 'second');

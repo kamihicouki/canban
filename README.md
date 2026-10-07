@@ -67,7 +67,7 @@
 
 Claude デスクトップには、拡張機能（`.mcpb`）として入れます。
 
-1. 拡張機能のファイルを作ります（`dist/canban.mcpb` ができます）。
+1. 通常checkoutのコミット済みmainから拡張機能のファイルを作ります（`dist/canban.mcpb` ができます）。Git管理ファイルだけを使い、ローカル設定・実データ・未追跡資料は含めません。
 
    ```bash
    cd ~/Documents/repo/canban

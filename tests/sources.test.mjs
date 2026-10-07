@@ -5,7 +5,8 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { listCodexSessions, codexSessionMessages } from '../server/sources/codex.mjs';
-import { listClaudeSessions, claudeSessionMessages } from '../server/sources/claude.mjs';
+import { listClaudeSessions, claudeSessionMessages, newSummary, foldSummary, normalizeClaudeSummary } from '../server/sources/claude.mjs';
+import { resumeCommand, headlessArgs } from '../server/agents.mjs';
 import { queryReadOnly } from '../server/sources/readonly.mjs';
 
 import { makeFixtures } from './helpers.mjs';
@@ -15,6 +16,26 @@ const { codexHome, claudeHome, desktopDir } = fx;
 const before = fx.snapshot();
 fx.lock(); // any write attempt now fails at the OS level
 after(() => fx.cleanup());
+
+test('Claude resume follows the latest main conversation worktree, preserving the session ID', () => {
+  const summary = newSummary('same-session');
+  const worktree = '/repo/.claude/worktrees/card-ux';
+  for (const record of [
+    { type: 'user', cwd: '/repo', gitBranch: 'main', message: { content: 'カードを改善して' } },
+    { type: 'assistant', cwd: '/repo/prototypes/card-ux', gitBranch: 'main' },
+    { type: 'assistant', cwd: worktree, gitBranch: 'worktree-card-ux' },
+    { type: 'assistant', isSidechain: true, cwd: '/other-agent', gitBranch: 'other-agent' },
+    { type: 'assistant', cwd: '  ', gitBranch: {} },
+    { type: 'assistant', cwd: 42 },
+  ]) foldSummary(summary, record);
+  const session = normalizeClaudeSummary(summary, { cwd: '/repo' });
+  assert.equal(session.cwd, worktree);
+  assert.equal(session.branch, 'worktree-card-ux');
+  assert.equal(session.nativeId, 'same-session');
+  const command = resumeCommand(session);
+  assert.ok(command.startsWith(`cd ${worktree} 2>/dev/null`), command);
+  assert.deepEqual(headlessArgs(session, { mode: 'default' }).args.slice(0, 3), ['-p', '--resume', 'same-session']);
+});
 
 test('codex sessions are normalized from the state DB', async () => {
   const { sessions, error } = await listCodexSessions({ home: codexHome });

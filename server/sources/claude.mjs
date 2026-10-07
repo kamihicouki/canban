@@ -60,8 +60,12 @@ export function foldSummary(s, o) {
     if (s.createdAt == null || ts < s.createdAt) s.createdAt = ts;
     if (s.updatedAt == null || ts > s.updatedAt) s.updatedAt = ts;
   }
-  if (o.cwd && !s.cwd) s.cwd = o.cwd;
-  if (o.gitBranch) s.branch = o.gitBranch;
+  // Resume where the main conversation last worked, not its initial checkout.
+  // Sidechains can run elsewhere; they must not redirect the parent session.
+  if (!o.isSidechain) {
+    if (typeof o.cwd === 'string' && o.cwd.trim()) s.cwd = o.cwd;
+    if (typeof o.gitBranch === 'string' && o.gitBranch.trim()) s.branch = o.gitBranch;
+  }
   if (!s.entrypoint && typeof o.entrypoint === 'string') s.entrypoint = o.entrypoint;
   switch (o.type) {
     case 'custom-title':

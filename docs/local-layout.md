@@ -53,6 +53,8 @@ macOS の Desktop はCLIとは別のログインを使う。0.24.2以降、ロ�
 
 ## ローカルmainとChrome更新
 
+Claude Desktop の拡張は `update:local` では更新されません。通常mainから `npm run pack:mcpb` で `dist/canban.mcpb` を生成し、Desktopの拡張設定で既存のCanbanを更新します。MCPBも `dist/codex-plugin/` のコミット済みGit管理ファイルだけを使い、`.local/` と未追跡資料を含めません。インストールコピーのmanifestと保存先を読み戻し、更新を確認します。アプリ管理キャッシュを手編集しません。
+
 ```sh
 cd /Users/d/Documents/repo/canban
 npm run update:local
