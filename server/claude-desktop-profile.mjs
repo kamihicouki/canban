@@ -3,14 +3,14 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { claudeDesktopRoots, invalidateDesktopRoots } from './accounts.mjs';
 
-let processCheck = async () => {
-  const commands = await new Promise((resolve, reject) => execFile('/bin/ps', ['-axo', 'command='], { timeout: 5000 }, (error, stdout) => error ? reject(error) : resolve(stdout)));
-  return commands.split('\n').some(line => /\/Claude\.app\/Contents\/(?:MacOS|Frameworks)\//.test(line));
-};
+import { inspectDesktopRuntime } from './claude-desktop-runtime.mjs';
+import { desktopProfileLock } from './claude-desktop-lock.mjs';
+
+let processCheck = inspectDesktopRuntime;
+const isRunning = status => typeof status === 'boolean' ? status : status?.running !== false;
 export function setDesktopProcessCheck(check) { const previous = processCheck; processCheck = check; return previous; }
 
 const identity = async dir => {
@@ -51,10 +51,9 @@ export async function desktopProfilePlan(account, { platform = process.platform 
 // replaces only the existing symlink. Roll back on failure if it is still ours.
 export async function withDesktopAccount(account, action, options = {}) {
   const plan = await desktopProfilePlan(account, options);
-  if (!plan.available) throw new Error(plan.reason);
+  if (!plan.available) throw Object.assign(new Error(plan.reason), { code: 'desktop_unavailable' });
   const lock = path.join(path.dirname(plan.defaultDir), '.canban-claude-profile.lock');
-  try { await fs.mkdir(lock, { mode: 0o700 }); }
-  catch (error) { if (error.code === 'EEXIST') throw new Error('Desktop のプロフィール切替が進行中です。完了してから再操作してください'); throw error; }
+  const lease = await desktopProfileLock(lock);
   const temporary = `${plan.defaultDir}.canban-${randomUUID()}`;
   let previous, changed = false;
   try {
@@ -62,12 +61,16 @@ export async function withDesktopAccount(account, action, options = {}) {
     if (!fresh.available || fresh.dir !== plan.dir) throw new Error('Desktop のプロフィールが変わりました。実行アカウントを選び直してください');
     // A link can have been changed externally while an old app is still open.
     // The app's loaded login cannot be inferred from a symlink/config snapshot.
-    if (await processCheck()) throw new Error('Claude Desktop を終了してから実行アカウントを適用してください。起動中のアカウントは保存先だけでは確認できません');
+    const runtime = await processCheck(fresh);
+    const running = isRunning(runtime);
+    if (running && (fresh.change || runtime.profileDir !== fresh.dir)) throw Object.assign(new Error('Desktop への適用は Claude Desktop を終了してから行ってください。起動中のプロフィールを確認できません'), { code: 'desktop_running' });
+    await lease.assertHeld();
     if (fresh.change) {
       previous = await fs.readlink(plan.defaultDir);
       if (await identity(plan.dir) !== account) throw new Error('Desktop のログインアカウントが変わりました');
       await fs.symlink(plan.dir, temporary);
-      if (await processCheck()) throw new Error('Claude Desktop が起動しました。終了してから再操作してください');
+      if (isRunning(await processCheck(fresh))) throw Object.assign(new Error('Claude Desktop が起動しました。終了してから再操作してください'), { code: 'desktop_running' });
+      await lease.assertHeld();
       // A separate profile switcher must not be silently overwritten.
       if (await fs.readlink(plan.defaultDir) !== previous) throw new Error('別の操作で Desktop のプロフィールが切り替わりました');
       await fs.rename(temporary, plan.defaultDir);
@@ -75,12 +78,15 @@ export async function withDesktopAccount(account, action, options = {}) {
       invalidateDesktopRoots();
     }
     if (await fs.realpath(plan.defaultDir) !== plan.dir || await identity(plan.dir) !== account) throw new Error('Desktop の実行アカウントを確認できません');
-    return await action({ account, changed, maintained: true });
+    await lease.assertHeld();
+    const result = await action({ account, changed, maintained: true, pending: false, profile: fresh.profile });
+    await lease.assertHeld();
+    return result;
   } catch (error) {
     if (changed) {
       // Never switch a running app's data directory back, or overwrite a newer
       // external choice. Report a failed rollback rather than claim success.
-      if (await processCheck() || await fs.realpath(plan.defaultDir).catch(() => null) !== plan.dir) throw new Error(`${error.message}。Desktop の保存先は切替後のままです。アプリを終了してプロフィールを確認してください`);
+      if (isRunning(await processCheck(plan)) || await fs.realpath(plan.defaultDir).catch(() => null) !== plan.dir) throw new Error(`${error.message}。Desktop の保存先は切替後のままです。アプリを終了してプロフィールを確認してください`);
       await fs.symlink(previous, temporary);
       await fs.rename(temporary, plan.defaultDir);
       invalidateDesktopRoots();
@@ -88,7 +94,7 @@ export async function withDesktopAccount(account, action, options = {}) {
     throw error;
   } finally {
     await fs.unlink(temporary).catch(() => {});
-    await fs.rmdir(lock);
+    await lease.release();
   }
 }
 
@@ -123,4 +129,17 @@ export async function desktopExecutionLink(session, account, { cliHome = path.jo
     }
   }
   return { url: `claude://resume?session=${session.nativeId}`, exact: true, label: 'Claude で開く', note: '選択した Desktop アカウントで同じ CLI 会話を取り込みます。' };
+}
+
+// Saving the CLI choice succeeds independently from Desktop's process lifecycle.
+// Only expected availability/lifecycle failures are converted to pending status.
+export async function saveClaudeExecutionAccount(account, commit, options = {}) {
+  const execution = await commit();
+  try {
+    const desktop = await withDesktopAccount(account, async status => status, options);
+    return { execution, desktop };
+  } catch (error) {
+    if (!['desktop_unavailable', 'desktop_running', 'desktop_busy'].includes(error.code)) throw error;
+    return { execution, desktop: { maintained: false, pending: true, account, reason: error.message, code: error.code } };
+  }
 }

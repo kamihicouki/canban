@@ -8,7 +8,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { listClaudeSessions } from '../server/sources/claude.mjs';
 import { listCodexSessions } from '../server/sources/codex.mjs';
-import { configureAccounts, refreshAccounts, accountsView, accountLimits, desktopAccountMismatch, homeEnv, resetAccountsForTest } from '../server/accounts.mjs';
+import { configureAccounts, refreshAccounts, accountsView, accountLimits, desktopAccountMismatch, homeEnv, resetAccountsForTest, resolveAccountHome } from '../server/accounts.mjs';
 import { noteLimits, limitsByAccount, resetLimitsForTest } from '../server/signals.mjs';
 import { resumeCommand } from '../server/agents.mjs';
 import { computeStats } from '../server/stats.mjs';
@@ -95,7 +95,7 @@ test('every account and config folder is listed, each session with its account',
   // A CLI-only session in the default folder: unknown. In a profile folder: that folder's account.
   assert.equal(by(all, 's4').account, null);
   assert.equal(by(all, 's3').account, 'claude:acct-c');
-  assert.equal(by(all, 's3').home, 'claude-work');
+  assert.equal(by(all, 's3').home, resolveAccountHome('claude', 'claude-work').id);
   assert.equal(by(all, 'x1').account, 'codex:cx-1');
   assert.equal(by(all, 'x2').account, null);
 });
@@ -136,7 +136,7 @@ test('usage per account: Claude from every desktop profile, Codex from the logs'
   assert.equal(acct('codex:cx-1').plan, 'plus');
   assert.equal(acct('claude:acct-a').count, 1);
   assert.deepEqual(v.unknown, { codex: 1, claude: 1 });
-  assert.deepEqual(v.homes.map((h) => [h.agent, h.id, h.source]), [['codex', 'default', 'default'], ['claude', 'default', 'default'], ['claude', 'claude-work', 'settings']]);
+  assert.deepEqual(v.homes.map((h) => [h.agent, h.id, h.source]), [['codex', 'default', 'default'], ['claude', 'default', 'default'], ['claude', resolveAccountHome('claude', 'claude-work').id, 'settings']]);
   // Tokens are never read into anything Canban returns.
   assert.doesNotMatch(JSON.stringify(v), /SECRET/);
 });

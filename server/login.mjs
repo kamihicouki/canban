@@ -2,6 +2,7 @@
 // into the UI; tokens remain inside the vendor CLI and its credential store.
 import fs from 'node:fs';
 import { isolatedClaudeEnvironment } from './claude-auth-env.mjs';
+import { isolatedCodexEnvironment } from './codex-auth-env.mjs';
 import path from 'node:path';
 import net from 'node:net';
 import crypto from 'node:crypto';
@@ -36,7 +37,7 @@ export function loginEnvironment(home, env = process.env) {
   for (const k of ['BROWSER', 'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_OAUTH_TOKEN', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'CANBAN_AUTH_SOCKET', 'CANBAN_AUTH_NONCE', 'CANBAN_AUTH_NODE', 'CANBAN_AUTH_HELPER']) delete out[k];
   for (const k of Object.keys(out)) if (/^CLAUDE_(BG|PTY)_/.test(k)) delete out[k];
   out[home.agent === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR'] = home.dir;
-  return home.agent === 'claude' ? isolatedClaudeEnvironment(out, home.dir) : out;
+  return home.agent === 'claude' ? isolatedClaudeEnvironment(out, home.dir) : isolatedCodexEnvironment(out, home.dir);
 }
 export function loginPreference(home) {
   try { return JSON.parse(fs.readFileSync(path.join(home.dir, LOGIN_TARGET_FILE), 'utf8')); } catch { return null; }

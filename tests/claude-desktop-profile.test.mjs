@@ -44,7 +44,7 @@ test('running Desktop, overlapping switches, and callback failure protect the ex
   setDesktopProcessCheck(async () => true);
   await assert.rejects(withDesktopAccount('claude:second', async () => {}, options), /Desktop を終了/);
   assert.equal(await fs.realpath(app), await fs.realpath(first));
-  setDesktopProcessCheck(async () => false);
+  setDesktopProcessCheck(async () => ({ running: false, profileDir: null }));
   await withDesktopAccount('claude:second', async () => {
     await assert.rejects(withDesktopAccount('claude:first', async () => {}, options), /切替が進行中/);
   }, options);

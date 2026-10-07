@@ -1,3 +1,4 @@
+import { normalizeClaudeExecution } from './accounts.mjs';
 import { sessionActions } from './session-actions.mjs';
 import { leaderFor } from './leader.mjs';
 // Combines read-only session listings (local + enabled remote hosts) with the
@@ -652,7 +653,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     repo: s.repo || null,
     parentId: s.parentId || null,
     tasks: taskEntries(state).map(([id, t]) => ({ id, title: t.title })),
-    launch: { ...withAccountNote(launchInfo(s), s, labels), claudeAccounts: claudeProfiles, claudeExecutionAccounts, claudeExecution: card.claudeExecution || null },
+    launch: { ...withAccountNote(launchInfo(s), s, labels), claudeAccounts: claudeProfiles, claudeExecutionAccounts, claudeExecution: normalizeClaudeExecution(card.claudeExecution) },
     settings: state.settings,
     terminals: installedTerminals(),
     recentMessages: recent,

@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { makeFixtures } from './helpers.mjs';
@@ -23,6 +24,7 @@ fs.writeFileSync(path.join(fx.desktopDir, 'config.json'), JSON.stringify({ lastK
 const cwd = path.join(fx.root, 'unchanged-worktree'); fs.mkdirSync(cwd);
 const second = path.join(fx.root, 'second-account');
 const duplicate = path.join(fx.root, 'second-copy');
+const duplicateId = `home-${createHash('sha256').update(`claude:${duplicate}`).digest('hex').slice(0, 24)}`;
 const extras = [second, duplicate, path.join(fx.root, 'second-third'), ...[1, 2, 3].map(n => path.join(fx.root, `first-copy-${n}`))];
 for (const dir of extras) fs.mkdirSync(dir);
 for (const dir of [fx.claudeHome, ...extras]) {
@@ -97,14 +99,14 @@ try {
   await page.locator('.claude-profile-row:visible').click();
   assert.equal((await (await saved).json()).result.isError, undefined);
   await page.waitForFunction(() => !document.querySelector('.claude-account-picker').disabled);
-  assert.equal((await new Store(dataDir).load()).cards['claude:c2'].claudeExecution.homeId, 'second-copy');
+  assert.equal((await new Store(dataDir).load()).cards['claude:c2'].claudeExecution.homeId, duplicateId);
   // Reselecting the same identity retains the exact saved configuration.
   await picker.click();
   saved = waitSaved();
   await identityRows.filter({ hasText: 'second@example.test' }).click();
   await saved;
   await page.waitForFunction(() => !document.querySelector('.claude-account-picker').disabled);
-  assert.equal((await new Store(dataDir).load()).cards['claude:c2'].claudeExecution.homeId, 'second-copy');
+  assert.equal((await new Store(dataDir).load()).cards['claude:c2'].claudeExecution.homeId, duplicateId);
   assert.equal(await page.locator('[data-resume-desktop]').isDisabled(), true);
   assert.match(await page.locator('.claude-execution-note').innerText(), /second@example.test/);
 
@@ -142,7 +144,7 @@ try {
   await prompt.fill('Persisted selection after reload');
   const persisted = await new Store(dataDir).load();
   assert.equal(persisted.cards['claude:c2'].claudeExecution.account, 'claude:second');
-  assert.equal(persisted.cards['claude:c2'].claudeExecution.homeId, 'second-copy');
+  assert.equal(persisted.cards['claude:c2'].claudeExecution.homeId, duplicateId);
   await picker.click();
   saved = waitSaved();
   await page.getByRole('button', { name: '元の設定に戻す', exact: true }).click();
@@ -155,7 +157,7 @@ try {
   await identityRows.filter({ hasText: 'second@example.test' }).click();
   await saved;
   await page.waitForFunction(() => !document.querySelector('.claude-account-picker').disabled);
-  assert.equal((await new Store(dataDir).load()).cards['claude:c2'].claudeExecution.homeId, 'second-copy');
+  assert.equal((await new Store(dataDir).load()).cards['claude:c2'].claudeExecution.homeId, duplicateId);
   // A fresh write must be rejected even when the cached board still looks idle.
   fs.utimesSync(transcript, new Date(), new Date());
   const busyError = await openRpc('terminal');
@@ -179,7 +181,7 @@ try {
     await page.screenshot({ path: path.join(output, `${layout}-${theme}-picker.png`) });
     await page.locator('.claude-execution-details summary').click();
     assert.equal(await page.locator('.claude-profile-row:visible').count(), 3);
-    assert.equal(await page.locator('.claude-profile-row input:checked').inputValue(), 'second-copy');
+    assert.equal(await page.locator('.claude-profile-row input:checked').inputValue(), duplicateId);
     await page.waitForTimeout(100);
     const popup = await page.locator('.claude-identity-picker').boundingBox();
     const appbar = await page.locator('.appbar').boundingBox();

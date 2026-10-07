@@ -2,6 +2,7 @@
 // shell command that resumes it in a terminal. Add an entry here to support a new agent.
 
 import { claudeAuthOverrides } from './claude-auth-env.mjs';
+import { CODEX_AUTH_OVERRIDES } from './codex-auth-env.mjs';
 
 export function shq(s) {
   const v = String(s ?? '');
@@ -86,7 +87,7 @@ export function headlessArgs(s, permission, { images = [] } = {}) {
 export function homePrefix(s) {
  if (!s.homeDir || (s.host && !s.host.local)) return '';
  if (s.agent === 'claude') return `env ${[...new Set([...claudeAuthOverrides(), 'CLAUDE_CONFIG_DIR'])].map(key => `-u ${shq(key)}`).join(' ')} ${s.claudeDefaultConfig ? '' : `CLAUDE_CONFIG_DIR=${shq(s.homeDir)} `}`;
-  return `${s.agent === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR'}=${shq(s.homeDir)} `;
+  return `env ${CODEX_AUTH_OVERRIDES.map(key => `-u ${shq(key)}`).join(' ')} CODEX_HOME=${shq(s.homeDir)} `;
 }
 
 export function resumeCommand(s) {

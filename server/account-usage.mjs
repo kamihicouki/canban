@@ -2,6 +2,7 @@
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 import { cleanEnv, resolveBin } from './dispatch.mjs';
+import { isolatedCodexEnvironment } from './codex-auth-env.mjs';
 import { credentialIdentity, claudeCredentials, updateClaudeCredentials } from './account-credentials.mjs';
 import { withClaudeAuthLock } from './claude-auth-lock.mjs';
 
@@ -30,8 +31,7 @@ export async function codexUsage({ key, home }, { spawner = spawn, bin = resolve
   if (key === 'codex:apikey') failure('unsupported');
   if (await credentialIdentity('codex', home) !== key) failure('login_required');
   if (!bin) failure('unavailable');
-  const env = { ...cleanEnv(), CODEX_HOME: home.dir };
-  for (const key of ['OPENAI_API_KEY', 'CODEX_API_KEY', 'OPENAI_BASE_URL']) delete env[key];
+  const env = isolatedCodexEnvironment(cleanEnv(), home.dir);
   const child = spawner(bin, ['app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="file"'],
     { cwd: home.dir, env, stdio: ['pipe', 'pipe', 'ignore'] });
   const pending = new Map(); let id = 0, bytes = 0;

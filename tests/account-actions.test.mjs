@@ -81,7 +81,8 @@ test('managed home can move to an unused path; default, occupied and active-sess
   assert.equal((await actions.moveHome({ id: p.id, dir: destination })).dir, destination);
   assert.equal(await fs.readFile(path.join(destination, 'history.jsonl'), 'utf8'), 'history');
   assert.ok((await store.load()).settings.accounts.codexHomes.includes(destination));
-  await assert.rejects(fs.stat(p.dir));
+  assert.equal(await fs.realpath(p.dir), await fs.realpath(destination));
+  assert.ok((await fs.lstat(p.dir)).isSymbolicLink());
 });
 test('normalization persists only whitelisted snapshot fields and strips credentials', () => {
   const a = normalizeAccounts({ usage: { 'codex:a': { at: 1000, attemptedAt: 2000, status: 'error', code: 'PRIVATE-TOKEN', plan: 'PRIVATE-TOKEN', accessToken: 'PRIVATE-TOKEN', primary: { usedPercent: null }, secondary: { usedPercent: 0, windowMinutes: 10080 } } }, refresh: { intervalMinutes: 'garbage' } });

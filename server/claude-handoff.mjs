@@ -3,7 +3,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { refreshAccounts, accountLabel } from './accounts.mjs';
+import { refreshAccounts, accountLabel, resolveAccountHome, normalizeClaudeExecution } from './accounts.mjs';
 import { resumeCommand } from './agents.mjs';
 import { CLAUDE_AUTH_OVERRIDES } from './claude-auth-env.mjs';
 import { desktopProfilePlan, desktopExecutionLink } from './claude-desktop-profile.mjs';
@@ -18,7 +18,7 @@ export async function claudeResumeAccounts(session, labels = {}) {
   return Promise.all(registry.homes.claude.filter(home => home.account).map(async home => {
     const desktop = await claudeDesktopChoice(session, home.account);
     const marker = await fs.readFile(path.join(home.dir, '.canban-account-profile'), 'utf8').catch(() => null);
-    const homeLabel = /^[0-9a-f-]{36}$/i.test(home.id) ? home.id.slice(0, 8) : home.id;
+    const homeLabel = /^[0-9a-f-]{36}$/i.test(home.id) ? home.id.slice(0, 8) : path.basename(home.dir);
     const profile = home.default ? '標準' : marker?.trim() === home.id ? `Canban追加 ${homeLabel}` : `${home.source === 'discovered' ? '自動検出' : '追加設定'} ${homeLabel}`;
     const sameAccount = home.account === session.account;
     const description = `Claude Code CLI · ${profile}${desktop.profile ? ` · Desktop: ${desktop.profile}` : ''}${sameAccount ? ' · 元と同じアカウント' : ''}`;
@@ -36,6 +36,7 @@ export async function claudeResumeAccounts(session, labels = {}) {
 // The same account identities used by the toolbar/sidebar. Configuration
 // folders are children, never extra accounts; preserve a saved exact home.
 export function groupClaudeResumeAccounts(profiles, accounts, session, execution = null) {
+  execution = normalizeClaudeExecution(execution);
   return accounts.filter(a => a.agent === 'claude').flatMap(account => {
     const homes = profiles.filter(p => p.account === account.key);
     if (!homes.length) return [];
@@ -66,8 +67,8 @@ export async function claudeExecutionSession(session, homeId, expectedAccount) {
   if (homeId == null || homeId === '') return session;
   if (!localClaude(session)) throw new Error('アカウントを選んで再開できるのは、このマシンの Claude Code セッションです');
   const registry = await refreshAccounts({ force: true });
-  const home = registry.homes.claude.find(h => h.id === homeId && h.account);
-  if (!home) throw new Error('選択した Claude CLI アカウントが見つかりません。AI Apps でログイン状態を確認してください');
+  const home = resolveAccountHome('claude', homeId, registry.homes.claude);
+  if (!home?.account) throw new Error('選択した Claude CLI アカウントが見つかりません。AI Apps でログイン状態を確認してください');
   if (expectedAccount && home.account !== expectedAccount) throw new Error('保存した実行アカウントが変わりました。実行アカウントを選び直してください');
   if (!session.cwd || !path.isAbsolute(session.cwd)) throw new Error('引き継ぐ作業フォルダを確認できません');
   if (!session.sourcePath || !path.isAbsolute(session.sourcePath) || !session.sourcePath.endsWith('.jsonl')) throw new Error('引き継ぐ Claude の会話ファイルを確認できません');
@@ -85,7 +86,7 @@ export async function claudeExecutionSession(session, homeId, expectedAccount) {
       throw new Error('Claude の設定に API 認証の上書きがあります。CLI アカウントで実行する設定にしてから再開してください');
     }
   }
-  await assertClaudeAccount({ ...home, configDir: nativeConfig(home) ? null : home.dir }, registry.accounts.get(home.account));
+  await assertClaudeAccount({ ...home, configDir: nativeConfig(home) ? null : home.dir }, home.identity);
   return { ...session, home: home.id, homeDir: home.dir, claudeDefaultConfig: nativeConfig(home), resumePath: session.sourcePath, executionAccount: home.account };
 }
 

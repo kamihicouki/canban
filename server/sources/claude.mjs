@@ -207,6 +207,7 @@ export async function listClaudeSessions({ home = null, desktopDir = claudeDeskt
     const homes = home ? [{ id: 'default', dir: home, default: true }] : await claudeHomes();
     const desktop = await loadDesktopMeta(desktopDir);
     const byId = new Map();
+    const copyRank = new Map();
     for (const h of homes) {
       const projectsDir = path.join(h.dir, 'projects');
       if (!exists(projectsDir)) continue;
@@ -219,7 +220,12 @@ export async function listClaudeSessions({ home = null, desktopDir = claudeDeskt
           if (!session) continue;
           if (!h.default) Object.assign(session, { home: h.id, homeDir: h.dir });
           const prev = byId.get(session.id);
-          if (!prev || (session.updatedAt || 0) > (prev.updatedAt || 0)) byId.set(session.id, session);
+          const rank = [s.updatedAt || 0, s.fileMtimeMs || 0];
+          const previousRank = copyRank.get(session.id);
+          if (!prev || rank[0] > previousRank[0] || (rank[0] === previousRank[0] && rank[1] > previousRank[1])) {
+            byId.set(session.id, session);
+            copyRank.set(session.id, rank);
+          }
         }
       }
     }

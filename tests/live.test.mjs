@@ -302,7 +302,7 @@ test('canban_watch over stdio: patches the card and streams the open session', a
     await new Promise((r2) => setTimeout(r2, 100));
     fs.writeFileSync(meta, JSON.stringify({ ...m, lastActivityAt: String(Date.now()) }));
     const quiet2 = await w2;
-    assert.equal(quiet2.reload, false);
+    assert.equal(quiet2.reload, false, JSON.stringify(quiet2));
     const w3 = call('canban_watch', { since: quiet2.seq, timeoutMs: 10000 });
     await new Promise((r2) => setTimeout(r2, 100));
     fs.writeFileSync(meta, JSON.stringify({ ...m, title: 'README 修正（改名）' }));

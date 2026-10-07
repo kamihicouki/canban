@@ -31,7 +31,7 @@ import { taskContextSchema } from './task-context.mjs';
 import { uploadImage, promptImages, listSkills, withSkills, withImagePaths, remoteImages } from './prompt-input.mjs';
 import { resolveSession, inspect, timingProblem } from './dispatch.mjs';
 import { claudeExecutionSession, savedClaudeExecutionSession } from './claude-handoff.mjs';
-import { desktopProfilePlan, withDesktopAccount, desktopExecutionLink } from './claude-desktop-profile.mjs';
+import { desktopProfilePlan, withDesktopAccount, saveClaudeExecutionAccount, desktopExecutionLink } from './claude-desktop-profile.mjs';
 import { SlackService, slackTools } from './slack.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -266,7 +266,7 @@ const TOOLS = [
   {
     name: 'canban_set_claude_execution',
     title: 'Claude の実行アカウントを保存',
-    description: '同じ会話の再開・送信に使うアカウントを保存する。ログイン済み Desktop プロフィールがある場合は通常起動も同じアカウントへ切り替える。切替が必要な場合は Desktop を終了しておく。認証情報や会話は移動しない。',
+    description: '同じ会話の再開・送信に使うアカウントを保存する。ログイン済み Desktop プロフィールがある場合は通常起動も同じアカウントへ切り替える。Desktop 起動中でも CLI の選択は保存し、Desktop は適用待ちとして返す。認証情報や会話は移動しない。',
     inputSchema: {
       type: 'object', properties: { cardId: { type: 'string' }, claudeHome: { type: ['string', 'null'] }, account: { type: ['string', 'null'] } },
       required: ['cardId', 'claudeHome', 'account'], additionalProperties: false,
@@ -286,14 +286,11 @@ const TOOLS = [
       const requests = await dispatcherFor(store).requests.list({ cardId });
       if (requests.some(r => ['queued', 'starting', 'running'].includes(r.state))) throw new Error('待機中または実行中の指示があります。完了または取消後に実行アカウントを選んでください');
       const execution = { homeId: session.home, account: session.executionAccount };
-      const commit = async desktop => {
-        // Recheck CLI identity before persisting a Desktop switch.
-        await claudeExecutionSession(source, claudeHome, account);
-        await store.setClaudeExecution({ cardId, execution });
-        return { text: desktop?.maintained ? '実行アカウントを保存しました。通常の Claude Desktop 起動も同じアカウントを使います' : 'CLI の実行アカウントを保存しました', structured: { execution, desktop } };
-      };
-      const plan = await desktopProfilePlan(account);
-      return plan.available ? withDesktopAccount(account, commit) : commit({ maintained: false, reason: plan.reason });
+      const result = await saveClaudeExecutionAccount(account, async () => {
+        await claudeExecutionSession(source, session.home, account);
+        return store.setClaudeExecution({ cardId, execution });
+      });
+      return { text: result.desktop.maintained ? 'CLI と Desktop の実行アカウントを保存しました' : `CLI の実行アカウントを保存しました。${result.desktop.reason}`, structured: result };
     },
   },
   {

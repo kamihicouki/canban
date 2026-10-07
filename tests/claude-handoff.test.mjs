@@ -35,7 +35,7 @@ before(async () => {
   fs.writeFileSync(path.join(target, '.credentials.json'), 'TARGET-CREDENTIAL-FIXTURE');
   Object.assign(process.env, { CANBAN_CLAUDE_HOME: source, CANBAN_CLAUDE_DESKTOP_DIR: path.join(root, 'desktop'), CANBAN_CODEX_HOME: path.join(root, 'codex'), CANBAN_CLAUDE_BIN: fileURLToPath(new URL('./fake-claude.sh', import.meta.url)), FAKE_AGENT_LOG: log, ANTHROPIC_API_KEY: 'INHERITED-FIXTURE', CLAUDE_CODE_OAUTH_TOKEN: 'INHERITED-FIXTURE', CLAUDECODE: '1' });
   configureAccounts({ claudeHomes: [target], codexHomes: [], discover: false });
-  await refreshAccounts({ force: true });
+  homeId = (await refreshAccounts({ force: true })).homes.claude.find(h => h.dir === target).id;
   snapshot = [transcript, path.join(source, '.claude.json'), path.join(target, '.claude.json'), path.join(source, '.credentials.json'), path.join(target, '.credentials.json')].map(file => [file, fs.readFileSync(file)]);
 });
 after(() => {
@@ -43,7 +43,7 @@ after(() => {
   Object.assign(process.env, env);
   fs.rmSync(root, { recursive: true, force: true });
 });
-const homeId = 'second-account';
+let homeId;
 const newStore = async name => {
   const store = new Store(path.join(root, name));
   await store.updateAccountSettings({ claudeHomes: [target], discover: false });
@@ -88,7 +88,7 @@ test('registered CLI profiles offer explicit transcript commands without exposin
   assert.deepEqual(options.map(o => o.account), ['claude:first', 'claude:second']);
   assert.equal(options[1].id, homeId);
   assert.equal(options[1].label, 'second@example.test');
-  assert.match(options[1].description, /Claude Code CLI · 追加設定 second-account/);
+  assert.match(options[1].description, /Claude Code CLI · 追加設定 second account/);
   assert.equal(options[0].sameAccount, true);
   assert.equal(options[1].sameAccount, false);
   assert.match(options[1].command, /CLAUDE_CONFIG_DIR=/);

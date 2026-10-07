@@ -653,6 +653,12 @@ export class Store {
 
   updateAccountSettings(patch = {}) {
     return this.mutate((s) => {
+      const migration = patch.executionHomeMigration;
+      if (migration && patch.profile?.id === migration.to && patch.profile?.key === migration.account) {
+        for (const card of Object.values(s.cards)) {
+          if (card.claudeExecution?.homeId === migration.from && card.claudeExecution.account === migration.account) card.claudeExecution.homeId = migration.to;
+        }
+      }
       s.settings = normalizeSettings({ ...s.settings, accounts: applyAccountPatch(s.settings.accounts, patch) });
       return s.settings.accounts;
     });

@@ -30,6 +30,7 @@ import { pool, hostsWithState } from './board.mjs';
 import { perf } from './perf.mjs';
 import { homeEnv, configureAccounts } from './accounts.mjs';
 import { isolatedClaudeEnvironment } from './claude-auth-env.mjs';
+import { CODEX_AUTH_OVERRIDES } from './codex-auth-env.mjs';
 import { promptImages, withSkills, claudeImageInput, remoteImages } from './prompt-input.mjs';
 
 export const QUIET_MS = Number(process.env.CANBAN_DISPATCH_QUIET_MS) || 20e3;
@@ -45,7 +46,7 @@ const NATIVE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const DROP_ENV = /^(CLAUDECODE|CLAUDE_CODE_.*|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_AGENT_SDK_VERSION|CODEX_THREAD_ID|CODEX_SANDBOX.*|CODEX_MANAGED_.*)$/;
 export function cleanEnv(env = process.env) {
   const out = {};
-  for (const [k, v] of Object.entries(env)) if (!DROP_ENV.test(k)) out[k] = v;
+  for (const [k, v] of Object.entries(env)) if (!DROP_ENV.test(k) && !CODEX_AUTH_OVERRIDES.includes(k)) out[k] = v;
   out.PATH = [env.PATH, ...extraPath()].filter(Boolean).join(path.delimiter);
   return out;
 }
