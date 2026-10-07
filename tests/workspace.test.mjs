@@ -177,9 +177,20 @@ test('a session linked again while its task is open is loaded afresh, a card tha
   const panes = [root, a], loaded = [];
   const context = vm.createContext({ panes, paneLayer: { hidden: false }, $: () => null, h: () => ({}), STATUS_LABELS: {}, paintTaskRelated: () => {},
     taskOverlayIds: (id, links, shown) => ({ ids: [id, ...[...shown.filter((x) => x !== id), ...links.map((l) => l.id)].filter((x, i, all) => all.indexOf(x) === i)] }),
-    showCards: (ids) => panes.splice(0, panes.length, ...ids.map((id) => [root, a, b].find((p) => p.id === id))), loadSession: (p) => loaded.push(p.id) });
+    showCards: (ids) => panes.splice(0, panes.length, ...ids.map((id) => [root, a, b].find((p) => p.id === id))), loadSession: (p) => loaded.push(p.id), styleIs: () => false, taskThreadChoice: () => null });
   vm.runInContext(`${source}\nreconcileCards({lists:[{cards:[{id:'task:t',status:'idle',links:[{id:'codex:a'},{id:'codex:b'}]}]}]});`, context);
   assert.deepEqual(loaded, ['codex:b']); // b has data from before it was unlinked, but its feed is gone
+});
+test('in the threads style a task stays beside one session, the one chosen', () => {
+  const html = boardHtml();
+  const start = html.indexOf('function reconcileCards('), source = html.slice(start, html.indexOf('\nasync function restoreCards(', start));
+  const root = { id: 'task:t', kind: 'task', el: {} }, a = { id: 'codex:a', kind: 'session', d: {} }, b = { id: 'codex:b', kind: 'session', d: {} };
+  const panes = [root, a], shownIds = [];
+  const context = vm.createContext({ panes, paneLayer: { hidden: false }, $: () => null, h: () => ({}), STATUS_LABELS: {}, paintTaskRelated: () => {},
+    taskOverlayIds: (id, links, shown, max) => ({ ids: [id, ...[...shown, ...links.map((l) => l.id)].filter((x, i, all) => all.indexOf(x) === i).slice(0, max)] }),
+    showCards: (ids) => { shownIds.push(ids); panes.splice(0, panes.length, ...ids.map((id) => [root, a, b].find((p) => p.id === id))); }, loadSession: () => {}, styleIs: () => true, taskThreadChoice: () => 'codex:b' });
+  vm.runInContext(`${source}\nreconcileCards({lists:[{cards:[{id:'task:t',status:'idle',links:[{id:'codex:a'},{id:'codex:b'}]}]}]});`, context);
+  assert.deepEqual(shownIds, [['task:t', 'codex:b']]);
 });
 test('the filters in effect become chips, except the axis the lanes follow', () => {
   const html = boardHtml();

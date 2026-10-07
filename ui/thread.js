@@ -190,7 +190,7 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
   const main = h('div', { class: 'th-main' },
     h('div', { class: 'th-conv', 'data-sec': 'conv' }, ...secs.conv.nodes),
     h('div', { class: 'th-dock', 'data-sec': 'send' }, ...secs.send.nodes));
-  el.replaceChildren(head, title, h('div', { class: 'th-meta' }, ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('session'));
+  el.replaceChildren(head, threadStrip(p, d), title, h('div', { class: 'th-meta' }, ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('session'));
   paintThreadStat(p, git);
   paintThreadSide(p);
 }
@@ -250,4 +250,29 @@ function renderChangesPanel(p) {
   }
   draw(false);
   return box;
+}
+
+// ---- threads of a task: the task beside one session, the others a click away ----
+const taskThreadsSaved = () => store.get('taskThreads', null) || {};
+function taskThreadChoice(taskId, links) {
+  const real = links.filter((l) => !l.subagent);
+  const saved = taskThreadsSaved()[taskId];
+  return real.some((l) => l.id === saved) ? saved : [...real].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0]?.id || null;
+}
+async function selectTaskThread(taskId, id) {
+  store.set('taskThreads', { ...taskThreadsSaved(), [taskId]: id });
+  if (panes[0]?.id !== taskId) return openCard(id);
+  showCards([taskId, id]);
+  const p = panes[1];
+  if (p) { await loadSession(p); revealPane(id); }
+}
+// The strip above a session that sits beside its task: every session of the task, and a new one.
+function threadStrip(p, d) {
+  const task = d.task && panes[0]?.kind === 'task' && panes[0].id === d.task.id && styleIs('taskDetail', 'threads') ? findCard(d.task.id)?.card : null;
+  if (!task) return null;
+  const links = task.links.filter((l) => !l.subagent);
+  return h('div', { class: 'th-threads', role: 'tablist', 'aria-label': `${T.taskCard}のスレッド` },
+    ...links.map((l) => h('button', { class: 'th-thread', type: 'button', role: 'tab', 'aria-selected': String(l.id === p.id), title: l.title, onclick: () => l.id !== p.id && selectTaskThread(task.id, l.id) },
+      faceGlyph(l.status), faceWho(l.agent), h('span', { class: 'ellipsis', text: l.title }))),
+    h('button', { class: 'th-thread th-new', type: 'button', title: 'このタスクで新しいセッションを始める', onclick: () => { revealPane(task.id); requestAnimationFrame(() => panes[0]?.el.querySelector('[data-sec="send"] textarea')?.focus()); } }, h('span', { html: picon('plus', 13) }), '新しいスレッド'));
 }

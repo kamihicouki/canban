@@ -648,6 +648,7 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
 /* @include card-interior.css */
 /* @include card-face.css */
 /* @include thread.css */
+/* @include inbox.css */
 /* @include component-styles.css */
 /* @include layouts.css */
 /* @include slack.css */
@@ -1032,11 +1033,12 @@ function render() {
   const focused = document.activeElement;
   const focusedCard = boardEl.contains(focused) ? focused.closest('.card')?.dataset.cardId : null;
   const frag = document.createDocumentFragment();
-  boardEl.classList.toggle('with-lanes', !!state.filters.swimlane);
+  boardEl.classList.toggle('with-lanes', !!state.filters.swimlane && !inboxOn());
   boardEl.style.setProperty('--lane-max-h', (LANE_HEIGHTS[state.filters.laneHeight] || LANE_HEIGHTS.normal)[1]);
   state.lanes = state.filters.swimlane ? buildLanes(b, state.filters.swimlane) : [];
   if (state.soloLane && !state.lanes.some((l) => l.key === state.soloLane)) state.soloLane = null;
-  if (state.filters.swimlane) {
+  if (inboxOn()) frag.append(renderInbox(b));
+  else if (state.filters.swimlane) {
     if (state.soloLane) {
       frag.append(h('div', { class: 'solo-bar' }, `「${state.lanes.find(l => l.key === state.soloLane)?.name}」だけを表示中`,
         h('button', { class: 'lane-solo', text: '◀ 全レーンに戻る', onclick: () => setSolo(null) })));
@@ -1046,7 +1048,7 @@ function render() {
     for (const list of b.lists) frag.append(renderList(list));
     frag.append(renderAddList());
   }
-  if (state.filters.swimlane && slackUi.visible) { const lanes = h('div', { class: 'slack-lanes' }, frag); boardEl.replaceChildren(lanes); }
+  if (state.filters.swimlane && !inboxOn() && slackUi.visible) { const lanes = h('div', { class: 'slack-lanes' }, frag); boardEl.replaceChildren(lanes); }
   else boardEl.replaceChildren(frag);
   boardEl.classList.toggle('with-slack', slackUi.visible);
   const slackNode = slackUi.boardNode(); if (slackNode) boardEl.prepend(slackNode);
@@ -1593,6 +1595,7 @@ paneStage.append(paneRow);
 // @include card-board.js
 // @include card-face.js
 // @include thread.js
+// @include inbox.js
 // Only a press that starts and ends on the backdrop closes the card, and not the same press that just closed a popover.
 let backdropDown = false;
 const onBackdrop = (e) => !e.target.closest('.pane, .pane-bar, .popover, .shortcut-map, .card-board-margin');
@@ -2059,7 +2062,9 @@ async function openTaskCard(cardId, { restore = false, shown = null } = {}) {
     } catch (e) { if (!restore) toast(e.message, true); return; }
   }
   if (!found) { if (!restore) toast('カードが見つかりません', true); return; }
-  const { ids } = taskOverlayIds(cardId, found.card.links, panes[0]?.id === cardId ? panes.map((p) => p.id) : []);
+  // Threads: the task beside one session at a time (the one chosen last, else the latest); the others are a click away.
+  const threads = styleIs('taskDetail', 'threads'), choice = threads ? taskThreadChoice(cardId, found.card.links) : null;
+  const { ids } = threads ? taskOverlayIds(cardId, found.card.links, choice ? [choice] : [], 1) : taskOverlayIds(cardId, found.card.links, panes[0]?.id === cardId ? panes.map((p) => p.id) : []);
   showCards(ids);
   const [root, ...sessions] = panes;
   await Promise.all([loadTask(root, found), ...sessions.map((p) => loadSession(p))]);
@@ -2082,7 +2087,8 @@ function reconcileCards(board) {
   const status = $('.pane-status', root.el);
   if (status) status.replaceChildren(h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]);
   paintTaskRelated(root, card);
-  const shown = panes.map((p) => p.id), { ids } = taskOverlayIds(root.id, card.links, shown);
+  const shown = panes.map((p) => p.id), threads = styleIs('taskDetail', 'threads');
+  const { ids } = threads ? taskOverlayIds(root.id, card.links, [taskThreadChoice(root.id, card.links)].filter(Boolean), 1) : taskOverlayIds(root.id, card.links, shown);
   if (ids.join() === shown.join()) return;
   showCards(ids);
   // A card that comes back (linked again) was detached with its live feed: it always needs a fresh load.
@@ -3416,7 +3422,7 @@ function taskRelatedNodes(card) {
   const rows = card.links.map((l) => h('div', { class: 'sub-row task-related-row', 'data-session-id': l.id },
     h('span', { class: `sdot s-${l.status}` }),
     h('div', { class: 'task-related-copy grow' },
-      h('button', { class: 'link-btn', text: l.title, title: '詳細を見る', onclick: () => revealPane(l.id) }),
+      h('button', { class: 'link-btn', text: l.title, title: '詳細を見る', onclick: () => (styleIs('taskDetail', 'threads') ? selectTaskThread(cardId, l.id) : revealPane(l.id)) }),
       h('div', { class: 'task-related-meta' }, h('span', { class: `badge ${l.agent}`, text: l.agent === 'codex' ? 'Codex' : 'Claude' }),
         l.host ? h('span', { class: 'host-chip', text: l.host.label }) : null,
         h('span', { class: 'muted', text: `${STATUS_LABELS[l.status]}・${relTime(l.updatedAt)}` }))),
@@ -4272,6 +4278,7 @@ function shortcutHints(entries, className = '') {
 // Read the rendered list, including its lane and pagination, rather than the unfiltered board data.
 // The originating lane survives a board redraw even when the same card occurs in several label lanes.
 function displayedListCards(id, origin = cardReturn) {
+  if (inboxOn()) return inboxRows().filter(el => el.getClientRects().length);
   const lists = $$('#board .list');
   const originList = origin?.closest?.('.list');
   const lane = originList?.closest('.lane')?.dataset.lane;
@@ -4283,6 +4290,7 @@ function displayedListCards(id, origin = cardReturn) {
 function stepDisplayedCard(delta) {
   const overlay = !paneLayer.hidden;
   if (overlay) return stepOpenCard(delta);
+  if (inboxOn()) return inboxStep(delta);
   const focused = document.activeElement?.closest?.('#board .card');
   const id = overlay ? panes[0]?.id : focused?.dataset.cardId;
   const cards = id ? displayedListCards(id, overlay ? cardReturn : focused) : $$('#board .card').filter(el => el.getClientRects().length);
@@ -4327,7 +4335,7 @@ function refreshShortcutHints() {
         ['⇧←', '左のリストへ', !adjacentPaneList(focusedPane(), -1)], ['⇧→', '右のリストへ', !adjacentPaneList(focusedPane(), 1)],
         ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
         ...(focusedPane()?.kind === 'session' ? [['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
-        ...(panePromptInput() ? [['i', '指示欄']] : []), ['r', '更新'], ...globalKeys, ['Alt+m', '案内の移動'], ['Alt+[ / ]', '左右余白'], ['0', '余白を初期化'], ['Esc', '閉じる']];
+        ...(panePromptInput() ? [['i', '指示欄']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ...(state.styles.review === 'on' ? [['f', '変更']] : [])] : []), ['r', '更新'], ...globalKeys, ['Alt+m', '案内の移動'], ['Alt+[ / ]', '左右余白'], ['0', '余白を初期化'], ['Esc', '閉じる']];
     }
     paneHints.replaceChildren(...shortcutHints(entries).childNodes);
     shortcutMap.hidden = entries.length === 0;
@@ -4362,7 +4370,7 @@ const SHORTCUTS = [
   ['カードを開いている間', [
     ['Shift+← / →', '左右の隣のリストへ移動（端で停止、入力中・配置調整中は無効）'],
     ['j / k', '表示リストの次 / 前のカードを開く（端で停止）'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'],
-    ['z', 'エージェントのセッションをアーカイブ / 復元'], ['Delete', 'セッションと会話履歴を削除（確認あり）'], ['i', '指示の入力欄へ'], ['o', '再開'], ['l g m', 'ラベル / ' + T.category + ' / リスト移動'], ['c', 'タスクを追加'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
+    ['z', 'エージェントのセッションをアーカイブ / 復元'], ['Delete', 'セッションと会話履歴を削除（確認あり）'], ['i', '指示の入力欄へ'], ['d / f', 'スレッド表示: 詳細パネル / 変更を開閉'], ['⌥Enter', '入力欄: キューに追加（⌘Enter は送信）'], ['o', '再開'], ['l g m', 'ラベル / ' + T.category + ' / リスト移動'], ['c', 'タスクを追加'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
   ]],
   ['カードボード（レイヤー2）', [
     ['Alt+[ / ]', '左 / 右の余白境界にフォーカス。←→で調整、Shiftで微調整、Homeで10%に戻す'],

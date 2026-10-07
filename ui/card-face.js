@@ -160,25 +160,38 @@ function peekBox(card) {
   const pk = state.peek;
   if (pk.loading) return (box.append(h('div', { class: 'muted', text: '読み込み中…' })), box);
   if (pk.error || !pk.d) return (box.append(h('div', { class: 'muted', text: `読み込めませんでした: ${pk.error || ''}` })), box);
-  const d = pk.d, s = d.session, D = d.dispatch;
-  for (const m of d.recentMessages.slice(-3)) {
-    box.append(h('div', { class: `pmsg ${m.role}` }, h('span', { class: `pwho${m.role === 'user' ? '' : ` who-${s.agent}`}`, text: m.role === 'user' ? 'あなた' : s.agent === 'codex' ? 'Codex' : 'Claude' }),
-      h('div', { class: 'ptext', html: mdInline(m.text.length > 420 ? `${m.text.slice(0, 420)}…` : m.text) })));
+  box.append(...peekContent(card, pk.d, { limit: 3, onClose: closePeek, onSent: async () => {
+    state.peek = { id: card.id, d: null, loading: true, error: null };
+    repaintCard(card.id); load();
+    const d2 = await bridge.callTool('canban_get_session', { cardId: card.id, messages: 4 }).catch(() => null);
+    if (state.peek?.id === card.id) { state.peek.loading = false; state.peek.d = d2; repaintCard(card.id); }
+  } }));
+  requestAnimationFrame(() => $('.peek-input', box)?.dispatchEvent(new Event('input')));
+  return box;
+}
+// What a reply shows: the last messages, what the session waits for, and the input. Shared by the card's
+// inline reply and the inbox preview (onSent refreshes whichever shows it; onClose is the Esc of an empty input).
+function peekContent(card, d, { limit = 3, onSent, onClose }) {
+  const out = [], s = d.session, D = d.dispatch;
+  const said = d.recentMessages.length ? d.recentMessages : (d.feed?.items || []).filter((it) => (it.k === 'user' || it.k === 'assistant') && it.text).map((it) => ({ role: it.k, text: it.text }));
+  for (const m of said.slice(-limit)) {
+    out.push(h('div', { class: `pmsg ${m.role}` }, h('span', { class: `pwho${m.role === 'user' ? '' : ` who-${s.agent}`}`, text: m.role === 'user' ? 'あなた' : s.agent === 'codex' ? 'Codex' : 'Claude' }),
+      h('div', { class: 'ptext', html: mdInline(m.text.length > 420 && limit <= 3 ? `${m.text.slice(0, 420)}…` : m.text) })));
   }
-  if (!d.recentMessages.length) box.append(h('div', { class: 'muted', text: d.messagesError ? `メッセージを取得できませんでした: ${d.messagesError}` : 'メッセージはありません' }));
+  if (!said.length) out.push(h('div', { class: 'muted', text: d.messagesError ? `メッセージを取得できませんでした: ${d.messagesError}` : 'メッセージはありません' }));
   if (s.status === 'waiting') {
     const what = activityText(s.activity, 'waiting', s.signals) || STATUS_LABELS.waiting;
-    box.append(h('div', { class: 'pwait' }, h('b', { text: what }), h('span', { text: 'Canban からは答えられません。アプリで答えてください。' }),
+    out.push(h('div', { class: 'pwait' }, h('b', { text: what }), h('span', { text: 'Canban からは答えられません。アプリで答えてください。' }),
       h('div', { class: 'row' }, d.launch?.desktop ? h('button', { class: 'btn-primary', type: 'button', text: 'アプリで開く', onclick: () => resume(card.id, { route: 'desktop' }) }) : null,
         h('button', { class: 'btn', type: 'button', text: '詳細を開く', onclick: () => openCard(card.id) }))));
-  } else if (s.status === 'aborted') box.append(h('div', { class: 'pwait pwait-err' }, h('b', { text: '中断しました' }), h('span', { text: '続けるには指示を送ってください。' })));
-  if (!D.settings.enabled) { box.append(h('div', { class: 'muted', text: '指示の送信は設定でオフになっています。' })); return box; }
+  } else if (s.status === 'aborted') out.push(h('div', { class: 'pwait pwait-err' }, h('b', { text: '中断しました' }), h('span', { text: '続けるには指示を送ってください。' })));
+  if (!D.settings.enabled) { out.push(h('div', { class: 'muted', text: '指示の送信は設定でオフになっています。' })); return out; }
   const elevated = !!D.permission?.elevated;
   const busy = s.status === 'running' || s.status === 'waiting' || !!s.codexFollowUps;
   const ta = h('textarea', { class: 'peek-input', rows: 1, 'aria-label': '返信', placeholder: elevated ? '制限なしのセッションです。詳細で確認してから送ってください' : busy ? '実行中です。送ると順番待ちに入ります' : 'このセッションに返信', disabled: elevated });
   ta.value = peekDrafts.get(card.id) || '';
-  const sendBtn = h('button', { class: 'send-round', type: 'button', title: busy ? 'キューに追加（⌘Enter）' : '送信（⌘Enter）', 'aria-label': busy ? 'キューに追加' : '送信', disabled: !ta.value.trim(), html: picon(busy ? 'queue' : 'send', 14) });
-  const fit = () => { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`; sendBtn.disabled = !ta.value.trim() || elevated; };
+  const sendBtn = h('button', { class: 'send-round', type: 'button', title: busy ? 'キューに追加（Enter）' : '送信（Enter）', 'aria-label': busy ? 'キューに追加' : '送信', disabled: !ta.value.trim(), html: picon(busy ? 'queue' : 'send', 14) });
+  const fit = () => { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`; sendBtn.disabled = !ta.value.trim() || elevated; };
   ta.addEventListener('input', () => { peekDrafts.set(card.id, ta.value); fit(); });
   const send = async () => {
     const prompt = ta.value.trim();
@@ -188,21 +201,17 @@ function peekBox(card) {
       await bridge.callTool('canban_dispatch', { cardId: card.id, prompt, imageIds: [], skills: [], when: busy ? 'queue' : 'now', expectedUpdatedAt: s.updatedAt || null, allowElevated: false });
       peekDrafts.delete(card.id);
       toast(busy ? 'キューに追加しました' : '送信しました');
-      state.peek = { id: card.id, d: null, loading: true, error: null };
-      repaintCard(card.id); load();
-      const d2 = await bridge.callTool('canban_get_session', { cardId: card.id, messages: 4 }).catch(() => null);
-      if (state.peek?.id === card.id) { state.peek.loading = false; state.peek.d = d2; repaintCard(card.id); }
+      await onSent?.();
     } catch (e) { toast(e.message, true); ta.disabled = false; fit(); ta.focus(); }
   };
   sendBtn.onclick = send;
   ta.addEventListener('keydown', (e) => {
     if (e.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || !e.shiftKey)) { e.preventDefault(); e.stopPropagation(); send(); }
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (!ta.value) closePeek(); else ta.blur(); }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (!ta.value) onClose?.(); else ta.blur(); }
   });
-  box.append(h('div', { class: 'peek-compose' }, ta, sendBtn),
+  out.push(h('div', { class: 'peek-compose' }, ta, sendBtn),
     h('div', { class: 'peek-foot' }, h('span', { class: 'peek-keys' }, keyHint(['Enter'], '送信'), keyHint(['Esc'], '閉じる')),
       h('button', { class: 'link-btn', type: 'button', text: 'カードを開く', onclick: () => openCard(card.id) })));
-  requestAnimationFrame(fit);
-  return box;
+  return out;
 }

@@ -103,3 +103,10 @@ body[data-cs-conversation="folded"] .fi-note { padding: 0 2px; color: var(--card
 .dl .t { padding: 0 12px 0 4px; }
 .dl .a { background: var(--tone-run-bg); } .dl .d { background: var(--tone-err-bg); } .dl .h { background: var(--btn-subtle); color: var(--card-muted); }
 @media (prefers-reduced-motion: reduce) { .tg-run { animation: none; } }
+/* ---------- threads of a task ---------- */
+.th-threads { display: flex; align-items: center; gap: 4px; padding: 4px 12px 6px 16px; overflow-x: auto; flex: none; scrollbar-width: none; }
+.th-thread { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px; border-radius: 9px; font-size: 12.5px; color: var(--card-muted); white-space: nowrap; max-width: 220px; flex: none; }
+.th-thread:hover { background: var(--btn-subtle); color: var(--card-fg); }
+.th-thread[aria-selected="true"] { background: var(--btn-subtle-hover); color: var(--card-fg); font-weight: 600; }
+.th-thread .glyph { width: 14px; height: 14px; margin: 0; } .th-thread .glyph::after { width: 5px; height: 5px; }
+.th-new { border: 1px dashed var(--btn-subtle-hover); }
