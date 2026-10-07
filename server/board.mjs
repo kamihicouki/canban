@@ -13,7 +13,7 @@ import { codexAppState, annotateCodexApp, codexProjectList } from './sources/cod
 import { LOCAL_HOST } from './sources/util.mjs';
 import { RemotePool } from './remote/pool.mjs';
 import { launchInfo } from './agents.mjs';
-import { claudeResumeAccounts } from './claude-handoff.mjs';
+import { claudeResumeAccounts, groupClaudeResumeAccounts } from './claude-handoff.mjs';
 import { installedTerminals } from './launcher.mjs';
 import { annotateStatus, STATUSES } from './status.mjs';
 import { currentLimits, cardSignals, limitsByAccount } from './signals.mjs';
@@ -635,6 +635,8 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     .map((c) => ({ id: c.id, title: c.title, status: c.status || 'idle', updatedAt: c.updatedAt, agentName: c.agentName || null }));
   const { host: h, ...rest } = s;
   const labels = state.settings.accounts.labels;
+  const claudeProfiles = await claudeResumeAccounts(s, labels);
+  const claudeExecutionAccounts = groupClaudeResumeAccounts(claudeProfiles, accountsView(state.settings.accounts).accounts, s, card.claudeExecution);
   return {
     session: { ...rest, actions: sessionActions(s), host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: accountLabel(s.account, labels) },
     card: {
@@ -650,7 +652,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     repo: s.repo || null,
     parentId: s.parentId || null,
     tasks: taskEntries(state).map(([id, t]) => ({ id, title: t.title })),
-    launch: { ...withAccountNote(launchInfo(s), s, labels), claudeAccounts: await claudeResumeAccounts(s, labels), claudeExecution: card.claudeExecution || null },
+    launch: { ...withAccountNote(launchInfo(s), s, labels), claudeAccounts: claudeProfiles, claudeExecutionAccounts, claudeExecution: card.claudeExecution || null },
     settings: state.settings,
     terminals: installedTerminals(),
     recentMessages: recent,

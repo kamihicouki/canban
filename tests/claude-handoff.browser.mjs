@@ -17,11 +17,24 @@ const writable = dir => {
   }
 };
 writable(fx.claudeHome);
+writable(fx.desktopDir);
+fs.renameSync(path.join(fx.desktopDir, 'a'), path.join(fx.desktopDir, 'first'));
+fs.writeFileSync(path.join(fx.desktopDir, 'config.json'), JSON.stringify({ lastKnownAccountUuid: 'first' }));
 const cwd = path.join(fx.root, 'unchanged-worktree'); fs.mkdirSync(cwd);
-const second = path.join(fx.root, 'second-account'); fs.mkdirSync(second);
-const duplicate = path.join(fx.root, 'second-copy'); fs.mkdirSync(duplicate);
-for (const [dir, account] of [[fx.claudeHome, 'first'], [second, 'second']]) fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: account, emailAddress: `${account}@example.test` } }));
-fs.copyFileSync(path.join(second, '.claude.json'), path.join(duplicate, '.claude.json'));
+const second = path.join(fx.root, 'second-account');
+const duplicate = path.join(fx.root, 'second-copy');
+const extras = [second, duplicate, path.join(fx.root, 'second-third'), ...[1, 2, 3].map(n => path.join(fx.root, `first-copy-${n}`))];
+for (const dir of extras) fs.mkdirSync(dir);
+for (const dir of [fx.claudeHome, ...extras]) {
+  const account = path.basename(dir).startsWith('second') ? 'second' : 'first';
+  fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: account, emailAddress: `${account}@example.test` } }));
+}
+writable(fx.codexHome);
+const codexSecond = path.join(fx.root, 'codex-second'); fs.mkdirSync(codexSecond);
+for (const [dir, account] of [[fx.codexHome, 'first'], [codexSecond, 'second']]) {
+  const jwt = `h.${Buffer.from(JSON.stringify({ email: `${account}@example.test` })).toString('base64url')}.sig`;
+  fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify({ tokens: { account_id: account, id_token: jwt } }));
+}
 const transcript = path.join(fx.claudeHome, 'projects', '-r-web', 'c2.jsonl');
 fs.writeFileSync(transcript, [
   { type: 'user', sessionId: 'c2', cwd, gitBranch: 'codex/unchanged', permissionMode: 'acceptEdits', timestamp: '2026-09-01T00:00:00Z', message: { content: 'Continue the same work' } },
@@ -33,7 +46,7 @@ fs.mkdirSync(path.join(root, '.local'), { recursive: true });
 const dataDir = fs.mkdtempSync(path.join(root, '.local/claude-handoff-data-'));
 const output = path.join(root, '.local/claude-handoff-screenshots'); fs.mkdirSync(output, { recursive: true });
 const agentLog = path.join(dataDir, 'fake-agent.jsonl');
-await new Store(dataDir).updateAccountSettings({ claudeHomes: [second, duplicate], discover: false });
+await new Store(dataDir).updateAccountSettings({ claudeHomes: extras, codexHomes: [codexSecond], discover: false });
 const host = spawn(process.execPath, ['tests/dev-host.mjs', '4599'], { cwd: root, env: { ...process.env, CANBAN_DATA_DIR: dataDir, CANBAN_CODEX_HOME: fx.codexHome, CANBAN_CLAUDE_HOME: fx.claudeHome, CANBAN_CLAUDE_DESKTOP_DIR: fx.desktopDir, CANBAN_CLAUDE_BIN: path.join(root, 'tests/fake-claude.sh'), CANBAN_LAUNCH_DRYRUN: '1', CANBAN_SEARCH_INDEX: '0', CANBAN_GH: path.join(root, 'tests/fake-gh.sh'), CANBAN_GLAB: path.join(root, 'tests/fake-glab.sh'), FAKE_GH_DATA: '/dev/null', FAKE_AGENT_LOG: agentLog } });
 let hostLog = '', browser;
 host.stdout.on('data', b => { hostLog += b; }); host.stderr.on('data', b => { hostLog += b; });
@@ -56,17 +69,42 @@ try {
   const prompt = page.getByRole('textbox', { name: '送るプロンプト', exact: true });
   await prompt.fill('Keep this draft while selecting the account');
   await picker.click();
-  assert.equal(await page.getByText('second@example.test', { exact: true }).count(), 2);
-  await page.getByRole('textbox', { name: /検索|絞り込み/ }).last().fill('Claude Code 追加設定 second');
-  assert.equal(await page.locator('.picker-row').count(), 2);
-  await page.getByRole('textbox', { name: /検索|絞り込み/ }).last().fill('Claude Code 追加設定 second-account');
-  assert.match(await page.locator('.picker-row').innerText(), /Claude Code CLI · 追加設定 second-account/);
-  const saved = page.waitForResponse(r => r.url().endsWith('/rpc') && r.request().postDataJSON()?.name === 'canban_set_claude_execution');
-  await page.getByText('second@example.test', { exact: true }).click();
+  const identityRows = page.locator('.claude-identity-picker .picker-row');
+  const canonical = await page.evaluate(() => __test.state.board.accounts.accounts);
+  assert.equal(canonical.length, 4);
+  const detail = await page.evaluate(async () => __test.bridge.callTool('canban_get_session', { cardId: 'claude:c2' }));
+  assert.deepEqual(detail.launch.claudeExecutionAccounts.map(a => a.key).sort(), canonical.filter(a => a.agent === 'claude').map(a => a.key).sort());
+  assert.deepEqual(detail.launch.claudeExecutionAccounts.map(a => a.profiles.length).sort(), [3, 4]);
+  assert.equal(await identityRows.count(), 2);
+  assert.equal(await page.locator('.claude-profile-row:visible').count(), 0);
+  await page.getByRole('textbox', { name: '実行アカウントを絞り込み' }).fill('second');
+  assert.equal(await identityRows.count(), 1);
+  assert.match(await identityRows.innerText(), /Claude Code/);
+  assert.doesNotMatch(await identityRows.innerText(), /second-account|second-copy|追加設定/);
+  const waitSaved = () => page.waitForResponse(r => r.url().endsWith('/rpc') && r.request().postDataJSON()?.name === 'canban_set_claude_execution');
+  let saved = waitSaved();
+  await identityRows.click();
   assert.equal((await (await saved).json()).result.isError, undefined);
   await page.waitForFunction(() => !document.querySelector('.claude-account-picker').disabled);
   assert.equal(await prompt.inputValue(), 'Keep this draft while selecting the account');
-  assert.match(await picker.innerText(), /Claude Code CLI · 追加設定 second-account/);
+  assert.match(await picker.innerText(), /second@example.test\s+Claude Code/);
+  await picker.click();
+  await page.locator('.claude-execution-details summary').click();
+  assert.equal(await page.locator('.claude-profile-row:visible').count(), 3);
+  await page.getByRole('textbox', { name: '設定名で検索' }).fill('second-copy');
+  assert.equal(await page.locator('.claude-profile-row:visible').count(), 1);
+  saved = waitSaved();
+  await page.locator('.claude-profile-row:visible').click();
+  assert.equal((await (await saved).json()).result.isError, undefined);
+  await page.waitForFunction(() => !document.querySelector('.claude-account-picker').disabled);
+  assert.equal((await new Store(dataDir).load()).cards['claude:c2'].claudeExecution.homeId, 'second-copy');
+  // Reselecting the same identity retains the exact saved configuration.
+  await picker.click();
+  saved = waitSaved();
+  await identityRows.filter({ hasText: 'second@example.test' }).click();
+  await saved;
+  await page.waitForFunction(() => !document.querySelector('.claude-account-picker').disabled);
+  assert.equal((await new Store(dataDir).load()).cards['claude:c2'].claudeExecution.homeId, 'second-copy');
   assert.equal(await page.locator('[data-resume-desktop]').isDisabled(), true);
   assert.match(await page.locator('.claude-execution-note').innerText(), /second@example.test/);
 
@@ -104,6 +142,20 @@ try {
   await prompt.fill('Persisted selection after reload');
   const persisted = await new Store(dataDir).load();
   assert.equal(persisted.cards['claude:c2'].claudeExecution.account, 'claude:second');
+  assert.equal(persisted.cards['claude:c2'].claudeExecution.homeId, 'second-copy');
+  await picker.click();
+  saved = waitSaved();
+  await page.getByRole('button', { name: '元の設定に戻す', exact: true }).click();
+  await saved;
+  await page.waitForFunction(() => !document.querySelector('.claude-account-picker').disabled);
+  assert.equal((await new Store(dataDir).load()).cards['claude:c2'].claudeExecution, undefined);
+  assert.match(await picker.innerText(), /first@example.test/);
+  await picker.click();
+  saved = waitSaved();
+  await identityRows.filter({ hasText: 'second@example.test' }).click();
+  await saved;
+  await page.waitForFunction(() => !document.querySelector('.claude-account-picker').disabled);
+  assert.equal((await new Store(dataDir).load()).cards['claude:c2'].claudeExecution.homeId, 'second-copy');
   // A fresh write must be rejected even when the cached board still looks idle.
   fs.utimesSync(transcript, new Date(), new Date());
   const busyError = await openRpc('terminal');
@@ -111,6 +163,7 @@ try {
   assert.match(JSON.stringify(busyError), /更新された直後|実行中|入力待ち/);
   fs.utimesSync(transcript, 1, 1);
 
+  await page.locator('.toast').waitFor({ state: 'detached' });
   for (const layout of ['trello', 'classic', 'rail', 'omni', 'hud']) for (const theme of ['light', 'dark']) {
     await page.evaluate(({ layout, theme }) => { __test.setLayout(layout); __test.setThemePref(theme); }, { layout, theme });
     await page.waitForTimeout(100);
@@ -119,8 +172,21 @@ try {
     await page.locator('.resume-box').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(output, `${layout}-${theme}.png`) });
     await picker.click();
-    assert.equal(await page.getByText('second@example.test', { exact: true }).count(), 3);
+    assert.equal(await identityRows.count(), 2);
+    const rowBoxes = await identityRows.evaluateAll(rows => rows.map(row => { const r = row.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height }; }));
+    assert.ok(rowBoxes.every(r => r.height >= 58));
+    assert.ok(rowBoxes[0].bottom <= rowBoxes[1].top);
     await page.screenshot({ path: path.join(output, `${layout}-${theme}-picker.png`) });
+    await page.locator('.claude-execution-details summary').click();
+    assert.equal(await page.locator('.claude-profile-row:visible').count(), 3);
+    assert.equal(await page.locator('.claude-profile-row input:checked').inputValue(), 'second-copy');
+    await page.waitForTimeout(100);
+    const popup = await page.locator('.claude-identity-picker').boundingBox();
+    const appbar = await page.locator('.appbar').boundingBox();
+    assert.ok(popup.y >= appbar.y + appbar.height);
+    assert.ok(popup.y + popup.height <= 800);
+    assert.ok(popup.x >= 0 && popup.x + popup.width <= 1280);
+    await page.screenshot({ path: path.join(output, `${layout}-${theme}-details.png`) });
     await page.keyboard.press('Escape');
   }
   await page.evaluate(() => { __test.setLayout('trello'); __test.setThemePref('light'); });
@@ -132,6 +198,6 @@ try {
   assert.equal(calls.filter(c => c.name === 'canban_dispatch').at(-1).arguments.claudeHome, undefined);
   assert.deepEqual(fs.readFileSync(transcript), original);
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: true, screenshots: 20, viewport: '1280x800', layouts: 5, themes: 2, accountSelection: true, duplicateProfiles: true, selectionPersisted: true, terminalResume: true, headlessResume: true, dryRun: true, keyboard: true, palette: true, draftPreserved: true, desktopSwitchRejected: true, freshTranscriptRejected: true, browserErrors: errors }));
+  console.log(JSON.stringify({ passed: true, screenshots: 30, viewport: '1280x800', layouts: 5, themes: 2, accountSelection: true, fourCanonicalAccounts: true, sevenProfilesTwoClaudeAccounts: true, noRowOverlap: true, detailWithinViewport: true, selectionPersisted: true, resetToSource: true, terminalResume: true, headlessResume: true, dryRun: true, keyboard: true, palette: true, draftPreserved: true, desktopSwitchRejected: true, freshTranscriptRejected: true, browserErrors: errors }));
 } catch (error) { console.error(error); console.error(hostLog.slice(-3000)); process.exitCode = 1; }
 finally { await browser?.close(); host.kill('SIGTERM'); fx.cleanup(); fs.rmSync(dataDir, { recursive: true, force: true }); }

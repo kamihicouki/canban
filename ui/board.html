@@ -246,6 +246,7 @@ button { cursor: pointer; border: 0; background: none; }
 .popover {
   position: fixed; z-index: 900; width: 304px; background: var(--modal-panel); color: var(--list-fg);
   border-radius: 8px; box-shadow: 0 8px 12px #091e4226, 0 0 1px #091e424f; padding: 12px;
+  max-width: calc(100vw - 16px); overflow-y: auto;
 }
 .popover h3 { margin: 0 0 8px; font-size: 14px; text-align: center; color: var(--list-muted); font-weight: 600; }
 .popover .close { position: absolute; right: 6px; top: 6px; }
@@ -505,7 +506,7 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 /* ---------- picker / palette ---------- */
 .picker { display: flex; flex-direction: column; gap: 6px; }
 .picker-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; }
-.picker-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 5px 8px; border-radius: 4px; min-height: 30px; }
+.picker-row { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 5px 8px; border-radius: 4px; min-height: 30px; }
 .picker-row.active { background: var(--btn-subtle-hover); box-shadow: inset 3px 0 0 var(--accent); }
 .picker-check { width: 14px; flex: none; color: var(--accent); font-weight: 700; }
 .picker-group { font-size: 11px; font-weight: 700; color: var(--list-muted); padding: 6px 8px 2px; }
@@ -517,6 +518,19 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .picker-description { font-size: 11px; line-height: 1.4; color: var(--list-muted); white-space: normal; overflow-wrap: anywhere; }
 .picker-row[aria-selected="true"] .picker-label { font-weight: 700; }
 .picker-btn.rich { display: flex; align-items: center; gap: 6px; min-height: 46px; white-space: normal; }
+.picker-tag { flex: none; font-size: 11px; padding: 2px 4px; border-radius: 4px; color: var(--list-muted); background: var(--btn-subtle-hover); }
+.claude-identity-picker .picker-row { min-height: 58px; padding: 9px 8px; }
+.claude-identity-picker .picker-description { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.claude-execution-footer { border-top: 1px solid var(--btn-subtle-hover); margin-top: 8px; padding-top: 8px; }
+.claude-execution-details summary { display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 4px; font-weight: 600; list-style: none; }
+.claude-execution-details summary::-webkit-details-marker { display: none; }
+.claude-execution-details[open] summary .ic { transform: rotate(180deg); }
+.claude-execution-help { font-size: 11px; color: var(--list-muted); padding: 0 4px 8px 24px; }
+.claude-profile-list { display: flex; flex-direction: column; max-height: 180px; overflow: auto; margin-top: 6px; }
+.claude-profile-row:not([hidden]) { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; min-height: 38px; padding: 7px 8px; cursor: pointer; border-radius: 4px; }
+.claude-profile-row:has(input:checked) { background: var(--btn-subtle-hover); font-weight: 600; }
+.claude-profile-id { display: block; padding: 6px 8px; font-size: 11px; color: var(--list-muted); overflow-wrap: anywhere; }
+.claude-execution-reset { color: var(--accent); margin-top: 8px; border-top: 1px solid var(--btn-subtle-hover); }
 .popover.palette { left: 50% !important; top: 8% !important; transform: translateX(-50%); width: min(560px, calc(100vw - 32px)) !important; max-height: 84vh; overflow-y: auto; }
 .popover.palette .picker-list { max-height: 55vh; }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
@@ -1332,7 +1346,7 @@ function closePopover(p = null) {
   const all = [...document.querySelectorAll('.popover')];
   const gone = p ? all.slice(all.indexOf(p)) : all;
   if (!gone.length || (p && !p.isConnected)) return;
-  gone.forEach((x) => { x.remove(); x.onClose?.(); });
+  gone.forEach((x) => { x.cleanupPopover?.(); x.remove(); x.onClose?.(); });
   popoverClosedAt = Date.now();
   if (!document.activeElement || document.activeElement === document.body) refocus(gone[0].returnFocus);
 }
@@ -1343,7 +1357,6 @@ function popover(anchor, title, body, { width, stack = false } = {}) {
     return anchor._pagePanel;
   }
   const returnFocus = stack ? document.activeElement : document.querySelector('.popover')?.returnFocus || document.activeElement;
-  const r = anchor.getBoundingClientRect();
   if (!stack) closePopover();
   const p = h('div', { class: 'popover', role: 'dialog', 'aria-label': title, style: width ? { width: `${width}px` } : null },
     h('h3', { text: title }),
@@ -1351,10 +1364,19 @@ function popover(anchor, title, body, { width, stack = false } = {}) {
     body);
   p.returnFocus = returnFocus;
   document.body.append(p);
-  const left = Math.min(r.left, window.innerWidth - p.offsetWidth - 8);
-  const top = Math.min(r.bottom + 6, window.innerHeight - p.offsetHeight - 8);
-  p.style.left = `${Math.max(8, left)}px`;
-  p.style.top = `${Math.max(8, top)}px`;
+  const place = () => {
+    if (!p.isConnected) return;
+    const r = anchor.getBoundingClientRect();
+    const minTop = Math.max(8, ($('.appbar')?.getBoundingClientRect().bottom || 48) + 8);
+    p.style.maxHeight = `${Math.max(120, window.innerHeight - minTop - 8)}px`;
+    p.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - p.offsetWidth - 8))}px`;
+    p.style.top = `${Math.max(minTop, Math.min(r.bottom + 6, window.innerHeight - p.offsetHeight - 8))}px`;
+  };
+  place();
+  const observer = new ResizeObserver(place);
+  observer.observe(p);
+  window.addEventListener('resize', place);
+  p.cleanupPopover = () => { observer.disconnect(); window.removeEventListener('resize', place); };
   setTimeout(() => {
     const off = (e) => {
       if (!p.isConnected) return document.removeEventListener('pointerdown', off, true);
@@ -1406,7 +1428,8 @@ function picker(anchor, { title, items, multi = false, selected = [], onPick, on
           r.it.description ? h('span', { class: 'grow picker-text', title: r.it.keywords || r.it.description },
             h('span', { class: 'picker-label ellipsis', text: r.it.label }), h('span', { class: 'picker-description', text: r.it.description }))
             : h('span', { class: 'grow ellipsis', text: r.it.label }),
-          r.it.hint != null && r.it.hint !== '' ? h('span', { class: 'muted', text: String(r.it.hint) }) : null]));
+          r.it.hint != null && r.it.hint !== '' ? h('span', { class: 'muted', text: String(r.it.hint) }) : null,
+          r.it.tag ? h('span', { class: 'picker-tag', text: r.it.tag, title: r.it.tagTitle || r.it.tag }) : null]));
     });
     if (!rows.length) out.push(h('div', { class: 'muted picker-empty', text: '一致する項目はありません' }));
     listEl.replaceChildren(...out);
@@ -1442,7 +1465,7 @@ function picker(anchor, { title, items, multi = false, selected = [], onPick, on
   return p;
 }
 // A button that behaves like a <select> but opens the picker. `.value` holds the choice.
-function pickerButton({ title, items, value, onChange, stack = true, className = 'text-input picker-btn', label = 'aria-label' }) {
+function pickerButton({ title, popoverTitle = title, items, value, onChange, stack = true, className = 'text-input picker-btn', label = 'aria-label', footer = null, width = 300, placeholder, popoverClass = '' }) {
   const btn = h('button', { class: className, type: 'button', 'aria-haspopup': 'listbox', [label]: title });
   const paint = () => {
     const it = items().find((i) => i.value === btn.value);
@@ -1454,7 +1477,11 @@ function pickerButton({ title, items, value, onChange, stack = true, className =
   };
   btn.repaint = paint;
   btn.value = value;
-  btn.onclick = () => picker(btn, { title, items: items(), selected: [btn.value], stack, onPick: (v) => { btn.value = v; paint(); onChange?.(v); } });
+  btn.onclick = () => {
+    const p = picker(btn, { title: popoverTitle, items: items(), selected: [btn.value], stack, width, placeholder,
+      footer: typeof footer === 'function' ? footer() : footer, onPick: (v) => { btn.value = v; paint(); onChange?.(v); } });
+    if (popoverClass) p.classList.add(popoverClass);
+  };
   paint();
   return btn;
 }
@@ -2228,28 +2255,63 @@ function renderPane(p, d) {
     const selected = claudeExecutionHomes.get(s.id);
     return selected ? executionAccounts.find(a => a.id === selected)?.command : L.terminal.command;
   };
-  const accountPicker = executionAccounts.length ? pickerButton({ title: 'Claude の実行アカウント', value: claudeExecutionHomes.get(s.id) || '', stack: false,
-    items: () => [{ value: '', label: '元の CLI 設定', description: `Claude Code CLI · ${s.accountLabel || '元のアカウント'} · ${s.home || '標準'}` },
-      ...executionAccounts.map(a => ({ value: a.id, label: a.label, description: a.description, keywords: a.keywords }))],
-    onChange: value => {
-      const save = (async () => {
-        accountPicker.disabled = true;
-        try {
-          const account = executionAccounts.find(a => a.id === value)?.account || null;
-          const result = await bridge.callTool('canban_set_claude_execution', { cardId: s.id, claudeHome: value || null, account });
-          L.claudeExecution = result.execution;
-          if (value) claudeExecutionHomes.set(s.id, value); else claudeExecutionHomes.delete(s.id);
-          toast(result.desktop?.maintained ? 'アカウントを保存しました。通常の Desktop 起動にも適用しました' : result.desktop?.reason || '元の CLI 設定に戻しました', !!result.desktop && !result.desktop.maintained);
-        } catch (error) {
-          toast(error.message, true);
-          accountPicker.value = claudeExecutionHomes.get(s.id) || '';
-          accountPicker.repaint();
-          throw error;
-        } finally { accountPicker.disabled = false; updateExecutionChoice(); }
-      })();
-      claudeExecutionPending.set(s.id, save);
-      const done = () => { if (claudeExecutionPending.get(s.id) === save) claudeExecutionPending.delete(s.id); };
-      save.then(done, done);
+  const executionIdentities = L.claudeExecutionAccounts || [];
+  const executionKey = () => {
+    const home = claudeExecutionHomes.get(s.id);
+    return executionAccounts.find(a => a.id === home)?.account || (home ? L.claudeExecution?.account : null)
+      || s.account || executionAccounts.find(a => a.id === (s.home || 'default'))?.account || '';
+  };
+  function saveExecutionHome(value) {
+    const save = (async () => {
+      accountPicker.disabled = true;
+      try {
+        const account = executionAccounts.find(a => a.id === value)?.account || null;
+        const result = await bridge.callTool('canban_set_claude_execution', { cardId: s.id, claudeHome: value || null, account });
+        L.claudeExecution = result.execution;
+        if (value) claudeExecutionHomes.set(s.id, value); else claudeExecutionHomes.delete(s.id);
+        toast(result.desktop?.maintained ? 'アカウントを保存しました。通常の Desktop 起動にも適用しました' : result.desktop?.reason || '元の CLI 設定に戻しました', !!result.desktop && !result.desktop.maintained);
+      } catch (error) {
+        toast(error.message, true);
+        throw error;
+      } finally {
+        accountPicker.value = executionKey(); accountPicker.repaint();
+        accountPicker.disabled = false; updateExecutionChoice();
+      }
+    })();
+    claudeExecutionPending.set(s.id, save);
+    const done = () => { if (claudeExecutionPending.get(s.id) === save) claudeExecutionPending.delete(s.id); };
+    save.then(done, done);
+    return save;
+  }
+  function executionFooter() {
+    const identity = executionIdentities.find(a => a.key === executionKey());
+    const current = claudeExecutionHomes.get(s.id) || s.home || 'default';
+    const rows = (identity?.profiles || []).map(home => h('label', { class: 'claude-profile-row', 'data-key': `${home.label} ${home.id} ${home.dir}`, title: `${home.dir}\n${home.id}` },
+      h('input', { type: 'radio', name: `claude-profile-${s.id}`, value: home.id, checked: home.id === current,
+        onchange: () => { closePopover(); saveExecutionHome(home.id).catch(() => {}); } }),
+      h('span', { class: 'grow', text: home.label })));
+    const details = h('details', { class: 'claude-execution-details' },
+      h('summary', {}, h('span', { class: 'ic', html: picon('chev', 14) }), '接続設定を指定'),
+      h('div', { class: 'claude-execution-help', text: identity?.label || '元のアカウント' }),
+      rowFilter(rows, '設定名で検索'),
+      h('div', { class: 'claude-profile-list', role: 'radiogroup', 'aria-label': 'Claude の接続設定' }, rows),
+      h('code', { class: 'claude-profile-id', text: `現在の設定: ${current}` }));
+    return h('div', { class: 'claude-execution-footer' }, details,
+      h('div', { class: 'claude-execution-help', text: '同じアカウントの設定フォルダーを変更' }),
+      h('button', { class: 'menu-item claude-execution-reset', text: '元の設定に戻す',
+        title: '元の CLI 設定に戻します。Desktop の通常起動は現在の選択を維持します',
+        onclick: () => { closePopover(); saveExecutionHome('').catch(() => {}); } }));
+  }
+  const accountPicker = executionIdentities.length ? pickerButton({
+    title: 'Claude の実行アカウント', popoverTitle: '実行アカウント', value: executionKey(), stack: false, width: 340,
+    placeholder: 'メールで検索', popoverClass: 'claude-identity-picker', footer: executionFooter,
+    items: () => executionIdentities.map(a => ({ value: a.key, label: a.label, description: a.description, keywords: a.keywords,
+      tag: a.sameAccount ? '元' : null, tagTitle: '元のアカウント' })),
+    onChange: key => {
+      const identity = executionIdentities.find(a => a.key === key);
+      const savedHome = claudeExecutionHomes.get(s.id);
+      const home = identity?.profiles.find(p => p.id === savedHome) || identity?.profiles.find(p => p.id === identity.preferredHomeId);
+      if (home) saveExecutionHome(home.id).catch(() => {});
     },
   }) : null;
   if (accountPicker) accountPicker.classList.add('claude-account-picker');
@@ -2286,7 +2348,7 @@ function renderPane(p, d) {
     if (desktopNote) desktopNote.textContent = selected ? option?.desktop?.reason || 'Desktop の通常起動も選択したアカウントを使います。他のカードでの切替は全体に適用されます' : '';
     resumeBox.querySelector('.resume-main').title = selected ? '選択した Claude CLI アカウントで再開' : `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`;
     const note = p.el.querySelector('.claude-execution-note');
-    if (note) note.textContent = selected ? `実行アカウント: ${option?.label || '選択したアカウント（利用できません）'}${option?.profile ? ` · ${option.profile}` : ''}` : `実行アカウント: ${s.accountLabel || '元のアカウント'}`;
+    if (note) note.textContent = selected ? `実行アカウント: ${option?.label || '選択したアカウント（利用できません）'}` : `実行アカウント: ${s.accountLabel || '元のアカウント'}`;
   }
   updateExecutionChoice();
 

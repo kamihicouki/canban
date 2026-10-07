@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configureAccounts, refreshAccounts } from '../server/accounts.mjs';
-import { claudeExecutionSession, claudeResumeAccounts } from '../server/claude-handoff.mjs';
+import { claudeExecutionSession, claudeResumeAccounts, groupClaudeResumeAccounts } from '../server/claude-handoff.mjs';
 import { resumeCommand, headlessArgs } from '../server/agents.mjs';
 import { Store } from '../server/store.mjs';
 import { dispatcherFor } from '../server/dispatch.mjs';
@@ -53,6 +53,35 @@ const waitFor = async fn => {
   for (let i = 0; i < 100; i++) { const value = await fn(); if (value) return value; await new Promise(r => setTimeout(r, 30)); }
   throw new Error('fake Claude did not finish');
 };
+
+test('execution accounts share canonical identities while seven CLI settings remain available', () => {
+  const accounts = ['codex:first', 'codex:second', 'claude:first', 'claude:second'].map(key => ({
+    key, agent: key.split(':')[0], email: `${key.split(':')[1]}@example.test`, label: `${key.split(':')[1]}@example.test`,
+  }));
+  const profiles = [4, 3].flatMap((count, i) => Array.from({ length: count }, (_, j) => ({
+    id: i === 0 && j === 0 ? 'default' : `config-${i}-${j}`, account: `claude:${i ? 'second' : 'first'}`,
+    default: i === 0 && j === 0, configKind: 'canban', dir: `/fixture/${i}/${j}`, desktop: { profile: i ? 'ppb' : 'main' },
+  })));
+  const saved = { account: 'claude:second', homeId: 'config-1-2' };
+  const grouped = groupClaudeResumeAccounts(profiles, accounts, session, saved);
+  assert.deepEqual(grouped.map(a => a.key), accounts.filter(a => a.agent === 'claude').map(a => a.key));
+  assert.deepEqual(grouped.map(a => a.profiles.length), [4, 3]);
+  assert.equal(grouped[0].preferredHomeId, 'default');
+  assert.equal(grouped[1].preferredHomeId, saved.homeId);
+  assert.equal(grouped[1].description, 'Claude Code · Desktop: ppb');
+  assert.equal(grouped[0].profiles[0].label, '標準 CLI');
+  assert.deepEqual(saved, { account: 'claude:second', homeId: 'config-1-2' });
+  assert.deepEqual(profiles.map(p => p.id), ['default', 'config-0-1', 'config-0-2', 'config-0-3', 'config-1-0', 'config-1-1', 'config-1-2']);
+});
+
+test('grouping never merges different account IDs by email and prefers the exact source setting', () => {
+  const accounts = ['claude:first', 'claude:second', 'codex:first'].map(key => ({ key, agent: key.split(':')[0], label: 'shared@example.test', email: 'shared@example.test' }));
+  const profiles = [{ id: 'default', account: 'claude:first', default: true }, { id: 'source-copy', account: 'claude:first' }, { id: 'second', account: 'claude:second' }];
+  const grouped = groupClaudeResumeAccounts(profiles, accounts, { ...session, home: 'source-copy' }, { account: 'claude:second', homeId: 'missing' });
+  assert.deepEqual(grouped.map(a => a.key), ['claude:first', 'claude:second']);
+  assert.equal(grouped[0].preferredHomeId, 'source-copy');
+  assert.equal(grouped[1].preferredHomeId, 'second');
+});
 
 test('registered CLI profiles offer explicit transcript commands without exposing credentials', async () => {
   const options = await claudeResumeAccounts(session);

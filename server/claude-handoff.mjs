@@ -24,12 +24,36 @@ export async function claudeResumeAccounts(session, labels = {}) {
     const description = `Claude Code CLI · ${profile}${desktop.profile ? ` · Desktop: ${desktop.profile}` : ''}${sameAccount ? ' · 元と同じアカウント' : ''}`;
     return {
       id: home.id, account: home.account, agent: 'claude', profile,
+      dir: home.dir, default: home.default, configKind: home.default ? 'standard' : marker?.trim() === home.id ? 'canban' : home.source,
       label: accountLabel(home.account, labels), description, sameAccount,
       keywords: `${home.id} ${home.account} ${home.dir} Claude Code CLI ${desktop.profile || ''}`,
       command: resumeCommand({ ...session, homeDir: home.dir, claudeDefaultConfig: nativeConfig(home), resumePath: session.sourcePath }),
       desktop,
     };
   }));
+}
+
+// The same account identities used by the toolbar/sidebar. Configuration
+// folders are children, never extra accounts; preserve a saved exact home.
+export function groupClaudeResumeAccounts(profiles, accounts, session, execution = null) {
+  return accounts.filter(a => a.agent === 'claude').flatMap(account => {
+    const homes = profiles.filter(p => p.account === account.key);
+    if (!homes.length) return [];
+    let extra = 0;
+    const configs = homes.map(home => ({ ...home,
+      label: home.default ? '標準 CLI' : `${home.configKind === 'canban' ? 'Canban 設定' : home.configKind === 'discovered' ? '自動検出' : '追加設定'} ${++extra}`,
+    }));
+    const preferred = configs.find(p => execution?.account === account.key && p.id === execution.homeId)
+      || configs.find(p => session.account === account.key && p.id === (session.home || 'default'))
+      || configs.find(p => p.default) || configs[0];
+    const desktop = homes[0].desktop;
+    return [{ key: account.key, agent: account.agent, label: account.label, email: account.email,
+      color: account.color, short: account.short, sameAccount: account.key === session.account,
+      description: `Claude Code${desktop?.profile ? ` · Desktop: ${desktop.profile}` : ''}`,
+      preferredHomeId: preferred.id, profiles: configs,
+      keywords: [account.email, account.label, account.key, 'Claude Code', desktop?.profile].filter(Boolean).join(' '),
+    }];
+  });
 }
 
 export async function claudeDesktopChoice(session, account) {
