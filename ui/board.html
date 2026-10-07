@@ -2206,14 +2206,35 @@ function renderPane(p, d) {
   due.onchange = () => act('canban_update_card', { cardId: s.id, due: due.value || null });
 
   const L = d.launch;
+  if (L.claudeExecution) claudeExecutionHomes.set(s.id, L.claudeExecution.homeId);
+  else claudeExecutionHomes.delete(s.id);
   const executionAccounts = L.claudeAccounts || [];
   const executionCommand = () => {
     const selected = claudeExecutionHomes.get(s.id);
     return selected ? executionAccounts.find(a => a.id === selected)?.command : L.terminal.command;
   };
   const accountPicker = executionAccounts.length ? pickerButton({ title: 'Claude の実行アカウント', value: claudeExecutionHomes.get(s.id) || '', stack: false,
-    items: () => [{ value: '', label: `元のアカウント（${s.accountLabel || '既定'}）` }, ...executionAccounts.map(a => ({ value: a.id, label: a.label }))],
-    onChange: value => { if (value) claudeExecutionHomes.set(s.id, value); else claudeExecutionHomes.delete(s.id); updateExecutionChoice(); },
+    items: () => [{ value: '', label: '元の CLI 設定' }, ...executionAccounts.map(a => ({ value: a.id, label: a.label }))],
+    onChange: value => {
+      const save = (async () => {
+        accountPicker.disabled = true;
+        try {
+          const account = executionAccounts.find(a => a.id === value)?.account || null;
+          const result = await bridge.callTool('canban_set_claude_execution', { cardId: s.id, claudeHome: value || null, account });
+          L.claudeExecution = result.execution;
+          if (value) claudeExecutionHomes.set(s.id, value); else claudeExecutionHomes.delete(s.id);
+          toast(result.desktop?.maintained ? 'アカウントを保存しました。通常の Desktop 起動にも適用しました' : result.desktop?.reason || '元の CLI 設定に戻しました', !!result.desktop && !result.desktop.maintained);
+        } catch (error) {
+          toast(error.message, true);
+          accountPicker.value = claudeExecutionHomes.get(s.id) || '';
+          accountPicker.textContent = `${executionAccounts.find(a => a.id === accountPicker.value)?.label || '元の CLI 設定'} ▾`;
+          throw error;
+        } finally { accountPicker.disabled = false; updateExecutionChoice(); }
+      })();
+      claudeExecutionPending.set(s.id, save);
+      const done = () => { if (claudeExecutionPending.get(s.id) === save) claudeExecutionPending.delete(s.id); };
+      save.then(done, done);
+    },
   }) : null;
   if (accountPicker) accountPicker.classList.add('claude-account-picker');
   const term = currentTerminal(d.terminals, d.settings);
@@ -2225,7 +2246,8 @@ function renderPane(p, d) {
   const resumeBox = h('div', { class: 'resume-box' },
     accountPicker ? h('div', { class: 'field-label' }, h('span', { text: '実行アカウント' }), ...keycap('Alt+a')) : null,
     accountPicker,
-    accountPicker ? h('div', { class: 'muted', text: '会話・作業フォルダ・ブランチを維持し、再開と指示の送信に使います。選択時はターミナルで再開します。' }) : null,
+    accountPicker ? h('div', { class: 'muted', text: '選択は保存され、再開と指示に使います。Desktop の切替が必要な場合はアプリを終了してください。' }) : null,
+    accountPicker ? h('div', { class: 'muted claude-desktop-account-note' }) : null,
     h('button', { class: 'btn-primary resume-main', 'data-pane-key': 'o', title: `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`, onclick: (e) => resume(s.id, optsFromEvent(e)) },
       h('span', { text: '▶ 再開' }), ...keycap('o')),
     h('div', { class: 'field-label', text: 'デスクトップアプリ' }),
@@ -2241,8 +2263,11 @@ function renderPane(p, d) {
 
   function updateExecutionChoice() {
     const selected = claudeExecutionHomes.get(s.id);
+    const option = executionAccounts.find(a => a.id === selected);
     const desktop = resumeBox.querySelector('[data-resume-desktop]');
-    if (desktop) { desktop.disabled = !!selected; desktop.title = selected ? '選択したアカウントでの再開はターミナルを使います' : L.desktop.url; }
+    if (desktop) { desktop.disabled = !!selected && !option?.desktop?.link; desktop.title = selected ? option?.desktop?.reason || option?.desktop?.link?.note || '実行アカウントを選び直してください' : L.desktop.url; }
+    const desktopNote = resumeBox.querySelector('.claude-desktop-account-note');
+    if (desktopNote) desktopNote.textContent = selected ? option?.desktop?.reason || 'Desktop の通常起動も選択したアカウントを使います。他のカードでの切替は全体に適用されます' : '';
     resumeBox.querySelector('.resume-main').title = selected ? '選択した Claude CLI アカウントで再開' : `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`;
     const note = p.el.querySelector('.claude-execution-note');
     if (note) note.textContent = selected ? `実行アカウント: ${executionAccounts.find(a => a.id === selected)?.label || '選択したアカウント（利用できません）'}` : `実行アカウント: ${s.accountLabel || '元のアカウント'}`;
@@ -2403,7 +2428,8 @@ function renderDispatch(d) {
     try {
       const payload = composer.payload();
       composer.setSending(true); sendButtons.forEach(b => { b.disabled = true; });
-      await bridge.callTool('canban_dispatch', { cardId: s.id, prompt, ...payload, ...claudeExecutionOptions(s.id), when, expectedUpdatedAt: s.updatedAt || null, allowElevated: !!ack?.checked });
+      await claudeExecutionPending.get(s.id);
+      await bridge.callTool('canban_dispatch', { cardId: s.id, prompt, ...payload, when, expectedUpdatedAt: s.updatedAt || null, allowElevated: !!ack?.checked });
       composer.clear();
       toast(when === 'now' ? '送信しました' : 'キューに追加しました');
       openCard(s.id);
@@ -3765,10 +3791,7 @@ function optsFromEvent(e) {
 }
 // Keys on a focused card.
 const claudeExecutionHomes = new Map();
-function claudeExecutionOptions(cardId) {
-  const claudeHome = claudeExecutionHomes.get(cardId);
-  return claudeHome ? { claudeHome } : {};
-}
+const claudeExecutionPending = new Map();
 const CARD_KEYS = {
   o: {},
   d: { route: 'desktop' },
@@ -3783,9 +3806,8 @@ function shortcutHelp() {
 }
 async function resume(cardId, opts = {}) {
   try {
-    const execution = claudeExecutionOptions(cardId);
-    if (execution.claudeHome && opts?.route === 'desktop') throw new Error('選択したアカウントでの再開はターミナルを使います');
-    const r = await bridge.callTool('canban_open_session', { cardId, ...opts, ...execution, ...(execution.claudeHome ? { route: 'terminal' } : {}) });
+    await claudeExecutionPending.get(cardId);
+    const r = await bridge.callTool('canban_open_session', { cardId, ...opts });
     if (r.route === 'desktop') toast(r.exact ? 'デスクトップアプリで開きました' : 'フォルダを開きました（続きはターミナルで再開できます）');
     else toast(`${TERMINAL_NAMES[r.terminal] || 'ターミナル'}で再開しました（${TARGET_LABELS[r.target] || r.target}${r.fellBack ? '・未対応のため新規ウィンドウ' : ''}）`);
   } catch (e) {

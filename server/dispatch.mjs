@@ -12,7 +12,7 @@
 // by one from the listing caches (never a full board), and only their log tails are read.
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { claudeExecutionSession } from './claude-handoff.mjs';
+import { savedClaudeExecutionSession } from './claude-handoff.mjs';
 import { leaderFor } from './leader.mjs';
 import { executionContext } from './sqlite-client.mjs';
 import os from 'node:os';
@@ -163,7 +163,7 @@ export async function resolveSession(store, cardId, claudeHome) {
     const s = agent === 'codex' ? await findCodexSession(nativeId) : (await listClaudeSessions()).sessions.find((x) => x.nativeId === nativeId);
     if (!s) throw new Error(`セッションが見つかりません: ${cardId}`);
     annotateCodexApp([s], await codexAppState());
-    return { session: await claudeExecutionSession(s, claudeHome), host: null };
+    return { session: await savedClaudeExecutionSession(s, await store.load(), claudeHome), host: null };
   }
   const host = (await hostsWithState((await store.load()))).find((h) => h.alias === alias);
   if (!host) throw new Error('Codex に登録されていない接続です');
@@ -171,7 +171,7 @@ export async function resolveSession(store, cardId, claudeHome) {
   const s = (await pool.sessions([host])).find((x) => x.id === cardId);
   if (!s) throw new Error(`セッションが見つかりません: ${cardId}`);
   annotateCodexApp([s], await codexAppState());
-  return { session: await claudeExecutionSession(s, claudeHome), host };
+  return { session: await savedClaudeExecutionSession(s, await store.load(), claudeHome), host };
 }
 
 // Tail of the session log (status + permissions) and when it was last written.
@@ -274,7 +274,7 @@ export class Dispatcher {
       agent: session.agent,
       hostId: host ? host.id : 'local',
       nativeId: session.nativeId,
-      claudeHome: claudeHome || null,
+      claudeHome: session.executionAccount ? session.home : null,
       executionAccount: session.executionAccount || null,
       cwd: session.cwd,
       title: session.title,

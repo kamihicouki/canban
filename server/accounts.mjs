@@ -45,6 +45,7 @@ export function claudeDesktopSessionsDir() {
 // Claude desktop app data folders: the default one (next to claude-code-sessions) and
 // other profiles beside it, one per real folder. { id, dir, sessionsDir, default }
 let desktopCache = { at: 0, roots: [] };
+export function invalidateDesktopRoots() { desktopCache.at = 0; registry.at = 0; }
 export async function claudeDesktopRoots(now = Date.now()) {
   if (now - desktopCache.at < DISCOVER_TTL_MS) return desktopCache.roots;
   const sessionsDir = claudeDesktopSessionsDir();

@@ -358,6 +358,17 @@ export class Store {
   }
 
   // ---- cards -------------------------------------------------------------
+  setClaudeExecution({ cardId, execution }) {
+    if (!/^claude:/.test(cardId)) throw new Error('このマシンの Claude Code セッションを選んでください');
+    if (execution && (typeof execution.homeId !== 'string' || !execution.homeId || !/^claude:.+/.test(execution.account))) throw new Error('実行アカウントが正しくありません');
+    return this.mutate(s => {
+      const card = s.cards[cardId] ||= {};
+      if (execution) card.claudeExecution = { homeId: execution.homeId, account: execution.account };
+      else delete card.claudeExecution;
+      return card.claudeExecution || null;
+    });
+  }
+
   // `order` is a number in the same space as the implicit order (-updatedAt),
   // computed by the caller from its neighbours.
   moveCard({ cardId, toListId, order }) {

@@ -30,7 +30,8 @@ import { boardHtml } from './ui.mjs';
 import { taskContextSchema } from './task-context.mjs';
 import { uploadImage, promptImages, listSkills, withSkills, withImagePaths, remoteImages } from './prompt-input.mjs';
 import { resolveSession, inspect, timingProblem } from './dispatch.mjs';
-import { claudeExecutionSession } from './claude-handoff.mjs';
+import { claudeExecutionSession, savedClaudeExecutionSession } from './claude-handoff.mjs';
+import { desktopProfilePlan, withDesktopAccount, desktopExecutionLink } from './claude-desktop-profile.mjs';
 import { SlackService, slackTools } from './slack.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -263,6 +264,39 @@ const TOOLS = [
     handler: async (args) => ({ text: 'カードを更新しました', structured: await store.updateCard(args) }),
   },
   {
+    name: 'canban_set_claude_execution',
+    title: 'Claude の実行アカウントを保存',
+    description: '同じ会話の再開・送信に使うアカウントを保存する。ログイン済み Desktop プロフィールがある場合は通常起動も同じアカウントへ切り替える。切替が必要な場合は Desktop を終了しておく。認証情報や会話は移動しない。',
+    inputSchema: {
+      type: 'object', properties: { cardId: { type: 'string' }, claudeHome: { type: ['string', 'null'] }, account: { type: ['string', 'null'] } },
+      required: ['cardId', 'claudeHome', 'account'], additionalProperties: false,
+    },
+    _meta: appOnly,
+    handler: async ({ cardId, claudeHome, account }) => {
+      const { session: source } = await findSession(store, cardId);
+      if (source.agent !== 'claude' || source.host?.local === false) throw new Error('このマシンの Claude Code セッションを選んでください');
+      if (!claudeHome) {
+        await store.setClaudeExecution({ cardId, execution: null });
+        return { text: '元の CLI 設定に戻しました。Desktop のプロフィールは現在の選択を維持します', structured: { execution: null, desktop: null } };
+      }
+      if (!account) throw new Error('選択したアカウントを確認できません。実行アカウントを選び直してください');
+      const session = await claudeExecutionSession(source, claudeHome, account);
+      const problem = timingProblem(source, await inspect(source, null));
+      if (problem) throw new Error(`${problem}。停止してから実行アカウントを選んでください`);
+      const requests = await dispatcherFor(store).requests.list({ cardId });
+      if (requests.some(r => ['queued', 'starting', 'running'].includes(r.state))) throw new Error('待機中または実行中の指示があります。完了または取消後に実行アカウントを選んでください');
+      const execution = { homeId: session.home, account: session.executionAccount };
+      const commit = async desktop => {
+        // Recheck CLI identity before persisting a Desktop switch.
+        await claudeExecutionSession(source, claudeHome, account);
+        await store.setClaudeExecution({ cardId, execution });
+        return { text: desktop?.maintained ? '実行アカウントを保存しました。通常の Claude Desktop 起動も同じアカウントを使います' : 'CLI の実行アカウントを保存しました', structured: { execution, desktop } };
+      };
+      const plan = await desktopProfilePlan(account);
+      return plan.available ? withDesktopAccount(account, commit) : commit({ maintained: false, reason: plan.reason });
+    },
+  },
+  {
     name: 'canban_open_session',
     title: 'セッションを再開',
     description:
@@ -274,7 +308,7 @@ const TOOLS = [
         route: { type: 'string', enum: ['desktop', 'terminal'] },
         terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
         target: { type: 'string', enum: ['new-window', 'new-tab', 'split', 'current'] },
-        claudeHome: { type: 'string', description: 'Claude の実行アカウント。canban_get_session の launch.claudeAccounts にある ID。選択時はターミナルで元の会話を再開する' },
+        claudeHome: { type: 'string', description: 'Claude の実行アカウント（launch.claudeAccounts の ID）。省略時は保存した選択。空文字は元の CLI 設定' },
       },
       required: ['cardId'],
       additionalProperties: false,
@@ -282,9 +316,9 @@ const TOOLS = [
     _meta: appAndModel,
     handler: async ({ cardId, route, terminal, target, claudeHome }) => {
       const { session: source, state } = await findSession(store, cardId);
-      const session = await claudeExecutionSession(source, claudeHome);
-      if (claudeHome) {
-        if (route === 'desktop') throw new Error('アカウントを選んだ再開はターミナルを使ってください');
+      const session = await savedClaudeExecutionSession(source, state, claudeHome);
+      const selected = !!session.executionAccount;
+      if (selected) {
         const problem = timingProblem(source, await inspect(source, null));
         if (problem) throw new Error(`${problem}。停止してからアカウントを選んで再開してください`);
         const requests = await dispatcherFor(store).requests.list({ cardId });
@@ -292,20 +326,25 @@ const TOOLS = [
       }
       await store.markSeen({ cardId });
       const prefs = state.settings.launch;
-      let useRoute = claudeHome ? 'terminal' : route || prefs.route;
-      const link = desktopLink(session);
+      let useRoute = selected && !route ? 'terminal' : route || prefs.route;
+      const link = selected ? await desktopExecutionLink(source, session.executionAccount) : desktopLink(session);
+      if (selected && useRoute === 'desktop' && !link) throw new Error('Desktop からこの会話を取り込めません。同じ会話をターミナルで再開してください');
       if (useRoute === 'desktop' && !link) {
         if (route === 'desktop') throw new Error('このセッションはデスクトップアプリでは開けません。ターミナルで再開してください。');
         useRoute = 'terminal';
       }
       // Claude desktop signed in to another account would not find the session: the
       // default route resumes it in the terminal instead (an explicit desktop still opens).
-      const accountNote = accountDesktopNote(session, state.settings.accounts.labels);
+      const accountNote = selected ? null : accountDesktopNote(session, state.settings.accounts.labels);
       if (useRoute === 'desktop' && accountNote && !route) useRoute = 'terminal';
       if (useRoute === 'desktop') {
-        await openUrl(link.url);
+        if (selected) await withDesktopAccount(session.executionAccount, async () => {
+          await claudeExecutionSession(source, session.home, session.executionAccount);
+          await openUrl(link.url);
+        });
+        else await openUrl(link.url);
         const note = accountNote || link.note || null;
-        return { text: `${link.label}: ${link.url}${accountNote ? `\n${note}` : ''}`, structured: { route: 'desktop', url: link.url, exact: link.exact, note } };
+        return { text: `${link.label}: ${link.url}${accountNote ? `\n${note}` : ''}`, structured: { route: 'desktop', url: link.url, exact: link.exact, note, executionAccount: session.executionAccount || null } };
       }
       const term = terminal || prefs.terminal;
       if (!installedTerminals().some((t) => t.id === term)) throw new Error(`${TERMINAL_LABELS[term] || term} が見つかりません。設定でターミナルを選んでください。`);

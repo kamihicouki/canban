@@ -650,7 +650,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     repo: s.repo || null,
     parentId: s.parentId || null,
     tasks: taskEntries(state).map(([id, t]) => ({ id, title: t.title })),
-    launch: { ...withAccountNote(launchInfo(s), s, labels), claudeAccounts: await claudeResumeAccounts(s, labels) },
+    launch: { ...withAccountNote(launchInfo(s), s, labels), claudeAccounts: await claudeResumeAccounts(s, labels), claudeExecution: card.claudeExecution || null },
     settings: state.settings,
     terminals: installedTerminals(),
     recentMessages: recent,

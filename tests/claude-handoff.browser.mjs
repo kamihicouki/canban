@@ -55,7 +55,10 @@ try {
   await prompt.fill('Keep this draft while selecting the account');
   await picker.click();
   await page.getByRole('textbox', { name: /検索|絞り込み/ }).last().fill('second');
+  const saved = page.waitForResponse(r => r.url().endsWith('/rpc') && r.request().postDataJSON()?.name === 'canban_set_claude_execution');
   await page.getByText('second@example.test (second-account)', { exact: true }).click();
+  assert.equal((await (await saved).json()).result.isError, undefined);
+  await page.waitForFunction(() => !document.querySelector('.claude-account-picker').disabled);
   assert.equal(await prompt.inputValue(), 'Keep this draft while selecting the account');
   assert.equal(await page.locator('[data-resume-desktop]').isDisabled(), true);
   assert.match(await page.locator('.claude-execution-note').innerText(), /second@example.test/);
@@ -67,8 +70,8 @@ try {
   assert.match(JSON.stringify(result), /CLAUDE_CONFIG_DIR/);
   assert.ok(JSON.stringify(result).includes(transcript));
   const opened = calls.filter(c => c.name === 'canban_open_session').at(-1);
-  assert.equal(opened.arguments.claudeHome, 'second-account');
-  assert.equal(opened.arguments.route, 'terminal');
+  assert.equal(opened.arguments.claudeHome, undefined);
+  assert.equal(opened.arguments.route, undefined);
 
   // Keyboard and palette use the same picker; closing either keeps the draft.
   await page.locator('.pane').first().focus();
@@ -88,6 +91,12 @@ try {
   const desktopError = await openRpc('desktop');
   assert.equal(desktopError.isError, true);
   assert.match(JSON.stringify(desktopError), /ターミナル/);
+  await page.reload();
+  await picker.waitFor({ state: 'visible' });
+  assert.match(await picker.innerText(), /second@example.test/);
+  await prompt.fill('Persisted selection after reload');
+  const persisted = await new Store(dataDir).load();
+  assert.equal(persisted.cards['claude:c2'].claudeExecution.account, 'claude:second');
   // A fresh write must be rejected even when the cached board still looks idle.
   fs.utimesSync(transcript, new Date(), new Date());
   const busyError = await openRpc('terminal');
@@ -100,6 +109,7 @@ try {
     await page.waitForTimeout(100);
     assert.equal(await page.locator('body').getAttribute('data-layout'), layout);
     assert.equal(await picker.isVisible(), true);
+    await page.locator('.resume-box').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(output, `${layout}-${theme}.png`) });
   }
   await page.evaluate(() => { __test.setLayout('trello'); __test.setThemePref('light'); });
@@ -108,9 +118,9 @@ try {
   const dispatchResult = (await (await sent).json()).result;
   assert.equal(dispatchResult.isError, undefined);
   assert.match(JSON.stringify(dispatchResult), /claude:second/);
-  assert.equal(calls.filter(c => c.name === 'canban_dispatch').at(-1).arguments.claudeHome, 'second-account');
+  assert.equal(calls.filter(c => c.name === 'canban_dispatch').at(-1).arguments.claudeHome, undefined);
   assert.deepEqual(fs.readFileSync(transcript), original);
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: true, screenshots: 10, viewport: '1280x800', layouts: 5, themes: 2, accountSelection: true, terminalResume: true, headlessResume: true, dryRun: true, keyboard: true, palette: true, draftPreserved: true, desktopSwitchRejected: true, freshTranscriptRejected: true, browserErrors: errors }));
+  console.log(JSON.stringify({ passed: true, screenshots: 10, viewport: '1280x800', layouts: 5, themes: 2, accountSelection: true, selectionPersisted: true, terminalResume: true, headlessResume: true, dryRun: true, keyboard: true, palette: true, draftPreserved: true, desktopSwitchRejected: true, freshTranscriptRejected: true, browserErrors: errors }));
 } catch (error) { console.error(error); console.error(hostLog.slice(-3000)); process.exitCode = 1; }
 finally { await browser?.close(); host.kill('SIGTERM'); fx.cleanup(); fs.rmSync(dataDir, { recursive: true, force: true }); }

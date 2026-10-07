@@ -121,3 +121,20 @@ test('a queued handoff keeps its target identity and blocks after a profile logi
   assert.equal(fs.readFileSync(log, 'utf8'), before);
   identity(target, 'second');
 });
+
+test('saved execution survives a new Store and implicit dispatch; changed identity fails closed', async () => {
+  const { resolveSession } = await import('../server/dispatch.mjs');
+  identity(target, 'second');
+  const store = await newStore('persistent-choice');
+  await store.setClaudeExecution({ cardId: session.id, execution: { homeId, account: 'claude:second' } });
+  const reopened = new Store(store.dir);
+  assert.equal((await resolveSession(reopened, session.id)).session.executionAccount, 'claude:second');
+  const request = await dispatcherFor(reopened).submit({ cardId: session.id, prompt: 'use persisted selection', when: 'queue' });
+  assert.equal(request.claudeHome, homeId);
+  await reopened.setClaudeExecution({ cardId: session.id, execution: null });
+  assert.equal((await resolveSession(reopened, session.id, request.claudeHome)).session.executionAccount, 'claude:second');
+  await reopened.setClaudeExecution({ cardId: session.id, execution: { homeId, account: 'claude:second' } });
+  identity(target, 'different-account');
+  await assert.rejects(resolveSession(reopened, session.id), /アカウントが変わりました/);
+  identity(target, 'second');
+});
