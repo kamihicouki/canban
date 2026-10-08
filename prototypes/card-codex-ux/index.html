@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>カード UI/UX 案 · Canban</title>
+<link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="shared.css">
+<style>
+body { display: block; overflow: auto; background: var(--modal-bg); color: var(--card-fg); height: auto; min-height: 100%; }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 32px 24px 80px; }
+h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -.01em; line-height: 1.3; } h2 { font-size: 18px; margin: 40px 0 12px; } .lead { color: var(--card-muted); font-size: 14.5px; line-height: 1.7; max-width: 820px; margin: 0; }
+.top { display: flex; align-items: flex-start; gap: 16px; } .top .grow { flex: 1; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 18px; }
+.tile { display: flex; flex-direction: column; background: var(--card-bg); border-radius: 14px; box-shadow: var(--card-shadow); overflow: hidden; color: inherit; text-decoration: none; transition: box-shadow .15s, transform .15s; }
+.tile:hover { box-shadow: var(--lift-shadow); transform: translateY(-2px); }
+.shot { position: relative; width: 100%; aspect-ratio: 16/10; overflow: hidden; background: var(--board-bg); border-bottom: 1px solid var(--btn-subtle); }
+.shot iframe { position: absolute; left: 0; top: 0; width: 1280px; height: 800px; border: 0; transform-origin: 0 0; pointer-events: none; }
+.tile .in { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.tile h3 { margin: 0; font-size: 16px; display: flex; align-items: center; gap: 8px; } .tile h3 .no { font: 700 12px/1 ui-monospace, Menlo, monospace; color: var(--card-muted); }
+.tile p { margin: 0; font-size: 13.5px; line-height: 1.65; color: var(--card-fg); }
+.tile ul { margin: 0; padding: 0; list-style: none; font-size: 12.5px; line-height: 1.6; color: var(--card-muted); } .tile li { display: flex; gap: 6px; } .tile li::before { content: "+"; color: var(--tone-run); font-weight: 700; } .tile li.n::before { content: "!"; color: var(--tone-wait); }
+.src { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; padding-top: 4px; }
+.pri { margin-left: auto; font-size: 11.5px; font-weight: 700; padding: 3px 8px; border-radius: 6px; } .pri.a { background: var(--tone-run-bg); color: var(--tone-run); } .pri.b { background: var(--tone-done-bg); color: var(--tone-done); } .pri.c { background: var(--tone-idle-bg); color: var(--tone-idle); }
+table { width: 100%; border-collapse: collapse; background: var(--card-bg); border-radius: 12px; overflow: hidden; box-shadow: var(--card-shadow); font-size: 13.5px; }
+th, td { text-align: left; padding: 10px 14px; vertical-align: top; border-top: 1px solid var(--btn-subtle); line-height: 1.6; } th { font-size: 12px; color: var(--card-muted); letter-spacing: .03em; border-top: 0; background: var(--btn-subtle); }
+.ph { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; } .ph > div { background: var(--card-bg); border-radius: 12px; padding: 14px 16px; box-shadow: var(--card-shadow); font-size: 13.5px; line-height: 1.7; } .ph b { display: block; margin-bottom: 4px; font-size: 14.5px; }
+.note { background: var(--tone-wait-bg); color: var(--tone-wait); border-radius: 12px; padding: 12px 16px; font-size: 13.5px; line-height: 1.7; } .note b { color: inherit; }
+.seg { display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--btn-subtle-hover); } .seg button { height: 28px; padding: 0 12px; border-radius: 7px; font-size: 13px; color: var(--card-muted); } .seg button[aria-selected=true] { background: var(--card-bg); color: var(--card-fg); font-weight: 600; }
+</style></head>
+<body>
+<script src="shared.js"></script>
+<div class="wrap">
+<div class="top"><div class="grow"><h1>カード UI/UX を Codex / Claude デスクトップに近づける案</h1>
+<p class="lead">Codex デスクトップのスレッド画面（会話を主役に、ツール呼び出しは折りたたみ、編集は「N件のファイルを編集 +/−」で要約、下端に権限とモデルのチップ付きの入力欄）と、Claude デスクトップの Code タブ（セッション一覧・差分/ターミナル/プレビューのペイン・承認カード）を手本にした 8 案です。どれもクリックして触れます。色・余白は製品の <code>ui/board.html</code> のトークンをそのまま使い、ライト/ダークで確認できます。製品コードはまだ変更していません。</p></div>
+<div class="seg" id="th"><button data-t="light">ライト</button><button data-t="dark">ダーク</button></div></div>
+
+<h2>プレビュー</h2><div class="grid" id="grid"></div>
+
+<h2>Codex / Claude から取り込む要素</h2>
+<table><thead><tr><th style="width:210px">要素</th><th style="width:160px">手本</th><th>Canban での置き換え</th><th style="width:90px">案</th></tr></thead><tbody id="tb"></tbody></table>
+
+<h2>おすすめの進め方</h2>
+<div class="ph"><div><b>1. 会話の見た目と入力欄（案 01 + 06 + 07）</b>いまのカード詳細は「会話」「指示を送る」「属性」が同格のモジュールで、会話が小さく見えます。会話を主役にし、属性はヘッダーの 1 行と右の詳細パネル（<span class="keycap">i</span>）へ。ツール呼び出しの折りたたみ、編集サマリー、入力欄のチップを入れます。既存データだけで実現でき、最も効果が大きい段階です。</div>
+<div><b>2. ボード上のカード（案 03 + 04）</b>状態の札を先頭の記号に、実行中の動きを光る 1 行に、差分を +/− に。標準を既定にし、現行とコンパクトは「レイアウトとテーマ」で選べるようにします。入力待ちのカードは、開かずに許可・返信できるようにします。</div>
+<div><b>3. タスクカード（案 05）</b><span class="dim">docs/card-model-research.md</span> の案 A そのものです。説明・メモ・チェックリストを左、紐付いたセッションをスレッドの切り替えとして右に。子が 1 件なら自動で開きます。</div>
+<div><b>4. 判断が要るもの（案 02・08）</b>案 02 は差分・ターミナルの取得 API が新しく要ります。案 08 は「ページはボード 1 枚」の原則に触れるため、ボードの表示形式（リスト）として足すかを先に決める必要があります。</div></div>
+
+<h2>AGENTS.md の原則との関係</h2>
+<div class="note"><b>守っているもの</b> ページはボード 1 枚 / 開くのはオーバーレイ（レイヤー 2）/ 色はトークン / 線のアイコン / すべての新操作にキーと ⌘K。<br><b>確認したいもの</b> ① カードの構造は「札・タイトル・動き・点線の属性」の 4 段と定めているため、案 03 の標準は構造の改訂になる（docs/ui-components.md と AGENTS.md の更新が要る）。② 案 04 のインライン返信は、レイヤー 2 に上げずにボード面（レイヤー 1）で入力を受ける新しい扱い。③ 案 08 はボードの表示形式の追加。④ 新しいアイコン（<code>undo</code> <code>diff</code> <code>mic</code> <code>stop</code> <code>send</code> <code>terminal</code> <code>branch</code> <code>pr</code> <code>shield</code> など）は <code>ui/icons.js</code> の <code>PIC</code> に足す。</div>
+</div>
+<script>
+const P = [
+  ['01', '01-thread.html', 'スレッド', '会話を主役にした 1 カラム。ヘッダー 1 行に属性、詳細パネルは i で開閉。ツール呼び出しは折りたたみ、編集は要約カード、入力欄は下端に浮く。', ['現行の「会話・指示・属性」モジュール並列より、読む場所が 1 つに定まる', 'ツール呼び出しと編集の要約で、長い作業も 1 画面で追える'], ['属性の編集は詳細パネルに 1 段深くなる'], ['Codex スレッド', 'Codex 入力欄'], 'a'],
+  ['02', '02-split-review.html', 'レビューペイン', '会話の右に 変更・ファイル・ターミナル・プレビューを並べる。ヘッダーにブランチ、PR 作成、コミット。', ['Claude Code のデスクトップの作りに近く、差分を見ながら指示を出せる', '変更は 1〜4 キーで切り替え'], ['差分・ターミナル出力を取得する新しい API が要る', '横幅が必要（1232px）'], ['Claude Code タブ', 'Codex 差分'], 'c'],
+  ['03', '03-board-cards.html', 'ボードのカード', '現行 / コンパクト / 標準 / リッチを切り替えて比較。状態は先頭の記号、実行中は光る 1 行、差分は +/−。ホバーで返信・開く。', ['状態を記号 1 つで読め、カードが軽くなる', '差分の +/− で「どれだけ進んだか」が一目で分かる'], ['4 段構造の規約を改訂する必要がある'], ['Codex サイドバー', 'Claude セッション一覧'], 'a'],
+  ['04', '04-inline-peek.html', 'インライン返信', 'カードを開かず、その場で最後の返事を読み、許可・拒否・返信まで済ませる。Space で展開、y / n で許可。', ['入力待ちを溜めない。1 日に何度もある「許可して進める」が 1 キーに', 'オーバーレイを開かずボードの位置を保てる'], ['レイヤーを増やさずにボード面で入力を受ける新しい扱い'], ['Claude 承認カード', 'Codex 承認'], 'a'],
+  ['05', '05-task-threads.html', 'タスクとスレッド', 'タスクを Codex のプロジェクトのように扱う。説明・メモ・チェックリストを左、紐付いたセッションをスレッドの切り替えに。', ['親子関係の調査（案 A）をそのまま形にした', '送信先を明示し、新しいスレッドでエージェントを選べる'], ['子が複数のとき、同時表示は 1 件に絞る前提'], ['Codex プロジェクト/スレッド'], 'b'],
+  ['06', '06-blocks.html', '会話の部品', '承認、計画、ツール折りたたみ、編集サマリー、テスト結果、エラー、質問、キュー、サブエージェント。各部品の由来を右に注記。', ['部品ごとにカードの状態と結びつく（承認＝入力待ち）', '案 01・02・05 の会話に共通して入る'], ['Codex / Claude のログ形式を部品へ対応づける変換が要る'], ['Claude 承認/計画/質問', 'Codex 編集サマリー'], 'a'],
+  ['07', '07-composer.html', 'コンポーザー', '/ コマンド、@ ファイル、$ スキル、添付チップ、キュー、権限・モデルのチップ、送信と停止。実行中の割り込みとキューも切り替えて試せる。', ['いまの「今すぐ送信 / キューに追加」2 ボタンが 1 つの送信になる', '権限とモデルが入力欄のそばに見える'], ['コマンドの一覧はエージェントごとに違う'], ['Codex 入力欄', 'Claude スラッシュコマンド'], 'a'],
+  ['08', '08-inbox.html', '受信トレイ', '左に「要対応 / 実行中 / 最近」の一覧、右に会話。j / k で移動し、e で完了して次へ。', ['入力待ちを上から片付ける作業に向く', 'Codex / Claude のサイドバーと同じ手触り'], ['「ページはボード 1 枚」の原則に触れる。ボードの表示形式として足すなら要判断'], ['Codex サイドバー', 'Claude セッション一覧'], 'c'],
+];
+const prio = { a: ['まず採用', 'a'], b: ['次に採用', 'b'], c: ['要判断', 'c'] };
+const grid = $('#grid');
+const theme = () => document.documentElement.dataset.theme;
+grid.innerHTML = P.map(([no, href, t, d, ok, ng, src, p]) => `<a class="tile" href="${href}"><div class="shot"><iframe loading="lazy" data-src="${href}" tabindex="-1" title="${t}"></iframe></div><div class="in"><h3><span class="no">${no}</span>${t}<span class="pri ${p}">${prio[p][0]}</span></h3><p>${d}</p><ul>${ok.map((x) => `<li>${x}</li>`).join('')}${ng.map((x) => `<li class="n">${x}</li>`).join('')}</ul><div class="src">${src.map((s) => `<span class="chipx">${s}</span>`).join('')}</div></div></a>`).join('');
+function frames() { $$('iframe', grid).forEach((f) => { const w = f.parentElement.clientWidth; f.style.transform = `scale(${w / 1280})`; f.src = `${f.dataset.src}?bar=0&theme=${theme()}`; }); }
+addEventListener('resize', () => $$('iframe', grid).forEach((f) => { f.style.transform = `scale(${f.parentElement.clientWidth / 1280})`; }));
+const ROWS = [
+  ['会話の主役化', 'Codex', '会話を 1 カラムで広く読ませ、属性はヘッダー 1 行と詳細パネルへ。', '01'],
+  ['ツール呼び出しの折りたたみ', 'Codex', '「ファイルを読み込む · コマンドを実行しました」を 1 行に要約。開くと各ステップと所要時間。', '01 06'],
+  ['作業時間の区切り', 'Codex', '「7m 24s 作業中」の区切り線。終われば「作業しました」。', '01 02'],
+  ['編集サマリー', 'Codex', '「N 件のファイルを編集 +74 −5」＋ 元に戻す / 変更内容を表示 / あと N 個。', '01 02 06'],
+  ['入力欄のチップ', 'Codex', '＋ / 権限（フルアクセスは警告色）/ モデルと推論の強さ / 音声 / 送信と停止。', '01 07'],
+  ['実行中の光る 1 行', 'Codex', '「変更前を同じ412px幅で確認」のように、いまの動きを光る文字で。カードにも出す。', '01 03'],
+  ['承認カード（許可・常に許可・拒否）', 'Claude', '入力待ちの正体を会話内とボードの両方で見せ、y / n で答える。', '04 06'],
+  ['計画・質問・サブエージェント', 'Claude', '計画のチェックリストと進捗、選択式の質問、並行する子の作業。', '06'],
+  ['差分・ターミナル・プレビューのペイン', 'Claude Code', '会話の右に切り替えて表示。ブランチ・PR・コミットをヘッダーに。', '02'],
+  ['セッション一覧（要対応が上）', 'Codex / Claude', '入力待ち・実行中・最近の順に並べ、j / k で片付ける。', '08'],
+  ['プロジェクトとスレッド', 'Codex', 'タスク＝プロジェクト、紐付いたセッション＝スレッド。新しいスレッドでエージェントを選ぶ。', '05'],
+  ['スラッシュコマンド・@・キュー', 'Claude / Codex', '/ で操作、@ でファイル、実行中の送信は割り込みかキュー。', '07'],
+];
+$('#tb').innerHTML = ROWS.map(([a, b, c, d]) => `<tr><td><b>${a}</b></td><td>${b}</td><td>${c}</td><td class="mono" style="font-size:12.5px">${d}</td></tr>`).join('');
+const setT = (t) => { document.documentElement.dataset.theme = t; try { localStorage.setItem('cx-theme', t); } catch {} $$('#th button').forEach((b) => b.setAttribute('aria-selected', b.dataset.t === t)); frames(); };
+$('#th').onclick = (e) => { const b = e.target.closest('button'); if (b) setT(b.dataset.t); };
+setT(theme());
+</script></body></html>

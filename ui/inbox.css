@@ -1,0 +1,25 @@
+/* Inbox: a list that needs you first, with the session on its right. */
+.inbox { flex: 1; align-self: stretch; min-width: 0; min-height: 0; display: flex; gap: 12px; }
+.inbox-side { width: 340px; flex: none; min-height: 0; display: flex; flex-direction: column; background: var(--list-bg); border-radius: 12px; box-shadow: var(--card-shadow); }
+.inbox-list { flex: 1; overflow-y: auto; padding: 2px 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+.inbox-gh { display: flex; align-items: center; gap: 6px; padding: 12px 8px 4px; font-size: 12px; font-weight: 700; letter-spacing: .03em; color: var(--list-muted); }
+.inbox-gh .n { font-weight: 400; }
+.inbox-more { padding: 8px; font-size: 12px; }
+.card.irow { flex-direction: row; align-items: flex-start; gap: 10px; padding: 8px; background: none; box-shadow: none; border-radius: 10px; cursor: pointer; }
+.card.irow:hover { background: var(--btn-subtle); }
+.card.irow[aria-selected="true"] { background: var(--card-bg); box-shadow: var(--card-shadow); }
+.card.irow:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.irow .glyph { margin-top: 2px; }
+.irow-t { font-size: 13.5px; font-weight: 600; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.irow-s { display: flex; align-items: center; gap: 8px; margin-top: 2px; font-size: 12px; color: var(--list-muted); min-width: 0; white-space: nowrap; }
+.irow-time { flex: none; font-size: 11.5px; color: var(--list-muted); margin-top: 2px; }
+.inbox-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--card-bg); color: var(--card-fg); border-radius: 12px; box-shadow: var(--card-shadow); overflow: hidden; }
+.inbox-h { display: flex; align-items: center; gap: 10px; padding: 14px 16px 6px; flex: none; }
+.inbox-h h2 { margin: 0; font-size: 18px; line-height: 1.35; min-width: 0; word-break: break-word; }
+.inbox-meta { display: flex; align-items: center; gap: 10px; padding: 0 16px 10px; font-size: 12px; color: var(--card-muted); border-bottom: 1px solid var(--btn-subtle); flex: none; min-width: 0; }
+.inbox-meta .ftime { margin-left: auto; }
+.inbox-body { flex: 1; min-height: 0; overflow: auto; padding: 14px max(16px, calc((100% - 720px) / 2)); display: flex; flex-direction: column; gap: 12px; font-size: 14px; }
+.inbox-dock { flex: none; padding: 6px max(16px, calc((100% - 720px) / 2)) 12px; display: flex; flex-direction: column; gap: 6px; }
+.inbox-main .pmsg { font-size: 14px; line-height: 1.7; }
+.flink-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; text-align: left; font-size: 13px; }
+.flink-row:hover { background: var(--btn-subtle); }

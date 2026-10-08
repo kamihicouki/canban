@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>04 インライン返信 · Canban カード案</title>
+<link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="cards.css">
+<style>
+.list { width: 300px; }
+.card.n { transition: box-shadow .15s; } .card.n.open { box-shadow: var(--lift-shadow); cursor: default; }
+.peek { display: none; margin: 2px 0 0; padding-top: 8px; border-top: 1px solid var(--btn-subtle-hover); flex-direction: column; gap: 8px; }
+.card.open .peek { display: flex; }
+.pm { font-size: 13px; line-height: 1.6; } .pm.me { align-self: flex-end; background: var(--chat-human-bg); border-radius: 12px 12px 3px 12px; padding: 6px 10px; max-width: 90%; }
+.pm .who { display: block; margin-bottom: 1px; font-size: 11px; }
+.perm { border: 1px solid var(--tone-wait); background: var(--tone-wait-bg); border-radius: 10px; padding: 9px 10px; display: flex; flex-direction: column; gap: 8px; }
+.perm .cmd { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--card-bg); border-radius: 6px; padding: 6px 8px; color: var(--card-fg); }
+.perm b { color: var(--tone-wait); font-size: 12.5px; display: flex; align-items: center; gap: 6px; }
+.perm .acts { display: flex; gap: 6px; flex-wrap: wrap; } .perm .btn { height: 28px; }
+.mini { display: flex; align-items: center; gap: 6px; background: var(--input-bg); border: 1px solid var(--btn-subtle-hover); border-radius: 12px; padding: 3px 3px 3px 10px; }
+.mini:focus-within { border-color: var(--accent); } .mini input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font-size: 13px; height: 28px; }
+.mini .send { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; } .mini .send:disabled { background: var(--btn-subtle-hover); color: var(--card-muted); }
+.pf { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--card-muted); } .pf .grow { flex: 1; }
+.chev2 { position: absolute; right: 8px; bottom: 6px; display: none; } .card.n:hover .chev2 { display: none; }
+.hintbar { position: absolute; left: 50%; transform: translateX(-50%); bottom: 14px; background: var(--modal-panel); color: var(--card-fg); border-radius: 999px; padding: 6px 14px; box-shadow: var(--lift-shadow); display: flex; gap: 12px; font-size: 12px; z-index: 5; }
+</style></head>
+<body>
+<script src="shared.js"></script>
+<script>
+const stage = shell('04 インライン返信', { backdrop: false });
+const WHO = { codex: 'Codex', claude: 'Claude', me: 'あなた' };
+const S = [
+  { id: 'a', t: 'APIのレート制限を調査して、再試行ロジックを入れる', a: 'claude', st: 'wait', br: 'fix/retry-429', tm: '2分', diff: [18, 2], now: '承認待ち: npm run test:integration', perm: 'npm run test:integration -- --maxWorkers=2', msgs: [['claude', '429 が返る箇所に指数バックオフを入れました。統合テストで確認したいので、外部APIへの接続を許可してください。']] },
+  { id: 'b', t: 'カレンダーをインフィニティスクロールに', a: 'codex', st: 'run', br: 'feat/calendar-infinite', tm: '7分', diff: [74, 5], now: '変更前を同じ412px幅で確認', msgs: [['codex', '月ごとのカード切り替えを、重複のない週の連続表示に変えます。曜日は上に固定します。']] },
+  { id: 'c', t: '設定画面のキーボード操作', a: 'claude', st: 'done', br: 'feat/settings-keys', tm: '1時間', diff: [112, 38], now: '完了 · テスト 24 件が成功', msgs: [['claude', 'j/k で項目を移動し、Enter で編集できるようにしました。テストも追加済みです。']] },
+  { id: 'd', t: 'ビルドが落ちる原因の調査', a: 'codex', st: 'err', br: 'main', tm: '3時間', diff: [0, 0], now: 'エラー: ENOSPC 書き込み先の空きがありません', msgs: [['codex', '/tmp の空きがなく、ビルドが途中で止まりました。キャッシュを削除してよいですか？']] },
+  { id: 'e', t: 'Slack取り込みのスレッド展開を直す', a: 'claude', st: 'idle', br: 'fix/slack-thread', tm: '昨日', diff: [0, 0], now: '', msgs: [] },
+];
+const glyph = (s) => `<span class="g ${s}">${s === 'done' ? ic('check', 12) : s === 'err' ? ic('alert', 11) : ''}</span>`;
+const stat = (c) => c.diff[0] || c.diff[1] ? `<span class="stat num"><span class="add">+${c.diff[0]}</span><span class="del">−${c.diff[1]}</span></span>` : '';
+const cols = [['入力待ち・エラー', ['a', 'd']], ['実行中', ['b']], ['完了・待機', ['c', 'e']]];
+function cardHtml(c) {
+  return `<article class="card n" tabindex="0" data-id="${c.id}"><div class="row1">${glyph(c.st)}<div class="title">${c.t}</div></div>
+  <div class="now ${c.st === 'wait' ? 'wait' : c.st === 'err' ? 'err' : ''}">${c.now ? (c.st === 'run' ? `<span class="shimmer">${c.now}</span>` : `<span>${c.now}</span>`) : ''}</div>
+  <div class="foot"><span class="who ${c.a}">${WHO[c.a]}</span>${stat(c)}<span class="mono">${c.br}</span><span class="tm">${c.tm}</span></div>
+  <div class="peek">${c.msgs.map(([w, m]) => `<div class="pm${w === 'me' ? ' me' : ''}"><span class="who ${w}">${WHO[w]}</span>${m}</div>`).join('')}
+   ${c.perm ? `<div class="perm"><b>${ic('shield', 14)} コマンドの実行を求めています</b><div class="cmd">${c.perm}</div><div class="acts"><button class="btn pri" data-act="ok">許可 ${kc('y')}</button><button class="btn" data-act="ok">このセッションで常に許可</button><button class="btn line" data-act="no">拒否 ${kc('n')}</button></div></div>` : ''}
+   ${c.st === 'err' ? `<div class="acts" style="display:flex;gap:6px"><button class="btn pri" data-act="ok">削除して再開</button><button class="btn line" data-act="no">しない</button></div>` : ''}
+   <div class="mini"><input placeholder="${c.st === 'run' ? '割り込んで指示（キューに追加）' : '返信する'}"><button class="send" disabled>${ic('send', 14)}</button></div>
+   <div class="pf"><span class="grow"></span><button class="btn" style="height:24px;font-size:12px">${ic('expand', 12)} カードを開く</button></div></div></article>`;
+}
+function render() {
+  $('#bd').innerHTML = cols.map(([n, ids]) => `<section class="list"><h3>${n}<span class="n">${ids.length}</span></h3>${ids.map((i) => cardHtml(S.find((c) => c.id === i))).join('')}</section>`).join('');
+  fillIc();
+}
+stage.insertAdjacentHTML('beforeend', `<div class="board" id="bd"></div><div class="hintbar"><span>${kc('Space')} カードをその場で展開</span><span>${kc('y')} 許可</span><span>${kc('n')} 拒否</span><span>${kc('r')} 返信欄へ</span><span>${kc('j')} ${kc('k')} 移動</span></div>`);
+render();
+const toggle = (el) => { $$('.card.open').forEach((x) => x !== el && x.classList.remove('open')); el.classList.toggle('open'); };
+$('#bd').addEventListener('click', (e) => {
+  const card = e.target.closest('.card'); if (!card) return;
+  const act = e.target.closest('[data-act]'), send = e.target.closest('.send');
+  const c = S.find((x) => x.id === card.dataset.id);
+  if (act) { if (act.dataset.act === 'ok') { c.st = 'run'; c.now = '承認されました。続行しています'; c.perm = null; c.tm = 'いま'; } else { c.st = 'idle'; c.now = '拒否しました'; c.perm = null; } render(); $(`[data-id=${c.id}]`).classList.add('open'); return; }
+  if (send && !send.disabled) { const i = $('input', card); c.msgs.push(['me', i.value]); c.st = 'run'; c.now = '指示を受け取りました'; c.tm = 'いま'; render(); $(`[data-id=${c.id}]`).classList.add('open'); return; }
+  if (e.target.closest('.peek')) return;
+  toggle(card);
+});
+$('#bd').addEventListener('input', (e) => { if (e.target.matches('.mini input')) $('.send', e.target.parentElement).disabled = !e.target.value.trim(); });
+addEventListener('keydown', (e) => {
+  const typing = /INPUT|TEXTAREA/.test(e.target.tagName);
+  if (e.key === 'Escape') { $$('.card.open').forEach((c) => c.classList.remove('open')); return; }
+  if (typing) return;
+  const cs = $$('.card'), cur = document.activeElement.closest?.('.card');
+  if (e.key === 'j' || e.key === 'k') { const i = cs.indexOf(cur); cs[Math.max(0, Math.min(cs.length - 1, i + (e.key === 'j' ? 1 : -1)))].focus(); }
+  if (e.key === ' ' && cur) { e.preventDefault(); toggle(cur); }
+  if (e.key === 'r' && cur?.classList.contains('open')) $('input', cur).focus();
+  if ((e.key === 'y' || e.key === 'n') && cur?.classList.contains('open')) $(`[data-act=${e.key === 'y' ? 'ok' : 'no'}]`, cur)?.click();
+});
+const first = $('[data-id=a]'); first.classList.add('open');
+</script></body></html>

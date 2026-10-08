@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>05 タスクとスレッド · Canban カード案</title>
+<link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="shared.css">
+<style>
+.pane { width: min(1232px, 100%); }
+.hd { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--btn-subtle); flex: none; }
+.body { display: flex; flex: 1; min-height: 0; }
+.brief { flex: 0 0 340px; overflow: auto; padding: 16px 18px; border-right: 1px solid var(--btn-subtle); display: flex; flex-direction: column; gap: 16px; background: var(--card-bg); }
+.brief h1 { margin: 0; font-size: 20px; line-height: 1.35; letter-spacing: -.01em; }
+.brief h4 { margin: 0 0 6px; font-size: 12px; font-weight: 700; letter-spacing: .03em; color: var(--card-muted); display: flex; align-items: center; gap: 6px; }
+.desc { font-size: 13.5px; line-height: 1.7; } .note { font-size: 13px; line-height: 1.6; padding: 9px 11px; border-radius: 9px; background: var(--note-bg); color: var(--note-fg); }
+.todo { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; } .todo .bx { width: 16px; height: 16px; border-radius: 5px; border: 1.8px solid var(--input-border); display: grid; place-items: center; flex: none; } .todo.on .bx { background: var(--accent); border-color: var(--accent); color: #fff; } .todo.on > span:last-child { text-decoration: line-through; color: var(--card-muted); }
+.kv { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; } .kv .k { width: 64px; color: var(--card-muted); flex: none; }
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; background: var(--card-bg); }
+.threads { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--btn-subtle); overflow-x: auto; flex: none; }
+.th { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: 9px; font-size: 13px; white-space: nowrap; color: var(--card-muted); }
+.th:hover { background: var(--btn-subtle); } .th[aria-selected=true] { background: var(--btn-subtle-hover); color: var(--card-fg); font-weight: 600; }
+.th .g { width: 14px; height: 14px; border-radius: 50%; flex: none; } .th .g.run { border: 2px solid var(--btn-subtle-hover); border-top-color: var(--tone-run); animation: spin .9s linear infinite; } .th .g.done { background: var(--tone-done); } .th .g.wait { background: var(--tone-wait); }
+.th .n { font-size: 11px; font-weight: 700; }
+.scroll { flex: 1; overflow: auto; padding: 20px 22px 150px; } .col { max-width: 700px; margin: 0 auto; }
+.dock { position: absolute; inset: auto 0 0 0; padding: 0 22px 14px; background: linear-gradient(transparent, var(--card-bg) 36%); } .dock > * { max-width: 700px; margin: 0 auto; }
+.tgt { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--card-muted); padding: 0 6px 6px; } .tgt b { color: var(--card-fg); }
+.empty { text-align: center; padding: 60px 20px; color: var(--card-muted); } .empty h3 { color: var(--card-fg); margin: 8px 0 4px; font-size: 16px; }
+.opts { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
+.opt { width: 180px; padding: 12px; border-radius: 12px; border: 1px solid var(--btn-subtle-hover); text-align: left; background: var(--card-bg); color: var(--card-fg); } .opt:hover { border-color: var(--accent); }
+.opt b { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; } .opt span { font-size: 12px; color: var(--card-muted); line-height: 1.5; display: block; }
+.chk { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--card-muted); justify-content: center; margin-top: 12px; }
+</style></head>
+<body>
+<script src="shared.js"></script>
+<script>
+const stage = shell('05 タスクとスレッド');
+const T = [
+  { id: 1, n: 'Codex', a: 'codex', st: 'run', t: 'UI 実装' },
+  { id: 2, n: 'Claude', a: 'claude', st: 'done', t: '設計レビュー' },
+  { id: 3, n: 'Claude', a: 'claude', st: 'wait', t: 'E2E テスト' },
+];
+const mini = (who, lines) => `<div class="thread"><div class="msg-user">${lines[0]}</div><div class="msg-agent"><p>${lines[1]}</p></div>${lines[2] ? `<div class="tools"><button><span class="chev">${ic('right', 13)}</span><span class="sum">${lines[2]}</span></button></div>` : ''}${lines[3] || ''}</div>`;
+const BODY = {
+  1: `<div class="thread">${THREAD_HTML({ running: true })}</div>`,
+  2: mini('Claude', ['スクロール方式のデータ構造に問題がないか確認して', '週配列を月境界で分割する方式は、月を跨ぐ週が重複します。<b>週IDを ISO 週で一意にする</b>案が最も単純です。', 'ファイルを 6 件読み込みました · コマンドを 2 件実行しました']),
+  3: mini('Claude', ['スクロールの E2E を書いて', '上端・下端それぞれで追加読み込みが 1 回だけ走ることを確認する E2E を書きました。ブラウザの起動許可が必要です。', 'ファイルを 3 件読み込みました', `<div class="edit-card"><div class="hd"><span class="ico">${ic('shield', 18)}</span><div class="grow ttl">許可が必要です<small class="dim">npx playwright test calendar.spec.ts</small></div><button class="btn pri">許可 ${kc('y')}</button><button class="btn line">拒否 ${kc('n')}</button></div></div>`]),
+};
+let cur = 1;
+function threads() {
+  return T.map((x) => `<button class="th" role="tab" aria-selected="${x.id === cur}" data-id="${x.id}"><span class="g ${x.st}"></span><span class="n ${x.a === 'codex' ? 'who codex' : 'who claude'}">${x.n}</span>${x.t}</button>`).join('') + `<button class="th" id="newT" style="border:1px dashed var(--btn-subtle-hover)">${ic('plus', 14)} 新しいスレッド ${kc('n')}</button>`;
+}
+function draw() {
+  $('#threads').innerHTML = threads();
+  const t = T.find((x) => x.id === cur);
+  $('#conv').innerHTML = cur === 0 ? `<div class="empty">${ic('spark', 28)}<h3>このタスクで新しいスレッドを始める</h3><div>説明とメモは依頼文の下書きに入ります。</div><div class="opts"><button class="opt"><b><span class="ag ag-codex">Codex</span></b><span>実装・修正向け。このMacのワークスペース内で実行</span></button><button class="opt"><b><span class="ag ag-claude">Claude</span></b><span>設計・レビュー向け。読み取り中心で開始</span></button></div><label class="chk"><input type="checkbox" checked> メモも依頼文に含める</label></div>` : BODY[cur];
+  $('#tgt').innerHTML = cur === 0 ? '' : `送信先: <b>${t.n}</b> · ${t.t} · このMac`;
+  fillIc(); const sc = $('.scroll'); sc.scrollTop = sc.scrollHeight;
+}
+stage.insertAdjacentHTML('beforeend', `<div class="scrim"><section class="pane"><div class="hd"><span class="ag ag-task">タスク</span><b>カレンダー改善</b><span class="chipx">${ic('folder', 13)} nuxt-app</span><span class="grow"></span><span class="st st-wait"><i></i>入力待ち 1</span><span class="st st-run"><i></i>実行中 1</span><button class="iconbtn">${ic('more', 17)}</button><button class="iconbtn" title="閉じる (Esc)">${ic('close', 17)}</button></div>
+<div class="body"><aside class="brief"><div><h1>カレンダーを、日が地続きに見えるスクロールにする</h1></div>
+<div><h4>${ic('message', 13)} 説明</h4><div class="desc">左右の月切り替えをやめ、上下スクロールで週が連続して追加されるカレンダーにする。月境界には小さな目印を置く。年月・日付の書体を統一し、バッジを少し大きく強調する。</div></div>
+<div><h4>${ic('note', 13)} メモ</h4><div class="note">最初に ui preview を作って確認してから実装する。412px 幅を基準にする。</div></div>
+<div><h4>${ic('checklist', 13)} チェックリスト 2/4</h4><div class="todo on"><span class="bx">${ic('check', 11)}</span><span>プレビューを作る</span></div><div class="todo on"><span class="bx">${ic('check', 11)}</span><span>年月に「年」を付ける</span></div><div class="todo"><span class="bx"></span><span>無限スクロールの実装</span></div><div class="todo"><span class="bx"></span><span>E2E テスト</span></div></div>
+<div><h4>属性</h4><div class="kv"><span class="k">リスト</span>進行中</div><div class="kv"><span class="k">ラベル</span><span class="chipx"><span class="lbl" style="background:var(--c-blue);width:14px"></span> UI</span></div><div class="kv"><span class="k">期限</span>10/12</div><div class="kv"><span class="k">優先度</span>高</div></div></aside>
+<div class="main"><div class="threads" id="threads" role="tablist"></div><div class="scroll"><div class="col" id="conv"></div></div>
+<div class="dock"><div class="tgt" id="tgt"></div>${composer({ running: false, id: 'c5', placeholder: 'このスレッドに指示を送る' })}</div></div></div></section></div>`);
+draw(); wireComposer($('.cmp'));
+document.addEventListener('click', (e) => { const b = e.target.closest('.th'); if (!b) return; cur = b.id === 'newT' ? 0 : +b.dataset.id; draw(); });
+addEventListener('keydown', (e) => { if (/TEXTAREA|INPUT/.test(e.target.tagName)) return; if (e.key === 'n') { cur = 0; draw(); } if (['1', '2', '3'].includes(e.key)) { cur = +e.key; draw(); } });
+</script></body></html>
