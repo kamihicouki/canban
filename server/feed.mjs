@@ -263,7 +263,16 @@ export function activityOf(items) {
 
 // The agent's last reply in the tail (what a card shows as its latest word).
 export function lastSaidOf(items) {
-  for (let i = items.length - 1; i >= 0; i--) if (items[i].k === 'assistant' && items[i].text) return clip(items[i].text.replace(/\s+/g, ' ').trim(), 240);
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (items[i].k !== 'assistant' || !items[i].text) continue;
+    const plain = items[i].text
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/^[ \t]*(?:#{1,6}[ \t]+|[-*+][ \t]+|\d+\.[ \t]+|>[ \t]?)/gm, '')
+      .replace(/(\*\*|__|\*|`)/g, '')
+      .replace(/\s+/g, ' ').trim();
+    if (plain) return clip(plain, 240);
+  }
   return null;
 }
 

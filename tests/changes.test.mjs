@@ -27,6 +27,7 @@ test('the last reply of the agent is a short single line', () => {
   const items = [{ k: 'assistant', text: 'first' }, { k: 'tool', name: 'x' }, { k: 'assistant', text: 'line one\n\n  line   two' }, { k: 'turn' }];
   assert.equal(lastSaidOf(items), 'line one line two');
   assert.equal(lastSaidOf([{ k: 'user', text: 'hi' }]), null);
+  assert.equal(lastSaidOf([{ k: 'assistant', text: '## 結果\n- **追加**: [PR](https://x.test/1) と `a.ts`\n```js\nconst x = 1\n```\n以上' }]), '結果 追加: PR と a.ts 以上');
 });
 
 test('changes of a folder: counts per file, untracked lines, one patch, and no path outside the repository', async () => {

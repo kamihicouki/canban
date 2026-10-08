@@ -69,7 +69,7 @@ function renderFaceCard(card, list) {
   const el = cardShell(card, ` face face-${kind}${task ? ' task' : ''}`);
   const rich = kind === 'rich', compact = kind === 'compact';
   el.append(h('div', { class: 'frow' }, faceGlyph(card.status), h('div', { class: 'ftitle', text: card.title }), compact ? null : faceFlags(card),
-    compact ? h('span', { class: 'fwho' }, faceWho(task ? 'task' : card.agent)) : null,
+    compact ? h('i', { class: `fagent fagent-${task ? 'task' : card.agent}`, title: task ? T.taskCard : card.agent === 'codex' ? 'Codex' : 'Claude' }) : null,
     compact ? h('span', { class: 'ftime', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }) : null));
   if (compact) return finishFace(el, card, list);
   const now = task ? faceTaskNow(card) : faceNow(card);
@@ -81,7 +81,7 @@ function renderFaceCard(card, list) {
       h('span', { class: 'num', text: `${plan.done}/${plan.total}` }), h('span', { class: 'bar' }, h('i', { style: { width: `${Math.round(plan.done / plan.total * 100)}%` } }))));
     if (!task && card.status === 'waiting') el.append(h('div', { class: 'fask' },
       card.canDesktop ? h('button', { class: 'btn-primary', type: 'button', text: 'アプリで答える', onpointerdown: (e) => e.stopPropagation(), onclick: (e) => { e.stopPropagation(); resume(card.id, { route: 'desktop' }); } }) : null,
-      h('button', { class: 'btn', type: 'button', text: '内容を見る', onpointerdown: (e) => e.stopPropagation(), onclick: (e) => { e.stopPropagation(); if (state.styles.peek === 'on') togglePeek(card); else openCard(card.id); } })));
+      state.styles.peek === 'on' ? null : h('button', { class: 'btn', type: 'button', text: '内容を見る', onpointerdown: (e) => e.stopPropagation(), onclick: (e) => { e.stopPropagation(); openCard(card.id); } })));
     if (task && card.links.length) el.append(h('div', { class: 'flinks' }, ...card.links.slice(0, 3).map((l) => h('span', { class: 'flink', title: l.title }, faceGlyph(l.status), faceWho(l.agent), h('span', { class: 'ellipsis', text: l.title })))));
   }
   const foot = h('div', { class: 'ffoot' }, faceWho(task ? 'task' : card.agent), dirPill(card.directory || { name: 'カテゴリ無し' }));
@@ -176,7 +176,9 @@ function peekContent(card, d, { limit = 3, onSent, onClose }) {
   const said = d.recentMessages.length ? d.recentMessages : (d.feed?.items || []).filter((it) => (it.k === 'user' || it.k === 'assistant') && it.text).map((it) => ({ role: it.k, text: it.text }));
   for (const m of said.slice(-limit)) {
     out.push(h('div', { class: `pmsg ${m.role}` }, h('span', { class: `pwho${m.role === 'user' ? '' : ` who-${s.agent}`}`, text: m.role === 'user' ? 'あなた' : s.agent === 'codex' ? 'Codex' : 'Claude' }),
-      h('div', { class: 'ptext', html: mdInline(m.text.length > 420 && limit <= 3 ? `${m.text.slice(0, 420)}…` : m.text) })));
+      // A card's reply shows a short excerpt; the inbox reads whole messages (cut when extreme) with their paragraphs and lists.
+      limit <= 3 ? h('div', { class: 'ptext', html: mdInline(m.text.length > 420 ? `${m.text.slice(0, 420)}…` : m.text) })
+        : h('div', { class: 'ptext md', html: mdHtml(m.text.length > 3000 ? `${m.text.slice(0, 3000)}\n\n…（長いため途中までを表示しています。続きはカードで）` : m.text) })));
   }
   if (!said.length) out.push(h('div', { class: 'muted', text: d.messagesError ? `メッセージを取得できませんでした: ${d.messagesError}` : 'メッセージはありません' }));
   if (s.status === 'waiting') {

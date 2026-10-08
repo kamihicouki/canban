@@ -165,7 +165,7 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
   const side = h('aside', { class: 'th-side', 'aria-label': '詳細パネル', hidden: true },
     h('div', { class: 'th-side-h' }, h('div', { class: 'seg', role: 'group', 'aria-label': '詳細パネル' },
       ...SIDE_TABS.filter(([id]) => id !== 'changes' || state.styles.review === 'on').map(([id, label, , key]) => h('button', { type: 'button', 'data-side-tab': id, 'aria-pressed': 'false', 'aria-keyshortcuts': key, onclick: () => toggleThreadSide(p, id) }, label, ' ', ...keycap(key)))),
-      h('span', { class: 'grow' }), h('button', { class: 'icon-btn', type: 'button', title: '詳細パネルを閉じる', 'aria-label': '詳細パネルを閉じる', html: picon('close', 14), onclick: () => openThreadSide(p, null) })),
+      h('span', { class: 'grow' })),
     h('div', { class: 'th-side-b' }));
   // The attributes: every section the module layout has, in one reading order.
   const order = [['progress', true], ['add', true], ['labels', true], ['prio', true], ['task', false], ['related', true], ['pr', true], ['memo', true], ['resume', true], ['detail', false], ['first', false], ['slack', true], ['other', false], ['actions', false]];

@@ -67,3 +67,10 @@
 .peek-foot .link-btn { margin-left: auto; }
 .peek-keys { flex: 0 1 auto; }
 .card.peeking .frow { padding-right: 62px; }
+.face-rich .ffoot { flex-wrap: wrap; overflow: visible; row-gap: 3px; }
+/* Compact: the agent is a thin colored marker (its name is in the tooltip), so the title keeps the width. */
+.fagent { width: 4px; height: 16px; border-radius: 2px; flex: none; display: block; }
+.fagent-codex { background: var(--ag-codex); } .fagent-claude { background: var(--ag-claude); } .fagent-task { background: var(--ag-task); }
+.ptext.md { white-space: normal; } .ptext.md p { margin: .35em 0; } .ptext.md ul, .ptext.md ol { margin: .35em 0; padding-left: 1.4em; }
+.ptext.md pre { margin: .5em 0; padding: 8px 10px; border-radius: 8px; background: var(--btn-subtle); white-space: pre-wrap; font-size: .9em; line-height: 1.5; overflow-x: auto; }
+.ptext.md h1, .ptext.md h2, .ptext.md h3, .ptext.md h4 { margin: .7em 0 .25em; font-size: 1em; font-weight: 700; }
