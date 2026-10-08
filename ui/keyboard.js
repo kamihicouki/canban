@@ -67,20 +67,18 @@ function refreshShortcutHints() {
   let entries;
   if (!paneLayer.hidden) {
     if (upper) entries = [];
-    else if (input === shortcutMapGrip) entries = [['← ↑ ↓ →', '案内を移動'], ['Alt+← / →', '左右の余白'], ['Shift', '微調整'], ['Home', '初期位置'], ...globalKeys, ['Esc', '閉じる']];
-    else if (input?.matches('.card-board-margin')) entries = [['← / →', '余白を調整'], ['Shift', '微調整'], ['Home', '10%に戻す'], ['0', 'すべて初期化'], ...globalKeys, ['Esc', '閉じる']];
     else if (typing) entries = [
       ...(input.closest('[data-sec="send"]') && input.closest('.prompt-composer') ? [[`${modKey}Enter`, input.closest('.pane').dataset.kind === 'task' ? 'セッション開始' : '送信']] : []),
       ['Esc', '入力を抜ける'], [`${modKey}K`, 'コマンド'],
     ];
-    else if (panes[0]?.kind === 'view') entries = [[openViewKind() === 'analytics' ? 'a' : 'u', '閉じる'], ['r', '更新'], ...globalKeys, ['Alt+m', '案内の移動'], ['Alt+[ / ]', '左右余白'], ['0', '余白を初期化'], ['Esc', '閉じる']];
+    else if (panes[0]?.kind === 'view') entries = [[openViewKind() === 'analytics' ? 'a' : 'u', '閉じる'], ['r', '更新'], ...globalKeys, ['Esc', '閉じる']];
     else {
       const cards = displayedListCards(panes[0]?.id), index = cards.findIndex(el => el.dataset.cardId === panes[0]?.id);
       entries = [['k', '前のカード', index <= 0], ['j', '次のカード', index < 0 || index === cards.length - 1],
         ['⇧←', '左のリストへ', !adjacentPaneList(focusedPane(), -1)], ['⇧→', '右のリストへ', !adjacentPaneList(focusedPane(), 1)],
         ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
         ...(focusedPane()?.kind === 'session' ? [['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
-        ...(panePromptInput() ? [['i', '指示欄']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ['f', '変更']] : []), ['r', '更新'], ...globalKeys, ['Alt+m', '案内の移動'], ['Alt+[ / ]', '左右余白'], ['0', '余白を初期化'], ['Esc', '閉じる']];
+        ...(panePromptInput() ? [['i', '指示欄']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ['f', '変更']] : []), ['r', '更新'], ...globalKeys, ['Esc', '閉じる']];
     }
     paneHints.replaceChildren(...shortcutHints(entries).childNodes);
     shortcutMap.hidden = entries.length === 0;
@@ -122,11 +120,6 @@ const SHORTCUTS = [
     ['j / k', '表示リストの次 / 前のカードを開く（端で停止）'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'],
     ['z', 'エージェントのセッションをアーカイブ / 復元'], ['Delete', 'セッションと会話履歴を削除（確認あり）'], ['i', '指示の入力欄へ'], ['d / f', 'スレッド表示: 詳細パネル / 変更を開閉'], ['⌥Enter', '入力欄: キューに追加（⌘Enter は送信）'], ['o', '再開'], ['l g m', 'ラベル / ' + T.category + ' / リスト移動'], ['c', 'タスクを追加'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
   ]],
-  ['カードボード（レイヤー2）', [
-    ['Alt+[ / ]', '左 / 右の余白境界にフォーカス。←→で調整、Shiftで微調整、Homeで10%に戻す'],
-    ['Alt+m', 'ショートカットマップにフォーカス。矢印で移動、Shiftで微調整、Alt+←→で左 / 右の余白に移動、Homeで右の初期位置'],
-    ['0', '左右余白とショートカットマップを初期化（1:8:1）'],
-  ]],
   ['カードのサイズ', [['右端・下端 + 矢印', 'カードの幅と高さを調整（同じ種類のカードで共通）'], ['右端・下端 + Home', '既定のサイズへ戻す']]],
   ['ピッカー', [['文字を入力', '絞り込み'], ['↑ ↓ / Enter', '選ぶ'], ['Space', '複数選択の切り替え（入力が空のとき）'], ['Esc', '閉じる']]],
 ];
@@ -152,12 +145,6 @@ function commandPalette() {
       ...PANE_MODES.map(([mode, label], i) => ({ label: `会話を${label}で表示`, run: () => setPaneMode(mode), hint: String(i + 1) })),
       ...(panePromptInput() ? [{ label: '指示欄にフォーカス', run: focusPanePrompt, hint: 'i' }] : []),
       { label: 'カードを閉じる', run: closeCards, hint: 'Esc' },
-    ] : []),
-    ...(!paneLayer.hidden ? [
-      { label: 'カードボードの左余白を調整', run: () => cardBoardHandles.left.focus(), hint: 'Alt+[' },
-      { label: 'カードボードの右余白を調整', run: () => cardBoardHandles.right.focus(), hint: 'Alt+]' },
-      { label: 'ショートカットマップを移動', run: () => shortcutMapGrip.focus(), hint: 'Alt+m' },
-      { label: 'カードボードの余白とキー案内を初期化', run: resetCardBoard, hint: '0' },
     ] : []),
     ...DRAWER_PAGES.map((page) => ({ label: `${WORKSPACE_PAGES.find(([id]) => id === page)[1]}を開く`, run: () => workspace.navigate(page) })),
     { label: '再読み込み', run: () => paneLayer.hidden ? load({ refresh: true }) : openCard(panes[0].id), hint: 'r' },

@@ -1,11 +1,12 @@
-/* Card interiors share one structure across all five board layouts. */
+/* Card interiors: one structure for sessions and tasks. A card never grows past the card board, so its
+   close button stays in view; a task with its session beside it scrolls sideways instead. */
 .pane[data-kind="session"], .pane[data-kind="task"] {
-  width: var(--pw); height: min(var(--ph), 100%); max-height: 100%;
+  width: min(var(--pw), calc(var(--card-board-width, 80vw) - 24px)); height: min(var(--ph), 100%); max-height: 100%;
   background: var(--card-bg); color: var(--card-fg); border-radius: 12px;
   --ph: var(--h-session, 860px);
 }
 .pane[data-kind="task"] { --ph: var(--h-task, 860px); }
-/* Default reading area grows with the card. Explicit module heights take precedence. */
+/* The reading area grows with the card. */
 .pane:not(.sheet) .title-input { height: auto; width: 100%; min-height: 34px; font-size: 21px; line-height: 1.4; font-weight: 700; padding: 0; }
 .pane:not(.sheet) .sub { flex-wrap: wrap; white-space: normal; gap: 6px 8px; }
 .card-crumb { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; font-size: 12px; color: var(--list-muted); }

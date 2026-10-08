@@ -19,7 +19,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => ap
 function sharedUiSnapshot() {
   return {
     slackVisible: slackUi.visible, filters: { ...state.filters }, themePref: state.themePref, boardView: state.view, sidebar: state.sideOpen, workspacePage: workspace.page,
-    paneGlobal: { ...paneGlobal }, cardWidths: { ...cardWidths }, cardBoard: structuredClone(cardBoardState), cardHeights: { ...cardHeights }, collapsedLanes: [...collapsedLanes],
+    paneGlobal: { ...paneGlobal }, cardWidths: { ...cardWidths }, cardHeights: { ...cardHeights }, collapsedLanes: [...collapsedLanes],
   };
 }
 
@@ -38,7 +38,6 @@ function adoptSharedUi(record) {
     if (value.boardView === 'board' || value.boardView === 'timeline') state.view = value.boardView;
     if (value.paneGlobal && typeof value.paneGlobal === 'object') Object.assign(paneGlobal, { mode: oneOf(value.paneGlobal.mode, PANE_MODES, PANE_DEF.mode) });
     if (value.cardWidths) Object.assign(cardWidths, normalizeCardWidths(value.cardWidths));
-    if (value.cardBoard) cardBoardState = normalizeCardBoard(value.cardBoard);
     if (value.cardHeights) Object.assign(cardHeights, normalizeCardHeights(value.cardHeights));
     workspace.navigate(workspacePage(value.workspacePage), { save: false, reload: false });
     if (Array.isArray(value.collapsedLanes)) {

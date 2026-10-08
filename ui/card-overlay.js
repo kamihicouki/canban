@@ -1,7 +1,7 @@
 // Part of board.html: included into its script by server/ui.mjs and shares its scope.
 // Only a press that starts and ends on the backdrop closes the card, and not the same press that just closed a popover.
 let backdropDown = false;
-const onBackdrop = (e) => !e.target.closest('.pane, .pane-bar, .popover, .shortcut-map, .card-board-margin');
+const onBackdrop = (e) => !e.target.closest('.pane, .pane-bar, .popover, .shortcut-map');
 paneLayer.addEventListener('pointerdown', e => { backdropDown = onBackdrop(e) && Date.now() - popoverClosedAt > 300; });
 paneLayer.addEventListener('click', e => { if (backdropDown && onBackdrop(e)) closeCards(); backdropDown = false; });
 document.body.append(paneLayer);
@@ -275,7 +275,7 @@ document.addEventListener('keydown', e => {
   const k = e.key, p = focusedPane();
   let run = null;
   if (e.shiftKey && (k === 'ArrowLeft' || k === 'ArrowRight') && p && p.kind !== 'view'
-    && !e.target.closest?.('[role="separator"], .card-board-margin, .shortcut-map-grip')) {
+    && !e.target.closest?.('[role="separator"]')) {
     if (e.repeat) return;
     const step = k === 'ArrowLeft' ? -1 : 1;
     if (adjacentPaneList(p, step)) run = () => movePaneAdjacent(p, step);
