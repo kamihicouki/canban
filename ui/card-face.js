@@ -1,10 +1,9 @@
-// Board card faces: compact / standard / rich, and the inline reply ("peek") under a card.
-// Included into board.html's script (shares its scope). The classic face stays in renderCard();
-// the user picks one per component (component-styles.js). Drag, keys, ▶ resume and the
+// Board cards and the inline reply ("peek") under a card. Included into board.html's script (shares its scope).
+// A card's face follows its lifetime (lifetime-model.js), not a setting: a live card shows everything it is
+// doing, a fresh or active one the standard face, a dormant one a single line. Drag, keys, ▶ resume and the
 // overlay all come from attachCardBehavior(), so every face behaves the same.
 const FACE_TONE = { running: 'run', waiting: 'wait', aborted: 'err', completed: 'done', idle: 'idle' };
-const faceKind = () => state.styles.boardCard;
-const isFace = () => faceKind() !== 'classic';
+const FACE_BY_LIFE = { live: 'rich', fresh: 'standard', active: 'standard', dormant: 'compact' };
 
 // The status as one small mark: a spinner while it works, an amber dot while it waits for you.
 function faceGlyph(status) {
@@ -63,10 +62,12 @@ function faceExtras(card) {
   return out;
 }
 
-function renderFaceCard(card, list) {
-  const kind = faceKind();
+function renderCard(card, list) {
+  const life = lifeOf(card), kind = FACE_BY_LIFE[life];
   const task = card.kind === 'task';
-  const el = cardShell(card, ` face face-${kind}${task ? ' task' : ''}`);
+  const el = cardShell(card, ` face face-${kind} life-${life}${task ? ' task' : ''}`);
+  el.dataset.life = life;
+  el.dataset.day = daysAgo(card.updatedAt);
   const rich = kind === 'rich', compact = kind === 'compact';
   el.append(h('div', { class: 'frow' }, faceGlyph(card.status), h('div', { class: 'ftitle', text: card.title }), compact ? null : faceFlags(card),
     compact ? h('i', { class: `fagent fagent-${task ? 'task' : card.agent}`, title: task ? T.taskCard : card.agent === 'codex' ? 'Codex' : 'Claude' }) : null,
@@ -81,7 +82,7 @@ function renderFaceCard(card, list) {
       h('span', { class: 'num', text: `${plan.done}/${plan.total}` }), h('span', { class: 'bar' }, h('i', { style: { width: `${Math.round(plan.done / plan.total * 100)}%` } }))));
     if (!task && card.status === 'waiting') el.append(h('div', { class: 'fask' },
       card.canDesktop ? h('button', { class: 'btn-primary', type: 'button', text: 'アプリで答える', onpointerdown: (e) => e.stopPropagation(), onclick: (e) => { e.stopPropagation(); resume(card.id, { route: 'desktop' }); } }) : null,
-      state.styles.peek === 'on' ? null : h('button', { class: 'btn', type: 'button', text: '内容を見る', onpointerdown: (e) => e.stopPropagation(), onclick: (e) => { e.stopPropagation(); openCard(card.id); } })));
+      h('button', { class: 'btn', type: 'button', text: 'その場で読む', onpointerdown: (e) => e.stopPropagation(), onclick: (e) => { e.stopPropagation(); togglePeek(card); } })));
     if (task && card.links.length) el.append(h('div', { class: 'flinks' }, ...card.links.slice(0, 3).map((l) => h('span', { class: 'flink', title: l.title }, faceGlyph(l.status), faceWho(l.agent), h('span', { class: 'ellipsis', text: l.title })))));
   }
   const foot = h('div', { class: 'ffoot' }, faceWho(task ? 'task' : card.agent), dirPill(card.directory || { name: 'カテゴリ無し' }));
@@ -92,7 +93,8 @@ function renderFaceCard(card, list) {
     if (stat) foot.append(stat);
     if (card.signals?.ctx && ctxPct(card.signals.ctx) >= 75) foot.append(h('span', { class: ctxPct(card.signals.ctx) >= 90 ? 'sig-hot' : 'sig-warn', title: ctxTitle(card.signals.ctx), text: `◔ ${ctxLabel(card.signals.ctx)}` }));
     if (rich && card.host) foot.append(h('span', { class: 'host-chip', title: `SSH: ${card.host.alias}`, text: card.host.label }));
-    if (rich) foot.append(acctChip(card));
+    const acct = rich ? acctChip(card) : null;
+    if (acct) foot.append(acct);
     if (card.pr) foot.append(prPill(card.pr));
   } else if (card.pr) foot.append(prPill(card.pr));
   const labels = faceLabels(card);
@@ -119,7 +121,7 @@ function finishFace(el, card, list) {
 const peekDrafts = new Map();
 state.peek = null; // { id, d, loading, error }
 function withPeek(el, card) {
-  if (card.kind === 'task' || state.styles.peek !== 'on') return el;
+  if (card.kind === 'task') return el;
   el.append(h('button', { class: 'card-peek', type: 'button', title: 'その場で読んで返信（Space / r）', 'aria-label': `${card.title} をその場で返信`, 'aria-expanded': String(state.peek?.id === card.id), html: picon('message', 14),
     onpointerdown: (e) => e.stopPropagation(), onclick: (e) => { e.stopPropagation(); togglePeek(card); } }));
   if (state.peek?.id === card.id) { el.classList.add('peeking'); el.append(peekBox(card)); }

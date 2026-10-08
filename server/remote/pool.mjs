@@ -100,8 +100,10 @@ export class RemotePool {
   }
 
   // Sessions from every given host. Hosts with no data yet are awaited (bounded by
-  // the ssh timeout); hosts with cached data return it and refresh in the background.
-  async sessions(hosts, { force = false } = {}) {
+  // the ssh timeout, or by `waitMs` when given); hosts with cached data return it and
+  // refresh in the background. A host that answers after `waitMs` calls `onLate()`, so
+  // the board can redraw instead of waiting for an unreachable machine on first load.
+  async sessions(hosts, { force = false, waitMs = Infinity } = {}) {
     const waits = [];
     for (const h of hosts) {
       const c = this.cache.get(h.id);
@@ -110,7 +112,15 @@ export class RemotePool {
       const p = this.refresh(h);
       if (!c || force) waits.push(p);
     }
-    await Promise.all(waits);
+    if (waits.length) {
+      const all = Promise.all(waits);
+      if (Number.isFinite(waitMs)) {
+        let timer;
+        const late = await Promise.race([all.then(() => false), new Promise((r) => { timer = setTimeout(() => r(true), waitMs); })]);
+        clearTimeout(timer);
+        if (late) all.then(() => this.onLate?.()).catch(() => {});
+      } else await all;
+    }
     return hosts.flatMap((h) => this.cache.get(h.id)?.sessions || []);
   }
 

@@ -51,36 +51,6 @@ function normalizeCardHeights(value) {
     return [kind, typeof v === 'number' && Number.isFinite(v) ? Math.min(CARD_HEIGHT_MAX, Math.max(CARD_HEIGHT_MIN, Math.round(v))) : CARD_HEIGHT_DEF[kind]];
   }));
 }
-function taskCardLayoutDefaults() {
-  return { main: ['conv', 'send', 'memo'], ratio: .6, heights: { conv: 160, send: 320, memo: 120 } };
-}
-function normalizeCardLayouts(value, defaults, heightDefaults) {
-  const legacyMain = ['conv', 'progress', 'send', 'labels', 'memo', 'detail', 'pr', 'related', 'first'];
-  const legacySide = ['resume', 'task', 'add', 'prio', 'other'];
-  const legacyHeights = { conv: 180, progress: 64, send: 360, labels: 84, memo: 150, detail: 320, pr: 180, related: 180, first: 150, resume: 290, task: 110, add: 130, prio: 130, other: 190 };
-  const identity = ['breadcrumb', 'title', 'status'].filter(id => defaults.side.includes(id));
-  const result = {};
-  for (const kind of CARD_KINDS) {
-    let stored = value?.[kind];
-    const oldMain = kind === 'task' ? ['conv', 'memo', 'related', 'send', ...legacyMain.filter(id => !['conv', 'memo', 'related', 'send'].includes(id))] : legacyMain;
-    const oldHeights = kind === 'task' ? { ...legacyHeights, conv: 110, memo: 120, related: 110 } : legacyHeights;
-    // Only untouched legacy defaults migrate. User arrangements, sizes and collapsed sections survive.
-    const untouched = stored && JSON.stringify(stored.main) === JSON.stringify(oldMain) && JSON.stringify(stored.side) === JSON.stringify(legacySide)
-      && !stored.collapsed?.length && (stored.ratio == null || stored.ratio === 2 / 3)
-      && Object.entries(stored.heights || {}).every(([id, height]) => oldHeights[id] === height);
-    if (untouched) stored = null;
-    if (stored && ![...(stored.main || []), ...(stored.side || [])].some(id => identity.includes(id)))
-      stored = { ...stored, side: [...identity, ...(stored.side || [])] };
-    if (stored && defaults.side.includes('actions') && ![...(stored.main || []), ...(stored.side || [])].includes('actions')) {
-      const side = [...(stored.side || [])], at = side.indexOf('status');
-      side.splice(at < 0 ? 0 : at + 1, 0, 'actions');
-      stored = { ...stored, side };
-    }
-    const seed = kind === 'task' ? { ...defaults, ...taskCardLayoutDefaults(), collapsed: ['memo', 'other'].filter(id => [...defaults.main, ...defaults.side].includes(id)) } : defaults;
-    result[kind] = normalizePaneLayout(stored ?? seed, defaults, { ...heightDefaults, ...(kind === 'task' ? taskCardLayoutDefaults().heights : {}) });
-  }
-  return result;
-}
 // The task's own card, then its linked sessions (never sub-agents) side by side, at most TASK_SESSIONS_MAX.
 // The order is stable: sessions already shown keep their place, new links go last, removed ones drop out.
 function taskOverlayIds(taskId, links, shown = [], max = TASK_SESSIONS_MAX) {

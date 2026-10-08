@@ -1,6 +1,6 @@
 /* Thread detail, folded conversation, chips composer and the changes panel. Colors come from board.html's tokens. */
 /* ---------- the thread layout of a session card ---------- */
-.pane[data-kind="session"][data-detail="thread"] { background: var(--card-bg); color: var(--card-fg); --fs: 14px; }
+.pane[data-detail="thread"] { background: var(--card-bg); color: var(--card-fg); --fs: 14px; }
 .pane[data-detail="thread"] .th-head { display: flex; align-items: center; gap: 4px; padding: 10px 12px 2px 16px; flex: none; min-width: 0; }
 .th-head .card-crumb { flex: 1; min-width: 0; }
 .th-tool { height: 28px; min-width: 28px; padding: 0 6px 0 8px; border-radius: 7px; background: var(--btn-subtle); color: var(--card-fg) !important; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--card-muted); font-size: 12px; font-weight: 600; }
@@ -56,11 +56,11 @@
 .cx-reqs { margin-bottom: 8px; display: grid; gap: 6px; }
 .cx-hist { margin-top: 8px; font-size: 12.5px; } .cx-hist summary { cursor: pointer; color: var(--card-muted); padding: 2px 6px; }
 /* ---------- folded conversation ---------- */
-body[data-cs-conversation="folded"] .fi-asst { background: none; padding: 0 2px; max-width: 100%; border-radius: 0; }
-body[data-cs-conversation="folded"] .fi-asst .fi-who { display: none; }
-body[data-cs-conversation="folded"] .fi-user { border-radius: 16px 16px 4px 16px; padding: 10px 14px; max-width: 80%; }
-body[data-cs-conversation="folded"] .fi-user .fi-who { display: none; }
-body[data-cs-conversation="folded"] .fi-note { padding: 0 2px; color: var(--card-muted); font-size: 12.5px; }
+.fi-asst { background: none; padding: 0 2px; max-width: 100%; border-radius: 0; }
+.fi-asst .fi-who { display: none; }
+.fi-user { border-radius: 16px 16px 4px 16px; padding: 10px 14px; max-width: 80%; }
+.fi-user .fi-who { display: none; }
+.fi-note { padding: 0 2px; color: var(--card-muted); font-size: 12.5px; }
 .tg { font-size: 13px; line-height: 1.5; color: var(--card-muted); padding: 0 2px; }
 .tg-head { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 3px 0; color: inherit; border-radius: 6px; }
 .tg-head:hover { color: var(--card-fg); }
@@ -111,3 +111,24 @@ body[data-cs-conversation="folded"] .fi-note { padding: 0 2px; color: var(--card
 .th-tool[aria-pressed="true"] { background: var(--accent); color: var(--primary-fg) !important; }
 :root:not([data-theme="dark"]) .th-tool[aria-pressed="true"] { color: #fff !important; }
 .th-tool[aria-pressed="true"] .add, .th-tool[aria-pressed="true"] .del { color: inherit; }
+
+/* ---------- the thread layout of a task card ---------- */
+.th-conv.th-task { gap: 4px; }
+.th-conv.th-task > .th-sec { padding: 14px max(20px, calc((100% - 720px) / 2)) 4px; }
+.th-sec-t { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 12px; font-weight: 700; letter-spacing: .03em; color: var(--card-muted); }
+.th-sec-t .icon-btn { margin-left: auto; }
+.th-task .note { width: 100%; min-height: 140px; resize: vertical; font-size: 14.5px; line-height: 1.7; }
+.th-task .task-related-row { padding: 8px 10px; border-radius: 10px; background: var(--btn-subtle); margin-bottom: 6px; }
+.th-dock > .th-sec-t { margin: 6px 0; }
+.th-dock .start-grid { display: grid; grid-template-columns: 120px 1fr; gap: 6px; margin-bottom: 6px; }
+.th-dock .start-grid > input { grid-column: 1 / -1; }
+.th-title .title-input { font-size: 20px; font-weight: 700; line-height: 1.35; border: 0; background: none; padding: 2px 0; resize: none; color: var(--card-fg); width: 100%; }
+.th-title .title-input:focus { outline: 2px solid var(--focus); border-radius: 6px; }
+.th-life { display: inline-flex; align-items: center; gap: 5px; }
+.th-life i { width: 7px; height: 7px; border-radius: 50%; background: var(--life); }
+.th-life.life-active i { background: var(--card-muted); }
+.th-life.life-dormant i { background: none; box-shadow: inset 0 0 0 1.5px var(--life); }
+.th-head > .card-actions { position: static; margin-left: 4px; }
+.pane[data-kind="task"] .th-dock { max-height: 44%; }
+.pane[data-kind="task"] .th-dock textarea.note { min-height: 72px; max-height: 160px; }
+.th-task [data-sec="conv"] .note { min-height: 96px; max-height: 40vh; }

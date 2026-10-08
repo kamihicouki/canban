@@ -24,13 +24,12 @@
 .hbtn.primary:hover { background: var(--primary-bg); opacity: .9; }
 .bar-sep { width: 1px; height: 22px; background: var(--header-btn-hover); margin: 0 2px; }
 .topbar.compact .hbtn .lbl, .topbar.no-word .brand-word { display: none; }
+.topbar.compact .acct-btn .rings > :nth-child(n+3) { display: none; } /* two rings are enough to tell the accounts apart */
 .topbar [data-pri].folded { display: none !important; }
 .more-menu .menu-item { display: flex; align-items: center; gap: 8px; }
 .more-menu .more-row { display: flex; gap: 4px; padding: 2px 6px 6px; flex-wrap: wrap; }
 .more-menu .more-row button { padding: 3px 8px; border-radius: 4px; background: var(--btn-subtle); font-size: 12px; }
 .more-menu .more-row button[aria-pressed="true"] { background: var(--c-blue); color: var(--on-scrim); }
-.view-menu .seg-row { margin-bottom: 4px; }
-.view-menu .layout-chooser { margin-top: 4px; }
 @media (max-width: 720px) {
   .brand-word, .ft-toggle, .quick-task-trigger .lbl, .bar-sep { display: none; }
   .topbar { gap: 6px; padding: 0 8px; }
@@ -42,3 +41,4 @@
 .shortcut-hint[aria-disabled="true"] { opacity: .4; }
 .board-shortcuts { position: fixed; right: 12px; bottom: 8px; z-index: 10; max-width: calc(100vw - 24px); padding: 2px 8px; border-radius: 4px; background: color-mix(in srgb, var(--board-bg) 94%, transparent); color: var(--on-board); pointer-events: none; }
 .board-shortcuts[hidden] { display: none; }
+.topbar.compact .board-name #logo { max-width: 104px; }

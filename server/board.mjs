@@ -32,6 +32,8 @@ import { perf } from './perf.mjs';
 const LOCAL_TTL_MS = 4000;
 let localCache = null;
 export const pool = new RemotePool();
+// On a cold start the board shows local sessions after this long; remote ones follow (pool.onLate).
+const REMOTE_FIRST_WAIT_MS = 1500;
 export const prs = new PrService();
 const PR_WINDOW_MS = 30 * 86400e3; // look up PRs for sessions active in the last 30 days
 
@@ -68,7 +70,7 @@ async function allSessionsImpl(state, { force = false } = {}) {
   if (configureAccounts(state.settings.accounts)) force = true; // homes changed: list again
   const hosts = await hostsWithState(state);
   const enabled = hosts.filter((h) => h.enabled);
-  const [local, remote] = await Promise.all([localSessions({ force }), perf.timed('remote.list', () => pool.sessions(enabled, { force }))]);
+  const [local, remote] = await Promise.all([localSessions({ force }), perf.timed('remote.list', () => pool.sessions(enabled, { force, waitMs: force ? Infinity : REMOTE_FIRST_WAIT_MS }))]);
   const all = [...local.sessions, ...remote];
   const app = await codexAppState();
   annotateCodexApp(all, app); // Codex projects, pins and follow-ups kept by the Codex app

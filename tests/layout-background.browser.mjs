@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { boardHtml } from '../server/ui.mjs';
 
-test('application paints each layout when the host makes the document transparent', async t => {
+test('application paints the board when the host makes the document transparent', async t => {
   const require = createRequire(process.env.CANBAN_PLAYWRIGHT_PACKAGE || import.meta.url);
   const { chromium } = require('playwright');
   const browser = await chromium.launch({ headless: true,
@@ -14,12 +14,12 @@ test('application paints each layout when the host makes the document transparen
   t.after(() => browser.close());
   const css = boardHtml().match(/<style>([\s\S]*?)<\/style>/)[1];
   for (const theme of ['light', 'dark']) {
-    for (const layout of ['trello', 'classic', 'rail', 'omni', 'hud']) {
+    for (const layout of ['board']) {
       await t.test(`${layout} / ${theme}`, async () => {
         const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
         try {
           await page.setContent(`<html data-theme="${theme}"><head><style>${css}</style></head>
-            <body data-layout="${layout}" style="background: transparent !important">
+            <body style="background: transparent !important">
               <div class="app-content"><header class="topbar">canban</header>
                 <div class="boardbar">ボード</div><div class="shell">
                   <aside class="sidebar">ワークスペース</aside><main class="board"></main>
@@ -35,12 +35,8 @@ test('application paints each layout when the host makes the document transparen
           assert.match(surface.image, /^linear-gradient\(/, 'application must paint its own background');
           assert.equal(surface.width, 1280);
           assert.equal(surface.height, 800);
-          if (layout === 'trello') {
-            assert.notEqual(surface.start, surface.end, 'Trello keeps its two-color gradient');
-            assert.match(surface.image, theme === 'light' ? /rgb\(0, 121, 191\)/ : /rgb\(11, 42, 74\)/);
-          } else {
-            assert.equal(surface.start, surface.end, 'other layouts keep their solid palette');
-          }
+          assert.notEqual(surface.start, surface.end, 'the board keeps its two-color gradient');
+          assert.match(surface.image, theme === 'light' ? /rgb\(0, 121, 191\)/ : /rgb\(11, 42, 74\)/);
         } finally { await page.close(); }
       });
     }

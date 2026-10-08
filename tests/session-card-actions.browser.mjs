@@ -24,19 +24,19 @@ try {
   browser = await chromium.launch({ headless: true, ...(process.env.CANBAN_BROWSER_EXECUTABLE ? {executablePath:process.env.CANBAN_BROWSER_EXECUTABLE} : {}) });
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   const errors = []; page.on('pageerror', e => errors.push(e.message));
-  await page.route('**/direct', async route => { const response = await route.fetch(); const html = await response.text(); const i = html.lastIndexOf('})();'); assert.ok(i > 0); await route.fulfill({response, body: html.slice(0,i) + 'globalThis.__test = {setThemePref,setLayout,state,load,bridge,openCard,closeCards};\n' + html.slice(i)}); });
+  await page.route('**/direct', async route => { const response = await route.fetch(); const html = await response.text(); const i = html.lastIndexOf('})();'); assert.ok(i > 0); await route.fulfill({response, body: html.slice(0,i) + 'globalThis.__test = {setThemePref,state,load,bridge,openCard,closeCards};\n' + html.slice(i)}); });
   await page.goto('http://localhost:4598/direct');
   await page.waitForSelector('.card[data-card-id="codex:t1"]');
   await page.locator('.card[data-card-id="codex:t1"]').click();
   await page.waitForSelector('[data-pane-key="z"]');
-  for (const theme of ['light', 'dark']) for (const layout of ['trello','classic','rail','omni','hud']) {
-    await page.evaluate(({theme,layout}) => { __test.setThemePref(theme); __test.setLayout(layout); }, {theme,layout});
+  for (const theme of ['light', 'dark']) for (const layout of ['board']) {
+    await page.evaluate(({theme,layout}) => { __test.setThemePref(theme); }, {theme,layout});
     await page.waitForTimeout(150);
-    const actions = page.locator('.psec[data-sec="actions"]');
+    const actions = page.locator('.dsec[data-sec="actions"]');
     await assert.doesNotReject(() => actions.getByRole('button', { name: /アーカイブ/ }).click({trial:true}));
     await page.screenshot({path: path.join(output, `${layout}-${theme}.png`)});
   }
-  await page.evaluate(() => { __test.setThemePref('light'); __test.setLayout('trello'); });
+  await page.evaluate(() => { __test.setThemePref('light'); });
   const prompt = page.locator('.pane .prompt-composer textarea').first();
   await prompt.fill('入力途中の文章');
   await prompt.press('Escape');
@@ -85,7 +85,7 @@ try {
   assert.equal(fs.existsSync(path.join(fx.codexHome,'sessions/rollout-a.jsonl')), false);
   await page.locator('.card[data-card-id="claude:c2"]').click();
   assert.equal(await page.locator('[data-pane-key="z"]').isDisabled(), true);
-  assert.match(await page.locator('.psec[data-sec="actions"]').innerText(), /Claudeで操作/);
+  assert.match(await page.locator('.dsec[data-sec="actions"]').innerText(), /Claudeで操作/);
   assert.equal(await page.getByText('ボードから隠す',{exact:true}).count(), 0);
   assert.deepEqual(errors,[]);
   console.log(JSON.stringify({passed:true,screenshots:11,viewport:'1280x800',layouts:5,themes:2,archiveRestore:true,deleteCancelDraft:true,deletePersists:true,nativeFixtureHistoryDeleted:true,claudeUnsupportedIsExplicit:true,browserErrors:errors}));

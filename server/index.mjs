@@ -64,6 +64,7 @@ const desktopBridge = await startDesktopBridge({ dataDir: store.dir }).catch(err
 const slack = new SlackService(store);
 // Realtime: watches nothing until a board calls canban_watch (see server/live.mjs).
 const live = process.env.CANBAN_LIVE === '0' ? null : new LiveHub({ dataDir: store.dir, codexHome: codexHome(), claudeProjects: path.join(claudeHome(), 'projects'), claudeDesktop: claudeDesktopSessionsDir(), extraRoots: extraWatchRoots(store) });
+if (live) pool.onLate = () => live.emit('store', store.dir); // a slow SSH host answered: rebuild the board
 const watch = live ? createWatch(live, { presence: new Presence(store.dir, { app: () => appLabel(client) }) }) : null;
 const accountsActions = accountActions({ store, allSessions, getLive: () => live });
 let client = null; // clientInfo from initialize: which host started this server
