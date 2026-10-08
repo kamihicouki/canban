@@ -11,6 +11,7 @@
 | `.local/data/` | 開発用データ、または既存共有データへの参照 |
 | `~/.canban/`（repo外） | 通常ユーザーのSQLite DB、検索索引、実行ログ、アカウントデータ |
 | `<Canban保存先>/prompt-images/` | プロンプトの添付画像・アップロード状態。通常は `~/.canban/prompt-images/`。開発・テストは明示した `.local/` 配下 |
+| `<Canban保存先>/cache/claude-summaries.json` | Claude の会話ログの要約（題名・最初の依頼・件数・読み終えた位置）。起動時に増えた分だけ読むための控えで、消しても次の一覧で作り直す。会話の本文は保存しない |
 | `<Canban保存先>/agent-bridges/` | Codex内のCanban MCPへ接続する一時的な探索レコード。会話・認証情報は保存しない |
 | `.local/chrome-main-test/` | 拡張の公開鍵・ID、ビルド記録、更新ロック |
 | `.local/backups/` | 配置移行・設定変更前の控え |

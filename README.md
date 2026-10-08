@@ -455,7 +455,8 @@ server/
   remote/collect.py    リモートで動く収集スクリプト（読み取り専用、Python 標準ライブラリのみ）
   remote/dispatch.py   リモートで指示を送るスクリプト（CLI の起動・確認・停止）
   remote/pool.mjs      SSH の並列実行・キャッシュ・タイムアウト
-ui/board.html          ボード UI（ui/header.*・ui/accounts.* を @include で取り込む）
+ui/board.html          ボード UI の骨組み（マークアップと、部品を @include で読み込む順番）
+ui/*.js, ui/*.css      ボード UI の部品（bridge・state・board-render・card-overlay・keyboard・lifetime など。同じスコープに組み立てる）
 ```
 
 ## 開発

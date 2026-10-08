@@ -34,6 +34,7 @@ import { claudeExecutionSession, savedClaudeExecutionSession } from './claude-ha
 import { desktopProfilePlan, withDesktopAccount, saveClaudeExecutionAccount, desktopExecutionLink } from './claude-desktop-profile.mjs';
 import { SlackService, slackTools } from './slack.mjs';
 import { listChanges, fileDiff } from './changes.mjs';
+import { attachSummaryCache } from './summary-cache.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // The Codex plugin manifest is absent when installed another way (Claude Desktop extension, a bare copy).
@@ -56,6 +57,7 @@ function readManifest(...candidates) {
 }
 
 const store = new Store();
+attachSummaryCache(store.dir); // Claude transcript summaries survive a restart: only new lines are read
 const desktopBridge = await startDesktopBridge({ dataDir: store.dir }).catch(error => {
   process.stderr.write(`[canban] Codex連携: ${error.message}\n`);
   return null;

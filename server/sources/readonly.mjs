@@ -78,6 +78,36 @@ export async function* readJsonLines(p) {
   }
 }
 
+// JSON lines from byte `start` on, each with the offset just past its newline. A last line without its
+// newline counts when it parses (a file that simply ends there); one that does not (mid-write) is left
+// for the next read. Malformed lines are skipped.
+export async function* readJsonLinesFrom(p, start = 0) {
+  const stream = fs.createReadStream(p, { flags: 'r', start });
+  let rest = Buffer.alloc(0), offset = start;
+  try {
+    for await (const chunk of stream) {
+      let buf = rest.length ? Buffer.concat([rest, chunk]) : chunk, from = 0, nl;
+      while ((nl = buf.indexOf(10, from)) !== -1) {
+        const line = buf.toString('utf8', from, nl);
+        offset += nl - from + 1;
+        from = nl + 1;
+        if (!line.trim()) continue;
+        let value;
+        try { value = JSON.parse(line); } catch { continue; }
+        yield { value, end: offset };
+      }
+      rest = buf.subarray(from);
+    }
+    if (rest.length) {
+      let value;
+      try { value = JSON.parse(rest.toString('utf8')); } catch {}
+      if (value !== undefined) yield { value, end: offset + rest.length };
+    }
+  } finally {
+    stream.destroy();
+  }
+}
+
 // Read the last `bytes` bytes of a file and return complete JSON lines from it.
 export async function readTailJsonLines(p, bytes = 256 * 1024) {
   const fh = await fsp.open(p, 'r');

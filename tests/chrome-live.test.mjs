@@ -7,9 +7,10 @@ import vm from 'node:vm';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { FrameDecoder, encodeNativeResponse } from '../server/native-messaging.mjs';
+import { boardHtml } from '../server/ui.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const html = fs.readFileSync(path.join(root, 'ui/board.html'), 'utf8');
+const html = boardHtml();
 const bridgeSource = html.slice(html.indexOf('const bridge = (() => {'), html.indexOf('\n})();', html.indexOf('const bridge = (() => {')) + 6);
 const liveSource = html.slice(html.indexOf('async function watchOnce('), html.indexOf('\nasync function liveLoop('));
 

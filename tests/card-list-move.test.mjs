@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { boardHtml } from '../server/ui.mjs';
 
-const html = fs.readFileSync(new URL('../ui/board.html', import.meta.url), 'utf8');
+const html = boardHtml();
 const source = html.slice(html.indexOf('function paneListId('), html.indexOf('function paintCardListControls('));
 function fixture() {
   const lists = [

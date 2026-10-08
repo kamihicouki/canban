@@ -13,18 +13,11 @@
 .pane-stage.can-scroll-right { mask-image: linear-gradient(to right, var(--on-scrim) calc(100% - 48px), transparent); }
 .pane-row { position: relative; display: flex; align-items: flex-start; gap: 16px; margin: 0 auto; width: max-content; height: 100%; max-height: 960px; }
 .card-board-end { position: absolute; inset: 0 0 0 auto; width: 1px; pointer-events: none; }
-.card-board-margin { position: absolute; z-index: 2; top: 8px; bottom: 24px; width: 16px; display: flex; align-items: center; justify-content: center; color: var(--on-scrim); opacity: .5; cursor: ew-resize; touch-action: none; }
-.card-board-margin::before { content: ''; position: absolute; inset: 0 auto; border-left: 1px solid var(--scrim-ctl); }
-.card-board-margin.left { left: calc(var(--gutter-left, 10%) - 8px); }
-.card-board-margin.right { right: calc(var(--gutter-right, 10%) - 8px); }
-.card-board-margin svg { background: var(--scrim-ctl); border-radius: 3px; }
-.card-board-margin:hover, .card-board-margin:focus-visible { opacity: 1; outline: none; }
-.card-board-margin:focus-visible::before { border-color: var(--on-scrim); }
-.shortcut-map { position: absolute; z-index: 3; width: max-content; color: var(--on-scrim); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.shortcut-map { position: absolute; z-index: 3; top: 8px; right: 8px; width: max-content; padding: 10px 12px; border-radius: 10px;
+  background: color-mix(in srgb, var(--modal-bg) 94%, transparent); color: var(--list-fg); box-shadow: var(--lift-shadow);
+  overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.shortcut-map-title { font: 700 11px/18px system-ui, sans-serif; letter-spacing: .03em; color: var(--list-muted); margin-bottom: 6px; }
 .shortcut-map[hidden] { display: none; }
-.shortcut-map-grip { display: flex; align-items: center; gap: 3px; max-width: 100%; padding: 3px 0 8px; border: 0; background: none; color: inherit; font: 600 11px/18px system-ui, sans-serif; cursor: grab; touch-action: none; }
-.shortcut-map-grip:active { cursor: grabbing; }
-.shortcut-map-grip:focus-visible { outline: 1px solid var(--on-scrim); outline-offset: -1px; border-radius: 3px; }
 .shortcut-map .pb-hint { flex-direction: column; align-items: flex-start; flex-wrap: nowrap; gap: 5px; font-size: 11px; }
 .shortcut-map .shortcut-hint { width: 100%; align-items: start; white-space: normal; line-height: 18px; }
 .shortcut-map .shortcut-hint kbd { flex: none; margin-top: 1px; }

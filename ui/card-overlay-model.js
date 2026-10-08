@@ -1,37 +1,20 @@
 // Pure rules for the card overlay (Trello's "back of card"); also exercised by the Node tests.
-// A card is shown on its own layer above the board. Layout (section order, heights, column ratio)
-// and width are kept per kind of card — "session" and "task" — and shared by every card of that kind.
+// A card is shown on its own layer above the board. Its width and height are kept per kind of card —
+// "session" and "task" — and shared by every card of that kind.
 const CARD_KINDS = ['session', 'task'];
 const CARD_WIDTH_DEF = { session: 1000, task: 760 };
 const CARD_WIDTH_MIN = 560, CARD_WIDTH_MAX = 1600;
 const CARD_HEIGHT_DEF = { session: 860, task: 860 };
 const CARD_HEIGHT_MIN = 320, CARD_HEIGHT_MAX = 1600;
 const TASK_SESSIONS_MAX = 8;
-const CARD_BOARD_DEF = { left: .1, right: .1, shortcut: { side: 'right', x: 0, y: .1 } };
-const cardBoardClamp = (n, min, max) => Math.min(max, Math.max(min, n));
-function normalizeCardBoard(value) {
-  const number = (n, fallback, min, max) => typeof n === 'number' && Number.isFinite(n) ? cardBoardClamp(n, min, max) : fallback;
-  let left = number(value?.left, .1, .02, .4), right = number(value?.right, .1, .02, .4);
-  if (left + right > .65) { const scale = .65 / (left + right); left *= scale; right *= scale; }
-  return { left, right, shortcut: { side: value?.shortcut?.side === 'left' ? 'left' : 'right',
-    x: number(value?.shortcut?.x, 0, 0, 1), y: number(value?.shortcut?.y, .1, 0, 1) } };
-}
-// Keep a usable card viewport and readable key labels even when the window shrinks.
-// These are display bounds; resizing a window never overwrites the saved ratios.
-function cardBoardGeometry(value, width) {
-  const board = normalizeCardBoard(value), w = Math.max(1, width);
-  const minStage = Math.min(360, w * .55), legend = Math.min(216, w * .32), margin = Math.min(24, w * .08);
-  const minLeft = board.shortcut.side === 'left' ? legend : margin;
-  const minRight = board.shortcut.side === 'right' ? legend : margin;
-  const left = cardBoardClamp(w * board.left, minLeft, w - minStage - minRight);
-  const right = cardBoardClamp(w * board.right, minRight, w - minStage - left);
+// The card board's margins follow the window: a slim one on the left, the key guide's on the right.
+// Nothing here is saved; the card itself is what the user sizes.
+function cardBoardGeometry(width) {
+  const w = Math.max(1, width);
+  const minStage = Math.min(360, w * .55), legend = Math.min(216, w * .32), margin = Math.min(Math.max(24, w * .06), w * .08);
+  const left = Math.round(Math.min(margin, w - minStage - legend));
+  const right = Math.round(Math.max(0, Math.min(legend, w - minStage - left)));
   return { left, right, width: w - left - right };
-}
-function fitShortcutMap(gutter, size, position) {
-  const pad = 8;
-  // Anchor the map's top-left to the gutter, independently of the number of hint rows.
-  return { x: gutter.left + cardBoardClamp(gutter.width * position.x, pad, Math.max(pad, gutter.width - size.width - pad)),
-    y: cardBoardClamp(gutter.height * position.y, pad, Math.max(pad, gutter.height - size.height - pad)) };
 }
 // Analytics and Agent Usage open on the same layer as sheets, under ids of their own ("view:analytics").
 const VIEW_SHEETS = { analytics: ['chart', '分析'], usage: ['gauge', 'Agent Usage'] };
