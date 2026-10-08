@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>02 レビューペイン · Canban カード案</title>
+<link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="shared.css">
+<style>
+.pane { width: min(1232px, 100%); }
+.hd { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--btn-subtle); flex: none; }
+.hd h2 { margin: 0; font-size: 15px; font-weight: 700; }
+.body { display: flex; flex: 1; min-height: 0; }
+.left { flex: 0 0 46%; min-width: 0; display: flex; flex-direction: column; position: relative; border-right: 1px solid var(--btn-subtle); }
+.scroll { flex: 1; overflow: auto; padding: 18px 18px 140px; }
+.dock { position: absolute; inset: auto 0 0 0; padding: 0 14px 12px; background: linear-gradient(transparent, var(--card-bg) 36%); }
+.right { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--modal-bg); }
+.seg { display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--btn-subtle); }
+.seg button { height: 26px; padding: 0 10px; border-radius: 7px; font-size: 13px; color: var(--card-muted); display: inline-flex; align-items: center; gap: 5px; }
+.seg button[aria-selected=true] { background: var(--card-bg); color: var(--card-fg); box-shadow: var(--card-shadow); font-weight: 600; }
+.rtop { display: flex; align-items: center; gap: 8px; padding: 8px 12px; flex: none; }
+.rbody { flex: 1; overflow: auto; padding: 4px 12px 14px; }
+.tabp { display: none; } .tabp.on { display: block; }
+.file { background: var(--card-bg); border-radius: 10px; box-shadow: var(--card-shadow); margin-bottom: 10px; overflow: hidden; }
+.file > header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; position: sticky; top: 0; background: var(--card-bg); }
+.file > header .p { color: var(--card-muted); } .file > header .n { font-weight: 600; }
+.file .chev { transition: transform .15s; } .file.closed .chev { transform: rotate(-90deg); } .file.closed .dl { display: none; }
+.dl { font: 12px/20px ui-monospace, SFMono-Regular, Menlo, monospace; border-top: 1px solid var(--btn-subtle); }
+.dl div { display: flex; white-space: pre; padding: 0 12px 0 0; } .dl div > b { width: 40px; flex: none; text-align: right; padding-right: 10px; color: var(--card-muted); font-weight: 400; user-select: none; }
+.dl .a { background: var(--tone-run-bg); } .dl .d { background: var(--tone-err-bg); } .dl .h { color: var(--card-muted); background: var(--btn-subtle); padding-left: 12px; }
+.dl div .t { padding-left: 4px; overflow: hidden; }
+.tree { list-style: none; margin: 0; padding: 0; font-size: 13px; } .tree li { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; } .tree li:hover { background: var(--btn-subtle); }
+.term { font: 12.5px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--txt-bg); color: var(--txt-fg); border-radius: 10px; padding: 12px 14px; white-space: pre-wrap; }
+.term .g { color: var(--tone-run); } .term .y { color: var(--tone-wait); } .term .m { color: var(--txt-dim); }
+.prev { background: var(--card-bg); border-radius: 10px; box-shadow: var(--card-shadow); padding: 14px; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; font-size: 12px; max-width: 360px; margin: 0 auto; }
+.cal b { color: var(--card-muted); font-weight: 600; } .cal span { padding: 6px 0; border-radius: 8px; } .cal .mo { grid-column: 1/-1; text-align: left; font-weight: 700; padding: 8px 4px 2px; font-size: 14px; } .cal .on { background: var(--accent); color: #fff; font-weight: 700; }
+</style></head>
+<body>
+<script src="shared.js"></script>
+<script>
+const stage = shell('02 レビューペイン');
+const dline = (t, k, a, b) => `<div class="${k}"><b>${a ?? ''}</b><b>${b ?? ''}</b><span class="t">${t}</span></div>`;
+const diff = `<div class="file"><header><span class="chev">${ic('chev', 14)}</span><span class="grow"><span class="p">nuxt-app/assets/css/</span><span class="n">cal-event-f-integrated.css</span></span><span class="add num">+20</span><span class="del num">−3</span></header><div class="dl">
+${dline('@@ .cal-grid { … }', 'h')}${dline('.cal-grid {', '', 41, 41)}${dline('  display: grid;', '', 42, 42)}${dline('  scroll-snap-type: x mandatory;', 'd', 43)}${dline('  overflow-y: auto;', 'a', null, 43)}${dline('  scroll-snap-type: y proximity;', 'a', null, 44)}${dline('  overscroll-behavior: contain;', 'a', null, 45)}${dline('}', '', 44, 46)}${dline('.cal-month-mark {', 'a', null, 47)}${dline('  position: sticky; top: 0;', 'a', null, 48)}${dline('  font: 700 13px/1 var(--font-ym);', 'a', null, 49)}${dline('}', 'a', null, 50)}</div></div>
+<div class="file"><header><span class="chev">${ic('chev', 14)}</span><span class="grow"><span class="p">nuxt-app/assets/css/</span><span class="n">cal-neumorph.css</span></span><span class="add num">+6</span><span class="del num">−1</span></header><div class="dl">${dline('@@ .cal-badge { … }', 'h')}${dline('  font-size: 10px;', 'd', 12)}${dline('  font-size: 12px;', 'a', null, 12)}${dline('  font-weight: 700;', 'a', null, 13)}</div></div>
+<div class="file closed"><header><span class="chev">${ic('chev', 14)}</span><span class="grow"><span class="n">DESIGN.md</span></span><span class="add num">+10</span><span class="del num">−1</span></header><div class="dl"></div></div>`;
+const mo = (n) => `<span class="mo">${n}</span>` + ['月','火','水','木','金','土','日'].map(() => '').join('');
+let cal = '<b>月</b><b>火</b><b>水</b><b>木</b><b>金</b><b>土</b><b>日</b><span class="mo">2026年10月</span>';
+for (let i = 1; i <= 21; i++) cal += `<span class="${i === 7 ? 'on' : ''}">${i}</span>`; cal += '<span class="mo">2026年11月</span>'; for (let i = 1; i <= 7; i++) cal += `<span>${i}</span>`;
+stage.insertAdjacentHTML('beforeend', `<div class="scrim"><section class="pane">
+ <div class="hd"><span class="ag ag-codex">Codex</span><h2>${SAMPLE.title}</h2><span class="st st-run"><i></i>実行中</span><span class="grow"></span>
+   <span class="chipx mono">${ic('branch', 13)} ${SAMPLE.branch}</span><button class="btn line">${ic('pr', 14)} PR を作成</button><button class="btn line">コミット</button>
+   <button class="iconbtn" title="閉じる (Esc)">${ic('close', 17)}</button></div>
+ <div class="body"><div class="left"><div class="scroll"><div class="thread">${THREAD_HTML({ running: true })}</div></div><div class="dock">${composer({ running: true, id: 'c2' })}</div></div>
+  <div class="right"><div class="rtop"><div class="seg" role="tablist" id="seg"><button aria-selected="true" data-t="diff">${ic('diff', 14)} 変更 <span class="add num">+74</span> <span class="del num">−5</span></button><button data-t="files" aria-selected="false">${ic('folder', 14)} ファイル</button><button data-t="term" aria-selected="false">${ic('terminal', 14)} ターミナル</button><button data-t="prev" aria-selected="false">${ic('eye', 14)} プレビュー</button></div><span class="grow"></span><button class="btn line">${ic('undo', 14)} すべて元に戻す</button><button class="iconbtn" title="ペインを閉じる">${ic('close', 15)}</button></div>
+   <div class="rbody"><div class="tabp on" id="t-diff">${diff}</div>
+    <div class="tabp" id="t-files"><ul class="tree">${['nuxt-app/components/CalendarGrid.vue|M', 'nuxt-app/composables/useInfiniteWeeks.ts|A', 'nuxt-app/assets/css/cal-neumorph.css|M', 'nuxt-app/assets/css/cal-event-f-integrated.css|M', 'DESIGN.md|M'].map((s) => { const [p, k] = s.split('|'); return `<li>${ic('file', 15)}<span class="grow mono" style="font-size:12.5px">${p}</span><span class="chipx">${k === 'A' ? '追加' : '変更'}</span></li>`; }).join('')}</ul></div>
+    <div class="tabp" id="t-term"><div class="term"><span class="m">~/repo/nuxt-app</span> $ npm run lint -- --quiet\n<span class="g">✔</span> 0 errors, 0 warnings\n<span class="m">~/repo/nuxt-app</span> $ npm run test -- calendar\n<span class="g">✔</span> useInfiniteWeeks › 週を重複なく連結する\n<span class="g">✔</span> useInfiniteWeeks › 上限で追加読み込みを止める\n<span class="y">…</span> CalendarGrid › 月境界の目印 <span class="m">(実行中)</span></div></div>
+    <div class="tabp" id="t-prev"><div class="prev"><div class="cal">${cal}</div></div></div></div></div></div></section></div>`);
+fillIc(); wireComposer($('.cmp')); tick($('.wk')); const sc = $('.scroll'); sc.scrollTop = sc.scrollHeight;
+$$('#seg button').forEach((b) => b.onclick = () => { $$('#seg button').forEach((x) => x.setAttribute('aria-selected', x === b)); $$('.tabp').forEach((p) => p.classList.toggle('on', p.id === 't-' + b.dataset.t)); });
+$$('.file > header').forEach((h) => h.onclick = () => h.parentElement.classList.toggle('closed'));
+addEventListener('keydown', (e) => { const k = { '1': 'diff', '2': 'files', '3': 'term', '4': 'prev' }[e.key]; if (k && !/TEXTAREA|INPUT/.test(e.target.tagName)) $(`#seg [data-t=${k}]`).click(); });
+</script></body></html>

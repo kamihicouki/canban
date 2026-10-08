@@ -6,11 +6,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import { codexLifecycle } from './session-actions.mjs';
+import { startDesktopBridge } from './codex-desktop-bridge.mjs';
 import { Store } from './store.mjs';
 import { leaderFor } from './leader.mjs';
 import { perf } from './perf.mjs';
 import { dispatcherFor, tickDispatch, setSpawner, dryRunSpawner } from './dispatch.mjs';
-import { buildBoard, sessionDetail, allSessions, findSession, hostsWithState, effectiveOrder, runRules, tickRules, tickSearch, pool } from './board.mjs';
+import { buildBoard, sessionDetail, allSessions, findSession, hostsWithState, effectiveOrder, dropLocalCache, runRules, tickRules, tickSearch, pool } from './board.mjs';
 import { RULE_TRIGGERS } from './store.mjs';
 import { computeStats } from './stats.mjs';
 import { desktopLink, resumeCommand, newSessionLink, newSessionCommand } from './agents.mjs';
@@ -28,6 +30,8 @@ import { boardHtml } from './ui.mjs';
 import { taskContextSchema } from './task-context.mjs';
 import { uploadImage, promptImages, listSkills, withSkills, withImagePaths, remoteImages } from './prompt-input.mjs';
 import { resolveSession } from './dispatch.mjs';
+import { SlackService, slackTools } from './slack.mjs';
+import { listChanges, fileDiff } from './changes.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // The Codex plugin manifest is absent when installed another way (Claude Desktop extension, a bare copy).
@@ -50,6 +54,12 @@ function readManifest(...candidates) {
 }
 
 const store = new Store();
+const desktopBridge = await startDesktopBridge({ dataDir: store.dir }).catch(error => {
+  process.stderr.write(`[canban] Codex連携: ${error.message}\n`);
+  return null;
+});
+
+const slack = new SlackService(store);
 // Realtime: watches nothing until a board calls canban_watch (see server/live.mjs).
 const live = process.env.CANBAN_LIVE === '0' ? null : new LiveHub({ dataDir: store.dir, codexHome: codexHome(), claudeProjects: path.join(claudeHome(), 'projects'), claudeDesktop: claudeDesktopSessionsDir(), extraRoots: extraWatchRoots(store) });
 const watch = live ? createWatch(live, { presence: new Presence(store.dir, { app: () => appLabel(client) }) }) : null;
@@ -80,7 +90,6 @@ const filterProps = {
   q: { type: 'string', description: 'タイトル・最初の依頼・メモ・ラベルの部分一致検索' },
   includeArchived: { type: 'boolean' },
   includeSubagents: { type: 'boolean' },
-  includeHidden: { type: 'boolean' },
   pinnedOnly: { type: 'boolean', description: 'Codex アプリでピン留めしたスレッドだけ' },
   groupBranch: { type: 'boolean', description: '同じリポジトリ＋ブランチのセッションをまとめる' },
   fulltext: { type: 'boolean', description: 'q を会話の本文でも検索する（3 文字以上）' },
@@ -88,6 +97,10 @@ const filterProps = {
 };
 
 const TOOLS = [
+  ...slackTools({ service: slack, store, appTool, validateCard: async cardId => {
+    if (cardId.startsWith('task:')) { const card = (await store.load()).cards[cardId]; if (card?.kind !== 'task') throw new Error('タスクカードが見つかりません'); return card.title; }
+    else return (await findSession(store, cardId)).session.title;
+  } }),
   appTool('canban_upload_prompt_image', 'プロンプトに画像を添付', {
     id: { type: 'string' }, offset: { type: 'integer' }, data: { type: 'string' },
     name: { type: 'string' }, mime: { type: 'string' }, size: { type: 'integer' },
@@ -108,6 +121,12 @@ const TOOLS = [
     const result = await pool.dispatch(host, { mode: 'prompt_skills', agent: context.agent || 'codex', cwd: context.cwd || '', homeDir: context.homeDir });
     if (!result.ok) throw new Error(result.error || '接続先のスキルを取得できません');
     return { skills: result.skills || [] };
+  }),
+  appTool('canban_get_changes', '作業フォルダの変更を取得', { cardId: { type: 'string' }, path: { type: 'string' } }, ['cardId'], async ({ cardId, path: file }) => {
+    const { session, host } = await findSession(store, cardId);
+    if (host) return { available: false, reason: 'リモートのセッションの変更はまだ表示できません' };
+    if (file) return { available: true, diff: await fileDiff(session.cwd, file) };
+    return listChanges(session.cwd);
   }),
   {
     name: 'open_canban',
@@ -242,7 +261,6 @@ const TOOLS = [
         note: { type: 'string' },
         priority: { type: ['string', 'null'], enum: ['high', 'medium', 'low', null] },
         due: { type: ['string', 'null'] },
-        hidden: { type: 'boolean' },
       },
       required: ['cardId'],
       additionalProperties: false,
@@ -450,11 +468,11 @@ const TOOLS = [
     name: 'canban_create_task',
     title: 'タスクカードを追加',
     description: 'セッションに紐づかないタスクカードを作る（Trello のカードと同じ）。list はリスト ID か名前（省略時は既定のリスト）。',
-    inputSchema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, list: { type: 'string' }, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } }, context: taskContextSchema, clientRequestId: { type: 'string', maxLength: 128 } }, required: ['title'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, list: { type: 'string' }, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } }, context: taskContextSchema, clientRequestId: { type: 'string', maxLength: 128 }, slackSource: { type: 'string', maxLength: 120 } }, required: ['title'], additionalProperties: false },
     _meta: appAndModel,
-    handler: async ({ title, description, list, directory, labels, context, clientRequestId }) => {
+    handler: async ({ title, description, list, directory, labels, context, clientRequestId, slackSource }) => {
       const l = list ? resolveList((await store.load()).lists, list) : null;
-      const res = await store.createTask({ title, description, listId: l?.id || list, directory, labels, context, clientRequestId });
+      const res = await store.createTask({ title, description, listId: l?.id || list, directory, labels, context, clientRequestId, slackSource });
       return { text: `タスクカード「${res.title}」を作成しました（${res.cardId}）`, structured: res };
     },
   },
@@ -534,6 +552,32 @@ const TOOLS = [
   },
   appTool('canban_unlink_session', 'セッションの紐付けを解除', { taskId: { type: 'string' }, sessionId: { type: 'string' } }, ['taskId', 'sessionId'], (a) => store.unlinkSession(a)),
   appTool('canban_update_task', 'タスクカードを更新', { cardId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, context: taskContextSchema, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } } }, ['cardId'], (a) => store.updateTask(a)),
+  {
+    name: 'canban_set_session_card_state',
+    title: 'セッションカードを整理',
+    description: 'エージェント本体のセッションをアーカイブ・復元・削除する。削除は会話履歴と関連情報も永久に削除する。対応するAPIがない場合は失敗し、Canbanだけの状態変更は行わない。',
+    inputSchema: { type: 'object', properties: { cardId: { type: 'string' }, action: { type: 'string', enum: ['archive', 'restore', 'delete'] } }, required: ['cardId', 'action'], additionalProperties: false },
+    _meta: appAndModel,
+    handler: async (a) => {
+      const { session, state } = await findSession(store, a.cardId);
+      const before = a.action === 'delete' ? (await allSessions(state)).sessions : [];
+      const affected = new Set([a.cardId]);
+      if (a.action === 'delete') {
+        for (let added = true; added;) {
+          added = false;
+          for (const s of before) if (affected.has(s.parentId) && !affected.has(s.id)) { affected.add(s.id); added = true; }
+        }
+      }
+      let result;
+      try { result = await codexLifecycle(session, a.action, { dataDir: store.dir }); }
+      finally { dropLocalCache(); }
+      if (a.action === 'delete') {
+        const remaining = new Set((await allSessions(state, { force: true })).sessions.map(s => s.id));
+        for (const id of affected) if (!remaining.has(id)) await store.removeSessionMetadata(id);
+      }
+      return { text: 'エージェントのセッションを操作しました', structured: result };
+    },
+  },
   appTool('canban_delete_task', 'タスクカードを削除', { cardId: { type: 'string' } }, ['cardId'], (a) => store.deleteTask(a)),
   appTool('canban_clear_pending', '開始待ちを取り消す', { taskId: { type: 'string' } }, ['taskId'], (a) => store.clearPending(a)),
   {
@@ -724,13 +768,17 @@ rl.on('line', (line) => {
   pending.add(p);
 });
 rl.on('close', async () => {
+  slack.stop();
   await Promise.allSettled([...pending]);
   await shutdownLogins();
+  await desktopBridge?.close();
   // Exit only after stdout has flushed; large responses are written asynchronously to pipes.
   process.stdout.write('', () => process.exit(0));
 });
 for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, async () => {
+  slack.stop();
   await shutdownLogins();
+  await desktopBridge?.close();
   process.exit(0);
 });
 
@@ -762,6 +810,7 @@ const background = [];
 const leader = leaderFor(store.dir, {
   mode: bgMode,
   onChange(isLeader) {
+    if (!isLeader) slack.closeSockets();
     for (const t of background.splice(0)) clearTimeout(t); // clears intervals too
     if (!isLeader) return;
     log('background leader');
@@ -780,5 +829,6 @@ const leader = leaderFor(store.dir, {
 });
 perf.startLoopMonitor();
 await leader.start();
+await slack.start(leader);
 
 log(`started v${PKG.version}`);

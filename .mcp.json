@@ -14,7 +14,10 @@
         "SSH_AUTH_SOCK",
         "CODEX_HOME",
         "CLAUDE_CONFIG_DIR",
-        "CANBAN_DATA_DIR"
+        "CANBAN_DATA_DIR",
+        "CODEX_APP_TOOLS_PIPE_PATH",
+        "CODEX_MCP_NODE_PATH",
+        "CODEX_THREAD_ID"
       ],
       "startup_timeout_sec": 15,
       "tool_timeout_sec": 60,

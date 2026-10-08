@@ -20,7 +20,7 @@ function normalizeCardBoard(value) {
 // These are display bounds; resizing a window never overwrites the saved ratios.
 function cardBoardGeometry(value, width) {
   const board = normalizeCardBoard(value), w = Math.max(1, width);
-  const minStage = Math.min(360, w * .55), legend = Math.min(112, w * .32), margin = Math.min(24, w * .08);
+  const minStage = Math.min(360, w * .55), legend = Math.min(216, w * .32), margin = Math.min(24, w * .08);
   const minLeft = board.shortcut.side === 'left' ? legend : margin;
   const minRight = board.shortcut.side === 'right' ? legend : margin;
   const left = cardBoardClamp(w * board.left, minLeft, w - minStage - minRight);
@@ -71,6 +71,11 @@ function normalizeCardLayouts(value, defaults, heightDefaults) {
     if (untouched) stored = null;
     if (stored && ![...(stored.main || []), ...(stored.side || [])].some(id => identity.includes(id)))
       stored = { ...stored, side: [...identity, ...(stored.side || [])] };
+    if (stored && defaults.side.includes('actions') && ![...(stored.main || []), ...(stored.side || [])].includes('actions')) {
+      const side = [...(stored.side || [])], at = side.indexOf('status');
+      side.splice(at < 0 ? 0 : at + 1, 0, 'actions');
+      stored = { ...stored, side };
+    }
     const seed = kind === 'task' ? { ...defaults, ...taskCardLayoutDefaults(), collapsed: ['memo', 'other'].filter(id => [...defaults.main, ...defaults.side].includes(id)) } : defaults;
     result[kind] = normalizePaneLayout(stored ?? seed, defaults, { ...heightDefaults, ...(kind === 'task' ? taskCardLayoutDefaults().heights : {}) });
   }

@@ -11,6 +11,7 @@
 | `.local/data/` | 開発用データ、または既存共有データへの参照 |
 | `~/.canban/`（repo外） | 通常ユーザーのSQLite DB、検索索引、実行ログ、アカウントデータ |
 | `<Canban保存先>/prompt-images/` | プロンプトの添付画像・アップロード状態。通常は `~/.canban/prompt-images/`。開発・テストは明示した `.local/` 配下 |
+| `<Canban保存先>/agent-bridges/` | Codex内のCanban MCPへ接続する一時的な探索レコード。会話・認証情報は保存しない |
 | `.local/chrome-main-test/` | 拡張の公開鍵・ID、ビルド記録、更新ロック |
 | `.local/backups/` | 配置移行・設定変更前の控え |
 
@@ -57,8 +58,16 @@ npm run update:local
 
 ## Chrome Native Hostの実行ファイル
 
+Codexが保持中のセッションの履歴操作は、Codexから起動されたCanban MCPがApp Toolsに実行を依頼する。MCPはCodexが指定した署名済みNodeを優先し、`CODEX_APP_TOOLS_PIPE_PATH`・`CODEX_MCP_NODE_PATH`・`CODEX_THREAD_ID`を引き継ぐ。Chrome Native Hostはこの接続口へ直接アクセスせず、同じCanban保存先の`agent-bridges/`から選択したCodex homeと一致するCanban MCPを探す。ブリッジはアーカイブ・復元だけを受け付け、対象を本体で確認して実行中・入力待ちを拒否する。削除は所有者によるアーカイブの後にCodexの削除APIを呼ぶ。
+
+探索レコードは権限600、Unixソケットは権限700の一時ディレクトリに権限600で作り、MCPの終了時に除去する。終了異常による古いレコードは接続確認で無視する。プラグイン再導入後も旧MCPが動作している場合は、CanbanのMCP接続を再接続する。保持されていないセッションと追加アカウントの履歴には、選択したhomeで起動するCodex App Serverを使う。
+
 macOSのDocuments保護により、Chromeの子プロセスはDocuments内のrepoを読み取れない場合がある。ホストはrepoを直接起動せず、macOSでは `~/Library/Application Support/Canban/native-hosts/<host名>/`、Linuxでは `${XDG_DATA_HOME:-~/.local/share}/canban/native-hosts/<host名>/` のアプリ用配布物を起動する。OSのアクセス権を広げる必要はない。
 
 Main Testの更新はcommit済みmainを `git archive` でコミット別ディレクトリへ配布し、そのランチャーを登録する。`.git`、`.local`、未追跡資料は配布しない。旧コミットの実行ファイルは起動中プロセスのため保持する。拡張の登録先は引き続きrepoの `dist/chrome`。ビルド記録に実行ファイルの保存先も記録する。
 
 ストア版は既存の `com.kamihicouki.canban` を使い、Main Testとは別の実行ファイル・登録を持つ。通常版の `npm run install:chrome-native-host -- --extension-id <拡張ID>` も実行ファイルを配布し、以降の更新時は再実行する。Gitのない連携ソフトではプログラムに必要なファイルだけをコピーする。両ホストのデータは同じ `~/.canban/` を参照し、Main Testへの明示した保存先は維持する。追加の旧テストホストは有効なworktreeを参照する限り保持する。
+
+## 個人用Slackの認証情報
+
+0.24.0以降、個人用Slackの認証情報は同じCanban保存先の `slack/credentials.json` に保管する（0600、親ディレクトリ0700）。通常Chromeは `~/.canban/slack/credentials.json`、明示した `CANBAN_DATA_DIR` がある場合はその配下を使う。SQLiteには認証情報を入れない。ビルド・Git管理ファイル・共有UI状態に含めない。開発・テストは `.local/` またはテスト用の隔離ディレクトリに保存し、通常利用の認証情報をコピーしない。設定は [Slack接続手順](slack-setup.md)を参照する。

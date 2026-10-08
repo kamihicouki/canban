@@ -55,8 +55,8 @@ function positionShortcutMap() {
   const gutter = cardBoardGutter(cardBoardState.shortcut.side);
   // Reserve the full legend's footprint so focusing the grip or a text field never
   // shifts its heading, including when the map is placed near the bottom edge.
-  shortcutMap.style.width = `${Math.min(136, Math.max(0, gutter.width - 16))}px`;
-  shortcutMap.style.height = `${Math.min(352, Math.max(0, gutter.height - 16))}px`;
+  shortcutMap.style.width = `${Math.min(240, Math.max(0, gutter.width - 16))}px`;
+  shortcutMap.style.height = `${Math.min(560, Math.max(0, gutter.height - 16))}px`;
   const point = fitShortcutMap(gutter, { width: shortcutMap.offsetWidth, height: shortcutMap.offsetHeight }, cardBoardState.shortcut);
   shortcutMap.style.left = `${point.x}px`; shortcutMap.style.top = `${point.y}px`;
   shortcutMap.dataset.side = cardBoardState.shortcut.side;

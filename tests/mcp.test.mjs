@@ -292,3 +292,17 @@ test('task dashboards are app-only, retain closed linked panes and reject stale 
   await call('canban_unlink_session',{taskId,sessionId:'codex:t1'});
   assert.deepEqual((await call('canban_get_task_dashboard',{taskId})).structuredContent.state.panes.map(p=>p.id),[taskId]);
 });
+
+
+test('unsupported native lifecycle never changes Claude history or Canban state', async () => {
+  const before = fx.snapshot();
+  const detail = (await call('canban_get_session', { cardId: 'claude:c2' })).structuredContent;
+  assert.equal(detail.session.actions.available, false);
+  for (const action of ['archive', 'restore', 'delete']) {
+    const result = await call('canban_set_session_card_state', { cardId: 'claude:c2', action });
+    assert.equal(result.isError, true);
+  }
+  const after = (await call('canban_get_session', { cardId: 'claude:c2' })).structuredContent;
+  assert.deepEqual(after.card, detail.card);
+  assert.deepEqual(fx.snapshot(), before);
+});

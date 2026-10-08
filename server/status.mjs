@@ -6,7 +6,7 @@
 //   idle      — no recent activity (or nothing to go on)
 // Keep the rules in sync with codex_status / claude_status in server/remote/collect.py.
 import { stat } from './sources/readonly.mjs';
-import { itemsFor, activityOf, readLines, FEED_MAX_DELTA } from './feed.mjs';
+import { itemsFor, activityOf, lastSaidOf, readLines, FEED_MAX_DELTA } from './feed.mjs';
 import { newAcc, foldSignals, signalsView, limitsFrom, noteLimits } from './signals.mjs';
 import { limitsAccount } from './accounts.mjs';
 
@@ -112,6 +112,7 @@ async function signalsOf(session, tail) {
 export async function localStatus(session, now = Date.now()) {
   session.activity = null;
   session.signals = null;
+  session.lastSaid = null;
   if (!session.sourcePath || (session.updatedAt || 0) < now - RECENT_MS) return 'idle';
   const st = await stat(session.sourcePath);
   if (!st) return 'idle';
@@ -120,13 +121,15 @@ export async function localStatus(session, now = Date.now()) {
     const tail = await readLines(session.sourcePath, { tailBytes: TAIL_BYTES });
     const { records } = tail;
     const raw = session.agent === 'codex' ? codexRawStatus(records) : claudeRawStatus(records, session.desktopStatus);
-    const activity = raw === 'running' || raw === 'waiting' ? activityOf(itemsFor(session.agent, records.slice(-200), {})) : null;
+    const items = itemsFor(session.agent, records.slice(-200), {});
+    const activity = raw === 'running' || raw === 'waiting' ? activityOf(items) : null;
     const signals = await signalsOf(session, tail);
-    hit = { mtimeMs: st.mtimeMs, size: st.size, desktopStatus: session.desktopStatus, raw, activity, signals };
+    hit = { mtimeMs: st.mtimeMs, size: st.size, desktopStatus: session.desktopStatus, raw, activity, signals, lastSaid: lastSaidOf(items) };
     cache.set(session.sourcePath, hit);
   }
   const status = settle(hit.raw, st.mtimeMs, now);
   session.signals = hit.signals;
+  session.lastSaid = hit.lastSaid;
   if (status === 'running' || status === 'waiting') session.activity = hit.activity;
   return status;
 }

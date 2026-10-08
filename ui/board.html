@@ -646,7 +646,12 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
 /* @include workspace.css */
 /* @include card-overlay.css */
 /* @include card-interior.css */
+/* @include card-face.css */
+/* @include thread.css */
+/* @include inbox.css */
+/* @include component-styles.css */
 /* @include layouts.css */
+/* @include slack.css */
 </style>
 </head>
 <body>
@@ -853,10 +858,11 @@ const bridge = (() => {
 // @include workspace-model.js
 // @include card-overlay-model.js
 // @include prompt-composer.js
+// @include component-styles-model.js
 const PAGE = 40;
 const COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
 const COLOR_NAMES = { gray: 'グレー', blue: '青', green: '緑', yellow: '黄', orange: 'オレンジ', red: '赤', purple: '紫', pink: 'ピンク', sky: '水色', lime: 'ライム' };
-const SHARED_UI_KEYS = ['filters', 'themePref', 'layout', 'cardFit', 'sidebar', 'workspacePage', 'labelsExpanded', 'paneGlobal', 'cardLayouts', 'cardWidths', 'cardBoard', 'cardHeights', 'collapsedLanes'];
+const SHARED_UI_KEYS = ['filters', 'themePref', 'layout', 'cardFit', 'sidebar', 'workspacePage', 'labelsExpanded', 'paneGlobal', 'cardLayouts', 'cardWidths', 'cardBoard', 'cardHeights', 'collapsedLanes', 'componentStyles'];
 const sharedUi = { revision: null, ready: false, dirty: false, blocked: false, applying: false, inflight: false, generation: 0, timer: null, checkTimer: null };
 const store = {
   get(k, d) { try { const v = localStorage.getItem(`sk:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -876,7 +882,7 @@ const store = {
   },
   cache(k, v) { try { localStorage.setItem(`sk:${k}`, JSON.stringify(v)); } catch {} },
 };
-const DEFAULT_FILTERS = { agent: 'all', host: '', account: '', status: '', project: '', directory: '', label: '', q: '', days: 30, includeArchived: false, includeSubagents: false, includeHidden: false, groupBranch: false, fulltext: false, swimlane: '', laneHeight: 'normal' };
+const DEFAULT_FILTERS = { agent: 'all', host: '', account: '', status: '', project: '', directory: '', label: '', q: '', days: 30, includeArchived: false, includeSubagents: false, groupBranch: false, fulltext: false, swimlane: '', laneHeight: 'normal' };
 const LANE_HEIGHTS = { compact: ['コンパクト', '240px'], normal: ['標準', '420px'], full: ['すべて', 'none'] };
 const state = {
   board: null,
@@ -885,6 +891,7 @@ const state = {
   themePref: store.get('themePref', 'system'),
   layout: store.get('layout', 'trello'),
   cardFit: store.get('cardFit', 'fixed') === 'auto' ? 'auto' : 'fixed',
+  styles: normalizeComponentStyles(store.get('componentStyles', null)),
   sideQ: '',
   soloLane: null,
   lanes: [],
@@ -964,7 +971,7 @@ function migrateLegacyScope(board) {
 async function load({ refresh = false, throwOnError = false } = {}) {
   const seq = ++loadSeq;
   const f = state.filters;
-  const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, includeHidden: f.includeHidden, pinnedOnly: !!f.pinnedOnly, groupBranch: !!f.groupBranch, fulltext: !!f.fulltext, refresh };
+  const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, pinnedOnly: !!f.pinnedOnly, groupBranch: !!f.groupBranch, fulltext: !!f.fulltext, refresh };
   if (f.project) args.project = f.project;
   if (f.folder) args.folder = f.folder;
   if (f.section) args.section = f.section;
@@ -1026,11 +1033,12 @@ function render() {
   const focused = document.activeElement;
   const focusedCard = boardEl.contains(focused) ? focused.closest('.card')?.dataset.cardId : null;
   const frag = document.createDocumentFragment();
-  boardEl.classList.toggle('with-lanes', !!state.filters.swimlane);
+  boardEl.classList.toggle('with-lanes', !!state.filters.swimlane && !inboxOn());
   boardEl.style.setProperty('--lane-max-h', (LANE_HEIGHTS[state.filters.laneHeight] || LANE_HEIGHTS.normal)[1]);
   state.lanes = state.filters.swimlane ? buildLanes(b, state.filters.swimlane) : [];
   if (state.soloLane && !state.lanes.some((l) => l.key === state.soloLane)) state.soloLane = null;
-  if (state.filters.swimlane) {
+  if (inboxOn()) frag.append(renderInbox(b));
+  else if (state.filters.swimlane) {
     if (state.soloLane) {
       frag.append(h('div', { class: 'solo-bar' }, `「${state.lanes.find(l => l.key === state.soloLane)?.name}」だけを表示中`,
         h('button', { class: 'lane-solo', text: '◀ 全レーンに戻る', onclick: () => setSolo(null) })));
@@ -1040,7 +1048,10 @@ function render() {
     for (const list of b.lists) frag.append(renderList(list));
     frag.append(renderAddList());
   }
-  boardEl.replaceChildren(frag);
+  if (state.filters.swimlane && !inboxOn() && slackUi.visible) { const lanes = h('div', { class: 'slack-lanes' }, frag); boardEl.replaceChildren(lanes); }
+  else boardEl.replaceChildren(frag);
+  boardEl.classList.toggle('with-slack', slackUi.visible);
+  const slackNode = slackUi.boardNode(); if (slackNode) boardEl.prepend(slackNode);
   renderSidebar(b);
   paintLayoutChrome();
   if (focused && focused !== document.body && boardEl.contains(focused)) focused.focus({ preventScroll: true });
@@ -1095,7 +1106,7 @@ const agentTag = (agent) => h('span', { class: `ag ag-${agent}`, text: agent ===
 const flag = (text, title, cls = '') => h('span', { class: `flag ${cls}`, title, text });
 function cardShell(card, extraClass) {
   return h('article', {
-    class: `card${extraClass}${card.archived ? ' is-archived' : ''}${card.unread ? ' unread' : ''}${state.cardFit === 'fixed' ? ' fixed' : ''}`, tabindex: 0, 'data-card-id': card.id,
+    class: `card${extraClass}${card.archived ? ' is-archived' : ''}${card.unread ? ' unread' : ''}${state.cardFit === 'fixed' && !isFace() ? ' fixed' : ''}`, tabindex: 0, 'data-card-id': card.id,
     'aria-label': `${card.title}（${card.kind === 'task' ? `${T.taskCard}・` : ''}${STATUS_LABELS[card.status]}${card.unread ? '・新着' : ''}）`, title: card.title,
   });
 }
@@ -1110,6 +1121,7 @@ function cardMeta(...nodes) {
 }
 
 function renderCard(card, list) {
+  if (isFace()) return renderFaceCard(card, list);
   if (card.kind === 'task') return renderTaskCard(card, list);
   const el = cardShell(card, '');
   const viewers = live.viewers.get(card.id);
@@ -1150,7 +1162,7 @@ function renderCard(card, list) {
   if (card.codexFollowUps) meta.append(h('span', { class: 'pill', title: 'Codex アプリのキューにフォローアップが待機しています（Canban からは送りません）', text: `Codex キュー ${card.codexFollowUps}` }));
   meta.append(h('span', { class: 'meta-end', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }));
   el.append(meta);
-  return attachCardBehavior(el, card, list, (opts) => resume(card.id, opts));
+  return withPeek(attachCardBehavior(el, card, list, (opts) => resume(card.id, opts)), card);
 }
 
 // Shared by session and task cards: drag, click to open (the card floats above the board), ▶ resume, keyboard.
@@ -1166,6 +1178,8 @@ function attachCardBehavior(el, card, list, onResume) {
     if (e.target !== el) return;
     if (e.key === 'Enter') openCard(card.id);
     const plain = !e.metaKey && !e.ctrlKey && !e.altKey;
+    if (e.key === 'Escape' && state.peek?.id === card.id) { e.preventDefault(); e.stopPropagation(); return closePeek(); }
+    if (plain && !e.shiftKey && card.kind !== 'task' && state.styles.peek === 'on' && (e.key === ' ' || e.key === 'r')) { e.preventDefault(); e.stopPropagation(); return togglePeek(card, { focusInput: e.key === 'r' }); }
     if (plain && CARD_ATTR_KEYS[e.key]) { e.preventDefault(); e.stopPropagation(); return CARD_ATTR_KEYS[e.key](el, card, list); }
     const k = onResume && !e.metaKey && !e.ctrlKey && !e.altKey && CARD_KEYS[e.key.toLowerCase()];
     if (k) { e.preventDefault(); onResume(k); }
@@ -1183,15 +1197,12 @@ function dirPill(d) {
     h('i', { class: 'dir-dot', style: { background: d.color ? colorVar(d.color) : 'var(--btn-subtle-hover)' } }), d.name);
 }
 
-// Attribute keys on a focused card (Trello-like): l = labels, g = directory, m = move, h = hide.
+// Attribute keys on a focused card (Trello-like): l = labels, g = directory, m = move.
 const CARD_ATTR_KEYS = {
   l: (el, card) => labelPicker(el, card.id, card, () => {}),
   g: (el, card) => directoryPicker(el, card),
   m: (el, card, list) => listPicker(el, card, list.id),
-  h: (el, card) => {
-    act('canban_update_card', { cardId: card.id, hidden: !card.hidden }).then(() =>
-      toastAction(card.hidden ? '再表示しました' : `「${card.title}」を隠しました`, '元に戻す', () => act('canban_update_card', { cardId: card.id, hidden: !!card.hidden }))).catch(() => {});
-  },
+
 };
 function listPicker(anchor, card, fromListId) {
   const lists = state.board.lists;
@@ -1237,6 +1248,7 @@ function cardLabels(card) {
 }
 
 function planMeta(meta, card) {
+  if (card.slackRefs?.length) meta.append(h('span', { class: 'pill', text: `Slack ${card.slackRefs.length}`, title: 'Slackからの資料' }));
   if (card.priority) meta.append(h('span', { class: `pill prio-${card.priority}`, text: { high: '優先度 高', medium: '優先度 中', low: '優先度 低' }[card.priority] }));
   if (card.due) {
     const overdue = Date.parse(card.due) < Date.now() - 86400000;
@@ -1487,7 +1499,8 @@ function lookMenu(anchor) {
   popover(anchor, 'レイアウトとテーマ', h('div', { class: 'view-menu' },
     h('div', { class: 'field-label', text: 'カードの高さ' }), seg([['fixed', '揃える'], ['auto', '内容に合わせる']], (k) => state.cardFit === k, setCardFit),
     h('div', { class: 'field-label', text: 'レーン内のリストの高さ' }), seg(Object.entries(LANE_HEIGHTS).map(([k, [label]]) => [k, label]), (k) => (f.laneHeight || 'normal') === k, (k) => { f.laneHeight = k; saveFilters(); render(); }),
-    h('div', { class: 'field-label', text: 'レイアウトと色' }), layoutChooser()), { width: 400 });
+    h('div', { class: 'field-label', text: 'コンポーネントのスタイル' }), componentStyleChooser(),
+    h('div', { class: 'field-label', text: 'レイアウトと色' }), layoutChooser()), { width: 440 });
 }
 
 function labelsManager(anchor) {
@@ -1531,15 +1544,15 @@ const paneGlobal = (() => {
 })();
 const saveGlobal = () => store.set('paneGlobal', paneGlobal);
 const PANE_SECS = {
-  conv: ['main', '会話'], send: ['main', '指示を送る'],
-  breadcrumb: ['side', 'パンくず'], title: ['side', '見出し'], status: ['side', '状態'],
+  conv: ['main', '会話'], send: ['main', '指示を送る'], slack: ['main', 'Slack資料'],
+  breadcrumb: ['side', 'パンくず'], title: ['side', '見出し'], status: ['side', '状態'], actions: ['side', 'カード操作'],
   add: ['side', 'カードに追加'], labels: ['side', 'ラベル'], prio: ['side', '優先度・期限'], related: ['side', '関連'],
   detail: ['side', '詳細'], pr: ['side', 'プルリクエスト'], resume: ['side', '再開'], progress: ['side', '進捗'],
   task: ['side', null], memo: ['side', 'メモ'], first: ['side', '最初の依頼'], other: ['side', 'その他'],
 };
 const secTitle = (id) => (id === 'task' ? T.taskCard : PANE_SECS[id][1]);
 const PANE_LAYOUT_DEF = { main: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'main'), side: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'side'), collapsed: ['memo', 'first', 'other', 'progress', 'task'] };
-const PANE_HEIGHTS = { conv: 440, send: 230, breadcrumb: 64, title: 64, status: 64, add: 96, labels: 64, prio: 80, related: 160, detail: 280, pr: 180, resume: 240, progress: 80, task: 64, memo: 150, first: 150, other: 160 };
+const PANE_HEIGHTS = { conv: 440, send: 230, breadcrumb: 64, title: 64, status: 64, actions: 180, add: 96, labels: 64, prio: 80, related: 160, detail: 280, pr: 180, resume: 240, progress: 80, task: 64, memo: 150, first: 150, other: 160 };
 let cardLayouts = normalizeCardLayouts(store.get('cardLayouts', null), PANE_LAYOUT_DEF, PANE_HEIGHTS);
 let cardWidths = normalizeCardWidths(store.get('cardWidths', null));
 let cardHeights = normalizeCardHeights(store.get('cardHeights', null));
@@ -1580,6 +1593,9 @@ const paneStage = h('div', { class: 'pane-stage' });
 const paneRow = h('div', { class: 'pane-row' });
 paneStage.append(paneRow);
 // @include card-board.js
+// @include card-face.js
+// @include thread.js
+// @include inbox.js
 // Only a press that starts and ends on the backdrop closes the card, and not the same press that just closed a popover.
 let backdropDown = false;
 const onBackdrop = (e) => !e.target.closest('.pane, .pane-bar, .popover, .shortcut-map, .card-board-margin');
@@ -1613,6 +1629,7 @@ const applyCardWidths = () => { for (const kind of CARD_KINDS) { paneLayer.style
 function applyPaneAttrs(p) {
   p.el.dataset.mode = paneGlobal.mode;
   p.el.dataset.kind = p.kind;
+  p.el.dataset.detail = state.styles.detail;
 }
 
 // ---- the bar over the cards: how the conversation is shown, reset layout, close ----
@@ -1834,8 +1851,14 @@ function stepPane(step) {
   const i = panes.indexOf(focusedPane()), target = panes[i + step];
   if (target) revealPane(target.id);
 }
+// The button behind a pane key. In the thread layout the buttons sit in the details panel: open it first.
+function paneKeyButton(p, k) {
+  const find = () => p.el.querySelector(`[data-pane-key="${k}"]`);
+  if (!find() && p.detailNodes) openThreadSide(p, 'details');
+  return find();
+}
 function focusPrompt(p) {
-  const field = (x) => x.el.querySelector('.psec[data-sec="send"] textarea');
+  const field = (x) => x.el.querySelector('[data-sec="send"] textarea');
   const ta = field(p) || panes.map(field).find(Boolean);
   if (ta) ta.focus(); else toast('指示を入力できるカードではありません');
 }
@@ -1857,7 +1880,9 @@ document.addEventListener('keydown', e => {
     else if (k === '[' || k === ']') run = () => stepPane(k === ']' ? 1 : -1);
     else if (/^[1-9]$/.test(k) && PANE_MODES[k - 1]) run = () => setPaneMode(PANE_MODES[k - 1][0]);
     else if (k === 'i') run = () => focusPrompt(p);
-    else if (/^[olgmh]$/.test(k)) run = () => p.el.querySelector(`[data-pane-key="${k}"]`)?.click();
+    else if (p.kind === 'session' && p.el.dataset.detail === 'thread' && (k === 'd' || (k === 'f' && state.styles.review === 'on' && !p.d?.session?.host))) run = () => toggleThreadSide(p, k === 'd' ? 'details' : 'changes');
+    else if (p.kind === 'session' && (k === 'z' || k === 'Delete')) run = () => paneKeyButton(p, k)?.click();
+    else if (/^[olgmh]$/.test(k)) run = () => paneKeyButton(p, k)?.click();
   }
   if (run) { e.preventDefault(); run(); }
 });
@@ -2032,12 +2057,14 @@ async function openTaskCard(cardId, { restore = false, shown = null } = {}) {
   let found = findCard(cardId);
   if (!found) {
     try {
-      const all = await bridge.callTool('canban_get_board', { days: 0, includeArchived: true, includeHidden: true });
+      const all = await bridge.callTool('canban_get_board', { days: 0, includeArchived: true });
       for (const list of all.lists) { const card = list.cards.find((c) => c.id === cardId); if (card) { found = { card, list }; break; } }
     } catch (e) { if (!restore) toast(e.message, true); return; }
   }
   if (!found) { if (!restore) toast('カードが見つかりません', true); return; }
-  const { ids } = taskOverlayIds(cardId, found.card.links, panes[0]?.id === cardId ? panes.map((p) => p.id) : []);
+  // Threads: the task beside one session at a time (the one chosen last, else the latest); the others are a click away.
+  const threads = styleIs('taskDetail', 'threads'), choice = threads ? taskThreadChoice(cardId, found.card.links) : null;
+  const { ids } = threads ? taskOverlayIds(cardId, found.card.links, choice ? [choice] : [], 1) : taskOverlayIds(cardId, found.card.links, panes[0]?.id === cardId ? panes.map((p) => p.id) : []);
   showCards(ids);
   const [root, ...sessions] = panes;
   await Promise.all([loadTask(root, found), ...sessions.map((p) => loadSession(p))]);
@@ -2060,7 +2087,8 @@ function reconcileCards(board) {
   const status = $('.pane-status', root.el);
   if (status) status.replaceChildren(h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]);
   paintTaskRelated(root, card);
-  const shown = panes.map((p) => p.id), { ids } = taskOverlayIds(root.id, card.links, shown);
+  const shown = panes.map((p) => p.id), threads = styleIs('taskDetail', 'threads');
+  const { ids } = threads ? taskOverlayIds(root.id, card.links, [taskThreadChoice(root.id, card.links)].filter(Boolean), 1) : taskOverlayIds(root.id, card.links, shown);
   if (ids.join() === shown.join()) return;
   showCards(ids);
   // A card that comes back (linked again) was detached with its live feed: it always needs a fresh load.
@@ -2108,7 +2136,7 @@ function renderPaneKeepingDrafts(p, d) {
   if (el.querySelector('.req-row textarea')) {
     // Keep the request editor while rebuilding a reset conversation cursor.
     p.d = d;
-    const conversation = $('.psec[data-sec="conv"] .psec-b', el);
+    const conversation = $('.psec[data-sec="conv"] .psec-b', el) || $('.th-conv', el);
     if (conversation && d.feed) conversation.replaceChildren(renderFeed(d, p));
     return;
   }
@@ -2127,6 +2155,47 @@ function renderPaneKeepingDrafts(p, d) {
     if (input) input.value = draft.value;
     else if (draft.label === '送るプロンプト') keepDisabledPrompt($('.send-section', el), draft.value);
   }
+}
+
+async function changeSessionCardState(p, action) {
+  if (p.cardActionBusy) return;
+  if (!p.d?.session?.actions?.available) { toast(p.d?.session?.actions?.reason || 'この操作は利用できません', true); return; }
+  p.cardActionBusy = true;
+  try {
+    await act('canban_set_session_card_state', { cardId: p.id, action }, { okMsg: action === 'delete' ? 'Codexのセッションを削除しました' : action === 'archive' ? 'Codexでアーカイブしました' : 'アーカイブから戻しました' });
+    closeCards();
+  } finally { p.cardActionBusy = false; }
+}
+function confirmSessionCardDelete(p) {
+  if (p?.kind !== 'session' || !p.d?.session || p.cardActionBusy || document.querySelector('dialog[open]')) return;
+  if (!p.d.session.actions?.available) { toast(p.d.session.actions?.reason || 'この操作は利用できません', true); return; }
+  const cancel = h('button', { class: 'btn', type: 'button', autofocus: true }, 'キャンセル', keycap('Esc'));
+  const error = h('p', { class: 'danger-text', role: 'alert' });
+  const remove = h('button', { class: 'btn-danger', type: 'button', text: 'セッションを削除' });
+  const dialog = h('dialog', { class: 'session-card-dialog', 'aria-labelledby': 'session-card-delete-title' },
+    h('h2', { id: 'session-card-delete-title', text: 'セッションと会話履歴を削除しますか？' }),
+    h('p', { text: `「${p.d.session.title}」の会話履歴と関連情報をCodexから永久に削除します。Canbanのメモ・ラベル・配置・タスクへの紐付けも削除します。元に戻せません。` }),
+    h('p', { text: 'Codexが生成した子セッションも削除対象です。履歴を残して後で戻したい場合は、アーカイブをご利用ください。' }),
+    error, h('div', { class: 'row' }, cancel, remove));
+  cancel.onclick = () => dialog.close();
+  remove.onclick = async () => {
+    remove.disabled = true; cancel.disabled = true;
+    try { await changeSessionCardState(p, 'delete'); dialog.close(); }
+    catch (e) { error.textContent = e.message; remove.disabled = false; cancel.disabled = false; cancel.focus(); }
+  };
+  dialog.addEventListener('cancel', e => { if (remove.disabled) e.preventDefault(); });
+  dialog.addEventListener('click', e => { if (e.target === dialog && !remove.disabled) { const r = dialog.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close(); } });
+  dialog.addEventListener('close', () => { dialog.remove(); if (p.el.isConnected) p.el.querySelector('[data-pane-key="Delete"]')?.focus({ preventScroll: true }); }, { once: true });
+  document.body.append(dialog); dialog.showModal();
+}
+function sessionCardActions(p, card) {
+  return [
+    h('button', { class: 'side-btn', disabled: !p.d.session.actions?.available, 'data-pane-key': 'z', onclick: () => changeSessionCardState(p, card.archived ? 'restore' : 'archive').catch(() => {}) },
+      h('span', { html: picon('box', 14) }), card.archived ? 'アーカイブから戻す' : 'アーカイブ', keycap('z')),
+    h('button', { class: 'side-btn danger-text', disabled: !p.d.session.actions?.available, 'data-pane-key': 'Delete', onclick: () => confirmSessionCardDelete(p) },
+      h('span', { html: picon('trash', 14) }), 'セッションを削除…', keycap('Delete')),
+    h('p', { class: 'muted', text: p.d.session.actions?.reason || 'Codex本体に反映します。アーカイブは「アーカイブ済みも表示」から戻せます。' }),
+  ];
 }
 
 function renderPane(p, d) {
@@ -2219,10 +2288,12 @@ function renderPane(p, d) {
   secs.status = { nodes: [h('div', { class: 'sub row' }, h('span', { class: `badge ${s.agent}`, text: s.agent === 'codex' ? 'Codex' : 'Claude' }),
     s.host ? h('span', { class: 'host-chip', text: s.host.label }) : null,
     h('span', { class: 'row pane-status' }, h('span', { class: `sdot s-${s.status || 'idle'}` }), STATUS_LABELS[s.status || 'idle']), h('span', { class: 'pill viewer-pill viewers', hidden: true }))] };
+  secs.actions = { nodes: sessionCardActions(p, card) };
   secs.conv = { title: d.feed ? '会話' : '直近のやりとり', nodes: d.feed ? [renderFeed(d, p)] : msgs,
     extra: d.feed ? h('span', { class: `live-badge${live.on ? ' on' : ''}`, title: live.on ? 'セッションの変化をそのまま表示します' : '', text: live.on ? 'ライブ' : '' }) : null };
   if (d.feed) secs.progress = { nodes: [renderSignals(s.signals, d.git)] };
   secs.send = { nodes: [renderDispatch(d)], extra: d.dispatch.settings.enabled ? keycap('i') : null };
+  if (card.slackRefs?.length) secs.slack = { nodes: [slackUi.sources(s.id, secs.send.nodes[0].querySelector('textarea'))] };
   secs.labels = { nodes: [labelWrap], extra: h('button', { class: 'link-btn', 'data-pane-key': 'l', text: '編集', onclick: e => labelPicker(e.currentTarget, s.id, card, paintLabels) }) };
   secs.memo = { nodes: [note] };
   secs.detail = { nodes: [h('dl', { class: 'kv' },
@@ -2252,12 +2323,11 @@ function renderPane(p, d) {
     s.prUrl ? h('button', { class: 'side-btn', text: '↗ PR を開く', onclick: () => bridge.openLink(s.prUrl).catch(() => copyText(s.prUrl, 'PR URL')) }) : null,
     h('button', { class: 'side-btn', text: '⧉ セッション ID をコピー', onclick: () => copyText(s.nativeId, 'セッション ID') }),
     s.sourcePath ? h('button', { class: 'side-btn', text: '⧉ ログのパスをコピー', onclick: () => copyText(s.sourcePath, 'パス') }) : null,
-    h('button', { class: 'side-btn', 'data-pane-key': 'h',
-      onclick: async () => { await act('canban_update_card', { cardId: s.id, hidden: !card.hidden }, { okMsg: card.hidden ? '再表示しました' : '隠しました' }); closeCards(); } }, card.hidden ? '👁 ボードに再表示' : '🙈 ボードから隠す', keycap('h')),
   ].filter(Boolean) };
 
+  const thread = state.styles.detail === 'thread';
   const cols = { main: h('div', { class: 'pcol', 'data-col': 'main' }), side: h('div', { class: 'pcol', 'data-col': 'side' }) };
-  for (const id of Object.keys(PANE_SECS)) {
+  if (!thread) for (const id of Object.keys(PANE_SECS)) {
     const sc = secs[id];
     if (!sc) continue;
     cols[PANE_SECS[id][0]].append(sectionEl(id, sc?.nodes || [h('span', { class: 'muted', text: 'なし' })], { kind: 'session', extra: sc?.extra, title: sc?.title ?? secTitle(id), hint: id === 'conv' ? '会話内容は読み取り専用です。下端をドラッグすると、すべてのカードで高さが揃います。' : id === 'memo' ? 'メモは Canban に保存します。セッションの内容は書き換えません。' : null }));
@@ -2267,13 +2337,17 @@ function renderPane(p, d) {
   p.activity = activityText(s.activity, p.status, s.signals);
   if (!d.feed) p.lastText = s.preview || '';
   el.setAttribute('aria-label', `セッション詳細: ${s.title}`);
-  el.replaceChildren(h('span', { class: 'ph-btns card-actions' }),
-    h('div', { class: 'pane-b' }, cols.main, columnSplit('session'), cols.side), ...paneSizeHandles('session'));
-  applyPaneLayoutTo(el);
-  cols.main.scrollTop = scroll[0];
-  cols.side.scrollTop = scroll[1];
+  applyPaneAttrs(p);
+  if (thread) renderThreadPane(p, d, secs, { card, listSel });
+  else {
+    el.replaceChildren(h('span', { class: 'ph-btns card-actions' }),
+      h('div', { class: 'pane-b' }, cols.main, columnSplit('session'), cols.side), ...paneSizeHandles('session'));
+    applyPaneLayoutTo(el);
+    cols.main.scrollTop = scroll[0];
+    cols.side.scrollTop = scroll[1];
+  }
   const prog = $('[data-sec="progress"]', el);
-  if (prog && $('.sig-box', prog)?.hidden) $('.psec-b', prog).append(h('span', { class: 'muted empty-progress', text: 'なし' }));
+  if (prog && $('.sig-box', prog)?.hidden) $('.psec-b, .dsec-b', prog).append(h('span', { class: 'muted empty-progress', text: 'なし' }));
   paintPaneButtons(p);
   applyPaneAttrs(p);
   paintViewers(p);
@@ -2327,7 +2401,8 @@ function renderDispatch(d) {
   const ta = h('textarea', { placeholder: 'このセッションに送るプロンプト（⌘/Ctrl + Enter で今すぐ送信）', 'aria-label': '送るプロンプト' });
   const ack = p?.elevated ? h('input', { type: 'checkbox', 'aria-label': '制限なしで実行されることを確認しました' }) : null;
   const busy = s.status === 'running' || s.status === 'waiting' || !!s.codexFollowUps;
-  const composer = promptComposer(ta, { key: `dispatch:${s.id}`, context: () => ({ cardId: s.id }), submit: () => send('now') });
+  const chips = styleIs('composer', 'chips');
+  const composer = promptComposer(ta, { key: `dispatch:${s.id}`, context: () => ({ cardId: s.id }), submit: () => send(busy ? 'queue' : 'now'), chips });
   const sendButtons = [];
   const send = async (when) => {
     const prompt = ta.value.trim();
@@ -2350,10 +2425,33 @@ function renderDispatch(d) {
       composer.setSending(false); sendButtons.forEach(b => { b.disabled = busy; });
     }
   };
-  sendButtons.push(h('button', { class: 'btn-primary', disabled: busy, text: '▶ 今すぐ送信', onclick: () => send('now') }),
+  if (chips) {
+    // One round button sends; while the session is busy it queues instead. Alt+Enter always queues.
+    const round = h('button', { class: 'send-round', type: 'button', title: busy ? 'キューに追加（⌘Enter）' : '今すぐ送信（⌘Enter）', 'aria-label': busy ? 'キューに追加' : '今すぐ送信', html: picon(busy ? 'queue' : 'send', 15), onclick: () => send(busy ? 'queue' : 'now') });
+    sendButtons.push(round);
+    if (!busy) sendButtons.unshift(h('button', { class: 'cx-ico', type: 'button', title: 'キューに追加（⌥Enter）', 'aria-label': 'キューに追加', html: picon('queue', 16), onclick: () => send('queue') }));
+    ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.altKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send('queue'); } });
+  } else sendButtons.push(h('button', { class: 'btn-primary', disabled: busy, text: '▶ 今すぐ送信', onclick: () => send('now') }),
     h('button', { class:'side-btn',disabled:busy,style:{width:'auto',marginBottom:0},text:'＋ キューに追加', onclick: () => send('queue') }));
   const appNote = s.agent === 'codex' || s.desktopSessionId || s.entrypoint === 'claude-desktop'
     ? helpTip(`${s.agent === 'codex' ? 'Codex' : 'Claude'} アプリでこのセッションを開いている場合は、閉じてから送ってください（アプリ側の表示と履歴がずれることがあります）。`) : null;
+  if (chips) {
+    composer.toolbar.append(permChip, h('span', { class: 'grow' }), appNote, ...sendButtons);
+    box.append(...[
+      D.paused ? h('div', { class: 'paused-bar' }, h('span', { class: 'grow', text: `⏸ キュー一時停止: ${D.paused.reason}` }),
+        h('button', { class: 'link-btn', text: '再開', onclick: () => act('canban_resume_queue', { cardId: s.id }, { okMsg: 'キューを再開しました' }).then(() => openCard(s.id)) })) : null,
+      D.active.length || D.queue.length ? h('div', { class: 'cx-reqs' }, ...D.active.map((r) => requestRow(s, r)), ...D.queue.map((r, i) => requestRow(s, r, { index: i, queue: D.queue }))) : null,
+      h('div', { class: 'send-box cx' }, composer.root,
+        ack ? h('label', { class: 'send-note row', style: { gap: '6px' } }, ack, 'このセッションはサンドボックス／確認なしで動いています。そのまま実行されることを確認しました') : null,
+        busy ? h('div', { class: 'muted cx-busy', text: s.codexFollowUps
+          ? `Codex アプリのキューにフォローアップが ${s.codexFollowUps} 件あります。二重に送らないよう、アプリ側で送るか消すまで Canban からは送りません。`
+          : `セッションが${s.status === 'running' ? '実行中' : '入力待ち'}です。送ると順番待ちに入ります。` }) : null),
+      h('div', { class: 'cx-keys' }, keyHint(['⌘', 'Enter'], busy ? 'キューへ' : '送信'), keyHint(['⌥', 'Enter'], 'キューへ'), keyHint(['$'], 'スキル')),
+      D.history.length ? h('details', { class: 'cx-hist' }, h('summary', { text: `依頼の履歴（${D.history.length}）` }),
+        ...D.history.map((r) => requestRow(s, r, { review: () => { try { composer.restore(r); toast('実行状況を確認し、内容を確認してから送信してください。'); } catch (e) { toast(e.message, true); } } }))) : null,
+    ].filter(Boolean));
+    return box;
+  }
   box.append(...[title,
     D.paused ? h('div', { class: 'paused-bar' }, h('span', { class: 'grow', text: `⏸ キュー一時停止: ${D.paused.reason}` }),
       h('button', { class: 'link-btn', text: '再開', onclick: () => act('canban_resume_queue', { cardId: s.id }, { okMsg: 'キューを再開しました' }).then(() => openCard(s.id)) })) : null,
@@ -2471,7 +2569,9 @@ function renderFeed(d, p) {
   const newBtn = h('button', { class: 'feed-new', text: '↓ 新着', hidden: true, onclick: () => scrollFeedToEnd(f) });
   const f = { pane: p, cardId: d.session.id, offset: d.feed.offset, size: d.feed.size, codexItems: d.feed.codexItems, list, foot, newBtn, tools: new Map(), status: d.session.status || 'idle', activity: d.session.activity || null, signals: d.session.signals || null, git: d.git || null };
   list.addEventListener('scroll', () => { if (atFeedEnd(list)) newBtn.hidden = true; });
-  for (const it of d.feed.items) { const el = feedItem(it, f); if (el) list.append(el); }
+  if (folded()) list.append(editSummary(f).el);
+  for (const it of d.feed.items) feedPush(f, it);
+  f.edits?.paint();
   const lastSaid = [...d.feed.items].reverse().find((it) => it.k === 'assistant');
   p.lastText = lastSaid ? lastSaid.text : d.session.preview || '';
   if (!d.feed.items.length) list.append(h('div', { class: 'muted', text: 'まだやりとりはありません' }));
@@ -2490,7 +2590,7 @@ function scrollFeedToEnd(f) {
 
 function paintFeedFoot(f) {
   const st = f.status;
-  if (st === 'running') f.foot.replaceChildren(h('span', { class: 'sdot s-running' }), h('span', { class: 'grow', title: f.activity || '' }, h('span', { class: 'dots', text: '作業中' }), f.activity ? `  ${f.activity}` : ''));
+  if (st === 'running') f.foot.replaceChildren(h('span', { class: 'sdot s-running' }), h('span', { class: 'grow', title: f.activity || '' }, h('span', { class: 'dots', text: '作業中' }), h('span', { class: 'elapsed num', text: f.turnStart ? ` ${fmtElapsed(Date.now() - f.turnStart)}` : '' }), f.activity ? `  ${f.activity}` : ''));
   else if (st === 'waiting') f.foot.replaceChildren(h('span', { class: 'sdot s-waiting' }), h('span', { class: 'grow', text: `${WAIT_TEXT[f.signals?.wait] || '入力待ち'}${f.activity ? `  ${f.activity}` : ''}（アプリで答えてください）` }));
   else f.foot.replaceChildren(h('span', { class: `sdot s-${st}` }), h('span', { class: 'grow', text: STATUS_LABELS[st] || '' }));
   const p = f.pane;
@@ -2515,8 +2615,7 @@ function applyFeed(f, feed) {
       continue;
     }
     if (it.k === 'assistant') f.pane.lastText = it.text;
-    const el = feedItem(it, f);
-    if (el) { f.list.append(el); added++; }
+    if (feedPush(f, it)) added++;
   }
   // Keep the DOM bounded on long runs.
   while (f.list.childElementCount > 400) f.list.firstElementChild.remove();
@@ -2528,16 +2627,17 @@ function applyFeed(f, feed) {
     f.status = feed.status;
     f.activity = feed.activity || null;
     f.signals = feed.signals || null;
-    if (feed.git) f.git = feed.git;
+    if (feed.git) { f.git = feed.git; paintThreadStat(f.pane, f.git); }
     paintFeedFoot(f);
+    f.edits?.paint();
     const box = f.pane.el.querySelector('.sig-box');
     if (box) {
       const next = renderSignals(f.signals, f.git);
       box.replaceWith(next);
-      const sec = next.closest('.psec');
+      const sec = next.closest('.psec, .dsec');
       if (sec) {
         let empty = $('.empty-progress', sec);
-        if (!empty) { empty = h('span', { class: 'muted empty-progress', text: 'なし' }); $('.psec-b', sec).append(empty); }
+        if (!empty) { empty = h('span', { class: 'muted empty-progress', text: 'なし' }); $('.psec-b, .dsec-b', sec).append(empty); }
         empty.hidden = !next.hidden;
       }
     }
@@ -2548,7 +2648,7 @@ function applyFeed(f, feed) {
 // ---- the long poll ----
 const live = { on: false, seq: null, feeds: new Map(), mode: 'long', inflight: 0, lastLoad: 0, loadTimer: null, dirty: false, ownActAt: 0, lastWatchEnd: 0, presence: [], viewers: new Map() };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const liveIdle = () => !state.drag && !document.querySelector('.popover, .list-title-input, .composer');
+const liveIdle = () => !state.drag && !document.querySelector('.popover, .list-title-input, .composer, .peek-input:focus');
 
 // Rebuild the board soon (coalesced, at most once every 1.5 s), when nothing is being edited.
 function scheduleLoad(delay = 0) {
@@ -2587,7 +2687,7 @@ function applyPatches(patches) {
     card.signals = p.signals || null;
     card.git = p.git || null;
     const el = document.querySelector(`.card[data-card-id="${CSS.escape(p.id)}"]`);
-    if (el && !state.drag) {
+    if (el && !state.drag && !el.querySelector('.peek-input:focus')) {
       const focused = el.contains(document.activeElement);
       const next = renderCard(card, list);
       el.replaceWith(next);
@@ -2624,7 +2724,7 @@ function applyPresence(list) {
     if (JSON.stringify(before.get(id)) === JSON.stringify(live.viewers.get(id))) continue;
     const hit = findCard(id);
     const el = document.querySelector(`.card[data-card-id="${CSS.escape(id)}"]`);
-    if (hit && !hit.link && el && !state.drag) {
+    if (hit && !hit.link && el && !state.drag && !el.querySelector('.peek-input:focus')) {
       const focused = el.contains(document.activeElement);
       const next = renderCard(hit.card, hit.list);
       el.replaceWith(next);
@@ -2852,7 +2952,7 @@ function setAllLanes(collapse) {
 // Sidebar: lanes (jump), directories and projects (one-click filters)
 // ======================================================================
 // ---- filters in effect, as chips in the app bar (each ✕ takes one off) ----
-const FILTER_KEYS = ['agent', 'days', 'status', 'directory', 'project', 'folder', 'section', 'label', 'host', 'account', 'includeArchived', 'includeSubagents', 'includeHidden', 'pinnedOnly'];
+const FILTER_KEYS = ['agent', 'days', 'status', 'directory', 'project', 'folder', 'section', 'label', 'host', 'account', 'includeArchived', 'includeSubagents', 'pinnedOnly'];
 const sameFilters = (a, b) => FILTER_KEYS.every((k) => (a[k] ?? DEFAULT_FILTERS[k]) === (b[k] ?? DEFAULT_FILTERS[k]));
 function activeView(b) { return (b?.settings?.views || []).find((v) => sameFilters({ ...DEFAULT_FILTERS, ...v.filters }, state.filters)); }
 // The lane axis is not also a filter: lanes by category already show every category.
@@ -2873,7 +2973,6 @@ function filterChips(b) {
   if (f.account && !laneHides('account')) add(`アカウント: ${b?.accounts?.accounts?.find((a) => a.key === f.account)?.label || f.account}`, { account: '' });
   if (f.includeArchived) add('アーカイブ済みも表示', { includeArchived: false });
   if (f.includeSubagents) add('サブエージェントも表示', { includeSubagents: false });
-  if (f.includeHidden) add('隠したカードも表示', { includeHidden: false });
   if (f.pinnedOnly) add('ピン留めだけ', { pinnedOnly: false });
   return out;
 }
@@ -2940,7 +3039,7 @@ function toggleSidebar(open = !state.sideOpen) {
 // 見る opens a sheet on the overlay; 管理 opens the management panel next to the sidebar. Pressing the open one again closes it.
 // カテゴリ is managed from the ⚙ beside the category list, so it has no entry of its own here.
 const SIDE_LOOK = [['analytics', 'chart', '分析', 'a'], ['usage', 'gauge', 'Agent Usage', '']];
-const SIDE_MANAGE = [['rules', 'zap', T.automation], ['labels', 'tag', 'ラベル'], ['views', 'bookmark', '保存ビュー'], ['hosts', 'server', 'マシン'], ['settings', 'gear', '設定']];
+const SIDE_MANAGE = [['rules', 'zap', T.automation], ['labels', 'tag', 'ラベル'], ['views', 'bookmark', '保存ビュー'], ['hosts', 'server', 'マシン'], ['slack', 'message', 'Slack接続'], ['settings', 'gear', '設定']];
 // The axes a lane can follow, in the order the sidebar offers them; the rest sit behind ⋯.
 const LANE_AXES = [['', 'なし'], ['directory', T.category], ['agent', 'AI Apps'], ['host', 'マシン'], ['label', 'ラベル']];
 const LANE_MORE = [['project', 'プロジェクト'], ['section', 'Codex セクション'], ['account', 'アカウント']];
@@ -3045,7 +3144,8 @@ function filterSection(b, hit = () => true) {
   if (!laneHides('label') && b.labels.length) group('ラベル', [...b.labels.map((l) => ({ id: l.id, name: l.name, color: l.color })), { id: '__none', name: 'ラベルなし', color: null }].map((l) =>
     choice(l.name, f.label === l.id, () => setScope({ label: f.label === l.id ? '' : l.id }), h('span', { class: 'dot', style: { background: l.color ? colorVar(l.color) : 'var(--header-btn-hover)' } }))));
   const scope = (key, label) => h('label', { class: 'side-check' }, h('input', { type: 'checkbox', checked: !!f[key], onchange: (e) => setScope({ [key]: e.target.checked }) }), label);
-  nodes.push(sideHead('表示する対象'), scope('includeArchived', 'アーカイブ済みも表示'), scope('includeSubagents', 'サブエージェントも表示'), scope('includeHidden', 'ボードから隠したカードも表示'), scope('pinnedOnly', 'Codex でピン留めしたものだけ'));
+  if (!['rail','omni'].includes(state.layout)) nodes.push(h('label', { class: 'side-check' }, h('input', { type: 'checkbox', checked: slackUi.visible, onchange: e => slackUi.toggle(e.target.checked) }), 'Slackタイムライン ', keycap('v')));
+  nodes.push(sideHead('表示する対象'), scope('includeArchived', 'アーカイブ済みも表示'), scope('includeSubagents', 'サブエージェントも表示'), scope('pinnedOnly', 'Codex でピン留めしたものだけ'));
   return h('section', { class: 'side-sec-filters' }, nodes);
 }
 // The foot of the sidebar: the sheets, the management pages and the look of the board.
@@ -3322,7 +3422,7 @@ function taskRelatedNodes(card) {
   const rows = card.links.map((l) => h('div', { class: 'sub-row task-related-row', 'data-session-id': l.id },
     h('span', { class: `sdot s-${l.status}` }),
     h('div', { class: 'task-related-copy grow' },
-      h('button', { class: 'link-btn', text: l.title, title: '詳細を見る', onclick: () => revealPane(l.id) }),
+      h('button', { class: 'link-btn', text: l.title, title: '詳細を見る', onclick: () => (styleIs('taskDetail', 'threads') ? selectTaskThread(cardId, l.id) : revealPane(l.id)) }),
       h('div', { class: 'task-related-meta' }, h('span', { class: `badge ${l.agent}`, text: l.agent === 'codex' ? 'Codex' : 'Claude' }),
         l.host ? h('span', { class: 'host-chip', text: l.host.label }) : null,
         h('span', { class: 'muted', text: `${STATUS_LABELS[l.status]}・${relTime(l.updatedAt)}` }))),
@@ -3349,7 +3449,7 @@ function paintTaskRelated(p, card) {
 async function taskLinkMenu(anchor, taskId) {
   try {
     const linked = findCard(taskId)?.card.linkedSessionIds || [];
-    const board = await bridge.callTool('canban_get_board', { days: 0, includeArchived: true, includeHidden: true });
+    const board = await bridge.callTool('canban_get_board', { days: 0, includeArchived: true });
     const candidates = board.lists.flatMap((l) => l.cards).flatMap((c) => c.kind === 'task' ? c.links.map((x) => ({ ...x, title: `${x.title}（${c.title}から移動）` })) : [c]);
     const cards = [...new Map(candidates.filter((c) => !c.subagent && !linked.includes(c.id)).map((c) => [c.id, c])).values()];
     const rows = cards.map((c) => h('button', { class: 'menu-item', 'data-key': c.title, text: c.title, onclick: async () => {
@@ -3446,9 +3546,9 @@ async function loadTask(p, found) {
       h('button', { class: 'side-btn', text: '所属を変更', onclick: () => taskQuickAdd.edit(card, list) }), h('button', { class: 'side-btn', 'data-pane-key': 'l', onclick: e => labelPicker(e.currentTarget, cardId, labelState, () => {}) }, '🏷 ラベル', keycap('l')),
       h('button', { class: 'side-btn', 'data-pane-key': 'g', onclick: e => directoryPicker(e.currentTarget, card, { cwd: cwd.value.trim() || null, after: () => openCard(cardId) }) }, `📂 カテゴリ: ${card.directory?.name || 'カテゴリ無し'}`, keycap('g'))] },
     prio: { nodes: [prio, due] },
-    other: { nodes: [h('button', { class: 'side-btn', 'data-pane-key': 'h', onclick: async () => { await act('canban_update_card', { cardId, hidden: !card.hidden }); closeCards(); } }, card.hidden ? '👁 ボードに再表示' : '🙈 ボードから隠す', keycap('h')),
-      h('button', { class: 'side-btn danger-text', text: '🗑 カードを削除', onclick: async () => { if (confirmInline(p.el, `この${T.taskCard}を削除します。紐付いたセッション自体は消えません。`)) { await act('canban_delete_task', { cardId }, { okMsg: '削除しました' }); closeCards(); } } })] },
+    other: { nodes: [h('button', { class: 'side-btn danger-text', text: '🗑 カードを削除', onclick: async () => { if (confirmInline(p.el, `この${T.taskCard}を削除します。紐付いたセッション自体は消えません。`)) { await act('canban_delete_task', { cardId }, { okMsg: '削除しました' }); closeCards(); } } })] },
   };
+  if (card.slackRefs?.length) secs.slack = { nodes: [slackUi.sources(cardId, prompt)] };
   const cols = { main: h('div', { class: 'pcol', 'data-col': 'main' }), side: h('div', { class: 'pcol', 'data-col': 'side' }) };
   for (const id of Object.keys(PANE_SECS)) {
     const sc = secs[id];
@@ -4178,6 +4278,7 @@ function shortcutHints(entries, className = '') {
 // Read the rendered list, including its lane and pagination, rather than the unfiltered board data.
 // The originating lane survives a board redraw even when the same card occurs in several label lanes.
 function displayedListCards(id, origin = cardReturn) {
+  if (inboxOn()) return inboxRows().filter(el => el.getClientRects().length);
   const lists = $$('#board .list');
   const originList = origin?.closest?.('.list');
   const lane = originList?.closest('.lane')?.dataset.lane;
@@ -4189,6 +4290,7 @@ function displayedListCards(id, origin = cardReturn) {
 function stepDisplayedCard(delta) {
   const overlay = !paneLayer.hidden;
   if (overlay) return stepOpenCard(delta);
+  if (inboxOn()) return inboxStep(delta);
   const focused = document.activeElement?.closest?.('#board .card');
   const id = overlay ? panes[0]?.id : focused?.dataset.cardId;
   const cards = id ? displayedListCards(id, overlay ? cardReturn : focused) : $$('#board .card').filter(el => el.getClientRects().length);
@@ -4201,7 +4303,7 @@ function stepDisplayedCard(delta) {
 function panePromptInput() {
   const active = document.activeElement?.closest?.('.pane');
   const ordered = active ? [active, ...panes.map(p => p.el).filter(el => el !== active)] : panes.map(p => p.el);
-  return ordered.map(el => el.querySelector('.psec[data-sec="send"] textarea:not([readonly]):not([disabled])')).find(Boolean);
+  return ordered.map(el => el.querySelector('[data-sec="send"] textarea:not([readonly]):not([disabled])')).find(Boolean);
 }
 function focusPanePrompt() {
   const input = panePromptInput();
@@ -4223,7 +4325,7 @@ function refreshShortcutHints() {
     else if (input === shortcutMapGrip) entries = [['← ↑ ↓ →', '案内を移動'], ['Alt+← / →', '左右の余白'], ['Shift', '微調整'], ['Home', '初期位置'], ...globalKeys, ['Esc', '閉じる']];
     else if (input?.matches('.card-board-margin')) entries = [['← / →', '余白を調整'], ['Shift', '微調整'], ['Home', '10%に戻す'], ['0', 'すべて初期化'], ...globalKeys, ['Esc', '閉じる']];
     else if (typing) entries = [
-      ...(input.closest('.psec[data-sec="send"]') && input.closest('.prompt-composer') ? [[`${modKey}Enter`, input.closest('.pane').dataset.kind === 'task' ? 'セッション開始' : '送信']] : []),
+      ...(input.closest('[data-sec="send"]') && input.closest('.prompt-composer') ? [[`${modKey}Enter`, input.closest('.pane').dataset.kind === 'task' ? 'セッション開始' : '送信']] : []),
       ['Esc', '入力を抜ける'], [`${modKey}K`, 'コマンド'],
     ];
     else if (panes[0]?.kind === 'view') entries = [[openViewKind() === 'analytics' ? 'a' : 'u', '閉じる'], ['r', '更新'], ...globalKeys, ['Alt+m', '案内の移動'], ['Alt+[ / ]', '左右余白'], ['0', '余白を初期化'], ['Esc', '閉じる']];
@@ -4232,7 +4334,8 @@ function refreshShortcutHints() {
       entries = [['k', '前のカード', index <= 0], ['j', '次のカード', index < 0 || index === cards.length - 1],
         ['⇧←', '左のリストへ', !adjacentPaneList(focusedPane(), -1)], ['⇧→', '右のリストへ', !adjacentPaneList(focusedPane(), 1)],
         ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
-        ...(panePromptInput() ? [['i', '指示欄']] : []), ['r', '更新'], ...globalKeys, ['Alt+m', '案内の移動'], ['Alt+[ / ]', '左右余白'], ['0', '余白を初期化'], ['Esc', '閉じる']];
+        ...(focusedPane()?.kind === 'session' ? [['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
+        ...(panePromptInput() ? [['i', '指示欄']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ...(state.styles.review === 'on' ? [['f', '変更']] : [])] : []), ['r', '更新'], ...globalKeys, ['Alt+m', '案内の移動'], ['Alt+[ / ]', '左右余白'], ['0', '余白を初期化'], ['Esc', '閉じる']];
     }
     paneHints.replaceChildren(...shortcutHints(entries).childNodes);
     shortcutMap.hidden = entries.length === 0;
@@ -4242,7 +4345,7 @@ function refreshShortcutHints() {
   if (!boardKeyHints.hidden) {
     if (typing) entries = input.id === 'q' ? [['↓ / Enter', 'カードへ'], ['Esc', '検索をクリア']] : [['⌘K / Ctrl+K', 'コマンド']];
     else if (workspace.utilityPage()) entries = [...globalKeys, ['Esc', 'パネルを閉じる']];
-    else if (input?.matches('.card')) entries = [['j / k', '次 / 前'], ['Enter', '開く'], ['l', 'ラベル'], ['m', 'リストへ移動'], ...globalKeys];
+    else if (input?.matches('.card')) entries = [['j / k', '次 / 前'], ['Enter', '開く'], ['Space', 'その場で返信'], ['l', 'ラベル'], ['m', 'リストへ移動'], ...globalKeys];
     else entries = [['j / k', 'カード選択'], ['/', '検索'], ['c', 'タスク追加'], ['b', 'ナビゲーション'], ['a / u', '分析 / Usage'], ['r', '更新'], ...globalKeys];
     boardKeyHints.replaceChildren(...shortcutHints(entries).childNodes);
   }
@@ -4258,15 +4361,16 @@ const SHORTCUTS = [
     ['p', `${T.category}・プロジェクトで絞り込み`], ['b', 'サイドバーの開閉'], ['[ / ]', '前 / 次のスイムレーンへ'],
     ['c', 'タスクを追加'], ['1〜9', '保存したビューに切り替え'], ['a', '分析を開く / 閉じる'], ['r', '再読み込み'], ['?', 'この一覧'],
   ]],
+  ['Slack', [['v', 'タイムラインの表示 / 非表示（ボード）'], ['c / l / t', 'メッセージ上: タスク作成 / カードへ追加 / 返信'], ['Alt+s', 'カード内: Slack資料の追加ボタンへ'], ['Esc', 'タイムライン内: 非表示']]],
   ['カードを選択中', [
-    ['Enter', '詳細を開く'], ['l', 'ラベル'], ['g', `${T.category}`], ['m', 'リストへ移動'], ['h', '隠す / 再表示'],
+    ['Enter', '詳細を開く'], ['Space / r', 'その場で読んで返信（r は入力欄へ）'], ['l', 'ラベル'], ['g', `${T.category}`], ['m', 'リストへ移動'],
     ['← →', '隣のリストへ移動'], ['↑ ↓ / Home End', 'リスト内で移動'], ['⌥ + 矢印', 'フォーカスだけ移動'],
     ['o', '再開（既定）'], ['d / t', 'デスクトップ / ターミナルで再開'], ['w n s e', 'ターミナル: 新規ウィンドウ / 新規タブ / 分割 / 既存'],
   ]],
   ['カードを開いている間', [
     ['Shift+← / →', '左右の隣のリストへ移動（端で停止、入力中・配置調整中は無効）'],
     ['j / k', '表示リストの次 / 前のカードを開く（端で停止）'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'],
-    ['i', '指示の入力欄へ'], ['o', '再開'], ['l g m h', 'ラベル / ' + T.category + ' / リスト移動 / 隠す'], ['c', 'タスクを追加'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
+    ['z', 'エージェントのセッションをアーカイブ / 復元'], ['Delete', 'セッションと会話履歴を削除（確認あり）'], ['i', '指示の入力欄へ'], ['d / f', 'スレッド表示: 詳細パネル / 変更を開閉'], ['⌥Enter', '入力欄: キューに追加（⌘Enter は送信）'], ['o', '再開'], ['l g m', 'ラベル / ' + T.category + ' / リスト移動'], ['c', 'タスクを追加'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
   ]],
   ['カードボード（レイヤー2）', [
     ['Alt+[ / ]', '左 / 右の余白境界にフォーカス。←→で調整、Shiftで微調整、Homeで10%に戻す'],
@@ -4283,6 +4387,7 @@ function showShortcuts() {
   p.querySelector('.close').focus();
 }
 function commandPalette() {
+  const sessionPane = !paneLayer.hidden && focusedPane()?.kind === 'session' && focusedPane()?.d?.session ? focusedPane() : null;
   const b = state.board;
   if (!b) return;
   const f = state.filters;
@@ -4309,11 +4414,22 @@ function commandPalette() {
     { label: 'すべて既読にする', run: () => act('canban_mark_all_seen', {}, { okMsg: 'すべて既読にしました' }) },
     { label: state.sideOpen ? 'サイドバーを閉じる' : 'サイドバーを開く', run: () => toggleSidebar(), hint: 'b' },
     { label: 'タスクを追加', run: () => taskQuickAdd.open(), hint: 'c' },
+    { label: slackUi.visible ? 'Slackタイムラインを隠す' : 'Slackタイムラインを表示', run: () => slackUi.toggle(), hint: 'v' },
+    ...((slackUi.selected && slackUi.visible) ? [
+      { label: '選択したSlackメッセージをタスクにする', run: () => slackUi.create(slackUi.selected), hint: 'c' },
+      { label: '選択したSlackメッセージをカードに追加', run: () => slackUi.link(slackUi.el,slackUi.selected), hint: 'l' },
+      { label: '選択したSlackメッセージの返信を読む', run: () => { const node = [...slackUi.el.querySelectorAll('[data-slack-key]')].find(n => n.dataset.slackKey === slackUi.selected.key); if (node) slackUi.thread(node,slackUi.selected); }, hint: 't' },
+    ] : []),
+    { label: 'Slack資料の追加ボタンへ', run: () => focusedPane()?.el.querySelector('.slack-add-prompt')?.focus(), hint: 'Alt+s' },
     ...(!paneLayer.hidden && focusedPane()?.kind !== 'view' ? [
       ...[-1, 1].filter(step => adjacentPaneList(focusedPane(), step)).map(step => {
         const p = focusedPane(), target = adjacentPaneList(p, step);
         return { label: `カードを${step < 0 ? '左' : '右'}のリスト「${target.title}」へ移動`, run: () => movePaneAdjacent(p, step), hint: `Shift+${step < 0 ? '←' : '→'}` };
       }),
+      ...(sessionPane ? [
+        { label: sessionPane.d?.card.archived ? 'セッションカードをアーカイブから戻す' : 'セッションをアーカイブ', run: () => paneKeyButton(sessionPane, 'z')?.click(), hint: 'z' },
+        { label: 'セッションと会話履歴を削除…', run: () => confirmSessionCardDelete(sessionPane), hint: 'Delete' },
+      ] : []),
       { label: 'カード: レイアウトとサイズを初期化', run: resetCardLayout },
       ...['breadcrumb', 'title', 'conv', 'send'].map(id => ({ label: `カード: ${secTitle(id)}の移動`, run: () => focusedPane()?.el.querySelector(`.psec[data-sec="${id}"] .grip`)?.focus() })),
       { label: 'カード: 列幅を変更', run: () => focusedPane()?.el.querySelector('.column-split')?.focus() },
@@ -4323,6 +4439,7 @@ function commandPalette() {
     ...Object.entries(LANE_MODES).map(([v, t]) => ({ label: `スイムレーン: ${t}`, run: () => { f.swimlane = v; state.soloLane = null; saveFilters(); render(); } })),
     ...Object.entries(LANE_HEIGHTS).map(([v, [t]]) => ({ label: `レーンの高さ: ${t}`, run: () => { f.laneHeight = v; saveFilters(); render(); } })),
     { label: 'キーボードショートカット', run: showShortcuts, hint: '?' },
+    ...COMPONENT_STYLE_KEYS.flatMap((key) => COMPONENT_STYLES[key][2].filter(([v]) => v !== state.styles[key]).map(([v, name]) => ({ label: `スタイル: ${COMPONENT_STYLES[key][0]} → ${name}`, run: () => setComponentStyle(key, v) }))),
     ...LAYOUTS.map(([id, name]) => ({ label: `レイアウト: ${name}`, run: () => setLayout(id) })),
     ...[['light', 'ライト'], ['dark', 'ダーク'], ['system', 'システム']].map(([k, n]) => ({ label: `色: ${n}`, run: () => { setThemePref(k); paintLayoutChrome(); } })),
   ];
@@ -4362,7 +4479,7 @@ document.addEventListener('keydown', (e) => {
     j: () => stepDisplayedCard(1), k: () => stepDisplayedCard(-1),
     '/': focusSearch, '?': showShortcuts, b: () => toggleSidebar(), '[': () => stepLane(-1), ']': () => stepLane(1),
     r: () => load({ refresh: true }).then(() => toast('最新の状態に更新しました')), a: toggleAnalytics, u: () => toggleView('usage'),
-    c: quickAdd, p: () => scopePicker($('#logo')),
+    c: quickAdd, v: () => slackUi.toggle(), p: () => scopePicker($('#logo')),
   }[k];
   if (run) { e.preventDefault(); return run(); }
   // 1–9: switch saved views
@@ -4382,7 +4499,9 @@ $('#board').addEventListener('wheel', (e) => {
 }, { passive: false });
 
 // ======================================================================
+// @include component-styles.js
 // @include layouts.js
+// @include slack.js
 // @include workspace.js
 
 // Theme & lifecycle
@@ -4405,8 +4524,8 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => ap
 
 function sharedUiSnapshot() {
   return {
-    filters: { ...state.filters }, themePref: state.themePref, layout: state.layout, cardFit: state.cardFit, sidebar: state.sideOpen, workspacePage: workspace.page, labelsExpanded: state.labelsExpanded,
-    paneGlobal: { ...paneGlobal }, cardLayouts: structuredClone(cardLayouts), cardWidths: { ...cardWidths }, cardBoard: structuredClone(cardBoardState), cardHeights: { ...cardHeights }, collapsedLanes: [...collapsedLanes],
+    slackVisible: slackUi.visible, filters: { ...state.filters }, themePref: state.themePref, layout: state.layout, cardFit: state.cardFit, sidebar: state.sideOpen, workspacePage: workspace.page, labelsExpanded: state.labelsExpanded,
+    paneGlobal: { ...paneGlobal }, cardLayouts: structuredClone(cardLayouts), cardWidths: { ...cardWidths }, cardBoard: structuredClone(cardBoardState), cardHeights: { ...cardHeights }, collapsedLanes: [...collapsedLanes], componentStyles: { ...state.styles },
   };
 }
 
@@ -4420,9 +4539,11 @@ function adoptSharedUi(record) {
     for (const key of SHARED_UI_KEYS) if (Object.hasOwn(value, key)) store.cache(key, value[key]);
     if (value.filters && typeof value.filters === 'object' && !Array.isArray(value.filters)) state.filters = { ...DEFAULT_FILTERS, ...value.filters };
     if (typeof value.sidebar === 'boolean') state.sideOpen = value.sidebar;
+    if (typeof value.slackVisible === 'boolean') { slackUi.visible = value.slackVisible; if (slackUi.visible) slackUi.refresh(); }
     if (typeof value.themePref === 'string') { state.themePref = value.themePref; applyTheme(); }
     if (typeof value.layout === 'string') { state.layout = layoutOf(value.layout); applyLayout(); }
     if (value.cardFit === 'auto' || value.cardFit === 'fixed') state.cardFit = value.cardFit;
+    if (value.componentStyles) { state.styles = normalizeComponentStyles(value.componentStyles); applyComponentStyles(); }
     if (typeof value.labelsExpanded === 'boolean') state.labelsExpanded = value.labelsExpanded;
     if (value.paneGlobal && typeof value.paneGlobal === 'object') Object.assign(paneGlobal, { mode: oneOf(value.paneGlobal.mode, PANE_MODES, PANE_DEF.mode) });
     // In place: sections already on screen keep their reference to the layout of their kind.
@@ -4581,7 +4702,7 @@ function scheduleSharedUiCheck() {
   sharedUi.checkTimer = setTimeout(checkSharedUiOnReturn, 150);
 }
 
-function idle() { return !state.drag && !document.querySelector('.popover, .list-title-input, .composer'); }
+function idle() { return !state.drag && !document.querySelector('.popover, .list-title-input, .composer, .peek-input:focus'); }
 let lastPoll = 0;
 setInterval(() => {
   // With the live watch on, this is only a safety net (remote hosts, missed events).
@@ -4598,6 +4719,7 @@ window.addEventListener('resize', () => bridge.reportSize());
   const ctx = await bridge.init();
   state.hostTheme = ctx.theme;
   applyTheme(ctx.theme);
+  applyComponentStyles();
   if (ctx.displayMode === 'inline') {
     $('#refresh').after(h('button', { class: 'hbtn', title: '全画面で開く', 'aria-label': '全画面で開く', text: '⤢', onclick: () => bridge.requestFullscreen() }));
   }

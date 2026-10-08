@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>01 スレッド · Canban カード案</title>
+<link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="shared.css">
+<style>
+.pane { width: min(980px, 100%); position: relative; }
+.hd { display: flex; align-items: center; gap: 8px; padding: 12px 16px 10px; flex: none; }
+.crumb { font-size: 12px; color: var(--card-muted); display: flex; align-items: center; gap: 4px; }
+.crumb button { padding: 2px 6px; border-radius: 6px; } .crumb button:hover { background: var(--btn-subtle-hover); }
+.ttl { font-size: 17px; font-weight: 700; line-height: 1.3; letter-spacing: -.005em; }
+.meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 0 16px 10px; border-bottom: 1px solid var(--btn-subtle); flex: none; }
+.body { display: flex; flex: 1; min-height: 0; }
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+.scroll { flex: 1; overflow: auto; padding: 22px 24px 150px; }
+.col { max-width: 720px; margin: 0 auto; }
+.dock { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 24px 14px; background: linear-gradient(transparent, var(--card-bg) 36%); pointer-events: none; }
+.dock > * { max-width: 720px; margin: 0 auto; pointer-events: auto; }
+.dock .hint { padding: 8px 6px 0; }
+.drawer { width: 0; overflow: hidden; border-left: 0 solid var(--btn-subtle); transition: width .18s; flex: none; background: var(--card-bg); }
+.drawer.open { width: 300px; border-left-width: 1px; }
+.drawer .in { width: 300px; padding: 14px 16px; display: flex; flex-direction: column; gap: 16px; overflow: auto; height: 100%; }
+.drawer h4 { margin: 0 0 6px; font-size: 12px; font-weight: 700; color: var(--card-muted); letter-spacing: .03em; }
+.kv { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; }
+.kv .k { width: 76px; color: var(--card-muted); flex: none; }
+.ctxbar { height: 6px; border-radius: 3px; background: var(--btn-subtle-hover); overflow: hidden; flex: 1; } .ctxbar i { display: block; height: 100%; width: 42%; background: var(--accent); }
+.jump { position: absolute; right: 24px; bottom: 138px; display: none; }
+</style></head>
+<body>
+<script src="shared.js"></script>
+<script>
+const stage = shell('01 スレッド');
+stage.insertAdjacentHTML('beforeend', `<div class="scrim"><section class="pane" aria-label="セッションカード">
+  <div class="hd"><span class="crumb"><button>進行中 ${ic('chev', 11)}</button>/ ${SAMPLE.dir}</span><span class="grow"></span>
+    <button class="iconbtn" title="前のカード">${ic('up', 16)}</button><button class="iconbtn" title="次のカード">${ic('chev', 16)}</button>
+    <button class="iconbtn" id="dBtn" title="詳細パネル (i)">${ic('panel', 17)}</button><button class="iconbtn" title="その他">${ic('more', 17)}</button><button class="iconbtn" title="閉じる (Esc)">${ic('close', 17)}</button></div>
+  <div class="hd" style="padding-top:0;padding-bottom:6px"><span class="ag ag-codex">Codex</span><h2 class="ttl grow" style="margin:0">${SAMPLE.title}</h2><span class="st st-run"><i></i>実行中</span></div>
+  <div class="meta"><span class="chipx">${ic('folder', 13)} ${SAMPLE.dir}</span><span class="chipx mono">${ic('branch', 13)} ${SAMPLE.branch}</span><button class="chipx">${ic('pr', 13)} PR ${SAMPLE.pr}</button><span class="chipx">${ic('tag', 13)} <span class="lbl" style="background:var(--c-blue);width:14px"></span> UI</span><span class="grow"></span><span class="chipx" title="コンテキスト">${ic('gauge', 13)} 42%</span><span class="chipx">${ic('clock', 13)} 開始 14:02</span></div>
+  <div class="body"><div class="main"><div class="scroll"><div class="col"><div class="thread">${THREAD_HTML({ running: true })}</div></div></div>
+    <div class="dock">${composer({ running: true })}<div class="hint">${kc('⌘ Enter')} 送信 ${kc('⌥ Enter')} キューへ ${kc('/')} コマンド ${kc('@')} ファイル ${kc('$')} スキル ${kc('i')} 詳細 ${kc('Esc')} 閉じる</div></div></div>
+  <aside class="drawer" id="drawer"><div class="in">
+    <div><h4>状態</h4><div class="kv"><span class="k">状態</span><span class="st st-run"><i></i>実行中</span></div><div class="kv"><span class="k">接続先</span>Codex · このMac</div><div class="kv"><span class="k">コンテキスト</span><span class="ctxbar"><i></i></span><span class="num">42%</span></div></div>
+    <div><h4>整理</h4><div class="kv"><span class="k">リスト</span>進行中</div><div class="kv"><span class="k">カテゴリ</span>${SAMPLE.dir}</div><div class="kv"><span class="k">ラベル</span><span class="chipx"><span class="lbl" style="background:var(--c-blue);width:14px"></span> UI</span></div><div class="kv"><span class="k">優先度</span>未設定</div><div class="kv"><span class="k">期限</span>—</div></div>
+    <div><h4>関連</h4><div class="kv">${ic('note', 15)} <span>タスクカード「カレンダー改善」</span></div><div class="kv">${ic('branch', 15)} 同じブランチ 1 件</div></div>
+    <div><h4>操作</h4><button class="btn line" style="width:100%;margin-bottom:6px">Codex で開く ${kc('o')}</button><button class="btn line" style="width:100%">アーカイブ</button></div>
+  </div></aside></div></section></div>`);
+fillIc();
+$('#dBtn').onclick = () => $('#drawer').classList.toggle('open');
+addEventListener('keydown', (e) => { if (e.key === 'i' && !/TEXTAREA|INPUT/.test(e.target.tagName)) $('#drawer').classList.toggle('open'); });
+wireComposer($('.cmp'));
+const sc = $('.scroll'); sc.scrollTop = sc.scrollHeight;
+tick($('.wk'));
+</script></body></html>

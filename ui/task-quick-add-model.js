@@ -42,6 +42,7 @@ async function saveQuickTaskDraft(draft, { callTool, refresh, newRequestId }) {
   draft.clientRequestId ||= newRequestId();
   const args = { title, description: draft.description, list: draft.listId, directory: draft.directory,
     labels: [...draft.labels], context: { ...draft.context }, clientRequestId: draft.clientRequestId };
+  if (draft.slackSource) args.slackSource = draft.slackSource;
   draft.submitting = true;
   try {
     const result = await callTool('canban_create_task', args);

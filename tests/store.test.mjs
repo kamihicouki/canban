@@ -119,3 +119,17 @@ test('simultaneous shared view state writes accept only one writer for a revisio
   assert.equal((await store.getUiState()).revision, 1);
   assert.ok(['board', 'analytics'].includes((await store.getUiState()).state.view));
 });
+
+
+test('native deletion removes Canban metadata and links only for the target session', async () => {
+  const store = new Store(tmp());
+  await store.updateCard({ cardId: 'codex:one', note: 'one' });
+  await store.updateCard({ cardId: 'codex@remote:one', note: 'remote' });
+  const task = await store.createTask({ title: 'owner' });
+  await store.linkSession({ taskId: task.cardId, sessionId: 'codex:one' });
+  await store.removeSessionMetadata('codex:one');
+  const state = await store.load();
+  assert.equal(state.cards['codex:one'], undefined);
+  assert.equal(state.cards['codex@remote:one'].note, 'remote');
+  assert.deepEqual(state.cards[task.cardId].links, []);
+});

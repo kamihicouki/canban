@@ -1,7 +1,7 @@
 // Common navigation, retained page forms and account/usage presentation.
 // Existing tool-backed editors can mount their body in a page instead of a popover.
 // The pages of the management panel (docs/ui-components.md), in the order the navigation lists them.
-const DRAWER_PAGES = ['rules', 'labels', 'directories', 'views', 'hosts', 'settings'];
+const DRAWER_PAGES = ['rules', 'labels', 'directories', 'views', 'hosts', 'slack', 'settings'];
 const PAGE_ICONS = { rules: 'zap', labels: 'tag', directories: 'folder', views: 'bookmark', hosts: 'server', settings: 'gear', home: 'board' };
 const workspace = {
   page: workspacePage(store.get('workspacePage', null)),
@@ -97,6 +97,7 @@ const workspace = {
     if (builders[this.page]) builders[this.page](anchor);
     else if (this.page === 'settings') this.renderSettings(entry, anchor, body);
     else if (this.page === 'directories') this.renderDirectories(entry, board);
+    else if (this.page === 'slack') slackUi.settings(body);
     this.trackDrafts(entry.el);
     bridge.reportSize();
   },

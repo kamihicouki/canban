@@ -1,7 +1,7 @@
 // Shared composer for task launches and session follow-ups. Drafts survive live
 // re-rendering; binary files never go into board settings or localStorage.
 const promptDrafts = new Map();
-function promptComposer(input, { key, context, submit }) {
+function promptComposer(input, { key, context, submit, chips = false }) {
   const existing = promptDrafts.get(key);
   if (existing && existing.text === existing.baseline && !existing.images.length && !existing.skills.length && !existing.sending) existing.text = existing.baseline = input.value;
   const draft = promptDrafts.get(key) || { text: input.value, baseline: input.value, images: [], skills: [], context: null, sending: false };
@@ -14,10 +14,15 @@ function promptComposer(input, { key, context, submit }) {
   const search = h('input', { class: 'text-input', type: 'search', placeholder: 'スキル名・説明で検索', 'aria-label': 'スキルを検索' });
   const choices = h('div', { class: 'prompt-skill-choices', 'aria-label': '利用できるスキル' });
   const fileInput = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, hidden: true, 'aria-label': '添付する画像を選択' });
-  const imageButton = h('button', { type: 'button', class: 'btn', text: '＋ 画像', onclick: () => fileInput.click() });
-  const skillButton = h('button', { type: 'button', class: 'btn', text: '＄ スキル', 'aria-expanded': 'false', 'aria-controls': picker.id, onclick: () => toggleSkills() });
-  const toolbar = h('div', { class: 'prompt-toolbar' }, imageButton, skillButton,
-    h('span', { class: 'muted prompt-hint', text: '画像を貼り付け・ドロップ / $ でスキル' }));
+  // chips: icon buttons that share one row with the permission and send controls (the caller adds them).
+  const imageButton = chips
+    ? h('button', { type: 'button', class: 'cx-ico', title: '画像を添付（貼り付け・ドロップも可）', 'aria-label': '画像を添付', html: picon('image', 16), onclick: () => fileInput.click() })
+    : h('button', { type: 'button', class: 'btn', text: '＋ 画像', onclick: () => fileInput.click() });
+  const skillButton = chips
+    ? h('button', { type: 'button', class: 'cx-ico', title: 'スキルを選ぶ（$）', 'aria-label': 'スキルを選ぶ', 'aria-expanded': 'false', 'aria-controls': picker.id, text: '$', onclick: () => toggleSkills() })
+    : h('button', { type: 'button', class: 'btn', text: '＄ スキル', 'aria-expanded': 'false', 'aria-controls': picker.id, onclick: () => toggleSkills() });
+  const toolbar = chips ? h('div', { class: 'prompt-toolbar chips' }, imageButton, skillButton)
+    : h('div', { class: 'prompt-toolbar' }, imageButton, skillButton, h('span', { class: 'muted prompt-hint', text: '画像を貼り付け・ドロップ / $ でスキル' }));
   picker.append(h('div', { class: 'row' }, search, h('button', { type: 'button', class: 'icon-btn', text: '✕', 'aria-label': 'スキル選択を閉じる', onclick: () => closeSkills() })), choices);
   root.append(assets, input, toolbar, picker, notice, fileInput);
   let catalog = [], loadedContext = null, pendingSkills = null, requestGeneration = 0, token = null;
@@ -145,7 +150,7 @@ function promptComposer(input, { key, context, submit }) {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); submit?.(); }
   });
   paint();
-  return { root, draft, contextChanged() { currentContext(); closeSkills(); paint(); },
+  return { root, toolbar, draft, contextChanged() { currentContext(); closeSkills(); paint(); },
     hasContent: () => !!(input.value.trim() || draft.images.length || draft.skills.length),
     payload() {
       draft.text = input.value;

@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import { resolveDataDirectory } from './data-directory.mjs';
 import { normalizeTaskDashboard, taskDashboardRecord } from './task-dashboard.mjs';
 import { normalizeTaskContext } from './task-context.mjs';
+import { attachSlackReference } from './slack-store.mjs';
 
 export const STORE_VERSION = 1;
 export const LIST_COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
@@ -71,7 +72,7 @@ function normalizeDispatch(x) {
   };
 }
 
-const VIEW_FILTER_KEYS = ['agent', 'host', 'account', 'status', 'project', 'folder', 'section', 'directory', 'label', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'includeHidden', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
+const VIEW_FILTER_KEYS = ['agent', 'host', 'account', 'status', 'project', 'folder', 'section', 'directory', 'label', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
 function normalizeView(v) {
   if (!v || typeof v.id !== 'string' || !String(v.name || '').trim()) return null;
   const filters = {};
@@ -369,7 +370,15 @@ export class Store {
     });
   }
 
-  updateCard({ cardId, labels, note, priority, due, hidden, directory }) {
+  removeSessionMetadata(cardId) {
+    return this.mutate(s => {
+      delete s.cards[cardId];
+      for (const c of Object.values(s.cards)) if (c.kind === 'task') c.links = (c.links || []).filter(id => id !== cardId);
+      return { cardId };
+    });
+  }
+
+  updateCard({ cardId, labels, note, priority, due, directory }) {
     return this.mutate((s) => {
       const card = (s.cards[cardId] ||= {});
       if (labels !== undefined) {
@@ -385,14 +394,13 @@ export class Store {
       if (note !== undefined) card.note = String(note ?? '').slice(0, 20000);
       if (priority !== undefined) card.priority = ['high', 'medium', 'low'].includes(priority) ? priority : null;
       if (due !== undefined) card.due = due && !Number.isNaN(Date.parse(due)) ? due : null;
-      if (hidden !== undefined) card.hidden = !!hidden;
       card.updatedAt = new Date().toISOString();
       return { cardId, ...card };
     });
   }
 
   // ---- task cards (not backed by a session) -------------------------------
-  async createTask({ title, listId, description = '', directory, labels, context, clientRequestId }) {
+  async createTask({ title, listId, description = '', directory, labels, context, clientRequestId, slackSource }) {
     title = String(title || '').trim();
     if (!title) throw new Error('カード名を入力してください');
     if (clientRequestId !== undefined && (typeof clientRequestId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(clientRequestId))) throw new Error('作成リクエストが不正です');
@@ -408,8 +416,18 @@ export class Store {
       const card = { kind: 'task', title: title.slice(0, 300), description: String(description).slice(0, 20000), createdAt: Date.now(), links: [], pending: [], ...attrs, ...(clientRequestId ? { clientRequestId } : {}) };
       placeCard(card, lid, Date.now()); // positive orders sort after session cards: new tasks go to the bottom
       s.cards[id] = card;
+      if (slackSource) attachSlackReference(s, id, slackSource);
       return { cardId: id, ...card };
     });
+  }
+
+  linkSlack({ cardId, key, sourceTitle }) {
+    if (typeof cardId !== 'string' || !/^(?:task:|(?:codex|claude)(?:@[^:\s]{1,200})?:)/.test(cardId)) throw new Error('カードを確認してください');
+    return this.mutate(s => { if (cardId.startsWith('task:') && s.cards[cardId]?.kind !== 'task') throw new Error('タスクカードが見つかりません'); attachSlackReference(s, cardId, key); if (sourceTitle && !cardId.startsWith('task:')) s.cards[cardId].slackTitle = String(sourceTitle).slice(0,300); return { cardId, key }; });
+  }
+
+  unlinkSlack({ cardId, key }) {
+    return this.mutate(s => { const card = s.cards[cardId]; if (card) card.slackRefs = (card.slackRefs || []).filter(k => k !== key); return { cardId, key }; });
   }
 
   updateTask({ cardId, title, description, target, context, directory, labels }) {
