@@ -17,7 +17,6 @@ const TOOL_KINDS = [
 ];
 const toolKindOf = (name) => (TOOL_KINDS.find(([, re]) => re.test(name || '')) || ['other', null, (n) => `ツールを ${n} 件使用`]);
 const TOOL_KIND_ICON = { edit: 'diff', read: 'file', run: 'terminal', web: 'search', agent: 'branch', plan: 'checklist', mcp: 'spark', other: 'gear' };
-const folded = () => state.styles.conversation === 'folded';
 function fmtElapsed(ms) {
   const s = Math.max(0, Math.round(ms / 1000)), m = Math.floor(s / 60);
   return m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : m ? `${m}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`;
@@ -41,7 +40,6 @@ function paintToolGroup(g) {
 }
 // Put one item into the feed: folded mode groups tool calls and ends a turn with its working time.
 function feedPush(f, it) {
-  if (!folded()) { const el = feedItem(it, f); if (el) f.list.append(el); return el; }
   if (it.k === 'turn') { endTurn(f, it); return null; }
   if (it.k === 'user') f.turnStart = Date.parse(it.at) || Date.now();
   const el = feedItem(it, f);
@@ -118,7 +116,7 @@ function editSummary(f) {
     el.replaceChildren(
       h('div', { class: 'ef-head' }, h('span', { class: 'ef-ico', html: picon('diff', 18) }),
         h('div', { class: 'grow' }, h('div', { class: 'ef-title', text: `${files.count} 件のファイルを編集` }), data && (sum.a || sum.d) ? h('div', { class: 'ef-stat' }, h('span', { class: 'add num', text: `+${sum.a}` }), ' ', h('span', { class: 'del num', text: `−${sum.d}` })) : null),
-        state.styles.review === 'on' && !f.pane.d?.session?.host ? h('button', { class: 'btn', type: 'button', text: '変更内容を表示', onclick: () => openThreadSide(f.pane, 'changes') }) : null),
+        !f.pane.d?.session?.host ? h('button', { class: 'btn', type: 'button', text: '変更内容を表示', onclick: () => openThreadSide(f.pane, 'changes') }) : null),
       body, more);
   };
   f.edits = edits;
@@ -129,7 +127,6 @@ function editSummary(f) {
 const SIDE_TABS = [['changes', '変更', 'diff', 'f'], ['details', '詳細', 'panel', 'd']];
 function sideTabOf(p) { return p.sideTab === undefined ? store.get('threadSide', null) : p.sideTab; }
 function openThreadSide(p, tab) {
-  if (tab === 'changes' && state.styles.review !== 'on') tab = 'details';
   p.sideTab = tab || null;
   store.set('threadSide', p.sideTab);
   paintThreadSide(p);
@@ -138,7 +135,7 @@ function toggleThreadSide(p, tab) { openThreadSide(p, sideTabOf(p) === tab ? nul
 function paintThreadSide(p) {
   const tab = sideTabOf(p), side = $('.th-side', p.el);
   if (!side) return;
-  const shown = tab === 'changes' && state.styles.review !== 'on' ? 'details' : tab;
+  const shown = tab;
   p.el.classList.toggle('side-open', !!shown);
   side.hidden = !shown;
   side.dataset.tab = shown || '';
@@ -180,7 +177,7 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
     h('span', { class: 'th-time', title: fmtDate(s.updatedAt), text: relTime(s.updatedAt) }),
   ].filter(Boolean);
   const head = h('div', { class: 'th-head' }, secs.breadcrumb.nodes[0], h('span', { class: 'grow' }),
-    state.styles.review === 'on' && !s.host ? h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'changes', title: '作業フォルダの変更を右に開く・閉じる（f）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'f', onclick: () => toggleThreadSide(p, 'changes') }, h('span', { html: picon('diff', 14) }), '変更', h('span', { class: 'th-diffstat' }), ...keycap('f')) : null,
+    !s.host ? h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'changes', title: '作業フォルダの変更を右に開く・閉じる（f）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'f', onclick: () => toggleThreadSide(p, 'changes') }, h('span', { html: picon('diff', 14) }), '変更', h('span', { class: 'th-diffstat' }), ...keycap('f')) : null,
     h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'details', title: '属性・メモ・再開などを右に開く・閉じる（d）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'd', onclick: () => toggleThreadSide(p, 'details') }, h('span', { html: picon('panel', 14) }), '詳細', ...keycap('d')),
     h('span', { class: 'ph-btns card-actions' }));
   const title = h('div', { class: 'th-title' }, secs.status.nodes[0], secs.title.nodes[0]);
@@ -189,6 +186,39 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
     h('div', { class: 'th-dock', 'data-sec': 'send' }, ...secs.send.nodes));
   el.replaceChildren(...[head, threadStrip(p, d), title].filter(Boolean), h('div', { class: 'th-meta' }, ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('session'));
   paintThreadStat(p, git);
+  paintThreadSide(p);
+}
+
+// The thread layout of a task card, the same frame as a session's: the description is the main text, the
+// sessions it gathered sit under it, starting a new one is the input at the foot, and the attributes live in
+// the same details panel (d).
+function taskSection(id, title, extra, nodes) {
+  return h('section', { class: 'th-sec', 'data-sec': id }, h('div', { class: 'th-sec-t' }, title, extra || null), h('div', { class: 'th-sec-b' }, ...nodes));
+}
+function renderTaskThreadPane(p, card, secs) {
+  const side = h('aside', { class: 'th-side', 'aria-label': '詳細パネル', hidden: true }, h('div', { class: 'th-side-b' }));
+  const order = [['add', true], ['prio', true], ['memo', true], ['slack', true], ['other', false]];
+  p.detailNodes = order.filter(([id]) => secs[id]).map(([id, open]) => detailSection(id, secs[id].title ?? secTitle(id), secs[id].nodes, { open, extra: secs[id].extra }));
+  const labels = card.labels.map((id) => state.board.labels.find((l) => l.id === id)).filter(Boolean);
+  const chips = [
+    faceWho('task'), dirPill(card.directory || { name: 'カテゴリ無し' }),
+    ...labels.map((l) => h('span', { class: 'th-label', title: 'ラベル' }, h('i', { style: { background: colorVar(l.color) } }), l.name)),
+    card.priority ? h('span', { class: `pill prio-${card.priority}`, text: { high: '優先度 高', medium: '優先度 中', low: '優先度 低' }[card.priority] }) : null,
+    card.due ? h('span', { class: `pill${Date.parse(card.due) < Date.now() - DAY_MS ? ' due-over' : ''}`, text: `期限 ${new Date(card.due).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}` }) : null,
+    card.pr ? prPill(card.pr) : null,
+    h('span', { class: `th-life life-${lifeOf(card)}`, title: '寿命（動きのあった時期）' }, h('i'), LIFE_LABELS[lifeOf(card)]),
+    h('span', { class: 'th-time', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }),
+  ].filter(Boolean);
+  const head = h('div', { class: 'th-head' }, secs.breadcrumb.nodes[0], h('span', { class: 'grow' }),
+    h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'details', title: '属性・メモ・削除を右に開く・閉じる（d）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'd', onclick: () => toggleThreadSide(p, 'details') }, h('span', { html: picon('panel', 14) }), '詳細', ...keycap('d')),
+    h('span', { class: 'ph-btns card-actions' }));
+  const title = h('div', { class: 'th-title' }, secs.status.nodes[0], secs.title.nodes[0]);
+  const main = h('div', { class: 'th-main' },
+    h('div', { class: 'th-conv th-task' },
+      taskSection('conv', '説明', null, secs.conv.nodes),
+      taskSection('related', secs.related.title, secs.related.extra, secs.related.nodes)),
+    h('div', { class: 'th-dock', 'data-sec': 'send' }, h('div', { class: 'th-sec-t' }, secs.send.title, secs.send.extra || null), ...secs.send.nodes));
+  p.el.replaceChildren(head, title, h('div', { class: 'th-meta' }, ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('task'));
   paintThreadSide(p);
 }
 
@@ -265,7 +295,7 @@ async function selectTaskThread(taskId, id) {
 }
 // The strip above a session that sits beside its task: every session of the task, and a new one.
 function threadStrip(p, d) {
-  const task = d.task && panes[0]?.kind === 'task' && panes[0].id === d.task.id && styleIs('taskDetail', 'threads') ? findCard(d.task.id)?.card : null;
+  const task = d.task && panes[0]?.kind === 'task' && panes[0].id === d.task.id ? findCard(d.task.id)?.card : null;
   if (!task) return null;
   const links = task.links.filter((l) => !l.subagent);
   return h('div', { class: 'th-threads', role: 'tablist', 'aria-label': `${T.taskCard}のスレッド` },

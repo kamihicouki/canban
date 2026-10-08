@@ -1,22 +1,13 @@
-// Inbox: the board as one list with the session on its right (component style "ボードの表示").
+// 時間軸: the board by time, with the session on its right (the view switch, `i`; ui/lifetime.js).
 // Included into board.html's script (shares its scope). Rows are sessions that need you first, then running
-// ones, then recent ones; the right side reads the last messages and answers in place. The list follows
+// ones, then by the calendar; the right side reads the last messages and answers in place. The list follows
 // the same filters as the board, and a row still opens the card (Enter).
 state.inbox = { sel: null, d: null, id: null, loading: false, error: null };
-const INBOX_RECENT = 60;
-const inboxOn = () => state.styles.boardView === 'inbox';
-function inboxGroups(b) {
-  const all = b.lists.flatMap((l) => l.cards.map((c) => ({ card: c, list: l })));
-  const byNew = (a, c) => (c.card.updatedAt || 0) - (a.card.updatedAt || 0);
-  const need = all.filter((x) => x.card.status === 'waiting' || x.card.status === 'aborted').sort(byNew);
-  const run = all.filter((x) => x.card.status === 'running').sort(byNew);
-  const rest = all.filter((x) => !need.includes(x) && !run.includes(x)).sort(byNew);
-  return [['要対応', need], ['実行中', run], ['最近', rest.slice(0, INBOX_RECENT), rest.length - INBOX_RECENT]];
-}
+const inboxOn = () => timelineOn();
 const inboxRows = () => $$('#board .irow');
 function inboxRow(x) {
   const { card, list } = x, task = card.kind === 'task';
-  const row = h('article', { class: 'card irow', tabindex: 0, role: 'option', 'data-card-id': card.id, 'aria-selected': String(state.inbox.sel === card.id), title: card.title },
+  const row = h('article', { class: 'card irow', tabindex: 0, role: 'option', 'data-card-id': card.id, 'data-life': lifeOf(card), 'data-day': daysAgo(card.updatedAt), 'aria-selected': String(state.inbox.sel === card.id), title: card.title },
     faceGlyph(card.status),
     h('div', { class: 'grow' }, h('div', { class: 'irow-t', text: card.title }),
       h('div', { class: 'irow-s' }, faceWho(task ? 'task' : card.agent), h('span', { class: 'ellipsis', text: (task ? card.links.length ? `${card.links.length} セッション` : 'セッションなし' : card.git?.branch || card.branch || card.directory?.name || '') }), card.unread ? h('span', { class: 'fflag fflag-new', text: '新着' }) : null)),
@@ -33,14 +24,14 @@ function inboxRow(x) {
   return row;
 }
 function renderInbox(b) {
-  const groups = inboxGroups(b);
+  const groups = timelineGroups(b);
   const first = groups.flatMap((g) => g[1])[0];
   if (!groups.some((g) => g[1].some((x) => x.card.id === state.inbox.sel))) state.inbox.sel = first?.card.id ?? null;
   const list = h('div', { class: 'inbox-list', role: 'listbox', 'aria-label': 'セッション' });
-  for (const [name, xs, more] of groups) {
+  for (const [name, xs, more, key] of groups) {
     if (!xs.length) continue;
-    list.append(h('div', { class: 'inbox-gh' }, name, h('span', { class: 'n', text: String(xs.length) })), ...xs.map(inboxRow));
-    if (more > 0) list.append(h('div', { class: 'muted inbox-more', text: `ほか ${more} 件（絞り込みで探せます）` }));
+    list.append(h('div', { class: `inbox-gh tg-${key}` }, h('i'), name, h('span', { class: 'n', text: String(xs.length + Math.max(0, more)) })), ...xs.map(inboxRow));
+    if (more > 0) list.append(h('div', { class: 'muted inbox-more', text: `ほか ${more} 件（検索で探せます）` }));
   }
   if (!first) list.append(h('div', { class: 'muted inbox-more', text: '表示するカードがありません' }));
   const main = h('section', { class: 'inbox-main', 'aria-label': 'プレビュー' });

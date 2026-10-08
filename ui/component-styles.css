@@ -1,7 +1,0 @@
-/* Component style chooser (レイアウトとテーマ): one row per component, the chosen option's meaning under its name. */
-.cs-chooser { display: grid; gap: 8px; margin-bottom: 4px; }
-.cs-row { display: grid; grid-template-columns: 112px 1fr; column-gap: 8px; row-gap: 2px; align-items: center; }
-.cs-name { font-size: 12.5px; font-weight: 650; line-height: 1.3; grid-row: 1 / span 2; align-self: start; padding-top: 5px; }
-.cs-desc { font-size: 11.5px; line-height: 1.4; grid-column: 2; }
-.seg-btn[aria-pressed="true"] { background: var(--accent); color: var(--primary-fg); font-weight: 650; }
-:root:not([data-theme="dark"]) .seg-btn[aria-pressed="true"] { color: #fff; }

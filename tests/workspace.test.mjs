@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import { boardHtml } from '../server/ui.mjs';
 
 const source = fs.readFileSync(new URL('../ui/workspace-model.js', import.meta.url), 'utf8');
-const model = new vm.Script(source + '\n({workspacePage, usageWindow, normalizePaneLayout})').runInNewContext();
+const model = new vm.Script(source + '\n({workspacePage, usageWindow})').runInNewContext();
 const plain = value => JSON.parse(JSON.stringify(value));
 
 test('pages are the board and the management pages; analytics and Agent Usage open as sheets, not pages', () => {
@@ -119,16 +119,6 @@ function workspaceHarness(extra={}) {
   return vm.runInNewContext(`${src}\nworkspace;`,{store:{get:(_key,fallback)=>fallback,set:()=>{}},workspacePage:model.workspacePage,state:{view:'board'},dashOpen:false,...extra});
 }
 
-test('shared layout restores cross-column moves, repairs duplicates and migrates old heights', () => {
-  const defaults = { main: ['conv','send'], side: ['resume','memo'] };
-  const result = plain(model.normalizePaneLayout({main:['resume','conv','conv','unknown'],side:['send'],ratio: .6,heights:{conv:180,memo:10000},collapsed:['conv','unknown','conv']},defaults,{conv:300,send:260,resume:290,memo:150}));
-  assert.deepEqual(result.main,['resume','conv']);
-  assert.deepEqual(result.side,['send','memo']);
-  assert.equal(result.ratio,.6); assert.equal(result.heights.conv,180); assert.equal(result.heights.memo,900);
-  assert.deepEqual(result.collapsed,['conv']);
-  const old = model.normalizePaneLayout(defaults,defaults,{conv:300});
-  assert.equal(old.ratio,2/3); assert.equal(old.heights.conv,300);
-});
 test('a session that cannot be read keeps its card with a reload button; a genuinely missing one closes the layer on restore', async () => {
   const html = boardHtml();
   const source = html.slice(html.indexOf('async function loadSession('), html.indexOf('async function openTaskCard('));
@@ -201,7 +191,7 @@ test('the filters in effect become chips, except the axis the lanes follow', () 
   vm.runInContext(`const DEFAULT_FILTERS = ${defaults};\n${source}\nstate.filters = { ...DEFAULT_FILTERS };`, context);
   const board = { directories: [{ id: 'd1', name: 'pical' }], labels: [], hosts: [], settings: { views: [{ name: '返事待ち', filters: { status: 'waiting' } }] } };
   const chips = () => plain(vm.runInContext('filterChips(board).map(c => c.text)', Object.assign(context, { board })));
-  assert.deepEqual(chips(), ['30日以内']);
+  assert.deepEqual(chips(), []); // the period is the time ribbon's, not a chip
   Object.assign(context.state.filters, { agent: 'codex', directory: 'd1', status: 'waiting', days: 0 });
   assert.deepEqual(chips(), ['Codex', '入力待ち', 'pical']);
   context.state.filters.swimlane = 'directory';

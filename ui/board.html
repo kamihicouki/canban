@@ -345,6 +345,8 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .seg-btn { white-space: nowrap; padding: 5px 6px; border-radius: 4px; background: var(--btn-subtle); font-size: 12px; }
 .seg-btn:hover:not(:disabled) { background: var(--btn-subtle-hover); }
 .seg-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.seg-btn[aria-pressed="true"] { background: var(--accent); color: var(--primary-fg); font-weight: 650; }
+:root:not([data-theme="dark"]) .seg-btn[aria-pressed="true"] { color: #fff; }
 .host-row { display: flex; align-items: center; gap: 8px; }
 .host-row .menu-item { flex: 1; min-width: 0; }
 .menu-item.active { background: var(--btn-subtle-hover); box-shadow: inset 3px 0 0 var(--accent); }
@@ -582,32 +584,9 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
 .pane .icon-btn { width: 28px; height: 28px; border-radius: 6px; flex: none; }
 .pane .icon-btn svg { display: block; }
 .pane-loading { padding: 20px 16px; }
-.pane-b { display: grid; grid-template-columns: minmax(0, 1fr) var(--side); grid-template-rows: minmax(0, 1fr); gap: 16px; padding: 4px 8px 12px 16px; min-height: 0; flex: 1; }
-.pcol { min-height: 0; overflow-y: auto; padding-right: 8px; position: relative; overscroll-behavior: contain; }
-.pcol.nope { outline: 2px dashed var(--danger); outline-offset: -2px; border-radius: 6px; cursor: not-allowed; }
-.psec { margin-bottom: 12px; }
-.psec-h { display: flex; align-items: center; gap: 4px; margin: 0 0 6px; min-height: 22px; }
-.psec-h h3 { margin: 0; font-size: 1.02em; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
-.pcol[data-col="side"] .psec-h h3 { font-size: .9em; color: var(--list-muted); }
-.psec-h .sp { flex: 1; }
-.grip { width: 20px; height: 22px; border-radius: 4px; display: inline-grid; place-items: center; opacity: .3; cursor: grab; color: var(--list-muted); flex: none; margin-left: -5px; }
-.psec:hover .grip, .grip:focus-visible { opacity: 1; }
-.grip:hover { background: var(--btn-subtle-hover); }
-.pchev { width: 22px; height: 22px; border-radius: 4px; display: grid; place-items: center; color: var(--list-muted); }
-.pchev:hover { background: var(--btn-subtle-hover); }
-.pchev svg { transition: transform .15s; }
-.psec.collapsed .pchev svg { transform: rotate(-90deg); }
-.psec.collapsed .psec-b { display: none; }
-.psec.collapsed { margin-bottom: 6px; }
-.psec.dragging { opacity: .35; }
-.drop-line { height: 3px; background: var(--accent); border-radius: 2px; margin: -2px 0 8px; pointer-events: none; }
-.psec-b .section-title:first-child { margin-top: 0; }
-.psec-b > .msg:last-child { margin-bottom: 0; }
 .pane .feed { max-height: calc(var(--area-h, 700px) * .42); }
 .pane .field-label:first-child { margin-top: 0; }
 .pane .sub-h { margin: 8px 0 4px; font-size: .9em; font-weight: 600; color: var(--list-muted); }
-.pane .psec-b .send-section .section-title { display: none; }
-.pane .psec-b .send-section { margin-top: 0; }
 .p-seg { display: inline-flex; border-radius: 6px; padding: 2px; gap: 2px; background: var(--btn-subtle); }
 .p-seg button { padding: 2px 10px; border-radius: 4px; color: var(--list-muted); font-size: 12px; white-space: nowrap; }
 .p-seg button:hover { color: var(--list-fg); }
@@ -633,8 +612,6 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
 .pane[data-mode="text"]:not(.is-note) { background: var(--txt-bg); color: var(--txt-fg); border: 1px solid var(--btn-subtle-hover); border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, "Noto Sans Mono CJK JP", monospace; }
 .pane[data-mode="text"] h2 { font-size: 1.15em; }
 .pane[data-mode="text"] .sub, .pane[data-mode="text"] .muted, .pane[data-mode="text"] .readonly-note { color: var(--txt-dim); }
-.pane[data-mode="text"] .psec-h h3::before { content: "## "; color: var(--txt-dim); }
-.pane[data-mode="text"] .psec-h h3 { color: var(--txt-fg); font-weight: 700; }
 .pane[data-mode="text"] .feed { background: none; padding: 0; gap: 2px; font-size: 1em; }
 .pane[data-mode="text"] .fi-user { align-self: stretch; max-width: none; background: none; color: var(--accent); border-radius: 0; padding: 4px 0 0; font-weight: 700; }
 .pane[data-mode="text"] .fi-user::before { content: "» "; }
@@ -668,8 +645,7 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
 /* @include card-face.css */
 /* @include thread.css */
 /* @include inbox.css */
-/* @include component-styles.css */
-/* @include layouts.css */
+/* @include lifetime.css */
 /* @include slack.css */
 </style>
 </head>
@@ -678,27 +654,31 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
   <button id="sideBtn" class="hbtn icon-only" title="ワークスペースサイドバー（b）" aria-label="ワークスペースサイドバー" aria-pressed="true" data-icon="sidebar"></button>
   <span id="brand" class="brand" title="Canban"><span class="brand-word">canban</span></span>
   <h1 class="board-name"><button id="logo" type="button" aria-haspopup="listbox" title="表示するカテゴリを選ぶ（p）">すべてのセッション</button></h1>
+  <div id="viewSwitch" class="view-switch" role="group" aria-label="表示" data-pri="3"></div>
   <label class="hsearch-wrap" data-icon="search" data-icon-size="16">
     <input id="q" class="hsearch" type="search" placeholder="検索・コマンド" aria-label="検索" aria-keyshortcuts="/" />
     <span class="hsearch-keys" aria-hidden="true"><kbd class="keycap">/</kbd><kbd class="keycap">⌘K</kbd></span>
   </label>
   <label class="ft-toggle" data-pri="2" title="会話の本文も検索する（3 文字以上）"><input id="fulltext" type="checkbox" /> 本文</label>
   <button id="quickTaskBtn" class="hbtn primary quick-task-trigger" type="button" aria-label="タスクを作成" title="タスクを作成（c）" data-icon="plus"><span class="lbl">作成 <kbd class="keycap">c</kbd></span></button>
-  <div id="filterChips" class="filter-chips" role="group" aria-label="有効な絞り込み"></div>
+  <div id="filterChips" class="filter-chips" role="group" aria-label="有効な絞り込み" data-pri="7"></div>
   <span class="spacer"></span>
   <button id="moreBtn" class="hbtn icon-only" aria-haspopup="true" title="その他" aria-label="その他" data-icon="more" hidden></button>
   <span class="bar-sep" aria-hidden="true"></span>
   <span id="presenceBar" class="limits presence" hidden></span>
-  <span id="statusBar" class="status-bar" role="group" aria-label="実行状態"></span>
-  <button id="seenBtn" class="hbtn" title="新着をすべて既読にする" data-icon="check" hidden><span class="lbl">既読</span></button>
-  <button id="perfBtn" class="hbtn" title="Canban 自身の処理が予算を超えました（クリックで詳細）" aria-label="処理時間の警告" data-icon="alert" hidden></button>
+  <span id="statusBar" class="status-bar" role="group" aria-label="実行状態" data-pri="8"></span>
+  <button id="seenBtn" class="hbtn" data-pri="5" title="新着をすべて既読にする" data-icon="check" hidden><span class="lbl">既読</span></button>
+  <button id="perfBtn" class="hbtn" data-pri="6" title="Canban 自身の処理が予算を超えました（クリックで詳細）" aria-label="処理時間の警告" data-icon="alert" hidden></button>
   <button id="accountsBtn" class="hbtn acct-btn" aria-haspopup="dialog" aria-label="アカウントと使用量" title="アカウント・使用量・設定フォルダ"><span id="acctRings" class="rings"></span><span class="ic"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><!-- Lucide UsersRound, ISC --><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/></svg></span><span class="lbl acct-lbl"></span><span class="caret">▾</span></button>
-  <button id="refresh" class="hbtn icon-only" title="再読み込み（r）" aria-label="再読み込み" data-icon="refresh"></button>
+  <button id="refresh" class="hbtn icon-only" data-pri="4" title="再読み込み（r）" aria-label="再読み込み" data-icon="refresh"></button>
 </header>
 <div id="errbar" class="errbar" hidden></div>
 <div class="shell">
   <aside id="sidebar" class="sidebar" aria-label="レーン・カテゴリ" hidden></aside>
-  <main id="board" class="board" aria-label="カンバンボード"><div class="loading">読み込み中…</div></main>
+  <div class="stage">
+    <div id="ribbon" class="time-ribbon" role="region" aria-label="時間の帯"></div>
+    <main id="board" class="board" aria-label="カンバンボード"><div class="loading">読み込み中…</div></main>
+  </div>
 </div>
 
 <script>
@@ -877,11 +857,11 @@ const bridge = (() => {
 // @include workspace-model.js
 // @include card-overlay-model.js
 // @include prompt-composer.js
-// @include component-styles-model.js
+// @include lifetime-model.js
 const PAGE = 40;
 const COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
 const COLOR_NAMES = { gray: 'グレー', blue: '青', green: '緑', yellow: '黄', orange: 'オレンジ', red: '赤', purple: '紫', pink: 'ピンク', sky: '水色', lime: 'ライム' };
-const SHARED_UI_KEYS = ['filters', 'themePref', 'layout', 'cardFit', 'sidebar', 'workspacePage', 'labelsExpanded', 'paneGlobal', 'cardLayouts', 'cardWidths', 'cardBoard', 'cardHeights', 'collapsedLanes', 'componentStyles'];
+const SHARED_UI_KEYS = ['filters', 'themePref', 'boardView', 'sidebar', 'workspacePage', 'paneGlobal', 'cardWidths', 'cardBoard', 'cardHeights', 'collapsedLanes'];
 const sharedUi = { revision: null, ready: false, dirty: false, blocked: false, applying: false, inflight: false, generation: 0, timer: null, checkTimer: null };
 const store = {
   get(k, d) { try { const v = localStorage.getItem(`sk:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -908,14 +888,10 @@ const state = {
   filters: { ...DEFAULT_FILTERS, ...store.get('filters', {}) },
   sideOpen: store.get('sidebar', window.innerWidth > 900),
   themePref: store.get('themePref', 'system'),
-  layout: store.get('layout', 'trello'),
-  cardFit: store.get('cardFit', 'fixed') === 'auto' ? 'auto' : 'fixed',
-  styles: normalizeComponentStyles(store.get('componentStyles', null)),
   sideQ: '',
   soloLane: null,
   lanes: [],
   shown: {},              // listId -> number of cards rendered
-  labelsExpanded: store.get('labelsExpanded', false),
   drag: null,
   busy: false,
 };
@@ -1072,7 +1048,9 @@ function render() {
   boardEl.classList.toggle('with-slack', slackUi.visible);
   const slackNode = slackUi.boardNode(); if (slackNode) boardEl.prepend(slackNode);
   renderSidebar(b);
-  paintLayoutChrome();
+  renderRibbon(b);
+  renderViewSwitch();
+  applyLens();
   if (focused && focused !== document.body && boardEl.contains(focused)) focused.focus({ preventScroll: true });
   else if (focusedCard) $(`.card[data-card-id="${CSS.escape(focusedCard)}"]`, boardEl)?.focus({ preventScroll: true });
   boardEl.scrollLeft = scroll;
@@ -1097,14 +1075,17 @@ function renderList(list, { inLane = false, lane = null } = {}) {
   head.addEventListener('pointerdown', (e) => startListDrag(e, list, el));
   el.append(head);
 
+  // Awake cards keep their order; the dormant ones fold at the foot (lifetime-model.js).
   const cardsEl = h('div', { class: 'cards', 'data-list-id': list.id });
+  const { awake, dormant } = splitByLife(list.cards);
   const n = state.shown[list.id] || PAGE;
-  for (const card of list.cards.slice(0, n)) cardsEl.append(renderCard(card, list));
-  el.append(cardsEl);
-  if (list.cards.length > n) {
-    el.append(h('button', { class: 'more-btn', text: `さらに表示（残り ${list.cards.length - n} 件）`,
+  for (const card of awake.slice(0, n)) cardsEl.append(renderCard(card, list));
+  if (awake.length > n) {
+    cardsEl.append(h('button', { class: 'more-btn', text: `さらに表示（残り ${awake.length - n} 件）`,
       onclick: () => { state.shown[list.id] = n + PAGE * 2; render(); } }));
   }
+  if (dormant.length) cardsEl.append(dormantFold(list, dormant, lane));
+  el.append(cardsEl);
   el.append(renderAddCard(list, { lane }));
   return el;
 }
@@ -1115,74 +1096,14 @@ function renderAddCard(list, { lane = null } = {}) {
     text: '＋ タスクを追加', onclick: () => taskQuickAdd.open({ listId: list.id, lane }) }));
 }
 
-// Card anatomy (AGENTS.md「カードの構造」): status and agent / title / what it is doing / details.
-const STATUS_TONE = { running: 'run', waiting: 'wait', aborted: 'err', completed: 'done', idle: 'idle' };
-function statusTag(status) {
-  return h('span', { class: `st st-${STATUS_TONE[status] || 'idle'}` }, h('i', { class: status === 'running' ? 'pulse-dot' : '' }), STATUS_LABELS[status] || STATUS_LABELS.idle);
-}
-const agentTag = (agent) => h('span', { class: `ag ag-${agent}`, text: agent === 'codex' ? 'Codex' : agent === 'claude' ? 'Claude' : T.taskCard });
-// Small flags beside the status: an icon-sized pill with the meaning in the tooltip.
-const flag = (text, title, cls = '') => h('span', { class: `flag ${cls}`, title, text });
+// The shell every card face shares (card-face.js draws the face by its lifetime).
 function cardShell(card, extraClass) {
   return h('article', {
-    class: `card${extraClass}${card.archived ? ' is-archived' : ''}${card.unread ? ' unread' : ''}${state.cardFit === 'fixed' && !isFace() ? ' fixed' : ''}`, tabindex: 0, 'data-card-id': card.id,
+    class: `card${extraClass}${card.archived ? ' is-archived' : ''}${card.unread ? ' unread' : ''}`, tabindex: 0, 'data-card-id': card.id,
     'aria-label': `${card.title}（${card.kind === 'task' ? `${T.taskCard}・` : ''}${STATUS_LABELS[card.status]}${card.unread ? '・新着' : ''}）`, title: card.title,
   });
 }
-function cardSlot(card, nodes, empty) {
-  const slot = h('div', { class: 'card-slot' }, ...nodes.filter(Boolean));
-  if (!slot.childNodes.length && state.cardFit === 'fixed') slot.append(h('span', { class: 'slot-empty', text: empty }));
-  return slot;
-}
-function cardMeta(...nodes) {
-  const meta = h('div', { class: 'meta' }, ...nodes.filter(Boolean));
-  return meta;
-}
 
-function renderCard(card, list) {
-  if (isFace()) return renderFaceCard(card, list);
-  if (card.kind === 'task') return renderTaskCard(card, list);
-  const el = cardShell(card, '');
-  const viewers = live.viewers.get(card.id);
-  el.append(h('div', { class: 'card-top' },
-    statusTag(card.status), agentTag(card.agent),
-    card.unread ? flag('新着', '新しい動きがあります', 'flag-new') : null,
-    card.autoMoved ? flag('⚡', `${T.automation}で移動`) : null,
-    viewers ? flag('◉', `${viewers.join('・')}で開いています`) : null,
-    card.pinnedInAgent ? flag('ピン', 'Codex アプリでピン留め') : null,
-    card.codexSection ? flag(`§ ${card.codexSection.name}`, 'Codex のセクション（サイドバーの見出し）') : null,
-    h('span', { class: 'grow' }), cardLabels(card)));
-  el.append(h('div', { class: 'title', text: card.title }));
-  const busy = card.status === 'running' || card.status === 'waiting';
-  const doing = busy ? activityText(card.activity, card.status, card.signals) : null;
-  el.append(cardSlot(card, [
-    doing ? h('div', { class: `activity act-${STATUS_TONE[card.status]}`, title: doing, text: doing }) : null,
-    signalRow(card.signals, busy),
-    card.snippet ? renderSnippet(card.snippet) : null,
-  ], card.pr ? 'プルリクエストあり' : '最近の動きなし'));
-  const meta = cardMeta(
-    dirPill(card.directory || { name: 'カテゴリ無し' }),
-    card.git ? gitPill(card.git, card.branch) : card.branch ? h('span', { class: 'branch ellipsis', title: card.branch, text: `⎇ ${card.branch}` }) : null,
-    card.host ? h('span', { class: 'host-chip', title: `SSH: ${card.host.alias}`, text: `⌂ ${card.host.label}` }) : null,
-    acctChip(card),
-    card.pr ? prPill(card.pr) : card.prUrl ? h('span', { title: card.prUrl, text: 'PR' }) : null);
-  if (card.priority) meta.append(h('span', { class: `pill prio-${card.priority}`, text: { high: '優先度 高', medium: '優先度 中', low: '優先度 低' }[card.priority] }));
-  if (card.due) {
-    const overdue = Date.parse(card.due) < Date.now() - 86400000;
-    meta.append(h('span', { class: `pill${overdue ? ' due-over' : ''}`, text: `期限 ${new Date(card.due).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}` }));
-  }
-  if (card.note) meta.append(h('span', { title: 'メモあり', text: '≡' }));
-  if (card.grouped?.length) meta.append(h('span', { class: 'pill', title: card.grouped.map((g) => g.title).join('\n'), text: `＋${card.grouped.length} 同じブランチ` }));
-  if (card.archived) meta.append(h('span', { text: 'アーカイブ済' }));
-  if (card.subagent) meta.append(h('span', { text: 'サブエージェント' }));
-  if (card.subagents) meta.append(h('span', { class: 'pill', title: 'このセッションが起動したサブエージェント', text: `サブ ${card.subagents.total}${card.subagents.running ? `（動作中 ${card.subagents.running}）` : ''}` }));
-  if (card.hidden) meta.append(h('span', { text: '非表示' }));
-  if (card.requests) meta.append(requestPill(card.requests));
-  if (card.codexFollowUps) meta.append(h('span', { class: 'pill', title: 'Codex アプリのキューにフォローアップが待機しています（Canban からは送りません）', text: `Codex キュー ${card.codexFollowUps}` }));
-  meta.append(h('span', { class: 'meta-end', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }));
-  el.append(meta);
-  return withPeek(attachCardBehavior(el, card, list, (opts) => resume(card.id, opts)), card);
-}
 
 // Shared by session and task cards: drag, click to open (the card floats above the board), ▶ resume, keyboard.
 function attachCardBehavior(el, card, list, onResume) {
@@ -1198,7 +1119,7 @@ function attachCardBehavior(el, card, list, onResume) {
     if (e.key === 'Enter') openCard(card.id);
     const plain = !e.metaKey && !e.ctrlKey && !e.altKey;
     if (e.key === 'Escape' && state.peek?.id === card.id) { e.preventDefault(); e.stopPropagation(); return closePeek(); }
-    if (plain && !e.shiftKey && card.kind !== 'task' && state.styles.peek === 'on' && (e.key === ' ' || e.key === 'r')) { e.preventDefault(); e.stopPropagation(); return togglePeek(card, { focusInput: e.key === 'r' }); }
+    if (plain && !e.shiftKey && card.kind !== 'task' && (e.key === ' ' || e.key === 'r')) { e.preventDefault(); e.stopPropagation(); return togglePeek(card, { focusInput: e.key === 'r' }); }
     if (plain && CARD_ATTR_KEYS[e.key]) { e.preventDefault(); e.stopPropagation(); return CARD_ATTR_KEYS[e.key](el, card, list); }
     const k = onResume && !e.metaKey && !e.ctrlKey && !e.altKey && CARD_KEYS[e.key.toLowerCase()];
     if (k) { e.preventDefault(); onResume(k); }
@@ -1257,49 +1178,8 @@ function directoryPicker(anchor, card, { cwd = card.cwd, explicit, after } = {})
   });
 }
 
-function cardLabels(card) {
-  const labelsById = new Map(state.board.labels.map((l) => [l.id, l]));
-  const labels = card.labels.map((id) => labelsById.get(id)).filter(Boolean);
-  if (!labels.length) return null;
-  return h('div', { class: `labels${state.labelsExpanded ? ' expanded' : ''}`, title: 'クリックでラベル名を表示',
-    onclick: (e) => { e.stopPropagation(); state.labelsExpanded = !state.labelsExpanded; store.set('labelsExpanded', state.labelsExpanded); render(); } },
-    labels.map((l) => h('span', { class: 'chip', style: { background: colorVar(l.color) }, text: state.labelsExpanded ? l.name : '' })));
-}
 
-function planMeta(meta, card) {
-  if (card.slackRefs?.length) meta.append(h('span', { class: 'pill', text: `Slack ${card.slackRefs.length}`, title: 'Slackからの資料' }));
-  if (card.priority) meta.append(h('span', { class: `pill prio-${card.priority}`, text: { high: '優先度 高', medium: '優先度 中', low: '優先度 低' }[card.priority] }));
-  if (card.due) {
-    const overdue = Date.parse(card.due) < Date.now() - 86400000;
-    meta.append(h('span', { class: `pill${overdue ? ' due-over' : ''}`, text: `🕑 ${new Date(card.due).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}` }));
-  }
-  if (card.note) meta.append(h('span', { title: 'メモあり', text: '≡' }));
-}
 
-// A task card: user-made, with its linked sessions listed inside.
-function renderTaskCard(card, list) {
-  const el = cardShell(card, ' task');
-  el.append(h('div', { class: 'card-top' },
-    statusTag(card.status), agentTag('task'),
-    card.unread ? flag('新着', '新しい動きがあります', 'flag-new') : null,
-    card.autoMoved ? flag('⚡', `${T.automation}で移動`) : null,
-    card.description ? flag('説明', '説明あり') : null,
-    h('span', { class: 'grow' }), cardLabels(card)));
-  el.append(h('div', { class: 'title', text: card.title }));
-  // The linked sessions, one line: each session's state and agent.
-  const links = card.links.length ? h('div', { class: 'task-links' }, ...card.links.slice(0, 3).map((l) =>
-    h('span', { class: 'task-link', title: l.title }, h('span', { class: `sdot s-${l.status}` }), l.agent === 'codex' ? 'Codex' : 'Claude', l.host ? ` ⌂ ${l.host.label}` : '')),
-    card.links.length > 3 ? h('span', { class: 'muted', text: `ほか ${card.links.length - 3}` }) : null) : null;
-  el.append(cardSlot(card, [links], 'セッションはまだありません'));
-  const meta = cardMeta(dirPill(card.directory || { name: 'カテゴリ無し' }), card.pr ? prPill(card.pr) : null);
-  planMeta(meta, card);
-  for (const p of card.pending) meta.append(h('span', { class: `pill${p.expired ? ' due-over' : ''}`, title: p.expired ? '開始したセッションが見つかりません。詳細から手動で紐付けてください' : '開始したセッションを待っています',
-    text: `${p.expired ? '⚠' : '⏳'} ${p.agent === 'codex' ? 'Codex' : 'Claude'}` }));
-  meta.append(h('span', { class: 'meta-end', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }));
-  el.append(meta);
-  const latest = [...card.links].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
-  return attachCardBehavior(el, card, list, latest ? (opts) => resume(latest.id, opts) : null);
-}
 
 function renderAddList() {
   const wrap = h('div', { class: 'add-list' });
@@ -1533,16 +1413,12 @@ function confirmDeleteList(anchor, list) {
       h('button', { class: 'btn-danger', text: '削除', onclick: () => { closePopover(); act('canban_delete_list', { listId: list.id, moveCardsTo: sel.value }, { okMsg: 'リストを削除しました' }); } }))));
 }
 
-// レイアウトとテーマ: how cards and lists look, a matter of taste. What is shown is the sidebar's 絞り込み.
-function lookMenu(anchor) {
-  const f = state.filters;
-  const seg = (items, on, pick) => h('div', { class: 'seg-row', style: { gridTemplateColumns: `repeat(${items.length}, 1fr)` } }, items.map(([k, label]) =>
-    h('button', { class: 'seg-btn', 'aria-pressed': String(on(k)), text: label, onclick: () => { pick(k); lookMenu(anchor); } })));
-  popover(anchor, 'レイアウトとテーマ', h('div', { class: 'view-menu' },
-    h('div', { class: 'field-label', text: 'カードの高さ' }), seg([['fixed', '揃える'], ['auto', '内容に合わせる']], (k) => state.cardFit === k, setCardFit),
-    h('div', { class: 'field-label', text: 'レーン内のリストの高さ' }), seg(Object.entries(LANE_HEIGHTS).map(([k, [label]]) => [k, label]), (k) => (f.laneHeight || 'normal') === k, (k) => { f.laneHeight = k; saveFilters(); render(); }),
-    h('div', { class: 'field-label', text: 'コンポーネントのスタイル' }), componentStyleChooser(),
-    h('div', { class: 'field-label', text: 'レイアウトと色' }), layoutChooser()), { width: 440 });
+// 色: light / dark / system. The only matter of taste left; everything else on the board follows the cards' lifetime.
+const THEME_CHOICES = [['light', 'sun', 'ライト'], ['dark', 'moon', 'ダーク'], ['system', 'system', 'システム']];
+function themeMenu(anchor) {
+  popover(anchor, '色', h('div', { class: 'theme-modes', role: 'group', 'aria-label': '色' }, THEME_CHOICES.map(([k, ic, n]) =>
+    h('button', { type: 'button', 'aria-pressed': String((state.themePref || 'system') === k), onclick: () => { setThemePref(k); themeMenu(anchor); } },
+      h('span', { html: picon(ic, 16) }), n))), { width: 300 });
 }
 
 function labelsManager(anchor) {
@@ -1593,14 +1469,9 @@ const PANE_SECS = {
   task: ['side', null], memo: ['side', 'メモ'], first: ['side', '最初の依頼'], other: ['side', 'その他'],
 };
 const secTitle = (id) => (id === 'task' ? T.taskCard : PANE_SECS[id][1]);
-const PANE_LAYOUT_DEF = { main: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'main'), side: Object.keys(PANE_SECS).filter((k) => PANE_SECS[k][0] === 'side'), collapsed: ['memo', 'first', 'other', 'progress', 'task'] };
-const PANE_HEIGHTS = { conv: 440, send: 230, breadcrumb: 64, title: 64, status: 64, actions: 180, add: 96, labels: 64, prio: 80, related: 160, detail: 280, pr: 180, resume: 240, progress: 80, task: 64, memo: 150, first: 150, other: 160 };
-let cardLayouts = normalizeCardLayouts(store.get('cardLayouts', null), PANE_LAYOUT_DEF, PANE_HEIGHTS);
 let cardWidths = normalizeCardWidths(store.get('cardWidths', null));
 let cardHeights = normalizeCardHeights(store.get('cardHeights', null));
 const saveCardHeights = () => store.set('cardHeights', cardHeights);
-const cardLayoutOf = (kind) => cardLayouts[kind];
-const saveCardLayouts = () => store.set('cardLayouts', cardLayouts);
 const saveCardWidths = () => store.set('cardWidths', cardWidths);
 
 // @include icons.js
@@ -1642,7 +1513,7 @@ paneStage.append(paneRow);
 let backdropDown = false;
 const onBackdrop = (e) => !e.target.closest('.pane, .pane-bar, .popover, .shortcut-map, .card-board-margin');
 paneLayer.addEventListener('pointerdown', e => { backdropDown = onBackdrop(e) && Date.now() - popoverClosedAt > 300; });
-paneLayer.addEventListener('click', e => { if (backdropDown && onBackdrop(e) && !sectionGesture && Date.now() - lastSectionDrag > 300) closeCards(); backdropDown = false; });
+paneLayer.addEventListener('click', e => { if (backdropDown && onBackdrop(e)) closeCards(); backdropDown = false; });
 document.body.append(paneLayer);
 const panes = []; // the cards on the layer in the order they sit: a task first, then the sessions linked to it
 const paneCache = new Map(); // cards that are no longer shown keep their DOM, and whatever is typed in it, until they are opened again
@@ -1653,7 +1524,7 @@ const KIND_LABEL = { session: 'セッションカード', task: T.taskCard };
 // The layer starts under the header and the board bar, which stay in view and in reach (as with the drawer).
 function paneMetrics() {
   if (paneLayer.hidden) return;
-  paneLayer.style.top = `${Math.max(0, Math.round($('#board')?.getBoundingClientRect().top ?? 0))}px`;
+  paneLayer.style.top = `${Math.max(0, Math.round($('.stage')?.getBoundingClientRect().top ?? 0))}px`;
   layoutCardBoard();
 }
 new ResizeObserver(paneMetrics).observe(paneStage);
@@ -1671,7 +1542,7 @@ const applyCardWidths = () => { for (const kind of CARD_KINDS) { paneLayer.style
 function applyPaneAttrs(p) {
   p.el.dataset.mode = paneGlobal.mode;
   p.el.dataset.kind = p.kind;
-  p.el.dataset.detail = state.styles.detail;
+  p.el.dataset.detail = 'thread';
 }
 
 // ---- the bar over the cards: how the conversation is shown, reset layout, close ----
@@ -1679,7 +1550,7 @@ function buildPaneBar() {
   const mode = h('div', { class: 'seg', role: 'group', 'aria-label': '会話の表示' },
     ...PANE_MODES.map(([v, t], i) => h('button', { type: 'button', 'data-v': v, 'aria-pressed': 'false', 'aria-keyshortcuts': String(i + 1), onclick: () => setPaneMode(v) }, t, ' ', ...keycap(String(i + 1)))));
   paneBar.append(h('span', { class: 'pb-title' }), mode,
-    h('button', { class: 'hbtn pb-reset', type: 'button', title: '開いている種類のカードの配置・列幅・部品の高さ・カードのサイズを初期状態に戻します', onclick: resetCardLayout }, 'レイアウトを初期化'));
+    h('button', { class: 'hbtn pb-reset', type: 'button', title: '開いている種類のカードの幅と高さを既定に戻します', onclick: resetCardLayout }, 'サイズを初期化'));
 }
 function paintPaneBar() {
   const view = panes[0]?.kind === 'view';
@@ -1744,15 +1615,14 @@ function closeCards() {
   const back = cardReturn; cardReturn = null;
   refocus(back); // refocus() finds a card the board has re-rendered since by its id
 }
-// Every card of the same kind shares one width and one layout.
+// Every card of the same kind shares one size.
 function resetCardLayout() {
   for (const kind of new Set(panes.map((p) => p.kind).filter((k) => CARD_KINDS.includes(k)))) {
-    Object.assign(cardLayouts[kind], normalizeCardLayouts(null, PANE_LAYOUT_DEF, PANE_HEIGHTS)[kind]); // in place: open sections keep their reference
     cardWidths[kind] = CARD_WIDTH_DEF[kind];
     cardHeights[kind] = CARD_HEIGHT_DEF[kind];
   }
-  saveCardLayouts(); saveCardWidths(); saveCardHeights(); applyCardWidths(); applyPaneLayoutAll();
-  toast('配置・列幅・部品の高さ・カードのサイズを初期化しました');
+  saveCardWidths(); saveCardHeights(); applyCardWidths();
+  toast('カードのサイズを初期化しました');
 }
 function setCardWidth(kind, width, save = false) {
   cardWidths[kind] = Math.min(CARD_WIDTH_MAX, Math.max(CARD_WIDTH_MIN, Math.round(width)));
@@ -1915,7 +1785,7 @@ document.addEventListener('keydown', e => {
   const k = e.key, p = focusedPane();
   let run = null;
   if (e.shiftKey && (k === 'ArrowLeft' || k === 'ArrowRight') && p && p.kind !== 'view'
-    && !e.target.closest?.('.grip, [role="separator"], .card-board-margin, .shortcut-map-grip')) {
+    && !e.target.closest?.('[role="separator"], .card-board-margin, .shortcut-map-grip')) {
     if (e.repeat) return;
     const step = k === 'ArrowLeft' ? -1 : 1;
     if (adjacentPaneList(p, step)) run = () => movePaneAdjacent(p, step);
@@ -1928,149 +1798,18 @@ document.addEventListener('keydown', e => {
     else if (k === '[' || k === ']') run = () => stepPane(k === ']' ? 1 : -1);
     else if (/^[1-9]$/.test(k) && PANE_MODES[k - 1]) run = () => setPaneMode(PANE_MODES[k - 1][0]);
     else if (k === 'i') run = () => focusPrompt(p);
-    else if (p.kind === 'session' && p.el.dataset.detail === 'thread' && (k === 'd' || (k === 'f' && state.styles.review === 'on' && !p.d?.session?.host))) run = () => toggleThreadSide(p, k === 'd' ? 'details' : 'changes');
+    else if ((p.kind === 'session' && (k === 'd' || (k === 'f' && !p.d?.session?.host))) || (p.kind === 'task' && k === 'd')) run = () => toggleThreadSide(p, k === 'd' ? 'details' : 'changes');
     else if (p.kind === 'session' && (k === 'z' || k === 'Delete')) run = () => paneKeyButton(p, k)?.click();
     else if (/^[olgmh]$/.test(k)) run = () => paneKeyButton(p, k)?.click();
   }
   if (run) { e.preventDefault(); run(); }
 });
 
-// ---- Sections share placement, column width and content height across all cards. ----
+// ---- a small ? that explains a part ----
 function helpTip(text) {
   return h('button', { class: 'help-tip', type: 'button', 'aria-label': text, title: text, text: '?',
     onclick: e => popover(e.currentTarget, 'ヒント', h('p', { text }), { width: 280 }) });
 }
-function applyPaneLayoutTo(el) {
-  const layout = cardLayoutOf(el.dataset.kind || 'session');
-  const sections = new Map($$('.psec', el).map(s => [s.dataset.sec, s]));
-  el.style.setProperty('--main-track', `${layout.ratio}fr`);
-  el.style.setProperty('--side-track', `${1 - layout.ratio}fr`);
-  for (const col of ['main', 'side']) {
-    const c = el.querySelector(`.pcol[data-col="${col}"]`);
-    if (!c) continue;
-    let cursor = c.firstElementChild;
-    for (const id of layout[col]) {
-      const section = sections.get(id);
-      if (section) {
-        section.dataset.col = col;
-        if (section !== cursor) {
-          const active = document.activeElement, focused = section.contains(active);
-          if (c.moveBefore && section.isConnected) c.moveBefore(section, cursor); else c.insertBefore(section, cursor);
-          if (focused && document.activeElement !== active) active.focus({ preventScroll: true });
-        }
-        cursor = section.nextElementSibling;
-      }
-    }
-  }
-  for (const [id, section] of sections) {
-    section.classList.toggle('collapsed', layout.collapsed.includes(id));
-    section.style.setProperty('--section-height', `${layout.heights[id]}px`);
-    const defaultHeight = el.dataset.kind === 'task' ? taskCardLayoutDefaults().heights[id] ?? PANE_HEIGHTS[id] : PANE_HEIGHTS[id];
-    section.dataset.autoHeight = String(layout.heights[id] === defaultHeight);
-    const handle = $('.section-resize', section);
-    if (handle) handle.setAttribute('aria-valuenow', layout.heights[id]);
-  }
-  const split = $('.column-split', el);
-  if (split) split.setAttribute('aria-valuenow', Math.round(layout.ratio * 100));
-}
-function applyPaneLayoutAll(kind) { panes.filter(p => !kind || p.kind === kind).forEach(p => applyPaneLayoutTo(p.el)); }
-function moveSection(id, col, beforeId, kind) {
-  const paneLayout = cardLayoutOf(kind);
-  if (!PANE_SECS[id] || !['main', 'side'].includes(col) || id === beforeId) return;
-  for (const key of ['main', 'side']) paneLayout[key] = paneLayout[key].filter(x => x !== id);
-  const i = beforeId ? paneLayout[col].indexOf(beforeId) : -1;
-  paneLayout[col].splice(i < 0 ? paneLayout[col].length : i, 0, id);
-  saveCardLayouts(); applyPaneLayoutAll(kind);
-}
-function toggleSection(id, kind) {
-  const paneLayout = cardLayoutOf(kind);
-  const i = paneLayout.collapsed.indexOf(id);
-  i < 0 ? paneLayout.collapsed.push(id) : paneLayout.collapsed.splice(i, 1);
-  saveCardLayouts(); applyPaneLayoutAll(kind);
-}
-function setSectionHeight(id, height, kind, save = false) {
-  const paneLayout = cardLayoutOf(kind);
-  paneLayout.heights[id] = Math.min(900, Math.max(64, Math.round(height)));
-  applyPaneLayoutAll(kind);
-  if (save) saveCardLayouts();
-}
-let sectionGesture = null, lastSectionDrag = 0;
-function sectionEl(id, nodes, { kind = 'session', extra = null, title = secTitle(id), hint = null } = {}) {
-  const paneLayout = cardLayoutOf(kind);
-  const grip = h('button', { class: 'grip', type: 'button', title: 'ドラッグで列間の移動・並べ替え。矢印キーでも移動（同じ種類のカードで共通）', 'aria-label': `${title}を移動`, html: picon('grip', 14),
-    onkeydown: e => {
-      const col = paneLayout.main.includes(id) ? 'main' : 'side';
-      if (['ArrowLeft', 'ArrowRight'].includes(e.key)) {
-        e.preventDefault(); moveSection(id, e.key === 'ArrowLeft' ? 'main' : 'side', null, kind);
-      } else if (['ArrowUp', 'ArrowDown'].includes(e.key)) {
-        e.preventDefault(); const list = paneLayout[col], i = list.indexOf(id), j = i + (e.key === 'ArrowUp' ? -1 : 1);
-        if (j >= 0 && j < list.length) moveSection(id, col, e.key === 'ArrowUp' ? list[j] : list[j + 1], kind);
-      }
-      grip.focus({ preventScroll: true });
-    } });
-  grip.onpointerdown = e => {
-    if (e.button !== 0) return;
-    e.preventDefault(); e.stopPropagation(); grip.setPointerCapture(e.pointerId);
-    const sec = grip.closest('.psec'), pane = sec.closest('.pane');
-    sectionGesture = { id, col: null, before: null, moved: false };
-    const move = ev => {
-      if (!sectionGesture) return;
-      if (!sectionGesture.moved && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) < 6) return;
-      sectionGesture.moved = true; sec.classList.add('dragging');
-      $$('.drop-line').forEach(x => x.remove());
-      // Hit test both columns even while pointer capture retains the grip as event target.
-      const col = [...pane.querySelectorAll('.pcol')].find(c => { const r = c.getBoundingClientRect(); return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom; });
-      sectionGesture.col = col?.dataset.col || null;
-      if (!col) return;
-      const next = [...col.querySelectorAll(':scope > .psec')].filter(x => x !== sec).find(x => { const r = x.getBoundingClientRect(); return ev.clientY < r.top + r.height / 2; });
-      sectionGesture.before = next?.dataset.sec || null;
-      const line = h('div', { class: 'drop-line' }); next ? col.insertBefore(line, next) : col.append(line);
-      const r = col.getBoundingClientRect();
-      if (ev.clientY > r.bottom - 40) col.scrollTop += 16;
-      if (ev.clientY < r.top + 40) col.scrollTop -= 16;
-    };
-    const end = ev => {
-      const gesture = sectionGesture; sectionGesture = null;
-      grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', end); grip.removeEventListener('pointercancel', end);
-      if (grip.hasPointerCapture(ev.pointerId)) grip.releasePointerCapture(ev.pointerId);
-      sec.classList.remove('dragging'); $$('.drop-line').forEach(x => x.remove());
-      if (gesture?.moved) lastSectionDrag = Date.now();
-      if (ev.type !== 'pointercancel' && gesture?.moved && gesture.col) { moveSection(id, gesture.col, gesture.before, kind); toast('配置を同じ種類のすべてのカードに適用しました'); grip.focus(); }
-    };
-    grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', end); grip.addEventListener('pointercancel', end);
-  };
-  const resize = h('div', { class: 'section-resize', role: 'separator', tabindex: 0, 'aria-orientation': 'horizontal', 'aria-label': `${title}の高さ（同じ種類のカードで共通）`, 'aria-valuemin': 64, 'aria-valuemax': 900, title: '上下にドラッグして高さを変更（同じ種類のカードで共通）。↑↓キーでも変更できます',
-    onkeydown: e => { if (['ArrowUp', 'ArrowDown'].includes(e.key)) { e.preventDefault(); setSectionHeight(id, paneLayout.heights[id] + (e.key === 'ArrowUp' ? -16 : 16), kind, true); } } });
-  resize.onpointerdown = e => {
-    if (e.button !== 0) return;
-    e.preventDefault(); e.stopPropagation(); resize.setPointerCapture(e.pointerId);
-    const initial = $('.psec-b', resize.closest('.psec')).getBoundingClientRect().height;
-    const move = ev => setSectionHeight(id, initial + ev.clientY - e.clientY, kind);
-    const end = ev => { resize.removeEventListener('pointermove', move); resize.removeEventListener('pointerup', end); resize.removeEventListener('pointercancel', end); if (resize.hasPointerCapture(ev.pointerId)) resize.releasePointerCapture(ev.pointerId); saveCardLayouts(); };
-    resize.addEventListener('pointermove', move); resize.addEventListener('pointerup', end); resize.addEventListener('pointercancel', end);
-  };
-  if (['breadcrumb', 'title', 'status'].includes(id)) return h('section', { class: 'psec psec-identity', 'data-sec': id },
-    h('div', { class: 'identity-row' }, grip, h('div', { class: 'psec-b' }, ...nodes)), resize);
-  return h('section', { class: 'psec', 'data-sec': id },
-    h('div', { class: 'psec-h' }, grip, h('h3', {}, title, extra), hint ? helpTip(hint) : null, h('span', { class: 'sp' }),
-      h('button', { class: 'pchev', type: 'button', 'aria-label': `${title}を開閉`, html: picon('chev', 14), onclick: () => toggleSection(id, kind) })),
-    h('div', { class: 'psec-b' }, ...nodes), resize);
-}
-function columnSplit(kind = 'session') {
-  const paneLayout = cardLayoutOf(kind);
-  const split = h('div', { class: 'column-split', role: 'separator', tabindex: 0, 'aria-orientation': 'vertical', 'aria-label': '左右の列幅（同じ種類のカードで共通）', 'aria-valuemin': 35, 'aria-valuemax': 80, title: 'ドラッグで列幅を変更。←→キーでも変更できます',
-    onkeydown: e => { if (['ArrowLeft', 'ArrowRight'].includes(e.key)) { e.preventDefault(); paneLayout.ratio = Math.min(.8, Math.max(.35, paneLayout.ratio + (e.key === 'ArrowLeft' ? -.025 : .025))); saveCardLayouts(); applyPaneLayoutAll(kind); } } });
-  split.onpointerdown = e => {
-    if (e.button !== 0) return;
-    e.preventDefault(); e.stopPropagation(); split.setPointerCapture(e.pointerId);
-    const box = split.parentElement.getBoundingClientRect();
-    const move = ev => { paneLayout.ratio = Math.min(.8, Math.max(.35, (ev.clientX - box.left) / box.width)); applyPaneLayoutAll(kind); };
-    const end = ev => { split.removeEventListener('pointermove', move); split.removeEventListener('pointerup', end); split.removeEventListener('pointercancel', end); if (split.hasPointerCapture(ev.pointerId)) split.releasePointerCapture(ev.pointerId); saveCardLayouts(); };
-    split.addEventListener('pointermove', move); split.addEventListener('pointerup', end); split.addEventListener('pointercancel', end);
-  };
-  return split;
-}
-
 // ---- opening ----
 async function openCard(cardId, { restore = false } = {}) {
   closePopover();
@@ -2111,8 +1850,8 @@ async function openTaskCard(cardId, { restore = false, shown = null } = {}) {
   }
   if (!found) { if (!restore) toast('カードが見つかりません', true); return; }
   // Threads: the task beside one session at a time (the one chosen last, else the latest); the others are a click away.
-  const threads = styleIs('taskDetail', 'threads'), choice = threads ? taskThreadChoice(cardId, found.card.links) : null;
-  const { ids } = threads ? taskOverlayIds(cardId, found.card.links, choice ? [choice] : [], 1) : taskOverlayIds(cardId, found.card.links, panes[0]?.id === cardId ? panes.map((p) => p.id) : []);
+  const choice = taskThreadChoice(cardId, found.card.links);
+  const { ids } = taskOverlayIds(cardId, found.card.links, choice ? [choice] : [], 1);
   showCards(ids);
   const [root, ...sessions] = panes;
   await Promise.all([loadTask(root, found), ...sessions.map((p) => loadSession(p))]);
@@ -2135,8 +1874,8 @@ function reconcileCards(board) {
   const status = $('.pane-status', root.el);
   if (status) status.replaceChildren(h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]);
   paintTaskRelated(root, card);
-  const shown = panes.map((p) => p.id), threads = styleIs('taskDetail', 'threads');
-  const { ids } = threads ? taskOverlayIds(root.id, card.links, [taskThreadChoice(root.id, card.links)].filter(Boolean), 1) : taskOverlayIds(root.id, card.links, shown);
+  const shown = panes.map((p) => p.id);
+  const { ids } = taskOverlayIds(root.id, card.links, [taskThreadChoice(root.id, card.links)].filter(Boolean), 1);
   if (ids.join() === shown.join()) return;
   showCards(ids);
   // A card that comes back (linked again) was detached with its live feed: it always needs a fresh load.
@@ -2184,7 +1923,7 @@ function renderPaneKeepingDrafts(p, d) {
   if (el.querySelector('.req-row textarea')) {
     // Keep the request editor while rebuilding a reset conversation cursor.
     p.d = d;
-    const conversation = $('.psec[data-sec="conv"] .psec-b', el) || $('.th-conv', el);
+    const conversation = $('.th-conv', el);
     if (conversation && d.feed) conversation.replaceChildren(renderFeed(d, p));
     return;
   }
@@ -2465,29 +2204,14 @@ function renderPane(p, d) {
     s.sourcePath ? h('button', { class: 'side-btn', text: '⧉ ログのパスをコピー', onclick: () => copyText(s.sourcePath, 'パス') }) : null,
   ].filter(Boolean) };
 
-  const thread = state.styles.detail === 'thread';
-  const cols = { main: h('div', { class: 'pcol', 'data-col': 'main' }), side: h('div', { class: 'pcol', 'data-col': 'side' }) };
-  if (!thread) for (const id of Object.keys(PANE_SECS)) {
-    const sc = secs[id];
-    if (!sc) continue;
-    cols[PANE_SECS[id][0]].append(sectionEl(id, sc?.nodes || [h('span', { class: 'muted', text: 'なし' })], { kind: 'session', extra: sc?.extra, title: sc?.title ?? secTitle(id), hint: id === 'conv' ? '会話内容は読み取り専用です。下端をドラッグすると、すべてのカードで高さが揃います。' : id === 'memo' ? 'メモは Canban に保存します。セッションの内容は書き換えません。' : null }));
-  }
-  const scroll = ['main', 'side'].map((c) => $(`.pcol[data-col="${c}"]`, el)?.scrollTop ?? 0);
   p.status = s.status || 'idle';
   p.activity = activityText(s.activity, p.status, s.signals);
   if (!d.feed) p.lastText = s.preview || '';
   el.setAttribute('aria-label', `セッション詳細: ${s.title}`);
   applyPaneAttrs(p);
-  if (thread) renderThreadPane(p, d, secs, { card, listSel });
-  else {
-    el.replaceChildren(h('span', { class: 'ph-btns card-actions' }),
-      h('div', { class: 'pane-b' }, cols.main, columnSplit('session'), cols.side), ...paneSizeHandles('session'));
-    applyPaneLayoutTo(el);
-    cols.main.scrollTop = scroll[0];
-    cols.side.scrollTop = scroll[1];
-  }
+  renderThreadPane(p, d, secs, { card, listSel });
   const prog = $('[data-sec="progress"]', el);
-  if (prog && $('.sig-box', prog)?.hidden) $('.psec-b, .dsec-b', prog).append(h('span', { class: 'muted empty-progress', text: 'なし' }));
+  if (prog && $('.sig-box', prog)?.hidden) $('.dsec-b', prog).append(h('span', { class: 'muted empty-progress', text: 'なし' }));
   paintPaneButtons(p);
   applyPaneAttrs(p);
   paintViewers(p);
@@ -2541,8 +2265,7 @@ function renderDispatch(d) {
   const ta = h('textarea', { placeholder: 'このセッションに送るプロンプト（⌘/Ctrl + Enter で今すぐ送信）', 'aria-label': '送るプロンプト' });
   const ack = p?.elevated ? h('input', { type: 'checkbox', 'aria-label': '制限なしで実行されることを確認しました' }) : null;
   const busy = s.status === 'running' || s.status === 'waiting' || !!s.codexFollowUps;
-  const chips = styleIs('composer', 'chips');
-  const composer = promptComposer(ta, { key: `dispatch:${s.id}`, context: () => ({ cardId: s.id }), submit: () => send(busy ? 'queue' : 'now'), chips });
+  const composer = promptComposer(ta, { key: `dispatch:${s.id}`, context: () => ({ cardId: s.id }), submit: () => send(busy ? 'queue' : 'now'), chips: true });
   const sendButtons = [];
   const send = async (when) => {
     const prompt = ta.value.trim();
@@ -2566,51 +2289,26 @@ function renderDispatch(d) {
       composer.setSending(false); sendButtons.forEach(b => { b.disabled = busy; });
     }
   };
-  if (chips) {
-    // One round button sends; while the session is busy it queues instead. Alt+Enter always queues.
-    const round = h('button', { class: 'send-round', type: 'button', title: busy ? 'キューに追加（⌘Enter）' : '今すぐ送信（⌘Enter）', 'aria-label': busy ? 'キューに追加' : '今すぐ送信', html: picon(busy ? 'queue' : 'send', 15), onclick: () => send(busy ? 'queue' : 'now') });
-    sendButtons.push(round);
-    if (!busy) sendButtons.unshift(h('button', { class: 'cx-ico', type: 'button', title: 'キューに追加（⌥Enter）', 'aria-label': 'キューに追加', html: picon('queue', 16), onclick: () => send('queue') }));
-    ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.altKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send('queue'); } });
-  } else sendButtons.push(h('button', { class: 'btn-primary', disabled: busy, text: '▶ 今すぐ送信', onclick: () => send('now') }),
-    h('button', { class:'side-btn',disabled:busy,style:{width:'auto',marginBottom:0},text:'＋ キューに追加', onclick: () => send('queue') }));
+  // One round button sends; while the session is busy it queues instead. Alt+Enter always queues.
+  const round = h('button', { class: 'send-round', type: 'button', title: busy ? 'キューに追加（⌘Enter）' : '今すぐ送信（⌘Enter）', 'aria-label': busy ? 'キューに追加' : '今すぐ送信', html: picon(busy ? 'queue' : 'send', 15), onclick: () => send(busy ? 'queue' : 'now') });
+  sendButtons.push(round);
+  if (!busy) sendButtons.unshift(h('button', { class: 'cx-ico', type: 'button', title: 'キューに追加（⌥Enter）', 'aria-label': 'キューに追加', html: picon('queue', 16), onclick: () => send('queue') }));
+  ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.altKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send('queue'); } });
   const appNote = s.agent === 'codex' || s.desktopSessionId || s.entrypoint === 'claude-desktop'
     ? helpTip(`${s.agent === 'codex' ? 'Codex' : 'Claude'} アプリでこのセッションを開いている場合は、閉じてから送ってください（アプリ側の表示と履歴がずれることがあります）。`) : null;
-  if (chips) {
-    composer.toolbar.append(permChip, h('span', { class: 'grow' }), appNote, ...sendButtons);
-    box.append(...[
-      D.paused ? h('div', { class: 'paused-bar' }, h('span', { class: 'grow', text: `⏸ キュー一時停止: ${D.paused.reason}` }),
-        h('button', { class: 'link-btn', text: '再開', onclick: () => act('canban_resume_queue', { cardId: s.id }, { okMsg: 'キューを再開しました' }).then(() => openCard(s.id)) })) : null,
-      D.active.length || D.queue.length ? h('div', { class: 'cx-reqs' }, ...D.active.map((r) => requestRow(s, r)), ...D.queue.map((r, i) => requestRow(s, r, { index: i, queue: D.queue }))) : null,
-      h('div', { class: 'send-box cx' }, composer.root,
-        ack ? h('label', { class: 'send-note row', style: { gap: '6px' } }, ack, 'このセッションはサンドボックス／確認なしで動いています。そのまま実行されることを確認しました') : null,
-        busy ? h('div', { class: 'muted cx-busy', text: s.codexFollowUps
-          ? `Codex アプリのキューにフォローアップが ${s.codexFollowUps} 件あります。二重に送らないよう、アプリ側で送るか消すまで Canban からは送りません。`
-          : `セッションが${s.status === 'running' ? '実行中' : '入力待ち'}です。送ると順番待ちに入ります。` }) : null),
-      h('div', { class: 'cx-keys' }, keyHint(['⌘', 'Enter'], busy ? 'キューへ' : '送信'), keyHint(['⌥', 'Enter'], 'キューへ'), keyHint(['$'], 'スキル')),
-      D.history.length ? h('details', { class: 'cx-hist' }, h('summary', { text: `依頼の履歴（${D.history.length}）` }),
-        ...D.history.map((r) => requestRow(s, r, { review: () => { try { composer.restore(r); toast('実行状況を確認し、内容を確認してから送信してください。'); } catch (e) { toast(e.message, true); } } }))) : null,
-    ].filter(Boolean));
-    return box;
-  }
-  box.append(...[title,
+  composer.toolbar.append(permChip, h('span', { class: 'grow' }), appNote, ...sendButtons);
+  box.append(...[
     D.paused ? h('div', { class: 'paused-bar' }, h('span', { class: 'grow', text: `⏸ キュー一時停止: ${D.paused.reason}` }),
       h('button', { class: 'link-btn', text: '再開', onclick: () => act('canban_resume_queue', { cardId: s.id }, { okMsg: 'キューを再開しました' }).then(() => openCard(s.id)) })) : null,
-    h('div', { class: 'send-box' },
-      s.agent === 'claude' && s.host?.local !== false ? h('div', { class: 'muted claude-execution-note', text: `実行アカウント: ${claudeExecutionHomes.has(s.id) ? d.launch.claudeAccounts.find(a => a.id === claudeExecutionHomes.get(s.id))?.label || '選択したアカウント（利用できません）' : s.accountLabel || '元のアカウント'}` }) : null,
-      composer.root,
+    D.active.length || D.queue.length ? h('div', { class: 'cx-reqs' }, ...D.active.map((r) => requestRow(s, r)), ...D.queue.map((r, i) => requestRow(s, r, { index: i, queue: D.queue }))) : null,
+    h('div', { class: 'send-box cx' }, composer.root,
       ack ? h('label', { class: 'send-note row', style: { gap: '6px' } }, ack, 'このセッションはサンドボックス／確認なしで動いています。そのまま実行されることを確認しました') : null,
-      busy ? h('div', { class: 'muted', style: { marginTop: '6px' }, text: s.codexFollowUps
+      busy ? h('div', { class: 'muted cx-busy', text: s.codexFollowUps
         ? `Codex アプリのキューにフォローアップが ${s.codexFollowUps} 件あります。二重に送らないよう、アプリ側で送るか消すまで Canban からは送りません。`
-        : `セッションが${s.status === 'running' ? '実行中' : '入力待ち'}のため、今すぐは送れません。入力を保持します。状態を確認してから再操作してください。` }) : null,
-      h('div', { class: 'send-actions' },
-        permChip, ...sendButtons,
-        helpTip('1 ターンずつ公式 CLI で実行します'), appNote)),
-    ...D.active.map((r) => requestRow(s, r)),
-    D.queue.length ? h('div', { class: 'field-label', text: `キュー（${D.queue.length}）` }) : null,
-    ...D.queue.map((r, i) => requestRow(s, r, { index: i, queue: D.queue })),
-    D.history.length ? h('div', { class: 'field-label', text: '履歴' }) : null,
-    ...D.history.map((r) => requestRow(s,r,{review:() => { try { composer.restore(r); toast('実行状況を確認し、内容を確認してから送信してください。'); } catch(e) { toast(e.message, true); } }})),
+        : `セッションが${s.status === 'running' ? '実行中' : '入力待ち'}です。送ると順番待ちに入ります。` }) : null),
+    h('div', { class: 'cx-keys' }, keyHint(['⌘', 'Enter'], busy ? 'キューへ' : '送信'), keyHint(['⌥', 'Enter'], 'キューへ'), keyHint(['$'], 'スキル')),
+    D.history.length ? h('details', { class: 'cx-hist' }, h('summary', { text: `依頼の履歴（${D.history.length}）` }),
+      ...D.history.map((r) => requestRow(s, r, { review: () => { try { composer.restore(r); toast('実行状況を確認し、内容を確認してから送信してください。'); } catch (e) { toast(e.message, true); } } }))) : null,
   ].filter(Boolean));
   return box;
 }
@@ -2711,7 +2409,7 @@ function renderFeed(d, p) {
   const newBtn = h('button', { class: 'feed-new', text: '↓ 新着', hidden: true, onclick: () => scrollFeedToEnd(f) });
   const f = { pane: p, cardId: d.session.id, offset: d.feed.offset, size: d.feed.size, codexItems: d.feed.codexItems, list, foot, newBtn, tools: new Map(), status: d.session.status || 'idle', activity: d.session.activity || null, signals: d.session.signals || null, git: d.git || null };
   list.addEventListener('scroll', () => { if (atFeedEnd(list)) newBtn.hidden = true; });
-  if (folded()) list.append(editSummary(f).el);
+  list.append(editSummary(f).el);
   for (const it of d.feed.items) feedPush(f, it);
   f.edits?.paint();
   const lastSaid = [...d.feed.items].reverse().find((it) => it.k === 'assistant');
@@ -2776,10 +2474,10 @@ function applyFeed(f, feed) {
     if (box) {
       const next = renderSignals(f.signals, f.git);
       box.replaceWith(next);
-      const sec = next.closest('.psec, .dsec');
+      const sec = next.closest('.dsec');
       if (sec) {
         let empty = $('.empty-progress', sec);
-        if (!empty) { empty = h('span', { class: 'muted empty-progress', text: 'なし' }); $('.psec-b, .dsec-b', sec).append(empty); }
+        if (!empty) { empty = h('span', { class: 'muted empty-progress', text: 'なし' }); $('.dsec-b', sec).append(empty); }
         empty.hidden = !next.hidden;
       }
     }
@@ -3104,7 +2802,6 @@ function filterChips(b) {
   const f = state.filters, out = [];
   const add = (text, patch) => out.push({ text, patch });
   if (f.agent !== 'all' && !laneHides('agent')) add(f.agent === 'codex' ? 'Codex' : 'Claude', { agent: 'all' });
-  if (Number(f.days)) add(`${f.days}日以内`, { days: 0 });
   if (f.status) add(STATUS_LABELS[f.status] || f.status, { status: '' });
   if (f.directory && !laneHides('directory')) add(f.directory === '__none' ? 'カテゴリ無し' : b?.directories.find((d) => d.id === f.directory)?.name || f.directory, { directory: '' });
   if (f.project && !laneHides('project')) add(f.project, { project: '' });
@@ -3231,6 +2928,9 @@ function laneSection(b, hit) {
     h('button', { class: 'side-mini', title: 'すべてたたむ', text: '⊟', onclick: () => setAllLanes(true) })] : [];
   const nodes = [sideHead('レーン', ...tools), axes];
   if (!mode) nodes.push(h('label', { class: 'side-check' }, h('input', { type: 'checkbox', checked: !!f.groupBranch, onchange: (e) => { f.groupBranch = e.target.checked; saveFilters(); load(); } }), '同じリポジトリ＋ブランチをまとめる'));
+  // The height of a lane's lists belongs to the lanes, so it sits with them (and only while there are lanes).
+  else nodes.push(h('div', { class: 'side-seg', role: 'group', 'aria-label': 'レーン内のリストの高さ' }, Object.entries(LANE_HEIGHTS).map(([k, [label]]) =>
+    h('button', { type: 'button', 'aria-pressed': String((f.laneHeight || 'normal') === k), title: `レーン内のリストの高さ: ${label}`, text: label, onclick: () => { f.laneHeight = k; saveFilters(); render(); } }))));
   const live = mode === 'directory' ? liveByDirectory(b) : null;
   for (const lane of state.lanes.filter((l) => hit(l.name))) {
     const collapsed = collapsedLanes.has(lane.key) || collapsedLanes.has(lane.name);
@@ -3263,7 +2963,6 @@ function filterSection(b, hit = () => true) {
   const f = state.filters, nodes = [sideHead('絞り込み', filterChips(b).length ? h('button', { class: 'side-mini', title: '絞り込みをすべて解除', text: '解除', onclick: clearFilters }) : null)];
   const seg = (label, items, on, pick) => h('div', { class: 'side-seg', role: 'group', 'aria-label': label }, items.map(([k, t]) => h('button', { type: 'button', 'aria-pressed': String(on(k)), text: t, onclick: () => pick(k) })));
   if (!laneHides('agent')) nodes.push(seg(T.aiApps, [['all', 'すべて'], ['codex', 'Codex'], ['claude', 'Claude']], (k) => f.agent === k, (k) => setScope({ agent: k })));
-  nodes.push(seg('期間', [[7, '7日'], [30, '30日'], [90, '90日'], [0, '全期間']], (k) => Number(f.days) === k, (k) => setScope({ days: k })));
   const group = (title, rows, extra) => { const shown = rows.filter((r) => r && hit(r.label)); if (shown.length) nodes.push(sideHead(title, extra), ...shown.map((r) => r.el)); };
   const choice = (label, on, pick, lead, ...tail) => ({ label, el: h('button', { class: `side-row${on ? ' active' : ''}`, 'aria-pressed': String(on), onclick: pick }, lead, h('span', { class: 'grow ellipsis', text: label }), ...tail) });
   group('状態', ['running', 'waiting', 'completed', 'aborted', 'idle'].filter((k) => b.statusCounts?.[k] || f.status === k).map((k) =>
@@ -3275,7 +2974,6 @@ function filterSection(b, hit = () => true) {
       h('button', { class: `side-row${f.directory === d.id ? ' active' : ''}`, 'aria-pressed': String(f.directory === d.id), title: 'クリックで絞り込み（もう一度で解除）。カードをここへドラッグすると所属を変えられます',
         onclick: () => setScope({ directory: f.directory === d.id ? '' : d.id }) },
         h('span', { class: 'dot', style: { background: d.color ? colorVar(d.color) : 'var(--header-btn-hover)' } }),
-        h('span', { class: 'dir-av', style: { background: d.color ? colorVar(d.color) : 'var(--header-btn-hover)' }, text: [...d.name][0]?.toUpperCase() || '' }),
         h('span', { class: 'grow ellipsis', text: d.name }), ...liveBadges(live.get(d.id)), sideCountEl(d.count)),
       d.id === '__none' ? null : h('button', { class: 'icon-btn', 'aria-label': `${d.name} の設定`, text: '⋯', onclick: (e) => directoryMenu(e.currentTarget, d.id) })) })),
       h('button', { class: 'side-mini', title: `${T.category}を管理`, 'aria-label': `${T.category}を管理`, html: picon('gear', 14), onclick: () => workspace.toggle('directories') }));
@@ -3286,18 +2984,19 @@ function filterSection(b, hit = () => true) {
   if (!laneHides('label') && b.labels.length) group('ラベル', [...b.labels.map((l) => ({ id: l.id, name: l.name, color: l.color })), { id: '__none', name: 'ラベルなし', color: null }].map((l) =>
     choice(l.name, f.label === l.id, () => setScope({ label: f.label === l.id ? '' : l.id }), h('span', { class: 'dot', style: { background: l.color ? colorVar(l.color) : 'var(--header-btn-hover)' } }))));
   const scope = (key, label) => h('label', { class: 'side-check' }, h('input', { type: 'checkbox', checked: !!f[key], onchange: (e) => setScope({ [key]: e.target.checked }) }), label);
-  if (!['rail','omni'].includes(state.layout)) nodes.push(h('label', { class: 'side-check' }, h('input', { type: 'checkbox', checked: slackUi.visible, onchange: e => slackUi.toggle(e.target.checked) }), 'Slackタイムライン ', keycap('v')));
+  nodes.push(h('label', { class: 'side-check' }, h('input', { type: 'checkbox', checked: slackUi.visible, onchange: e => slackUi.toggle(e.target.checked) }), 'Slackタイムライン ', keycap('v')));
   nodes.push(sideHead('表示する対象'), scope('includeArchived', 'アーカイブ済みも表示'), scope('includeSubagents', 'サブエージェントも表示'), scope('pinnedOnly', 'Codex でピン留めしたものだけ'));
   return h('section', { class: 'side-sec-filters' }, nodes);
 }
-// The foot of the sidebar: the sheets, the management pages and the look of the board.
+// The foot of the sidebar: the sheets, the management pages and the color theme.
 function sideFoot(b) {
   return h('div', { class: 'side-foot' },
     h('div', { class: 'side-foot-look side-sec-look' }, SIDE_LOOK.map((x) => sideEntry(b, x))),
     h('div', { class: 'side-head side-sec-manage' }, h('span', { class: 'grow', text: '管理' })),
     h('div', { class: 'side-foot-grid side-sec-manage' }, SIDE_MANAGE.map((x) => sideEntry(b, x))),
-    h('button', { class: 'side-row side-entry', type: 'button', 'data-look': '', title: 'カードの高さ・レイアウト・色', onclick: (e) => lookMenu(e.currentTarget) },
-      h('span', { class: 'side-ic', html: picon('layout', 18) }), h('span', { class: 'grow ellipsis', text: 'レイアウトとテーマ' })));
+    h('button', { class: 'side-row side-entry', type: 'button', 'data-look': '', title: 'ライト・ダーク・システム', onclick: (e) => themeMenu(e.currentTarget) },
+      h('span', { class: 'side-ic', html: picon(THEME_CHOICES.find(([k]) => k === (state.themePref || 'system'))[1], 18) }), h('span', { class: 'grow ellipsis', text: '色' }),
+      h('span', { class: 'count', text: THEME_CHOICES.find(([k]) => k === (state.themePref || 'system'))[2] })));
 }
 function renderSidebar(b) {
   const el = $('#sidebar');
@@ -3315,8 +3014,7 @@ function renderSidebar(b) {
   }
   const hit = matcher(state.sideQ.trim());
   const scroll = $('.side-scroll', el)?.scrollTop || 0;
-  const secs = [h('div', { class: 'side-brand', html: LOGO_SVG }, h('span', { class: 'brand-word', text: 'canban' })),
-    h('div', { class: 'side-top' }, h('span', { class: 'grow', text: 'ワークスペース' }),
+  const secs = [h('div', { class: 'side-top' }, h('span', { class: 'grow', text: 'ワークスペース' }),
       h('button', { class: 'side-fold', type: 'button', title: 'サイドバーを畳む（b）', 'aria-label': 'サイドバーを畳む', html: picon('chev', 18), onclick: () => toggleSidebar(false) })),
     state.sideInput];
   const views = (b.settings?.views || []).map((v, i) => ({ v, i })).filter(({ v }) => hit(v.name)), current = activeView(b);
@@ -3359,15 +3057,6 @@ function directoryMenu(anchor, dirId) {
     del), { width: 340 });
 }
 
-// "…[match]…" from the index → text with <mark>
-function renderSnippet(snip) {
-  const el = h('div', { class: 'snippet' });
-  String(snip).split(/(\[[^\]]*\])/).forEach((part) => {
-    if (/^\[.*\]$/.test(part)) el.append(h('mark', { text: part.slice(1, -1) }));
-    else if (part) el.append(part);
-  });
-  return el;
-}
 
 function syncHeaderInputs() {
   $('#q').value = state.filters.q || '';
@@ -3564,7 +3253,7 @@ function taskRelatedNodes(card) {
   const rows = card.links.map((l) => h('div', { class: 'sub-row task-related-row', 'data-session-id': l.id },
     h('span', { class: `sdot s-${l.status}` }),
     h('div', { class: 'task-related-copy grow' },
-      h('button', { class: 'link-btn', text: l.title, title: '詳細を見る', onclick: () => (styleIs('taskDetail', 'threads') ? selectTaskThread(cardId, l.id) : revealPane(l.id)) }),
+      h('button', { class: 'link-btn', text: l.title, title: '詳細を見る', onclick: () => selectTaskThread(cardId, l.id) }),
       h('div', { class: 'task-related-meta' }, h('span', { class: `badge ${l.agent}`, text: l.agent === 'codex' ? 'Codex' : 'Claude' }),
         l.host ? h('span', { class: 'host-chip', text: l.host.label }) : null,
         h('span', { class: 'muted', text: `${STATUS_LABELS[l.status]}・${relTime(l.updatedAt)}` }))),
@@ -3579,13 +3268,13 @@ function taskRelatedNodes(card) {
   return [...(rows.length ? rows : [h('p', { class: 'muted', text: 'なし' })]), ...pending, ...more];
 }
 function paintTaskRelated(p, card) {
-  const sec = $('.psec[data-sec="related"]', p.el);
+  const sec = $('[data-sec="related"]', p.el);
   if (!sec) return;
   const signature = JSON.stringify([card.links.map((l) => [l.id, l.title, l.status, l.agent, l.host?.label, relTime(l.updatedAt)]), card.pending]);
   if (sec.dataset.signature === signature) return;
   sec.dataset.signature = signature;
-  $('.psec-b', sec).replaceChildren(...taskRelatedNodes(card));
-  const heading = $('h3', sec);
+  $('.th-sec-b', sec).replaceChildren(...taskRelatedNodes(card));
+  const heading = $('.th-sec-t', sec);
   if (heading?.firstChild) heading.firstChild.textContent = taskRelatedTitle(card);
 }
 async function taskLinkMenu(anchor, taskId) {
@@ -3685,23 +3374,16 @@ async function loadTask(p, found) {
       h('div', { class: 'row', style: { marginTop: '8px', flexWrap: 'wrap' } },
         ...startButtons)], hint: '開始したセッションは、AI App・マシン・フォルダ・依頼文が一致すると自動でこのカードに紐付きます。' },
     add: { nodes: [taskQuickAdd.summary(card),
-      h('button', { class: 'side-btn', text: '所属を変更', onclick: () => taskQuickAdd.edit(card, list) }), h('button', { class: 'side-btn', 'data-pane-key': 'l', onclick: e => labelPicker(e.currentTarget, cardId, labelState, () => {}) }, '🏷 ラベル', keycap('l')),
-      h('button', { class: 'side-btn', 'data-pane-key': 'g', onclick: e => directoryPicker(e.currentTarget, card, { cwd: cwd.value.trim() || null, after: () => openCard(cardId) }) }, `📂 カテゴリ: ${card.directory?.name || 'カテゴリ無し'}`, keycap('g'))] },
+      h('button', { class: 'side-btn', text: '所属を変更', onclick: () => taskQuickAdd.edit(card, list) }), h('button', { class: 'side-btn', 'data-pane-key': 'l', onclick: e => labelPicker(e.currentTarget, cardId, labelState, () => {}) }, h('span', { html: picon('tag', 14) }), ' ラベル', keycap('l')),
+      h('button', { class: 'side-btn', 'data-pane-key': 'g', onclick: e => directoryPicker(e.currentTarget, card, { cwd: cwd.value.trim() || null, after: () => openCard(cardId) }) }, h('span', { html: picon('folder', 14) }), ` ${T.category}: ${card.directory?.name || 'カテゴリ無し'}`, keycap('g'))] },
     prio: { nodes: [prio, due] },
-    other: { nodes: [h('button', { class: 'side-btn danger-text', text: '🗑 カードを削除', onclick: async () => { if (confirmInline(p.el, `この${T.taskCard}を削除します。紐付いたセッション自体は消えません。`)) { await act('canban_delete_task', { cardId }, { okMsg: '削除しました' }); closeCards(); } } })] },
+    other: { nodes: [h('button', { class: 'side-btn danger-text', text: 'カードを削除', onclick: async () => { if (confirmInline(p.el, `この${T.taskCard}を削除します。紐付いたセッション自体は消えません。`)) { await act('canban_delete_task', { cardId }, { okMsg: '削除しました' }); closeCards(); } } })] },
   };
   if (card.slackRefs?.length) secs.slack = { nodes: [slackUi.sources(cardId, prompt)] };
-  const cols = { main: h('div', { class: 'pcol', 'data-col': 'main' }), side: h('div', { class: 'pcol', 'data-col': 'side' }) };
-  for (const id of Object.keys(PANE_SECS)) {
-    const sc = secs[id];
-    if (!sc) continue;
-    cols[PANE_SECS[id][0]].append(sectionEl(id, sc?.nodes || [h('span', { class: 'muted', text: 'なし' })], { kind: 'task', extra: sc?.extra, title: sc?.title ?? secTitle(id), hint: sc?.hint }));
-  }
   p.status = card.status;
   p.el.setAttribute('aria-label', `タスクカード詳細: ${card.title}`);
-  p.el.replaceChildren(h('span', { class: 'ph-btns card-actions' }),
-    h('div', { class: 'pane-b' }, cols.main, columnSplit('task'), cols.side), ...paneSizeHandles('task'));
-  applyPaneLayoutTo(p.el); paintPaneButtons(p); applyPaneAttrs(p);
+  renderTaskThreadPane(p, card, secs);
+  paintPaneButtons(p); applyPaneAttrs(p);
   p.rendered = true;
   workspace.trackDrafts(p.el);
 }
@@ -3780,19 +3462,6 @@ function ctxTitle(ctx) {
 function activityText(activity, status, sig) {
   const w = status === 'waiting' && sig?.wait ? WAIT_TEXT[sig.wait] : null;
   return w ? (activity ? `${w} · ${activity}` : w) : activity || null;
-}
-// One line under a card. Running / waiting cards show everything; others only a nearly full context.
-function signalRow(sig, live) {
-  if (!sig) return null;
-  const parts = [];
-  if (live && sig.plan) parts.push(h('span', { title: `計画 ${sig.plan.done}/${sig.plan.total}${sig.plan.current ? `\nいま: ${sig.plan.current}` : ''}`, text: `☑ ${sig.plan.done}/${sig.plan.total}` }));
-  if (live && sig.files) parts.push(h('span', { title: `このターンで編集したファイル\n${sig.files.names.join('\n')}`, text: `✎ ${sig.files.count}` }));
-  if (live && sig.subRunning) parts.push(h('span', { title: '動作中のサブエージェント', text: `🤖 ${sig.subRunning}` }));
-  if (sig.ctx) {
-    const pct = ctxPct(sig.ctx);
-    if (live || pct >= 75) parts.push(h('span', { class: pct >= 90 ? 'sig-hot' : pct >= 75 ? 'sig-warn' : '', title: ctxTitle(sig.ctx), text: `◔ ${ctxLabel(sig.ctx)}` }));
-  }
-  return parts.length ? h('div', { class: 'sig-row' }, ...parts) : null;
 }
 const MODE_TEXT = { 'danger-full-access': 'フルアクセス', 'workspace-write': 'ワークスペース書き込み', 'read-only': '読み取り専用', bypassPermissions: '権限確認なし', acceptEdits: '編集は自動承認', plan: 'プランモード', default: '毎回確認', auto: 'auto', dontAsk: '確認しない' };
 // The detail's "now" box: model / effort / mode, context meter, plan and edited files.
@@ -4197,14 +3866,18 @@ function placeCardPlaceholder(x, y) {
   const listEl = listAt(x, y);
   if (!listEl) return;
   const cardsEl = $('.cards', listEl);
-  const cards = [...cardsEl.querySelectorAll('.card:not(.drag-source)')];
+  const cards = [...cardsEl.querySelectorAll(':scope > .card:not(.drag-source)')];
   let before = null;
   for (const c of cards) {
     const r = c.getBoundingClientRect();
     if (y < r.top + r.height / 2) { before = c; break; }
   }
   if (before) { if (d.ph.nextSibling !== before) cardsEl.insertBefore(d.ph, before); }
-  else if (cardsEl.lastElementChild !== d.ph) cardsEl.append(d.ph);
+  else {
+    const fold = $(':scope > .life-fold, :scope > .more-btn', cardsEl); // below the awake cards, above the fold
+    if (fold) { if (d.ph.nextSibling !== fold) cardsEl.insertBefore(d.ph, fold); }
+    else if (cardsEl.lastElementChild !== d.ph) cardsEl.append(d.ph);
+  }
 }
 
 function listAt(x, y) {
@@ -4393,12 +4066,6 @@ $('#fulltext').checked = !!state.filters.fulltext;
 $('#fulltext').addEventListener('change', (e) => { state.filters.fulltext = e.target.checked; saveFilters(); if (state.filters.q) load(); });
 // Analytics is a sheet on the overlay, over the board (a / the sidebar's 分析 toggle it).
 function toggleAnalytics() { toggleView('analytics'); }
-// Card height: equal (the default) or fit to content; shared like the other view settings.
-function setCardFit(fit) {
-  if (state.cardFit === fit) return;
-  state.cardFit = fit; store.set('cardFit', state.cardFit);
-  if (state.board) render();
-}
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.querySelector('.popover')) closePopover(); });
 
 // ======================================================================
@@ -4459,8 +4126,6 @@ function panePromptInput() {
 function focusPanePrompt() {
   const input = panePromptInput();
   if (!input) return;
-  const section = input.closest('.psec');
-  if (section?.classList.contains('collapsed')) toggleSection(section.dataset.sec, section.closest('.pane').dataset.kind);
   input.focus({ preventScroll: true });
   input.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
@@ -4486,7 +4151,7 @@ function refreshShortcutHints() {
         ['⇧←', '左のリストへ', !adjacentPaneList(focusedPane(), -1)], ['⇧→', '右のリストへ', !adjacentPaneList(focusedPane(), 1)],
         ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
         ...(focusedPane()?.kind === 'session' ? [['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
-        ...(panePromptInput() ? [['i', '指示欄']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ...(state.styles.review === 'on' ? [['f', '変更']] : [])] : []), ['r', '更新'], ...globalKeys, ['Alt+m', '案内の移動'], ['Alt+[ / ]', '左右余白'], ['0', '余白を初期化'], ['Esc', '閉じる']];
+        ...(panePromptInput() ? [['i', '指示欄']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ['f', '変更']] : []), ['r', '更新'], ...globalKeys, ['Alt+m', '案内の移動'], ['Alt+[ / ]', '左右余白'], ['0', '余白を初期化'], ['Esc', '閉じる']];
     }
     paneHints.replaceChildren(...shortcutHints(entries).childNodes);
     shortcutMap.hidden = entries.length === 0;
@@ -4497,7 +4162,7 @@ function refreshShortcutHints() {
     if (typing) entries = input.id === 'q' ? [['↓ / Enter', 'カードへ'], ['Esc', '検索をクリア']] : [['⌘K / Ctrl+K', 'コマンド']];
     else if (workspace.utilityPage()) entries = [...globalKeys, ['Esc', 'パネルを閉じる']];
     else if (input?.matches('.card')) entries = [['j / k', '次 / 前'], ['Enter', '開く'], ['Space', 'その場で返信'], ['l', 'ラベル'], ['m', 'リストへ移動'], ...globalKeys];
-    else entries = [['j / k', 'カード選択'], ['/', '検索'], ['c', 'タスク追加'], ['b', 'ナビゲーション'], ['a / u', '分析 / Usage'], ['r', '更新'], ...globalKeys];
+    else entries = [['j / k', 'カード選択'], ['/', '検索'], ['c', 'タスク追加'], ['i', timelineOn() ? 'ボード' : '時間軸'], ...(state.lens ? [['Esc', '照らすのをやめる']] : []), ['b', 'ナビゲーション'], ['a / u', '分析 / Usage'], ['r', '更新'], ...globalKeys];
     boardKeyHints.replaceChildren(...shortcutHints(entries).childNodes);
   }
 }
@@ -4512,7 +4177,11 @@ const SHORTCUTS = [
     ['p', `${T.category}・プロジェクトで絞り込み`], ['b', 'サイドバーの開閉'], ['[ / ]', '前 / 次のスイムレーンへ'],
     ['c', 'タスクを追加'], ['1〜9', '保存したビューに切り替え'], ['a', '分析を開く / 閉じる'], ['r', '再読み込み'], ['?', 'この一覧'],
   ]],
-  ['Slack', [['v', 'タイムラインの表示 / 非表示（ボード）'], ['c / l / t', 'メッセージ上: タスク作成 / カードへ追加 / 返信'], ['Alt+s', 'カード内: Slack資料の追加ボタンへ'], ['Esc', 'タイムライン内: 非表示']]],
+  ['時間（寿命）', [
+    ['i', 'ボード（リストごと）と時間軸（時間ごと）を切り替え'], ['時間の帯で ← →', '日を移動（Home / End で最古 / 今日）。Enter で照らす'],
+    ['Esc', '照らすのをやめる（ボード）'], ['⌘K', '「期間: …」「…のカードを照らす」'],
+  ]],
+  ['Slack', [['v', 'Slackタイムラインの表示 / 非表示（ボード）'], ['c / l / t', 'メッセージ上: タスク作成 / カードへ追加 / 返信'], ['Alt+s', 'カード内: Slack資料の追加ボタンへ'], ['Esc', 'タイムライン内: 非表示']]],
   ['カードを選択中', [
     ['Enter', '詳細を開く'], ['Space / r', 'その場で読んで返信（r は入力欄へ）'], ['l', 'ラベル'], ['g', `${T.category}`], ['m', 'リストへ移動'],
     ['← →', '隣のリストへ移動'], ['↑ ↓ / Home End', 'リスト内で移動'], ['⌥ + 矢印', 'フォーカスだけ移動'],
@@ -4529,7 +4198,7 @@ const SHORTCUTS = [
     ['Alt+m', 'ショートカットマップにフォーカス。矢印で移動、Shiftで微調整、Alt+←→で左 / 右の余白に移動、Homeで右の初期位置'],
     ['0', '左右余白とショートカットマップを初期化（1:8:1）'],
   ]],
-  ['カード内の配置・サイズ', [['つまみ + ← →', '部品を左 / 右列へ移動'], ['つまみ + ↑ ↓', '部品を並べ替え'], ['境界 + 矢印', '列幅・部品の高さ・カードの幅と高さを調整'], ['境界 + Home', 'カードサイズを既定値へ戻す']]],
+  ['カードのサイズ', [['右端・下端 + 矢印', 'カードの幅と高さを調整（同じ種類のカードで共通）'], ['右端・下端 + Home', '既定のサイズへ戻す']]],
   ['ピッカー', [['文字を入力', '絞り込み'], ['↑ ↓ / Enter', '選ぶ'], ['Space', '複数選択の切り替え（入力が空のとき）'], ['Esc', '閉じる']]],
 ];
 function showShortcuts() {
@@ -4583,18 +4252,17 @@ function commandPalette() {
         ...(sessionPane.d?.launch?.claudeAccounts?.length ? [{ label: 'Claude の実行アカウントを選ぶ', run: () => claudeAccountPicker(sessionPane)?.click(), hint: 'Alt+a' }] : []),
         { label: 'セッションと会話履歴を削除…', run: () => confirmSessionCardDelete(sessionPane), hint: 'Delete' },
       ] : []),
-      { label: 'カード: レイアウトとサイズを初期化', run: resetCardLayout },
-      ...['breadcrumb', 'title', 'conv', 'send'].map(id => ({ label: `カード: ${secTitle(id)}の移動`, run: () => focusedPane()?.el.querySelector(`.psec[data-sec="${id}"] .grip`)?.focus() })),
-      { label: 'カード: 列幅を変更', run: () => focusedPane()?.el.querySelector('.column-split')?.focus() },
+      { label: 'カード: サイズを初期化', run: resetCardLayout },
       { label: 'カード: サイズを変更', run: () => focusedPane()?.el.querySelector('.pane-corner')?.focus() },
     ] : []),
     { label: '絞り込みをすべて解除', run: () => { $('#q').value = ''; setScope({ directory: '', project: '', q: '', status: '', host: '' }); } },
     ...Object.entries(LANE_MODES).map(([v, t]) => ({ label: `スイムレーン: ${t}`, run: () => { f.swimlane = v; state.soloLane = null; saveFilters(); render(); } })),
     ...Object.entries(LANE_HEIGHTS).map(([v, [t]]) => ({ label: `レーンの高さ: ${t}`, run: () => { f.laneHeight = v; saveFilters(); render(); } })),
     { label: 'キーボードショートカット', run: showShortcuts, hint: '?' },
-    ...COMPONENT_STYLE_KEYS.flatMap((key) => COMPONENT_STYLES[key][2].filter(([v]) => v !== state.styles[key]).map(([v, name]) => ({ label: `スタイル: ${COMPONENT_STYLES[key][0]} → ${name}`, run: () => setComponentStyle(key, v) }))),
-    ...LAYOUTS.map(([id, name]) => ({ label: `レイアウト: ${name}`, run: () => setLayout(id) })),
-    ...[['light', 'ライト'], ['dark', 'ダーク'], ['system', 'システム']].map(([k, n]) => ({ label: `色: ${n}`, run: () => { setThemePref(k); paintLayoutChrome(); } })),
+    { label: timelineOn() ? 'ボードで表示' : '時間軸で表示', run: toggleBoardView, hint: 'i' },
+    ...PERIODS.filter(([k]) => Number(f.days) !== k).map(([k, n]) => ({ label: `期間: ${n}`, run: () => setScope({ days: k }) })),
+    ...Object.entries(LIFE_LABELS).map(([k, n]) => ({ label: `${n}のカードを照らす`, run: () => pinLens({ life: k }) })),
+    ...[['light', 'ライト'], ['dark', 'ダーク'], ['system', 'システム']].map(([k, n]) => ({ label: `色: ${n}`, run: () => setThemePref(k) })),
   ];
   const run = new Map();
   const items = [];
@@ -4632,7 +4300,8 @@ document.addEventListener('keydown', (e) => {
     j: () => stepDisplayedCard(1), k: () => stepDisplayedCard(-1),
     '/': focusSearch, '?': showShortcuts, b: () => toggleSidebar(), '[': () => stepLane(-1), ']': () => stepLane(1),
     r: () => load({ refresh: true }).then(() => toast('最新の状態に更新しました')), a: toggleAnalytics, u: () => toggleView('usage'),
-    c: quickAdd, v: () => slackUi.toggle(), p: () => scopePicker($('#logo')),
+    c: quickAdd, v: () => slackUi.toggle(), p: () => scopePicker($('#logo')), i: toggleBoardView,
+    Escape: state.lens ? () => pinLens(null) : null,
   }[k];
   if (run) { e.preventDefault(); return run(); }
   // 1–9: switch saved views
@@ -4652,8 +4321,7 @@ $('#board').addEventListener('wheel', (e) => {
 }, { passive: false });
 
 // ======================================================================
-// @include component-styles.js
-// @include layouts.js
+// @include lifetime.js
 // @include slack.js
 // @include workspace.js
 
@@ -4677,8 +4345,8 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => ap
 
 function sharedUiSnapshot() {
   return {
-    slackVisible: slackUi.visible, filters: { ...state.filters }, themePref: state.themePref, layout: state.layout, cardFit: state.cardFit, sidebar: state.sideOpen, workspacePage: workspace.page, labelsExpanded: state.labelsExpanded,
-    paneGlobal: { ...paneGlobal }, cardLayouts: structuredClone(cardLayouts), cardWidths: { ...cardWidths }, cardBoard: structuredClone(cardBoardState), cardHeights: { ...cardHeights }, collapsedLanes: [...collapsedLanes], componentStyles: { ...state.styles },
+    slackVisible: slackUi.visible, filters: { ...state.filters }, themePref: state.themePref, boardView: state.view, sidebar: state.sideOpen, workspacePage: workspace.page,
+    paneGlobal: { ...paneGlobal }, cardWidths: { ...cardWidths }, cardBoard: structuredClone(cardBoardState), cardHeights: { ...cardHeights }, collapsedLanes: [...collapsedLanes],
   };
 }
 
@@ -4694,13 +4362,8 @@ function adoptSharedUi(record) {
     if (typeof value.sidebar === 'boolean') state.sideOpen = value.sidebar;
     if (typeof value.slackVisible === 'boolean') { slackUi.visible = value.slackVisible; if (slackUi.visible) slackUi.refresh(); }
     if (typeof value.themePref === 'string') { state.themePref = value.themePref; applyTheme(); }
-    if (typeof value.layout === 'string') { state.layout = layoutOf(value.layout); applyLayout(); }
-    if (value.cardFit === 'auto' || value.cardFit === 'fixed') state.cardFit = value.cardFit;
-    if (value.componentStyles) { state.styles = normalizeComponentStyles(value.componentStyles); applyComponentStyles(); }
-    if (typeof value.labelsExpanded === 'boolean') state.labelsExpanded = value.labelsExpanded;
+    if (value.boardView === 'board' || value.boardView === 'timeline') state.view = value.boardView;
     if (value.paneGlobal && typeof value.paneGlobal === 'object') Object.assign(paneGlobal, { mode: oneOf(value.paneGlobal.mode, PANE_MODES, PANE_DEF.mode) });
-    // In place: sections already on screen keep their reference to the layout of their kind.
-    if (value.cardLayouts) { const next = normalizeCardLayouts(value.cardLayouts, PANE_LAYOUT_DEF, PANE_HEIGHTS); for (const kind of CARD_KINDS) Object.assign(cardLayouts[kind], next[kind]); }
     if (value.cardWidths) Object.assign(cardWidths, normalizeCardWidths(value.cardWidths));
     if (value.cardBoard) cardBoardState = normalizeCardBoard(value.cardBoard);
     if (value.cardHeights) Object.assign(cardHeights, normalizeCardHeights(value.cardHeights));
@@ -4732,7 +4395,7 @@ async function applySharedUi(record, { redraw = true } = {}) {
   try { adopted = adoptSharedUi(record); }
   finally { sharedUi.applying = wasApplying; }
   if (!adopted) return;
-  applyCardWidths(); layoutCardBoard(); applyPaneLayoutAll(); panes.forEach(applyPaneAttrs); paintPaneBar();
+  applyCardWidths(); layoutCardBoard(); panes.forEach(applyPaneAttrs); paintPaneBar();
   if (redraw) {
     await load();
     if (state.board) renderSidebar(state.board);
@@ -4872,7 +4535,6 @@ window.addEventListener('resize', () => bridge.reportSize());
   const ctx = await bridge.init();
   state.hostTheme = ctx.theme;
   applyTheme(ctx.theme);
-  applyComponentStyles();
   if (ctx.displayMode === 'inline') {
     $('#refresh').after(h('button', { class: 'hbtn', title: '全画面で開く', 'aria-label': '全画面で開く', text: '⤢', onclick: () => bridge.requestFullscreen() }));
   }

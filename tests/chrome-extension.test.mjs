@@ -10,7 +10,7 @@ import { FrameDecoder, encodeNativeResponse } from '../server/native-messaging.m
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-test('Chrome build emits an MV3 toolbar extension with an external CSP-safe board', () => {
+test('Chrome build emits an MV3 toolbar extension with an external CSP-safe board', async () => {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-chrome-'));
   try {
     const build = spawnSync(process.execPath, [path.join(root, 'scripts', 'build-chrome.mjs'), '--outdir', out], { encoding: 'utf8' });
@@ -29,7 +29,22 @@ test('Chrome build emits an MV3 toolbar extension with an external CSP-safe boar
     assert.doesNotMatch(html, /<style\b/i);
     assert.doesNotMatch(html, /<script(?:\s[^>]*)?>\s*[^<]/i);
     assert.match(fs.readFileSync(path.join(out, 'board.js'), 'utf8'), /connectNative/);
-    assert.match(fs.readFileSync(path.join(out, 'service-worker.js'), 'utf8'), /chrome\.tabs\.create/);
+    const worker = fs.readFileSync(path.join(out, 'service-worker.js'), 'utf8');
+    assert.match(worker, /chrome\.tabs\.create/);
+    assert.match(worker, /runtime\.getContexts/); // the button brings an open board forward instead of adding a tab
+    // The worker answers the toolbar button: the open board comes forward, otherwise a new tab opens.
+    const calls = [];
+    let contexts = [{ contextType: 'TAB', documentUrl: 'chrome-extension://x/board.html#a', tabId: 7, windowId: 3 }];
+    let listener;
+    const chrome = { action: { onClicked: { addListener: (fn) => { listener = fn; } } },
+      runtime: { getURL: (p) => `chrome-extension://x/${p}`, getContexts: async () => contexts },
+      tabs: { create: async (o) => calls.push(['create', o.url]), update: async (id, o) => calls.push(['update', id, o.active]) },
+      windows: { update: async (id, o) => calls.push(['focus', id, o.focused]) } };
+    new Function('chrome', worker)(chrome);
+    await listener();
+    contexts = [];
+    await listener();
+    assert.deepEqual(calls, [['update', 7, true], ['focus', 3, true], ['create', 'chrome-extension://x/board.html']]);
   } finally {
     fs.rmSync(out, { recursive: true, force: true });
   }

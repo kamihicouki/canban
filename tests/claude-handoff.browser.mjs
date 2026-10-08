@@ -62,7 +62,7 @@ try {
   page.on('request', r => { if (r.url().endsWith('/rpc')) { const data = r.postDataJSON(); if (data?.name) calls.push(data); } });
   await page.route('**/direct', async route => {
     const response = await route.fetch(), html = await response.text(), i = html.lastIndexOf('})();');
-    await route.fulfill({ response, body: html.slice(0, i) + 'globalThis.__test={state,bridge,load,openCard,setThemePref,setLayout,closeCards};' + html.slice(i) });
+    await route.fulfill({ response, body: html.slice(0, i) + 'globalThis.__test={state,bridge,load,openCard,setThemePref,closeCards};' + html.slice(i) });
   });
   await page.goto('http://localhost:4599/direct');
   await page.locator('.card[data-card-id="claude:c2"]').click();
@@ -166,10 +166,9 @@ try {
   fs.utimesSync(transcript, 1, 1);
 
   await page.locator('.toast').waitFor({ state: 'detached' });
-  for (const layout of ['trello', 'classic', 'rail', 'omni', 'hud']) for (const theme of ['light', 'dark']) {
-    await page.evaluate(({ layout, theme }) => { __test.setLayout(layout); __test.setThemePref(theme); }, { layout, theme });
+  for (const layout of ['board']) for (const theme of ['light', 'dark']) {
+    await page.evaluate(({ layout, theme }) => { __test.setThemePref(theme); }, { layout, theme });
     await page.waitForTimeout(100);
-    assert.equal(await page.locator('body').getAttribute('data-layout'), layout);
     assert.equal(await picker.isVisible(), true);
     await page.locator('.resume-box').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(output, `${layout}-${theme}.png`) });
@@ -191,7 +190,7 @@ try {
     await page.screenshot({ path: path.join(output, `${layout}-${theme}-details.png`) });
     await page.keyboard.press('Escape');
   }
-  await page.evaluate(() => { __test.setLayout('trello'); __test.setThemePref('light'); });
+  await page.evaluate(() => { __test.setThemePref('light'); });
   const sent = page.waitForResponse(r => r.url().endsWith('/rpc') && r.request().postDataJSON()?.name === 'canban_dispatch');
   await page.getByRole('button', { name: /今すぐ送信/ }).click();
   const dispatchResult = (await (await sent).json()).result;

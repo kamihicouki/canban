@@ -54,11 +54,11 @@ test('real lane construction keeps stable attribute IDs even when display names 
 
 test('the real swimlane column always exposes task addition with its column and lane context', () => {
   const source = boardHtml();
-  const code = source.slice(source.indexOf('function renderList('), source.indexOf('function renderCard('));
+  const code = source.slice(source.indexOf('function renderList('), source.indexOf('// The shell every card face shares'));
   const node = (tag, attrs = {}, ...children) => ({ tag, attrs, children,
     append(...items) { this.children.push(...items); }, addEventListener() {} });
   let request;
-  const context = vm.createContext({ h: node, state: { shown: {} }, PAGE: 50, colorVar: x => x,
+  const context = vm.createContext({ h: node, state: { shown: {} }, PAGE: 50, colorVar: x => x, splitByLife: (cards) => ({ awake: cards, dormant: [] }),
     taskQuickAdd: { open: value => { request = value; } } });
   vm.runInContext(code, context);
   const lane = { creation: { context: { project: 'p' } } };

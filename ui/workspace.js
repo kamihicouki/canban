@@ -24,7 +24,6 @@ const workspace = {
       if (e.key !== 'Escape' || e.defaultPrevented || !this.utilityPage() || !paneLayer.hidden || document.querySelector('.popover, dialog[open]') || typingIn(e.target)) return;
       e.preventDefault(); this.navigate('home');
     });
-    buildLayouts();
     this.initialized = true;
     this.navigate(this.page, { save: false, reload: false });
     setInterval(() => {
@@ -60,7 +59,6 @@ const workspace = {
     this.title.replaceChildren(h('span', { html: picon(PAGE_ICONS[this.page] || 'more', 20) }), WORKSPACE_PAGES.find(([id]) => id === this.page)?.[1] || '');
     for (const entry of this.entries.values()) entry.el.hidden = entry.page !== this.page || (entry.page === 'settings' && entry.tab !== this.settingsTab);
     $('.shell').inert = !paneLayer.hidden; // the board waits while the overlay is open; the app bar stays usable
-    paintLayoutChrome();
   },
   trackDrafts(root) {
     for (const el of root.querySelectorAll('input:not([type=checkbox]):not([type=radio]),textarea,select')) {

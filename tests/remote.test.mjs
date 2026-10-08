@@ -150,3 +150,19 @@ test('dispatch.py: inspect reads only agent logs; start / poll / stop run the CL
 test('fixtures stay byte-for-byte unchanged', () => {
   assert.deepEqual(fx.snapshot(), before);
 });
+
+test('a cold host that is slower than waitMs does not hold the listing; it reports late instead', async () => {
+  const pool = newPool();
+  let late = 0;
+  pool.onLate = () => { late++; };
+  pool.refresh = (h) => new Promise((resolve) => setTimeout(() => {
+    pool.cache.set(h.id, { sessions: [{ id: 'x' }], summaries: new Map(), fetchedAt: Date.now(), errors: [] });
+    resolve();
+  }, 150));
+  const t = Date.now();
+  assert.deepEqual(await pool.sessions([host], { waitMs: 20 }), []);
+  assert.ok(Date.now() - t < 120);
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(late, 1);
+  assert.deepEqual((await pool.sessions([host], { waitMs: 20 })).map((s) => s.id), ['x']);
+});
