@@ -3,7 +3,7 @@
 .pane[data-kind="session"][data-detail="thread"] { background: var(--card-bg); color: var(--card-fg); --fs: 14px; }
 .pane[data-detail="thread"] .th-head { display: flex; align-items: center; gap: 4px; padding: 10px 12px 2px 16px; flex: none; min-width: 0; }
 .th-head .card-crumb { flex: 1; min-width: 0; }
-.th-tool { height: 28px; min-width: 28px; padding: 0 7px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--card-muted); font-size: 12px; font-weight: 600; }
+.th-tool { height: 28px; min-width: 28px; padding: 0 6px 0 8px; border-radius: 7px; background: var(--btn-subtle); color: var(--card-fg) !important; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--card-muted); font-size: 12px; font-weight: 600; }
 .th-tool:hover { background: var(--btn-subtle-hover); color: var(--card-fg); }
 .th-tool[aria-pressed="true"] { background: var(--btn-subtle-hover); color: var(--card-fg); }
 .th-diffstat { display: inline-flex; gap: 5px; } .th-diffstat:empty { display: none; }
@@ -27,10 +27,6 @@
 .th-dock .send-section { margin: 0; }
 .th-side { width: 340px; flex: none; border-left: 1px solid var(--btn-subtle); display: flex; flex-direction: column; min-height: 0; background: var(--card-bg); }
 .th-side[hidden] { display: none; }
-.th-side-h { display: flex; align-items: center; gap: 6px; padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--btn-subtle); flex: none; }
-.th-side-h .seg { background: var(--btn-subtle); display: flex; gap: 2px; padding: 3px; border-radius: 9px; }
-.th-side-h .seg button { height: 26px; padding: 0 9px; border-radius: 7px; font-size: 12.5px; color: var(--card-muted); display: inline-flex; align-items: center; gap: 5px; }
-.th-side-h .seg button[aria-pressed="true"] { background: var(--card-bg); color: var(--card-fg); font-weight: 600; box-shadow: var(--card-shadow); }
 .th-side-b { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .pane-pad { padding: 10px 12px; }
 /* attributes of the details panel */
@@ -110,3 +106,8 @@ body[data-cs-conversation="folded"] .fi-note { padding: 0 2px; color: var(--card
 .th-thread[aria-selected="true"] { background: var(--btn-subtle-hover); color: var(--card-fg); font-weight: 600; }
 .th-thread .glyph { width: 14px; height: 14px; margin: 0; } .th-thread .glyph::after { width: 5px; height: 5px; }
 .th-new { border: 1px dashed var(--btn-subtle-hover); }
+/* the panel buttons read like the other labelled controls: icon, name, key */
+.th-tool .keycap { margin-left: 2px; }
+.th-tool[aria-pressed="true"] { background: var(--accent); color: var(--primary-fg) !important; }
+:root:not([data-theme="dark"]) .th-tool[aria-pressed="true"] { color: #fff !important; }
+.th-tool[aria-pressed="true"] .add, .th-tool[aria-pressed="true"] .del { color: inherit; }

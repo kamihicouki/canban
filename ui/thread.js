@@ -162,11 +162,8 @@ function detailSection(id, title, nodes, { open = true, extra = null } = {}) {
 }
 function renderThreadPane(p, d, secs, { card, listSel }) {
   const el = p.el, s = d.session;
-  const side = h('aside', { class: 'th-side', 'aria-label': '詳細パネル', hidden: true },
-    h('div', { class: 'th-side-h' }, h('div', { class: 'seg', role: 'group', 'aria-label': '詳細パネル' },
-      ...SIDE_TABS.filter(([id]) => id !== 'changes' || state.styles.review === 'on').map(([id, label, , key]) => h('button', { type: 'button', 'data-side-tab': id, 'aria-pressed': 'false', 'aria-keyshortcuts': key, onclick: () => toggleThreadSide(p, id) }, label, ' ', ...keycap(key)))),
-      h('span', { class: 'grow' })),
-    h('div', { class: 'th-side-b' }));
+  // One entry per panel: the labelled buttons in the header (with their keys) open and close it.
+  const side = h('aside', { class: 'th-side', 'aria-label': '詳細パネル', hidden: true }, h('div', { class: 'th-side-b' }));
   // The attributes: every section the module layout has, in one reading order.
   const order = [['progress', true], ['add', true], ['labels', true], ['prio', true], ['task', false], ['related', true], ['pr', true], ['memo', true], ['resume', true], ['detail', false], ['first', false], ['slack', true], ['other', false], ['actions', false]];
   p.detailNodes = order.filter(([id]) => secs[id]).map(([id, open]) => detailSection(id, secs[id].title ?? secTitle(id), secs[id].nodes, { open, extra: secs[id].extra }));
@@ -183,8 +180,8 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
     h('span', { class: 'th-time', title: fmtDate(s.updatedAt), text: relTime(s.updatedAt) }),
   ].filter(Boolean);
   const head = h('div', { class: 'th-head' }, secs.breadcrumb.nodes[0], h('span', { class: 'grow' }),
-    state.styles.review === 'on' && !s.host ? h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'changes', title: '変更を見る（f）', 'aria-pressed': 'false', onclick: () => toggleThreadSide(p, 'changes') }, h('span', { html: picon('diff', 15) }), h('span', { class: 'th-diffstat' })) : null,
-    h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'details', title: '詳細パネル（d）', 'aria-pressed': 'false', onclick: () => toggleThreadSide(p, 'details') }, h('span', { html: picon('panel', 15) })),
+    state.styles.review === 'on' && !s.host ? h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'changes', title: '作業フォルダの変更を右に開く・閉じる（f）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'f', onclick: () => toggleThreadSide(p, 'changes') }, h('span', { html: picon('diff', 14) }), '変更', h('span', { class: 'th-diffstat' }), ...keycap('f')) : null,
+    h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'details', title: '属性・メモ・再開などを右に開く・閉じる（d）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'd', onclick: () => toggleThreadSide(p, 'details') }, h('span', { html: picon('panel', 14) }), '詳細', ...keycap('d')),
     h('span', { class: 'ph-btns card-actions' }));
   const title = h('div', { class: 'th-title' }, secs.status.nodes[0], secs.title.nodes[0]);
   const main = h('div', { class: 'th-main' },
