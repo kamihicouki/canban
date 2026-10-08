@@ -139,13 +139,27 @@ const slackUi = {
       } catch (error) { area.textContent = error.message; }
     }; refresh(); return area;
   },
+  async browserChooser() {
+    const L = state.board?.settings?.launch || {};
+    const save = async patch => { try { await bridge.callTool('canban_update_settings', patch); await load?.(); } catch (error) { toast(error.message, true); } };
+    let browsers = []; try { browsers = (await bridge.callTool('canban_login_browsers', {})).result?.browsers || []; } catch {}
+    const browser = h('select', { 'aria-label': 'リンクを開くブラウザ' }, h('option', { value: '', text: 'OSの既定のブラウザ' }), browsers.map(b => h('option', { value: b.id, text: b.label })));
+    const profile = h('select', { 'aria-label': 'Chromeのプロファイル' });
+    const fill = () => { const list = browsers.find(b => b.id === browser.value)?.profiles || []; profile.hidden = !list.length;
+      profile.replaceChildren(...list.map(p => h('option', { value: p.id, text: p.label }))); profile.value = list.some(p => p.id === L.linkProfile) ? L.linkProfile : list[0]?.id || ''; };
+    browser.value = browsers.some(b => b.id === L.linkBrowser) ? L.linkBrowser : ''; fill();
+    browser.onchange = () => { fill(); save({ linkBrowser: browser.value, linkProfile: profile.value }); };
+    profile.onchange = () => save({ linkBrowser: browser.value, linkProfile: profile.value });
+    return h('label', { class: 'page-help' }, 'リンクを開くブラウザ（PRなど他のリンクにも使います） ', browser, profile);
+  },
   async settings(body) {
     const generation = body._slackGeneration = (body._slackGeneration || 0) + 1;
     body.textContent = 'Slack接続を取得しています…';
     try {
       this.data = await this.call('view'); if (generation !== body._slackGeneration || !body.isConnected) return; body.replaceChildren();
       body.append(h('p', { class: 'page-help', text: '個人用Slackアプリの読み取り権限で接続します。認証情報はこのMacのCanban保存先に保管します。' }),
-        h('button', { class: 'link-btn', text: 'Slackアプリの設定を開く', onclick: () => bridge.openLink('https://api.slack.com/apps') }));
+        h('button', { class: 'link-btn', text: 'Slackアプリの設定を開く', onclick: () => bridge.openLink('https://api.slack.com/apps').catch(() => navigator.clipboard?.writeText('https://api.slack.com/apps').then(() => toast('開けませんでした。URLをコピーしました', true))) }),
+        await this.browserChooser());
       const userToken = h('input', { class: 'text-input', type: 'password', autocomplete: 'off', 'aria-label': 'Slackユーザートークン', placeholder: 'ユーザートークン（xoxp-）' });
       const appToken = h('input', { class: 'text-input', type: 'password', autocomplete: 'off', 'aria-label': 'Slack Appトークン', placeholder: 'Appトークン（xapp-）' });
       const feedback = h('p', { role: 'status', class: 'page-help' });

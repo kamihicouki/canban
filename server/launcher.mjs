@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
+import { loginBrowsers, openLoginBrowser } from './login-browsers.mjs';
 
 const ALLOWED_SCHEMES = new Set(['codex:', 'claude:']);
 
@@ -129,4 +130,21 @@ export async function runInTerminal({ terminal, target, command }) {
   const mode = TERMINAL_CAPS[terminal].includes(target) ? target : 'new-window';
   await runner('osascript', ['-', command, mode], SCRIPTS[terminal]);
   return { terminal, target: mode, fellBack: mode !== target };
+}
+
+// Opens an http(s) link in the browser chosen in settings; '' follows the OS default.
+export async function openExternal(url, { linkBrowser = '', linkProfile = '' } = {}, browsers = loginBrowsers) {
+  let u;
+  try { u = new URL(url); } catch { throw new Error('不正な URL です'); }
+  if (!['http:', 'https:'].includes(u.protocol)) throw new Error(`許可されていないスキームです: ${u.protocol}`);
+  const catalog = linkBrowser ? browsers() : [];
+  const b = catalog.find((x) => x.id === linkBrowser);
+  if (!b) {
+    if (process.platform === 'darwin') return runner('open', [u.toString()]);
+    if (process.platform === 'linux') return runner('xdg-open', [u.toString()]);
+    throw new Error('この OS ではブラウザを開けません');
+  }
+  const profileId = b.id === 'chrome' ? (b.profiles.some((p) => p.id === linkProfile) ? linkProfile : b.profiles[0]?.id) : undefined;
+  try { await openLoginBrowser({ mode: 'auto', browserId: b.id, profileId }, u.toString(), catalog); }
+  catch (e) { throw new Error(e.browserReason || e.message); }
 }

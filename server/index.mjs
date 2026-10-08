@@ -17,7 +17,7 @@ import { RULE_TRIGGERS } from './store.mjs';
 import { computeStats } from './stats.mjs';
 import { desktopLink, resumeCommand, newSessionLink, newSessionCommand } from './agents.mjs';
 import { LOCAL_HOST } from './sources/util.mjs';
-import { openUrl, runInTerminal, installedTerminals, setRunner, TERMINAL_LABELS } from './launcher.mjs';
+import { openUrl, openExternal, runInTerminal, installedTerminals, setRunner, TERMINAL_LABELS } from './launcher.mjs';
 import { LiveHub } from './live.mjs';
 import { createWatch } from './watch.mjs';
 import { Presence, appLabel } from './presence.mjs';
@@ -514,7 +514,11 @@ const TOOLS = [
     route: { type: 'string', enum: ['desktop', 'terminal'] },
     terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
     target: { type: 'string', enum: ['new-window', 'new-tab', 'split', 'current'] },
+    linkBrowser: { type: 'string', enum: ['', 'chrome', 'safari'] },
+    linkProfile: { type: 'string', maxLength: 40 },
   }, [], (a) => store.updateLaunchSettings(a)),
+  appTool('canban_open_external', '設定したブラウザで URL を開く', { url: { type: 'string', maxLength: 2000 } }, ['url'],
+    async ({ url }) => { await openExternal(url, (await store.load()).settings.launch); return { opened: true }; }),
   {
     name: 'canban_create_task',
     title: 'タスクカードを追加',

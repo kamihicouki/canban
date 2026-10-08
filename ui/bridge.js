@@ -137,6 +137,7 @@ const bridge = (() => {
   }
 
   function openLink(url) {
+    if (!openai() && /^https?:/i.test(url) && hooks.linkBrowser?.()) return callTool('canban_open_external', { url });
     if (openai() && window.openai.openExternal) return window.openai.openExternal({ href: url });
     if (isChromeExtension()) return chrome.tabs.create({ url });
     return request('ui/open-link', { url }, 5000);
