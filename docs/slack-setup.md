@@ -2,15 +2,18 @@
 
 Canban 0.24.0は、自分用のSlackアプリを使います。会話の読み取り・資料の取り込みだけに対応します。Slackへの返信・リアクション・既読更新はしません。
 
-## Slackで行う設定
+## 接続の手順
 
-1. [Slackアプリ管理](https://api.slack.com/apps)で **Create New App → From a manifest** を選び、対象ワークスペースを選択します。[アプリmanifest](slack-app-manifest.json)のJSONを貼り付けて作成します。
-2. **Socket Mode** が有効であることを確認します。**Basic Information → App-Level Tokens** で `connections:write` だけを持つAppトークンを生成します。`xapp-` から始まる値です。
-3. **OAuth & Permissions** の **User Token Scopes** を確認して、自分のアカウントでワークスペースへインストールします。管理者の承認が必要な場合はSlackの通常の手順に従います。
-4. **User OAuth Token**（`xoxp-`）を取得します。Botトークンは使いません。**Event Subscriptions** の **Subscribe to events on behalf of users** に `message.channels` / `message.groups` / `message.im` / `message.mpim` があることを確認します。
-5. Canbanの管理「Slack接続」でUserトークンとAppトークンを入力し、「接続を保存」を押します。
-6. 「読む会話とカテゴリを選ぶ」でアクセスできる会話を取得し、読むものを選びます。会話ごとにカテゴリを指定でき、未分類と新規カテゴリ作成も使えます。「読む会話を保存」で確定します。
-7. ボードで `v` または⌘K「Slackタイムラインを表示」を使います。メッセージを選択して `c` でタスク作成、`l` で既存カードへ追加、`t` で返信を開けます。カードのSlack資料から、確認した本文を依頼文へ追加できます。
+Canbanの管理「Slack接続」に、この4ステップがボタンと入力欄つきで表示されます。
+
+1. **Slackにアプリを作る**: 「Slackでアプリを作る」を押すと、[アプリmanifest](slack-app-manifest.json)入りの作成画面（`https://api.slack.com/apps?new_app=1&manifest_json=…`）が開きます。ワークスペースを選んで **Next → Create**。開けないときは「設定をコピー」で manifest をコピーし、[Slackアプリ管理](https://api.slack.com/apps)の **Create New App → From a manifest** に貼り付けます。
+2. **ユーザートークンを貼る**: 作ったアプリの **OAuth & Permissions → Install to Workspace → 許可する**。表示された **User OAuth Token**（`xoxp-`）を貼ります。Botトークン（`xoxb-`）は使いません。管理者の承認が必要な場合はSlackの通常の手順に従います。
+3. **Appトークンを貼る**: **Basic Information → App-Level Tokens → Generate Token and Scopes**。名前は自由、**Add Scope** で `connections:write` だけを選んで **Generate**。`xapp-` の値を貼ります。
+4. **接続を確認する**: 「接続を確認して保存」を押すと、2つのトークンをSlackに確認して保存し、続けて「読む会話とカテゴリを選ぶ」が開きます。会話ごとにカテゴリを指定でき、未分類と新規カテゴリ作成も使えます。「読む会話を保存」で確定します。
+
+入力欄は形式をその場で確かめ、欄の入れ違い（`xapp-` をユーザートークン欄に貼った等）は正しい欄へ移します。接続に失敗したときは、どちらのトークンが、どの理由（`invalid_auth`・`missing_scope` など）で通らなかったかを表示します。
+
+ボードで `v` または⌘K「Slackタイムラインを表示」を使います。メッセージを選択して `c` でタスク作成、`l` で既存カードへ追加、`t` で返信を開けます。カードのSlack資料から、確認した本文を依頼文へ追加できます。
 
 複数ワークスペースはそれぞれのUserトークンを追加します。同じアプリを複数ワークスペースで使う場合は同じAppトークンを使い、Socket接続を共有します。UserトークンとAppトークンは**同じSlackアプリ**のものを使ってください。別アプリの組み合わせはUserトークンの認証に成功しても変更イベントを受信できません。
 

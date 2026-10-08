@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { executionContext } from './sqlite-client.mjs';
 import { SlackStore } from './slack-store.mjs';
-import { SLACK_CACHE_MS, slackKey, slackMessage, safeSlackUrl } from './slack-model.mjs';
+import { SLACK_CACHE_MS, slackKey, slackMessage, safeSlackUrl, slackTokenProblem, slackErrorText } from './slack-model.mjs';
 
 const METHODS = new Set(['auth.test', 'conversations.list', 'conversations.history', 'conversations.replies', 'apps.connections.open']);
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -22,7 +22,7 @@ export class SlackApi {
       if (response.status === 429) { this.cooldowns.set(scope, this.now() + Math.max(60, Number(response.headers.get('retry-after')) || 60)*1000); throw new Error('Slackの取得制限です。時間をおいて再試行してください'); }
       if (!response.ok) throw new Error(`Slackへの接続に失敗しました（HTTP ${response.status}）`);
       const result = await response.json();
-      if (!result.ok) throw new Error(`Slack: ${String(result.error || '取得失敗').replace(/[^a-z_0-9]/gi, '').slice(0,80)}`);
+      if (!result.ok) throw new Error(`Slack: ${slackErrorText(result.error)}`);
       return result;
     };
     // All requests share a bounded serial lane; no bursts per channel or message.
@@ -57,11 +57,14 @@ export class SlackService {
     finally { await handle.close(); await fs.rm(lock, { force: true }); await fs.rm(temp, { force: true }); }
   }
   async connect({ userToken, appToken }) {
-    if (!/^(xoxp-|xoxe\.xoxp-)[\w.-]+$/.test(userToken || '') || !/^xapp-[\w.-]+$/.test(appToken || '')) throw new Error('ユーザートークンとSocket Mode用のAppトークンを確認してください');
-    const auth = await this.api.call(userToken, 'auth.test');
-    if (auth.bot_id || !/^[A-Z0-9]+$/.test(auth.team_id || '') || !auth.user_id) throw new Error('本人のユーザートークンを指定してください');
+    userToken = String(userToken || '').trim(); appToken = String(appToken || '').trim();
+    const problem = slackTokenProblem('user', userToken) || slackTokenProblem('app', appToken); if (problem) throw new Error(problem);
+    // Name the token that failed so the person knows which step to redo.
+    const check = async (label, token, method) => { try { return await this.api.call(token, method); } catch (e) { throw new Error(`${label}: ${String(e.message).replace(/^Slack: /, '')}`); } };
+    const auth = await check('ユーザートークン', userToken, 'auth.test');
+    if (auth.bot_id || !/^[A-Z0-9]+$/.test(auth.team_id || '') || !auth.user_id) throw new Error('ユーザートークン: Botのトークンです。「User OAuth Token」（xoxp-）を貼ってください');
     // Validate the app token without exposing its short-lived WebSocket URL to the board.
-    await this.api.call(appToken, 'apps.connections.open');
+    await check('Appトークン', appToken, 'apps.connections.open');
     await this.saveCredentials(auth.team_id, { userToken, appToken });
     await this.db.saveWorkspace({ id: auth.team_id, name: String(auth.team || auth.team_id).slice(0,200), userId: auth.user_id, url: safeSlackUrl(auth.url) });
     await this.db.status(auth.team_id, { state: '待機', at: Date.now(), incomplete: true });

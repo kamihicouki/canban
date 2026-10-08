@@ -15,8 +15,23 @@
 .slack-ref { display: block; margin-top: 6px; text-align: left; }
 .slack-source { padding: 10px 0; border-bottom: 1px solid var(--border); }
 .slack-source:last-child { border-bottom: 0; }
-.slack-setup { display: grid; gap: 10px; }
-.slack-setup input { width: 100%; }
+.slack-setup > summary { cursor: pointer; font-weight: 600; }
+.slack-steps { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 18px; }
+.slack-step { display: grid; grid-template-columns: 26px minmax(0,1fr); gap: 10px; }
+.slack-step > div { display: grid; gap: 6px; min-width: 0; }
+.slack-step-n { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 13px; display: grid; place-items: center; }
+.slack-step .page-help { margin: 0; line-height: 1.7; }
+.slack-step code { font: inherit; font-size: 12px; padding: 1px 5px; border-radius: 4px; background: var(--btn-subtle-hover); white-space: nowrap; }
+.slack-token { display: grid; gap: 4px; font-size: 12px; }
+.slack-token input { width: 100%; }
+.slack-hint { margin: 0; font-size: 12px; min-height: 1em; color: var(--card-muted); }
+.slack-hint.good, .slack-status.good { color: color-mix(in srgb, var(--c-green) 55%, var(--card-fg)); }
+.slack-hint.bad { color: var(--danger); }
+.slack-status { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 13px; }
+.slack-status.warn { color: var(--warn-fg); }
+.slack-status-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.slack-next { margin: 0 0 8px; font-weight: 600; }
+.slack-notice .btn-primary, .slack-notice .btn { margin-top: 6px; }
 .slack-channel-row { display: grid; grid-template-columns: minmax(0,1fr) 120px; gap: 8px; align-items: center; padding: 5px 0; }
 .slack-channel-row label { overflow-wrap: anywhere; }
 .slack-notice { font-size: 12px; color: var(--card-muted); padding: 8px; }

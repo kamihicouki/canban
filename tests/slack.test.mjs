@@ -6,7 +6,7 @@ import path from 'node:path';
 import { Store } from '../server/store.mjs';
 import { SlackStore } from '../server/slack-store.mjs';
 import { SlackService, SlackApi, slackTools } from '../server/slack.mjs';
-import { slackMessage, safeSlackUrl, SLACK_CACHE_MS } from '../server/slack-model.mjs';
+import { slackMessage, safeSlackUrl, SLACK_CACHE_MS, slackTokenProblem, slackErrorText } from '../server/slack-model.mjs';
 
 const workspace = { id: 'T1', name: '架空のチーム', url: 'https://example.slack.com/', userId: 'U1', channels: [] };
 const channel = { id: 'C1', name: '依頼', directory: '__none' };
@@ -152,4 +152,23 @@ test('relink after cache eviction appends a revision without overwriting saved h
   await store.linkSlack({cardId:card.cardId,key:m.key});
   assert.equal((await db.sources(card.cardId))[0].versions,3);
   assert.deepEqual((await db.revisions({key:m.key})).revisions.map(r=>r.text),['第3版','第2版',m.text]);
+});
+
+test('connection guide: token shapes, which token failed, and the manifest the board prefills', async t => {
+  assert.equal(slackTokenProblem('user', 'xoxp-1-abc'), null);
+  assert.equal(slackTokenProblem('app', 'xapp-1-abc'), null);
+  assert.match(slackTokenProblem('user', 'xoxb-1'), /Botトークン/);
+  assert.match(slackTokenProblem('user', 'xapp-1'), /Appトークン」欄/);
+  assert.match(slackTokenProblem('app', 'xoxp-1'), /App-Level Tokens/);
+  assert.match(slackErrorText('invalid_auth'), /コピーし直して.*invalid_auth/);
+  assert.equal(slackErrorText(''), '取得失敗');
+  const { store } = await fixture(t);
+  const api = { async call(token, method) { if (method === 'auth.test') return { team_id: 'T9', team: '架空', user_id: 'U9' }; throw new Error('Slack: ' + slackErrorText('invalid_auth')); } };
+  const service = new SlackService(store, { api, Socket }); t.after(() => service.stop());
+  await assert.rejects(service.connect({ userToken: 'xapp-1', appToken: 'xoxp-1' }), /Appトークン」欄/);
+  await assert.rejects(service.connect({ userToken: ' xoxp-1 ', appToken: 'xapp-1' }), /^Error: Appトークン: トークンが正しくありません/);
+  const manifest = JSON.parse(await fs.readFile(new URL('../docs/slack-app-manifest.json', import.meta.url), 'utf8'));
+  const ui = await fs.readFile(new URL('../ui/slack.js', import.meta.url), 'utf8');
+  const literal = ui.match(/const SLACK_MANIFEST = (\{[\s\S]*?\n\});/)[1];
+  assert.deepEqual(Function(`return (${literal})`)(), manifest);
 });
