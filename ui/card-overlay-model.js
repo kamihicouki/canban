@@ -20,7 +20,7 @@ function normalizeCardBoard(value) {
 // These are display bounds; resizing a window never overwrites the saved ratios.
 function cardBoardGeometry(value, width) {
   const board = normalizeCardBoard(value), w = Math.max(1, width);
-  const minStage = Math.min(360, w * .55), legend = Math.min(112, w * .32), margin = Math.min(24, w * .08);
+  const minStage = Math.min(360, w * .55), legend = Math.min(216, w * .32), margin = Math.min(24, w * .08);
   const minLeft = board.shortcut.side === 'left' ? legend : margin;
   const minRight = board.shortcut.side === 'right' ? legend : margin;
   const left = cardBoardClamp(w * board.left, minLeft, w - minStage - minRight);
