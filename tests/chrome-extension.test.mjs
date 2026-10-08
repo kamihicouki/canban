@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { FrameDecoder, encodeNativeResponse } from '../server/native-messaging.mjs';
+import { boardHtml } from '../server/ui.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -51,7 +52,7 @@ test('Chrome build emits an MV3 toolbar extension with an external CSP-safe boar
 });
 
 test('adopting shared state from an older version lands on the board: analytics is no longer a page', () => {
-  const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
+  const html = boardHtml();
   const adopt = html.match(/function adoptSharedUi\(record\) \{([\s\S]*?)\n\}\n\nasync function applySharedUi/);
   const pages = ['home', 'rules', 'settings'], navigated = [];
   const state = { filters: {} };
@@ -63,7 +64,7 @@ test('adopting shared state from an older version lands on the board: analytics 
 });
 
 test('Chrome bridge waits for every large-response chunk before decoding', () => {
-  const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
+  const html = boardHtml();
   const source = html.slice(html.indexOf('  function settleNative('), html.indexOf('  function connectNative('));
   const response = { id: 7, result: { text: '🍙'.repeat(350000) } };
   const chunks = encodeNativeResponse(response).flatMap((frame) => new FrameDecoder().push(frame)).reverse();
@@ -81,7 +82,7 @@ test('Chrome bridge waits for every large-response chunk before decoding', () =>
 });
 
 test('repainting adopted settings does not create an unsaved local change', () => {
-  const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
+  const html = boardHtml();
   const source = html.slice(html.indexOf('const SHARED_UI_KEYS ='), html.indexOf('const DEFAULT_FILTERS ='));
   const values = new Map();
   let saves = 0;
@@ -96,7 +97,7 @@ test('repainting adopted settings does not create an unsaved local change', () =
 });
 
 test('foreground synchronization preserves an unsent session prompt', async () => {
-  const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
+  const html = boardHtml();
   const source = html.slice(html.indexOf('function hasUnsavedPaneInput()'), html.indexOf('function scheduleSharedUiCheck()'));
   let reads = 0;
   const context = vm.createContext({ promptDrafts: new Map(), paneCache: new Map(), sharedUi: { ready: true }, workspace: { hasDrafts: () => false }, idle: () => true,
@@ -119,7 +120,7 @@ test('Native Messaging installer targets only the supplied Chrome extension id',
 });
 
 test('foreground synchronization preserves an edited card note', async () => {
-  const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
+  const html = boardHtml();
   const source = html.slice(html.indexOf('function hasUnsavedPaneInput()'), html.indexOf('function scheduleSharedUiCheck()'));
   let reads = 0;
   const context = vm.createContext({ promptDrafts: new Map(), paneCache: new Map(), sharedUi: { ready: true }, workspace: { hasDrafts: () => false }, idle: () => true,
@@ -130,7 +131,7 @@ test('foreground synchronization preserves an edited card note', async () => {
 });
 
 test('startup preserves pending local settings after a revision conflict', async () => {
-  const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
+  const html = boardHtml();
   const source = html.slice(html.indexOf('async function initializeSharedUi()'), html.indexOf('function hasUnsavedPaneInput()'));
   let adopted = false, conflict = false;
   const sharedUi = {};

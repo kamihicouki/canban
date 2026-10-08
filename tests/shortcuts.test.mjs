@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { boardHtml } from '../server/ui.mjs';
 const source = fs.readFileSync(new URL('../ui/card-board.js', import.meta.url), 'utf8');
 const router = source.slice(source.indexOf('function handleCardBoardKey'), source.indexOf("document.addEventListener('keydown', handleCardBoardKey)"));
 function fixture({ overlay = true, typing = false, upper = false } = {}) {
@@ -38,7 +39,7 @@ test('card board keys respect input, IME, higher layers and handled events', () 
   }
 });
 
-const boardSource = fs.readFileSync(new URL('../ui/board.html', import.meta.url), 'utf8');
+const boardSource = boardHtml();
 const stepSource = boardSource.slice(boardSource.indexOf('async function stepOpenCard'), boardSource.indexOf('const focusedPane ='));
 test('browsing a linked session makes it the root instead of only refreshing its pane', async () => {
   const calls = [], cards = ['codex:a', 'task:b', 'codex:c'].map(id => ({ dataset: { cardId: id }, scrollIntoView() {} }));

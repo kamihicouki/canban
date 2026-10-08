@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.26.1 — 2026-10-08
+
+- 約30万バイト・4,500行の `ui/board.html` を、ページの骨組み（5,643バイト）と責務ごとの部品（`bridge`・`state`・`load`・`board-render`・`popover`・`card-overlay`・`requests`・`realtime`・`lanes`・`sidebar`・`analytics`・`task-detail`・`status`・`resume`・`settings`・`drag`・`search`・`app-bar`・`keyboard`・`boot`・`base.css`・`board.css`）に分けました。組み立て後のコードは、見出しのコメント1行と、作成ボタンの登録位置を除いて同一です。画面と動作は変わりません。
+- テストは `ui/board.html` の生の文字列ではなく、組み立て後のページを読むようにしました。骨組みが12,000バイトを超えると失敗します。
+
 ## 0.26.0 — 2026-10-08
 
 ムリ・ムダ・ムラを省き、1つの見た目に「時間・空間・情報の寿命」を足しました。検査と評価は [docs/audit-0.26.md](docs/audit-0.26.md)。
