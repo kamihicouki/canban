@@ -203,10 +203,21 @@ https://github.com/kamihicouki/canban
 
 | 素材 | サイズ | ファイル / 状態 |
 |---|---|---|
-| ストアアイコン | 128×128 PNG | `chrome/icons/icon-128.png` |
+| ストアアイコン | 128×128 PNG | `chrome/icons/icon-128.png`（96pxのロゴと各辺16pxの透過余白） |
 | ツールバーアイコン | 16×16 / 48×48 PNG | `chrome/icons/icon-16.png`, `icon-48.png` |
-| スクリーンショット | 1280×800 または 640×400 | `chrome/store/screenshot-board-0.16.0.jpg` / `screenshot-task-add.jpg`（1280×800、0.16.0 の同一 UI と隔離した MCP 開発ホスト・模擬データで撮影。ストア版インストールの動作証拠ではない） |
-| 宣伝用タイル（任意） | 440×280 | 未作成 |
+| スクリーンショット | 1280×800 PNG、5枚 | `chrome/store/screenshot-board-light.png`, `screenshot-timeline.png`, `screenshot-conversation.png`, `screenshot-task-detail.png`, `screenshot-board-dark.png` |
+| 小タイル | 440×280 PNG | `chrome/store/promo-small.png` |
+| 大型バナー | 1400×560 PNG | `chrome/store/promo-marquee.png` |
+
+2026-10-09: origin/main `02b94ecee4284be2f528aab4abb46984c998eaea`（UI 0.26.3）のボード・時間軸・カード詳細に合わせて掲載素材を更新。素材変更の版番号は0.26.5（0.26.4は既存の別PRで使用中）。画面内のロゴを正本として、配布用SVG/PNG・ツールバーアイコン・ストアアイコンを揃えた。
+
+画面画像は同じソースUIを隔離したMCP開発ホストと架空データで撮影したもの。ストア版インストールやNative Messaging接続の動作証拠ではない。実ユーザーの会話・アカウント情報を含まない。
+
+素材一覧と掲載順序は `chrome/store/README.md`。再生成は `node scripts/generate-store-assets.mjs`、ロゴと宣伝画像だけなら `--branding-only`。Chromeは拡張を無効にした一時プロファイルで起動し、実拡張や登録済みプロファイルにはアクセスしない。
+
+ストア管理画面へのアクセスは以前の安全判定で拒否されているため、これらの掲載素材はアップロード準備済み・ストア反映未確認。別経路で管理画面にアクセスしない。画像・掲載情報の更新はGitHub ActionsのZIP公開では反映されない。
+
+検証: `npm test` 366件成功、`node --test tests/board-smoke.browser.mjs` 成功、5枚の画面画像を確認。PNG寸法・128pxアイコンの透過余白・3ファイルの版番号一致・ZIPの9ファイルallowlist・新アイコンとのバイト列一致・nativeMessagingのみを照合した。0.26.5の配布ZIP SHA256は `43601557e4535f77287587e1368e7909d145879648701bbec1c12df6aeb48240`。このZIPは未アップロードで、ストア登録済みZIPとの一致は未確認。
 
 ## 権限の説明
 
