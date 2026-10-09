@@ -44,7 +44,7 @@ const NATIVE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 // Variables of the agent that started this server; they must not leak into the turn
 // (Claude Code otherwise records the turn as coming from its own host app).
-const DROP_ENV = /^(CLAUDECODE|CLAUDE_CODE_.*|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_AGENT_SDK_VERSION|CODEX_THREAD_ID|CODEX_SANDBOX.*|CODEX_MANAGED_.*)$/;
+const DROP_ENV = /^(CANBAN_UI_TOKEN|CLAUDECODE|CLAUDE_CODE_.*|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_AGENT_SDK_VERSION|CODEX_THREAD_ID|CODEX_SANDBOX.*|CODEX_MANAGED_.*)$/;
 export function cleanEnv(env = process.env) {
   const out = {};
   for (const [k, v] of Object.entries(env)) if (!DROP_ENV.test(k) && !CODEX_AUTH_OVERRIDES.includes(k)) out[k] = v;
@@ -247,7 +247,7 @@ export class Dispatcher {
   }
 
   // Validate and record a request; "now" starts it immediately or fails with the reason.
-  async submit({ cardId, prompt, imageIds = [], skills = [], when = 'queue', origin = 'ui', expectedUpdatedAt = null, allowElevated = false, claudeHome, now = Date.now() }) {
+  async submit({ cardId, prompt, imageIds = [], skills = [], when = 'queue', origin = 'ui', expectedUpdatedAt = null, allowElevated = false, claudeHome, loopContext, now = Date.now() }) {
     const cfg = (await this.settings());
     if (!cfg.enabled) throw new Error('指示の送信は設定でオフになっています');
     if (origin === 'model' && !cfg.allowModel) throw new Error('モデルからの送信は設定でオフになっています');
@@ -289,6 +289,7 @@ export class Dispatcher {
       origin,
       allowElevated: !!allowElevated || (origin === 'model' && cfg.allowModelElevated),
       expectedUpdatedAt,
+      ...(loopContext ? { loopContext } : {}),
     }));
     if (when === 'now') {
       const res = await this.tryStart(req, { session, host, insp, permission, force: true });

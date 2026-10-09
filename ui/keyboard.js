@@ -2,6 +2,11 @@
 // Keyboard: global shortcuts, command palette (⌘K) and the ? overlay
 const typingIn = (t) => t?.closest?.('input, textarea, select, [contenteditable]');
 document.addEventListener('keydown', e => {
+  if (!e.shiftKey || e.metaKey || e.ctrlKey || e.altKey || e.isComposing || typingIn(e.target) || document.querySelector('dialog[open], .popover')) return;
+  if (e.code === 'KeyO') { e.preventDefault(); toggleView('orbit'); }
+  if (e.code === 'KeyL' && (openViewKind() === 'orbit' || focusedPane()?.kind === 'task' || document.activeElement?.closest?.('.card')?.dataset.cardId?.startsWith('task:'))) { e.preventDefault(); focusTaskLoop(); }
+}, true);
+document.addEventListener('keydown', e => {
   if (e.altKey && !e.metaKey && !e.ctrlKey && !e.isComposing && e.code === 'KeyA' && !typingIn(e.target) && !document.querySelector('.popover')) {
     const picker = claudeAccountPicker(focusedPane());
     if (picker) { e.preventDefault(); picker.click(); }
@@ -71,7 +76,7 @@ function refreshShortcutHints() {
       ...(input.closest('[data-sec="send"]') && input.closest('.prompt-composer') ? [[`${modKey}Enter`, input.closest('.pane').dataset.kind === 'task' ? 'セッション開始' : '送信']] : []),
       ['Esc', '入力を抜ける'], [`${modKey}K`, 'コマンド'],
     ];
-    else if (panes[0]?.kind === 'view') entries = [[openViewKind() === 'analytics' ? 'a' : 'u', '閉じる'], ['r', '更新'], ...globalKeys, ['Esc', '閉じる']];
+    else if (panes[0]?.kind === 'view') entries = [[{ analytics: 'a', usage: 'u', orbit: 'Shift+O' }[openViewKind()], '閉じる'], ['r', '更新'], ...globalKeys, ['Esc', '閉じる']];
     else {
       const cards = displayedListCards(panes[0]?.id), index = cards.findIndex(el => el.dataset.cardId === panes[0]?.id);
       entries = [['k', '前のカード', index <= 0], ['j', '次のカード', index < 0 || index === cards.length - 1],
@@ -102,7 +107,7 @@ const SHORTCUTS = [
   ['全体', [
     ['/', '検索にフォーカス（Esc でクリア、↓ / Enter で最初のカードへ）'], ['⌘K / Ctrl+K', `コマンドパレット（カード・ビュー・${T.category}・操作を検索して実行）`],
     ['p', `${T.category}・プロジェクトで絞り込み`], ['b', 'サイドバーの開閉'], ['[ / ]', '前 / 次のスイムレーンへ'],
-    ['c', 'タスクを追加'], ['1〜9', '保存したビューに切り替え'], ['a', '分析を開く / 閉じる'], ['r', '再読み込み'], ['?', 'この一覧'],
+    ['c', 'タスクを追加'], ['1〜9', '保存したビューに切り替え'], ['a', '分析を開く / 閉じる'], ['Shift+O', '軌道シートを開く / 閉じる'], ['Shift+L', 'タスクの改善ループへ'], ['r', '再読み込み'], ['?', 'この一覧'],
   ]],
   ['時間（寿命）', [
     ['i', 'ボード（リストごと）と時間軸（時間ごと）を切り替え'], ['時間の帯で ← →', '日を移動（Home / End で最古 / 今日）。Enter で照らす'],
@@ -138,6 +143,8 @@ function commandPalette() {
   const actions = [
     { label: openViewKind() === 'analytics' ? '分析を閉じる' : '分析を開く', run: toggleAnalytics, hint: 'a' },
     { label: openViewKind() === 'usage' ? 'Agent Usage を閉じる' : 'Agent Usage を開く', run: () => toggleView('usage'), hint: 'u' },
+    { label: openViewKind() === 'orbit' ? '軌道を閉じる' : '軌道を開く', run: () => toggleView('orbit'), hint: 'Shift+O' },
+    { label: 'タスクの改善ループにフォーカス', run: focusTaskLoop, hint: 'Shift+L' },
     ...(paneLayer.hidden || panes[0]?.kind !== 'view' ? [
       { label: paneLayer.hidden ? '次のカードにフォーカス' : '次のカードを開く', run: () => stepDisplayedCard(1), hint: 'j' },
       { label: paneLayer.hidden ? '前のカードにフォーカス' : '前のカードを開く', run: () => stepDisplayedCard(-1), hint: 'k' },

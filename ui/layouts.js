@@ -11,9 +11,9 @@ const LAYOUTS = [
   ['hud', 'ライブ HUD', '動いているセッションを、いつも最上段にタイルで表示'],
 ];
 const layoutOf = (v) => (LAYOUTS.some(([id]) => id === v) ? v : 'trello');
-// Places a layout can jump to: [icon, label]. analytics / usage open a sheet on the overlay; the rest open the management panel.
+// Places a layout can jump to: [icon, label]. analytics / usage / orbit open a sheet on the overlay; the rest open the management panel.
 const PLACES = {
-  home: ['board', 'ボード'], analytics: ['chart', '分析'], usage: ['gauge', 'Agent Usage'], rules: ['zap', T.automation],
+  home: ['board', 'ボード'], analytics: ['chart', '分析'], usage: ['gauge', 'Agent Usage'], orbit: ['refresh', '軌道'], rules: ['zap', T.automation],
   labels: ['tag', 'ラベル'], directories: ['folder', T.category], views: ['bookmark', '保存ビュー'], hosts: ['server', 'マシン'], settings: ['gear', '設定'],
   look: ['layout', 'レイアウトと色'],
   slack: ['message', 'Slack接続'], slackTimeline: ['message', 'Slack'],
@@ -45,13 +45,13 @@ function applyLayout() {
   if (state.layout === 'rail' && matchMedia('(min-width: 721px)').matches) {
     layoutParts.rail = h('nav', { class: 'layout-rail', 'aria-label': '場所' },
       h('span', { class: 'rail-logo', html: LOGO_SVG }),
-      ...['home', 'analytics', 'usage', 'slackTimeline'].map(p => placeBtn(p, 'rail-item', { size: 21 })), h('span', { class: 'rail-sep' }),
+      ...['home', 'analytics', 'usage', 'orbit', 'slackTimeline'].map(p => placeBtn(p, 'rail-item', { size: 21 })), h('span', { class: 'rail-sep' }),
       ...MANAGE_PLACES.map(p => placeBtn(p, 'rail-item', { size: 21 })), placeBtn('look', 'rail-item', { size: 21 }));
     content.prepend(layoutParts.rail);
   }
   if (state.layout === 'omni') {
     layoutParts.dock = h('nav', { class: 'layout-dock', 'aria-label': '場所' },
-      ...['home', 'analytics', 'usage', 'slackTimeline', ...MANAGE_PLACES, 'look'].map(p => placeBtn(p, 'dock-item', { size: 22 })));
+      ...['home', 'analytics', 'usage', 'orbit', 'slackTimeline', ...MANAGE_PLACES, 'look'].map(p => placeBtn(p, 'dock-item', { size: 22 })));
     layoutParts.filterBtn = h('button', { class: 'hbtn omni-filter', type: 'button', 'aria-haspopup': 'dialog', onclick: e => {
       const b = state.board; if (!b) return;
       popover(e.currentTarget, 'レーンと絞り込み', h('div', { class: 'sidebar omni-pop' }, laneSection(b, () => true), filterSection(b)), { width: 320 });
@@ -62,7 +62,7 @@ function applyLayout() {
   }
   if (state.layout === 'hud') {
     layoutParts.tabs = h('nav', { class: 'layout-tabs', 'aria-label': '場所', 'data-pri': '9' },
-      ...['home', 'analytics', 'usage'].map(p => placeBtn(p, 'layout-tab', { size: 17 })));
+      ...['home', 'analytics', 'usage', 'orbit'].map(p => placeBtn(p, 'layout-tab', { size: 17 })));
     layoutParts.hud = h('section', { class: 'live-hud', 'aria-label': '動いているセッション' });
     $('.topbar').after(layoutParts.hud);
     $('#brand').after(layoutParts.tabs);

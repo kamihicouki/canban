@@ -1,7 +1,7 @@
 // Kanban state store. This is the only module that writes to disk, and it only
 // writes inside the configured Canban data directory.
 import { isMainThread, proxyStore } from './sqlite-client.mjs';
-import { readBoard, writeBoard, transaction, currentFence } from './sqlite-backend.mjs';
+import { readBoard, writeBoard, transaction, currentFence, db, bump, readTransaction } from './sqlite-backend.mjs';
 import { defaultAccounts, normalizeAccounts, applyAccountPatch } from './accounts-settings.mjs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -9,6 +9,7 @@ import { resolveDataDirectory } from './data-directory.mjs';
 import { normalizeTaskDashboard, taskDashboardRecord } from './task-dashboard.mjs';
 import { normalizeTaskContext } from './task-context.mjs';
 import { attachSlackReference } from './slack-store.mjs';
+import { loopRecord, applyLoopCommand, loopProgress } from './loop.mjs';
 
 export const STORE_VERSION = 1;
 export const LIST_COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
@@ -476,6 +477,49 @@ export class Store {
 
   getTaskDashboard({ taskId }) {
     return taskDashboardRecord(this.load().cards[taskId], taskId);
+  }
+
+  getLoop({ taskId }) {
+    return readTransaction(() => {
+      const row = db().prepare("SELECT payload FROM board_records WHERE kind='cards' AND id=?").get(taskId);
+      const task = row && JSON.parse(row.payload);
+      const saved = db().prepare('SELECT payload FROM loop_state WHERE task_id=?').get(taskId);
+      task && (task.loop = saved ? JSON.parse(saved.payload) : null);
+      const rounds = db().prepare('SELECT payload FROM loop_rounds WHERE task_id=? ORDER BY rowid').all(taskId).map(r => JSON.parse(r.payload));
+      for (const c of task?.loop?.cycles || []) c.rounds = rounds.filter(r => r.cycleId === c.id);
+      return loopRecord(task, taskId);
+    });
+  }
+
+  loopSummaries() {
+    return readTransaction(() => Object.fromEntries(db().prepare('SELECT task_id FROM loop_state').all().flatMap(({ task_id: taskId }) => {
+      if (!db().prepare("SELECT 1 FROM board_records WHERE kind='cards' AND id=?").get(taskId)) return [];
+      const record = this.getLoop({ taskId });
+      return [[taskId, { revision: record.revision, cycles: record.cycles.map(c => ({ id: c.id, parentId: c.parentId, goal: c.goal,
+        status: c.status, phase: c.phase, version: c.version, maxRounds: c.maxRounds, count: c.rounds.filter(r => r.version === c.version).length,
+        progress: loopProgress(c), reason: c.reason, updatedAt: c.updatedAt })) }]];
+    })));
+  }
+
+  loopCommand(args) {
+    return transaction(() => {
+      const record = this.getLoop(args);
+      const saved = db().prepare('SELECT payload FROM loop_state WHERE task_id=?').get(args.taskId);
+      const task = { kind: 'task', loop: { ...(saved ? JSON.parse(saved.payload) : {}), ...record } };
+      const result = applyLoopCommand(task, args.taskId, args);
+      if (result.conflict || result.duplicate) return result;
+      for (const c of task.loop.cycles) for (const r of c.rounds) {
+        const payload = JSON.stringify({ ...r, cycleId: c.id });
+        const old = db().prepare('SELECT payload FROM loop_rounds WHERE task_id=? AND id=?').get(args.taskId, r.id);
+        if (old?.payload === payload) continue;
+        if (old && JSON.parse(old.payload).closedAt) throw new Error('確定済みの周回は変更できません');
+        db().prepare('INSERT INTO loop_rounds VALUES(?,?,?) ON CONFLICT(task_id,id) DO UPDATE SET payload=excluded.payload').run(args.taskId, r.id, payload);
+      }
+      const payload = JSON.stringify({ ...task.loop, cycles: task.loop.cycles.map(({ rounds, ...c }) => c) });
+      db().prepare('INSERT INTO loop_state VALUES(?,?) ON CONFLICT(task_id) DO UPDATE SET payload=excluded.payload').run(args.taskId, payload);
+      bump('board');
+      return result;
+    }, { fence: currentFence });
   }
 
   saveTaskDashboard({ taskId, expectedRevision, state }) {

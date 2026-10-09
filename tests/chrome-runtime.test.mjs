@@ -10,7 +10,7 @@ import { FrameDecoder, encodeNativeResponse } from '../server/native-messaging.m
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-test('installed Chrome host serves shared data without access to the original Documents checkout', { timeout: 10000 }, async () => {
+test('installed Chrome host serves shared data without access to the original Documents checkout', { timeout: 30000 }, async () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-chrome-runtime-'));
   let child;
   try {
@@ -44,7 +44,9 @@ test('installed Chrome host serves shared data without access to the original Do
     child.stderr.on('data', (bytes) => { stderr += bytes; });
     child.stdin.on('error', () => {});
     const response = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`Native Host timed out: ${stderr}`)), 5000);
+      // Cold process startup can be delayed by the real-session reader fixture and OS I/O.
+      // This verifies installation independence, not a five-second performance budget.
+      const timer = setTimeout(() => reject(new Error(`Native Host timed out: ${stderr}`)), 15000);
       child.once('error', (error) => { clearTimeout(timer); reject(error); });
       child.once('close', () => { clearTimeout(timer); reject(new Error(`Native host has exited: ${stderr}`)); });
       child.stdout.on('data', (bytes) => {

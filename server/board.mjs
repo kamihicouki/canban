@@ -344,6 +344,7 @@ export function buildBoard(...args) {
 
 async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
   const filters = normalizeFilters(rawFilters);
+  const loopSummaries = await store.loopSummaries();
   let state = (await store.load());
   const { sessions: sourceSessions, errors, hosts, app } = await allSessions(state, { force });
   const sessions = sessionCardStates(sourceSessions, state);
@@ -446,7 +447,8 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
     const allLinks = (t.links || []).map((sid) => byId.get(sid)).filter(Boolean);
     const links = allLinks.filter(s => (filters.includeArchived || !s.archived));
     const status = aggregateStatus(links.map((x) => x.status || 'idle'));
-    const updatedAt = Math.max(t.createdAt || 0, ...links.map((x) => x.updatedAt || 0));
+    const taskUpdatedAt = typeof t.updatedAt === 'number' ? t.updatedAt : Date.parse(t.updatedAt) || 0;
+    const updatedAt = Math.max(t.createdAt || 0, taskUpdatedAt, ...links.map((x) => x.updatedAt || 0), ...(loopSummaries[id]?.cycles || []).map(c => c.updatedAt));
     const dir = resolveDirectory(state, t, t.target?.cwd || links.find((x) => x.cwd)?.cwd);
     const context = effectiveTaskContext(t, links);
     if (t.context?.project) projects.set(context.project, (projects.get(context.project) || 0) + 1);
@@ -463,6 +465,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       kind: 'task',
       title: t.title,
       description: t.description || '',
+      loop: loopSummaries[id] || null,
       slackRefs: t.slackRefs || [],
       directory: dirView(dir),
       context: t.context || {},

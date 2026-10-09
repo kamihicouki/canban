@@ -109,6 +109,10 @@ function renderCard(card, list) {
 }
 const gitTitleOr = (card) => (card.git ? gitTitle(card.git) : card.branch || '');
 function faceTaskNow(card) {
+  if (card.loop?.cycles.length) {
+    const c = card.loop.cycles.find(c => !c.parentId) || card.loop.cycles[0];
+    return h('div', { class: 'fnow', text: `周回 ${c.count}/${c.maxRounds} · ${LOOP_STATUS[c.status]}${c.progress == null ? ' · 未確認' : ` · 前回の確認 ${Math.round(c.progress * 100)}%`}` });
+  }
   if (!card.links.length) return h('div', { class: 'fnow', text: card.pending?.length ? '開始したセッションを待っています' : 'セッションはまだありません' });
   const n = (s) => card.links.filter((l) => l.status === s).length;
   const parts = [`${card.links.length} セッション`, n('running') ? `実行中 ${n('running')}` : null, n('waiting') ? `入力待ち ${n('waiting')}` : null, n('aborted') ? `中断 ${n('aborted')}` : null].filter(Boolean);
