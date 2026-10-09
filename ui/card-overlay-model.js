@@ -17,7 +17,7 @@ function cardBoardGeometry(width) {
   return { left, right, width: w - left - right };
 }
 // Analytics and Agent Usage open on the same layer as sheets, under ids of their own ("view:analytics").
-const VIEW_SHEETS = { analytics: ['chart', '分析'], usage: ['gauge', 'Agent Usage'] };
+const VIEW_SHEETS = { analytics: ['chart', '分析'], usage: ['gauge', 'Agent Usage'], orbit: ['refresh', '軌道'] };
 const cardKind = (id) => (String(id).startsWith('task:') ? 'task' : String(id).startsWith('view:') ? 'view' : 'session');
 const viewOf = (id) => (cardKind(id) === 'view' && Object.hasOwn(VIEW_SHEETS, String(id).slice(5)) ? String(id).slice(5) : null);
 function normalizeCardWidths(value) {

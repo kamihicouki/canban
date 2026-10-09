@@ -219,6 +219,7 @@ function renderTaskThreadPane(p, card, secs) {
     h('div', { class: 'th-conv th-task' },
       taskSection('conv', '説明', null, secs.conv.nodes),
       secs.slack ? taskSection('slack', 'Slack資料', null, secs.slack.nodes) : null,
+      loopComponent(card, { compact: true }),
       taskSection('related', secs.related.title, secs.related.extra, secs.related.nodes)),
     h('div', { class: 'th-dock', 'data-sec': 'send' }, h('div', { class: 'th-sec-t' }, secs.send.title, secs.send.extra || null), ...secs.send.nodes));
   p.el.replaceChildren(head, title, h('div', { class: 'th-meta' }, ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('task'));

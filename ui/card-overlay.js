@@ -385,6 +385,7 @@ function toggleView(kind) { return openViewKind() === kind ? closeCards() : open
 function loadView(p) {
   const kind = viewOf(p.id);
   if (kind === 'analytics') return loadAnalytics(p);
+  if (kind === 'orbit' && state.board) return loadOrbit(p);
   if (kind === 'usage' && state.board) {
     const body = $('.sheet-b', p.el), top = body.scrollTop;
     workspace.renderUsage({ el: body }, state.board);

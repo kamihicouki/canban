@@ -88,7 +88,7 @@ function toggleSidebar(open = !state.sideOpen) {
 // Sidebar entries that open something other than a filter: [page, icon, label, key hint].
 // 見る opens a sheet on the overlay; 管理 opens the management panel next to the sidebar. Pressing the open one again closes it.
 // カテゴリ is managed from the ⚙ beside the category list, so it has no entry of its own here.
-const SIDE_LOOK = [['analytics', 'chart', '分析', 'a'], ['usage', 'gauge', 'Agent Usage', '']];
+const SIDE_LOOK = [['analytics', 'chart', '分析', 'a'], ['usage', 'gauge', 'Agent Usage', ''], ['orbit', 'refresh', '軌道', 'Shift+O']];
 const SIDE_MANAGE = [['rules', 'zap', T.automation], ['labels', 'tag', 'ラベル'], ['views', 'bookmark', '保存ビュー'], ['hosts', 'server', 'マシン'], ['slack', 'message', 'Slack接続'], ['settings', 'gear', '設定']];
 // The axes a lane can follow, in the order the sidebar offers them; the rest sit behind ⋯.
 const LANE_AXES = [['', 'なし'], ['directory', T.category], ['agent', 'AI Apps'], ['host', 'マシン'], ['label', 'ラベル']];

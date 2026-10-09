@@ -48,6 +48,23 @@ export class RequestStore {
 
   create(fields) {
     return this.mutate((s) => {
+      if (fields.loopContext) {
+        const x = fields.loopContext;
+        const prior = db().prepare('SELECT payload FROM loop_dispatch WHERE round_id=?').get(x.roundId);
+        if (prior) {
+          const original = JSON.parse(prior.payload);
+          if (original.cardId !== fields.cardId) throw new Error('この周回は別のセッションへ送信済みです');
+          return s.requests.find(r => r.id === original.id) || original;
+        }
+        const row = db().prepare('SELECT payload FROM loop_state WHERE task_id=?').get(x.taskId);
+        const record = row && JSON.parse(row.payload);
+        const c = record?.cycles.find(c => c.id === x.cycleId);
+        const roundRow = db().prepare('SELECT payload FROM loop_rounds WHERE task_id=? AND id=?').get(x.taskId, x.roundId);
+        const round = roundRow && JSON.parse(roundRow.payload);
+        const taskRow = db().prepare("SELECT payload FROM board_records WHERE kind='cards' AND id=?").get(x.taskId);
+        const task = taskRow && JSON.parse(taskRow.payload);
+        if (record?.revision !== x.expectedRevision || c?.status !== 'active' || round?.cycleId !== c.id || round.version !== c.version || round.closedAt || !task?.links?.includes(fields.cardId)) throw new Error('周回または紐付けが変わりました。最新の状態を確認してください');
+      }
       const req = {
         id: `req-${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}`,
         state: 'queued',
@@ -56,6 +73,7 @@ export class RequestStore {
         ...fields,
       };
       s.requests.push(req);
+      if (fields.loopContext) db().prepare('INSERT INTO loop_dispatch VALUES(?,?,?)').run(fields.loopContext.roundId, req.id, JSON.stringify(req));
       return req;
     });
   }
@@ -83,6 +101,20 @@ export class RequestStore {
     return this.mutate((s) => {
       const r = s.requests.find((x) => x.id === id);
       if (!r || r.state !== 'queued') return { ok: false, reason: 'この依頼は待機中ではありません' };
+      if (r.loopContext) {
+        const x = r.loopContext;
+        const row = db().prepare('SELECT payload FROM loop_state WHERE task_id=?').get(x.taskId);
+        const c = row && JSON.parse(row.payload).cycles.find(c => c.id === x.cycleId);
+        const roundRow = db().prepare('SELECT payload FROM loop_rounds WHERE task_id=? AND id=?').get(x.taskId, x.roundId);
+        const round = roundRow && JSON.parse(roundRow.payload);
+        const taskRow = db().prepare("SELECT payload FROM board_records WHERE kind='cards' AND id=?").get(x.taskId);
+        const task = taskRow && JSON.parse(taskRow.payload);
+        if (c?.status !== 'active' || round?.cycleId !== c?.id || round?.version !== c?.version || round?.closedAt || !task?.links?.includes(r.cardId)) {
+          const reason = '周回が停止・終了したか、紐付けが変わったため送信を取り消しました';
+          Object.assign(r, { state: 'cancelled', endedAt: Date.now(), reasonCode: 'loop_changed', error: reason });
+          return { ok: false, reason, reasonCode: 'loop_changed' };
+        }
+      }
       if (s.requests.some((x) => x.cardId === r.cardId && ACTIVE_STATES.has(x.state))) return { ok: false, reason: 'このセッションには実行中の依頼があります' };
       if (!force && s.paused[r.cardId]) return { ok: false, reason: `キューは一時停止中です: ${s.paused[r.cardId].reason}` };
       const active = s.requests.filter((x) => ACTIVE_STATES.has(x.state));
