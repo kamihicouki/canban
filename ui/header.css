@@ -1,33 +1,44 @@
-/* Header (the whole app) and board bar (this board), Trello's two translucent bars.
-   The board bar folds labels first, then [data-pri] items into ⋯ (ui/header.js). */
-.topbar, .boardbar { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; white-space: nowrap; color: var(--header-fg); }
-.topbar { height: 52px; padding: 0 12px; background: var(--header-bg); flex: none; }
-.boardbar { min-height: 52px; padding: 8px 12px 8px 10px; background: var(--boardbar-bg); flex: none; overflow: hidden; }
-.topbar > *, .boardbar > * { flex: none; }
-.topbar .spacer, .boardbar .spacer { flex: 1 1 0; min-width: 4px; }
+/* The app bar: one translucent bar for the whole app and the board it shows (docs/ui-components.md).
+   When it does not fit, labels fold first, then [data-pri] items move into ⋯ (ui/header.js). */
+.topbar { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; white-space: nowrap; color: var(--header-fg);
+  height: 52px; padding: 0 10px; background: var(--header-bg); flex: none; overflow: hidden; }
+.topbar > * { flex: none; }
+.topbar .spacer { flex: 1 1 0; min-width: 4px; }
 .brand { display: inline-flex; align-items: center; gap: 9px; padding: 0 6px 0 2px; color: var(--header-fg); }
 .brand .logo-mark { width: 28px; height: 28px; }
 .brand-word { font: 700 19px/1 "Avenir Next", "Futura", "Century Gothic", -apple-system, sans-serif; letter-spacing: -.01em; }
-.hsearch-wrap { position: relative; display: inline-flex; align-items: center; flex: 0 1 340px !important; min-width: 120px; }
+.board-name { margin: 0; font-size: 16px; font-weight: 700; }
+.board-name #logo { display: block; height: 32px; padding: 0 8px; border-radius: 6px; color: var(--header-fg); font: inherit; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-name #logo:hover, .board-name #logo[aria-pressed="true"] { background: var(--header-btn); }
+.hsearch-wrap { position: relative; display: inline-flex; align-items: center; flex: 0 1 320px !important; min-width: 160px; }
 .hsearch-wrap > svg { position: absolute; left: 10px; color: var(--header-dim); pointer-events: none; }
 .hsearch-wrap:focus-within > svg { color: var(--list-muted); }
-.topbar .hsearch { width: 100%; padding-left: 32px; }
+.topbar .hsearch { width: 100%; padding-left: 32px; padding-right: 64px; }
+.hsearch-keys { position: absolute; right: 8px; display: flex; gap: 2px; color: var(--header-dim); pointer-events: none; }
+.hsearch-wrap:focus-within .hsearch-keys, .hsearch-wrap:has(.hsearch:not(:placeholder-shown)) .hsearch-keys { display: none; }
+.topbar .quick-task-trigger .keycap { margin-left: 2px; }
+@media (max-width: 760px) { .hsearch-keys { display: none; } .topbar .hsearch { padding-right: 12px; } }
 .hbtn { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .hbtn.icon-only { width: 32px; padding: 0; justify-content: center; }
 .hbtn.primary { background: var(--primary-bg); color: var(--primary-fg); }
 .hbtn.primary:hover { background: var(--primary-bg); opacity: .9; }
-.boardbar h1 { font-size: 18px; font-weight: 700; margin: 0 6px 0 4px; max-width: 360px; overflow: hidden; text-overflow: ellipsis; color: var(--header-fg); }
-.boardbar.compact .hbtn[data-pri] .lbl { display: none; }
-.boardbar [data-pri].folded { display: none !important; }
-.theme-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 6px; background: var(--header-btn); }
-.theme-seg button { width: 30px; height: 28px; border-radius: 4px; display: grid; place-items: center; color: var(--header-dim); }
-.theme-seg button:hover { color: var(--header-fg); }
-.theme-seg button[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-fg); }
+.bar-sep { width: 1px; height: 22px; background: var(--header-btn-hover); margin: 0 2px; }
+.topbar.compact .hbtn .lbl, .topbar.no-word .brand-word { display: none; }
+.topbar.compact .acct-btn .rings > :nth-child(n+3) { display: none; } /* two rings are enough to tell the accounts apart */
+.topbar [data-pri].folded { display: none !important; }
 .more-menu .menu-item { display: flex; align-items: center; gap: 8px; }
 .more-menu .more-row { display: flex; gap: 4px; padding: 2px 6px 6px; flex-wrap: wrap; }
 .more-menu .more-row button { padding: 3px 8px; border-radius: 4px; background: var(--btn-subtle); font-size: 12px; }
-.more-menu .more-row button[aria-pressed="true"] { background: var(--c-blue); color: #fff; }
+.more-menu .more-row button[aria-pressed="true"] { background: var(--c-blue); color: var(--on-scrim); }
 @media (max-width: 720px) {
-  .brand-word, .ft-toggle, .quick-task-trigger .lbl { display: none; }
+  .brand-word, .ft-toggle, .quick-task-trigger .lbl, .bar-sep { display: none; }
   .topbar { gap: 6px; padding: 0 8px; }
+  .board-name #logo { max-width: 140px; }
 }
+.shortcut-hints { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; line-height: 20px; }
+.shortcut-hint { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.shortcut-hints kbd { font: 11px/16px ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px solid currentColor; border-radius: 3px; padding: 0 4px; }
+.shortcut-hint[aria-disabled="true"] { opacity: .4; }
+.board-shortcuts { position: fixed; right: 12px; bottom: 8px; z-index: 10; max-width: calc(100vw - 24px); padding: 2px 8px; border-radius: 4px; background: color-mix(in srgb, var(--board-bg) 94%, transparent); color: var(--on-board); pointer-events: none; }
+.board-shortcuts[hidden] { display: none; }
+.topbar.compact .board-name #logo { max-width: 104px; }

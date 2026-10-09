@@ -1,0 +1,132 @@
+/* Part of board.html (included by server/ui.mjs; shares its scope). */
+:root {
+  --board-bg: #0079bf;
+  --board-bg-2: #5067c5;
+  --header-bg: rgba(0, 0, 0, 0.24);
+  --header-fg: #fff;
+  --header-dim: rgba(255, 255, 255, 0.78);
+  --header-btn: rgba(255, 255, 255, 0.2);
+  --header-btn-hover: rgba(255, 255, 255, 0.32);
+  --side-bg: rgba(0, 0, 0, 0.24);
+  --side-active: rgba(255, 255, 255, 0.26);
+  --on-board: #fff; --on-board-dim: rgba(255, 255, 255, 0.85); --on-board-btn: rgba(255, 255, 255, 0.2); --on-board-btn-hover: rgba(255, 255, 255, 0.32);
+  --pressed-bg: #fff; --pressed-fg: #0c66e4; --primary-bg: #fff; --primary-fg: #0c66e4;
+  --tone-run: #216e4e; --tone-run-bg: #dcfff1; --tone-wait: #7f5f01; --tone-wait-bg: #fff7d6;
+  --tone-err: #ae2e24; --tone-err-bg: #ffeceb; --tone-done: #0055cc; --tone-done-bg: #e9f2ff;
+  --tone-idle: #44546f; --tone-idle-bg: rgba(9, 30, 66, 0.06);
+  --ag-codex: #0a7c62; --ag-codex-bg: #dff5ee; --ag-claude: #a8462a; --ag-claude-bg: #fdeee8; --ag-task: #5e4db2; --ag-task-bg: #f3f0ff;
+  --logo-bg: #fff;
+  --logo-fg: #0c66e4;
+  --list-bg: #f1f2f4;
+  --list-fg: #172b4d;
+  --list-muted: #44546f;
+  --card-bg: #fff;
+  --chat-human-bg: #e9f2ff; --chat-agent-bg: #f1f2f4;
+  --card-fg: #172b4d;
+  --card-muted: #626f86;
+  --card-shadow: 0 1px 1px #091e4240, 0 0 1px #091e424f;
+  --card-hover: #f7f8f9;
+  --input-bg: #fff;
+  --input-border: #8590a2;
+  --btn-subtle: rgba(9, 30, 66, 0.06);
+  --btn-subtle-hover: rgba(9, 30, 66, 0.14);
+  --modal-bg: #f1f2f4;
+  --modal-panel: #fff;
+  --overlay: rgba(0, 0, 0, 0.64);
+  --on-scrim: #fff;
+  --scrim-ctl: rgba(255, 255, 255, 0.15);
+  --scrim-ctl-hover: rgba(255, 255, 255, 0.25);
+  --task-accent: #8b7bb2;
+  --danger-solid: #c43135;
+  --lift-shadow: 0 8px 24px rgba(9, 30, 66, 0.25), 0 0 1px rgba(9, 30, 66, 0.5);
+  --accent: #0c66e4;
+  --danger: #c9372c;
+  --warn-bg: #ffecb3;
+  --warn-fg: #7f5f01;
+  --focus: #388bff;
+  --codex: #12a381;
+  --claude: #d46f4c;
+  --c-gray: #8590a2; --c-blue: #579dff; --c-green: #4bce97; --c-yellow: #f5cd47; --c-orange: #fea362;
+  --c-red: #f87168; --c-purple: #9f8fef; --c-pink: #e774bb; --c-sky: #6cc3e0; --c-lime: #94c748;
+  --txt-bg: #fbfbfc; --txt-fg: #1d2733; --txt-dim: #6b778c; --note-bg: #fdf0a6; --note-fg: #3d3200;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --board-bg: #1d2125;
+  --board-bg-2: #0b2a4a;
+  --header-bg: rgba(0, 0, 0, 0.35);
+  --header-dim: rgba(255, 255, 255, 0.7);
+  --header-btn: rgba(255, 255, 255, 0.12);
+  --header-btn-hover: rgba(255, 255, 255, 0.2);
+  --side-bg: rgba(0, 0, 0, 0.32);
+  --side-active: rgba(255, 255, 255, 0.18);
+  --pressed-bg: #dee4ea; --pressed-fg: #1d2125; --primary-bg: #579dff; --primary-fg: #1d2125;
+  --tone-run: #7ee2b8; --tone-run-bg: #164b35; --tone-wait: #f5cd47; --tone-wait-bg: #533f04;
+  --tone-err: #fd9891; --tone-err-bg: #5d1f1a; --tone-done: #85b8ff; --tone-done-bg: #09326c;
+  --tone-idle: #9fadbc; --tone-idle-bg: rgba(255, 255, 255, 0.06);
+  --ag-codex: #6cd4b6; --ag-codex-bg: #0f3a30; --ag-claude: #f0a281; --ag-claude-bg: #4a2617; --ag-task: #b8acf6; --ag-task-bg: #352c63;
+  --logo-bg: #579dff;
+  --logo-fg: #1d2125;
+  --list-bg: #101204;
+  --list-fg: #b6c2cf;
+  --list-muted: #8c9bab;
+  --card-bg: #22272b;
+  --chat-human-bg: #09326c; --chat-agent-bg: #282e33;
+  --card-fg: #b6c2cf;
+  --card-muted: #8c9bab;
+  --card-shadow: 0 1px 1px #03040480, 0 0 1px #03040480;
+  --card-hover: #2c333a;
+  --input-bg: #22272b;
+  --input-border: #738496;
+  --btn-subtle: rgba(161, 189, 217, 0.08);
+  --btn-subtle-hover: rgba(166, 197, 226, 0.16);
+  --modal-bg: #323940;
+  --modal-panel: #282e33;
+  --overlay: rgba(0, 0, 0, 0.72);
+  --on-scrim: #fff;
+  --scrim-ctl: rgba(255, 255, 255, 0.15);
+  --scrim-ctl-hover: rgba(255, 255, 255, 0.25);
+  --task-accent: #a89bd1;
+  --danger-solid: #c43135;
+  --lift-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 1px rgba(0, 0, 0, 0.7);
+  --accent: #579dff;
+  --danger: #f87168;
+  --warn-bg: #533f04;
+  --warn-fg: #f5cd47;
+  --txt-bg: #0e1215; --txt-fg: #c9d4df; --txt-dim: #7d8b99; --note-bg: #5c4b0a; --note-fg: #ffeaa0;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font: 14px/20px -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  color: var(--list-fg);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; border: 0; background: none; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+/* ---------- header ---------- */
+
+/* Solid surfaces for the restored classic/rail/omni/HUD layouts. */
+:root {
+  --layout-board-bg: #f3f5f8; --layout-board-bg-2: #f3f5f8; --layout-list-bg: #e7eaef;
+  --layout-header-bg: #ffffff; --layout-header-fg: #172b4d; --layout-header-dim: #5b6a82;
+  --layout-header-btn: rgba(9, 30, 66, 0.06); --layout-header-btn-hover: rgba(9, 30, 66, 0.12);
+  --layout-side-bg: #f9fafb; --layout-side-active: #e3edff; --layout-chrome-line: rgba(9, 30, 66, 0.12);
+  --layout-on-board: #172b4d; --layout-on-board-dim: #44546f; --layout-on-board-btn: rgba(9, 30, 66, 0.07); --layout-on-board-btn-hover: rgba(9, 30, 66, 0.13);
+  --layout-pressed-bg: #e3edff; --layout-pressed-fg: #0c55c8; --layout-primary-bg: #0c66e4; --layout-primary-fg: #ffffff;
+  --layout-logo-bg: #0c66e4; --layout-logo-fg: #ffffff; --layout-dock-bg: rgba(255, 255, 255, 0.9);
+}
+:root[data-theme="dark"] {
+  --layout-board-bg: #0f1216; --layout-board-bg-2: #0f1216; --layout-list-bg: #171b21;
+  --layout-header-bg: #161a20; --layout-header-fg: #dee4ea; --layout-header-dim: #9fadbc;
+  --layout-header-btn: rgba(255, 255, 255, 0.06); --layout-header-btn-hover: rgba(255, 255, 255, 0.12);
+  --layout-side-bg: #13171c; --layout-side-active: #1c2b41; --layout-chrome-line: rgba(255, 255, 255, 0.08);
+  --layout-on-board: #dee4ea; --layout-on-board-dim: #9fadbc; --layout-on-board-btn: rgba(255, 255, 255, 0.07); --layout-on-board-btn-hover: rgba(255, 255, 255, 0.13);
+  --layout-pressed-bg: #1c2b41; --layout-pressed-fg: #85b8ff; --layout-primary-bg: #579dff; --layout-primary-fg: #0f1216;
+  --layout-logo-bg: #579dff; --layout-logo-fg: #0f1216; --layout-dock-bg: rgba(26, 31, 39, 0.9);
+}
+
+:root { --layout-shadow: rgba(9, 30, 66, 0.25); }

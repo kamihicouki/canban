@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { codexSnapshot, claudeSnapshot, codexUsage, claudeUsage } from '../server/account-usage.mjs';
-import { claudeKeychainService, claudeCredentials } from '../server/account-credentials.mjs';
+import { claudeKeychainService, claudeCredentials, updateClaudeCredentials } from '../server/account-credentials.mjs';
 
 let root, codex, claude, fake;
 const write = (file, value) => fs.writeFile(file, JSON.stringify(value));
@@ -83,4 +83,95 @@ test('Claude keychain is scoped by config directory and only falls back to that 
   let service;
   const r = await claudeCredentials(claude, { platform: 'darwin', keychain: async (s) => { service = s; return null; } });
   assert.equal(service, claudeKeychainService(claude)); assert.equal(r.claudeAiOauth.accessToken, 'PRIVATE-TOKEN');
+});
+
+test('Claude refreshes expired credentials and keeps the rotated login across usage-client restarts', async () => {
+  await write(path.join(claude.dir, '.claude.json'), { oauthAccount: { accountUuid: 'b' } });
+  const file = path.join(claude.dir, '.credentials.json');
+  await write(file, { other: 'preserved', claudeAiOauth: {
+    accessToken: 'EXPIRED-PRIVATE', refreshToken: 'REFRESH-PRIVATE', expiresAt: 1,
+    scopes: ['user:profile', 'user:inference'], subscriptionType: 'max', rateLimitTier: 'tier',
+  } });
+  let refreshes = 0, saves = 0;
+  const read = async () => JSON.parse(await fs.readFile(file, 'utf8'));
+  const saveCredentials = async (home, expected, next) => {
+    assert.equal(home.dir, claude.dir); assert.equal((await read()).claudeAiOauth.accessToken, expected.claudeAiOauth.accessToken);
+    saves++; await write(file, next); return true;
+  };
+  const fetcher = async (url, options) => {
+    assert.equal(options.redirect, 'error');
+    if (options.method === 'POST') {
+      refreshes++; assert.equal(url, 'https://platform.claude.com/v1/oauth/token');
+      const body = JSON.parse(options.body);
+      assert.equal(body.grant_type, 'refresh_token'); assert.equal(body.refresh_token, 'REFRESH-PRIVATE');
+      assert.equal(body.scope, 'user:profile user:inference');
+      return response({ access_token: 'NEW-PRIVATE', refresh_token: 'ROTATED-PRIVATE', expires_in: 3600, scope: body.scope });
+    }
+    assert.equal(options.headers.Authorization, 'Bearer NEW-PRIVATE');
+    return response(url.endsWith('/profile') ? { account: { uuid: 'b' } } : { five_hour: { utilization: 12 } });
+  };
+  for (let restart = 0; restart < 2; restart++) {
+    const result = await claudeUsage({ key: 'claude:b', home: claude }, { credentials: read, saveCredentials, fetcher });
+    assert.equal(result.primary.usedPercent, 12); assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
+  }
+  assert.equal(refreshes, 1); assert.equal(saves, 1);
+  const saved = await read(); assert.equal(saved.other, 'preserved');
+  assert.equal(saved.claudeAiOauth.refreshToken, 'ROTATED-PRIVATE'); assert.equal(saved.claudeAiOauth.rateLimitTier, 'tier');
+});
+
+test('Claude persists into the original CLI store and never replaces a newer login', async () => {
+  const expected = { other: 'keep', claudeAiOauth: { accessToken: 'OLD', refreshToken: 'REFRESH' } };
+  const next = { ...expected, claudeAiOauth: { accessToken: 'NEW', refreshToken: 'ROTATED' } };
+  const file = path.join(claude.dir, '.credentials.json');
+  await write(file, expected);
+  assert.equal(await updateClaudeCredentials(claude, expected, next, { platform: 'linux' }), true);
+  assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), next);
+  assert.equal((await fs.stat(file)).mode & 0o777, 0o600);
+  assert.equal(await updateClaudeCredentials(claude, expected, next, { platform: 'linux' }), false);
+  let writes = 0, keychain = expected;
+  const options = { platform: 'darwin', keychain: async () => keychain,
+    writeKeychain: async (service, value) => { assert.equal(service, claudeKeychainService(claude)); writes++; keychain = value; } };
+  assert.equal(await updateClaudeCredentials(claude, expected, next, options), true);
+  assert.equal(await updateClaudeCredentials(claude, expected, next, options), false);
+  assert.equal(writes, 1); assert.deepEqual(keychain, next);
+  assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), next);
+  await assert.rejects(updateClaudeCredentials(claude, next, expected, { ...options, writeKeychain: async () => {} }), /credential_store_unavailable/);
+});
+
+test('Claude renews a revoked access token once, and redacts renewal and persistence failures', async () => {
+  await write(path.join(claude.dir, '.claude.json'), { oauthAccount: { accountUuid: 'b' } });
+  const credentials = async () => ({ claudeAiOauth: { accessToken: 'PRIVATE', refreshToken: 'PRIVATE-REFRESH', expiresAt: Date.now() + 60000 } });
+  let renewals = 0, writes = 0;
+  const fetcher = async (url, options) => {
+    if (options.method === 'POST') { renewals++; return response({ access_token: 'RENEWED', expires_in: 3600 }); }
+    if (options.headers.Authorization === 'Bearer PRIVATE') return { status: 401 };
+    return response(url.endsWith('/profile') ? { account: { uuid: 'b' } } : { five_hour: { utilization: 0 } });
+  };
+  const result = await claudeUsage({ key: 'claude:b', home: claude }, { credentials, fetcher, saveCredentials: async (home, expected, next) => {
+    assert.equal(next.claudeAiOauth.refreshToken, 'PRIVATE-REFRESH'); writes++; return true;
+  } });
+  assert.equal(result.primary.usedPercent, 0); assert.equal(renewals, 1); assert.equal(writes, 1);
+  const expired = async () => ({ claudeAiOauth: { accessToken: 'PRIVATE', refreshToken: 'PRIVATE-REFRESH', expiresAt: 1 } });
+  for (const [status, code] of [[400, 'login_required'], [429, 'rate_limited'], [503, 'unavailable']]) {
+    await assert.rejects(claudeUsage({ key: 'claude:b', home: claude }, { credentials: expired, fetcher: async () => ({ status }) }), { code, message: code });
+  }
+  await assert.rejects(claudeUsage({ key: 'claude:b', home: claude }, { credentials, fetcher, saveCredentials: async () => { throw new Error('PRIVATE'); } }), { code: 'unavailable', message: 'unavailable' });
+  await assert.rejects(claudeUsage({ key: 'claude:b', home: claude }, { credentials, fetcher, saveCredentials: async () => false }), { code: 'identity_changed' });
+});
+
+test('Claude keeps a rotated refresh token even when the following usage request fails', async () => {
+  let saved = { claudeAiOauth: { accessToken: 'EXPIRED', refreshToken: 'OLD-REFRESH', expiresAt: 1 } }, renewals = 0;
+  const credentials = async () => saved;
+  const saveCredentials = async (home, expected, next) => { saved = next; return true; };
+  const fetcher = async (url, options) => {
+    if (options.method === 'POST') { renewals++; return response({ access_token: 'NEW', refresh_token: 'NEW-REFRESH', expires_in: 3600 }); }
+    throw new Error('PRIVATE-NETWORK-ERROR');
+  };
+  await assert.rejects(claudeUsage({ key: 'claude:b', home: claude }, { credentials, saveCredentials, fetcher }), { code: 'unavailable', message: 'unavailable' });
+  assert.equal(saved.claudeAiOauth.refreshToken, 'NEW-REFRESH');
+  const restarted = await claudeUsage({ key: 'claude:b', home: claude }, { credentials, saveCredentials, fetcher: async (url, options) => {
+    assert.notEqual(options.method, 'POST');
+    return response(url.endsWith('/profile') ? { account: { uuid: 'b' } } : { five_hour: { utilization: 5 } });
+  } });
+  assert.equal(restarted.primary.usedPercent, 5); assert.equal(renewals, 1);
 });

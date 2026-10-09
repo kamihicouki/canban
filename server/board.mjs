@@ -1,3 +1,5 @@
+import { normalizeClaudeExecution } from './accounts.mjs';
+import { sessionActions } from './session-actions.mjs';
 import { leaderFor } from './leader.mjs';
 // Combines read-only session listings (local + enabled remote hosts) with the
 // Canban store into a board snapshot.
@@ -9,9 +11,11 @@ import { permissionFor } from './permissions.mjs';
 import { RequestStore, requestSummary } from './requests.mjs';
 import { listRemoteHosts } from './sources/remotes.mjs';
 import { codexAppState, annotateCodexApp, codexProjectList } from './sources/codex-app.mjs';
+import { mergeDotSessions, matchesDotScope, isCloudSession, CLOUD_OPERATION_REASON } from './sources/codex-dots.mjs';
 import { LOCAL_HOST } from './sources/util.mjs';
 import { RemotePool } from './remote/pool.mjs';
 import { launchInfo } from './agents.mjs';
+import { claudeResumeAccounts, groupClaudeResumeAccounts } from './claude-handoff.mjs';
 import { installedTerminals } from './launcher.mjs';
 import { annotateStatus, STATUSES } from './status.mjs';
 import { currentLimits, cardSignals, limitsByAccount } from './signals.mjs';
@@ -29,6 +33,8 @@ import { perf } from './perf.mjs';
 const LOCAL_TTL_MS = 4000;
 let localCache = null;
 export const pool = new RemotePool();
+// On a cold start the board shows local sessions after this long; remote ones follow (pool.onLate).
+const REMOTE_FIRST_WAIT_MS = 1500;
 export const prs = new PrService();
 const PR_WINDOW_MS = 30 * 86400e3; // look up PRs for sessions active in the last 30 days
 
@@ -40,7 +46,7 @@ export function dropLocalCache() {
 async function localSessions({ force = false } = {}) {
   if (!force && localCache && Date.now() - localCache.at < LOCAL_TTL_MS) return localCache.value;
   const [codex, claude] = await Promise.all([perf.timed('codex.list', () => listCodexSessions()), perf.timed('claude.list', () => listClaudeSessions())]);
-  const value = { sessions: [...codex.sessions, ...claude.sessions], errors: [codex.error, claude.error].filter(Boolean) };
+  const value = { sessions: [...codex.sessions, ...claude.sessions], errors: [codex.error, claude.error].filter(Boolean), codexAvailable: !codex.error };
   localCache = { at: Date.now(), value };
   return value;
 }
@@ -65,20 +71,21 @@ async function allSessionsImpl(state, { force = false } = {}) {
   if (configureAccounts(state.settings.accounts)) force = true; // homes changed: list again
   const hosts = await hostsWithState(state);
   const enabled = hosts.filter((h) => h.enabled);
-  const [local, remote] = await Promise.all([localSessions({ force }), perf.timed('remote.list', () => pool.sessions(enabled, { force }))]);
-  const all = [...local.sessions, ...remote];
+  const [local, remote] = await Promise.all([localSessions({ force }), perf.timed('remote.list', () => pool.sessions(enabled, { force, waitMs: force ? Infinity : REMOTE_FIRST_WAIT_MS }))]);
   const app = await codexAppState();
+  const all = mergeDotSessions([...local.sessions, ...remote], app, { includeCloud: local.codexAvailable });
   annotateCodexApp(all, app); // Codex projects, pins and follow-ups kept by the Codex app
   await perf.timed('status', () => annotateStatus(all));
   for (const fn of sessionHooks) fn(local.sessions);
   const now = Date.now();
-  await prs.annotate(all.filter((s) => (s.updatedAt || 0) >= now - PR_WINDOW_MS || state.cards[s.id]?.listId));
+  await prs.annotate(all.filter((s) => !isCloudSession(s) && ((s.updatedAt || 0) >= now - PR_WINDOW_MS || state.cards[s.id]?.listId)));
   const errors = [...local.errors];
   for (const h of enabled) {
     const st = pool.hostStatus(h.id);
     if (st.state === 'error' && st.error) errors.push(`${h.label}: ${st.error}`);
   }
-  return { sessions: [...local.sessions, ...remote], errors, hosts, app };
+  const cloudHosts = [...new Map(all.filter(isCloudSession).map(s => [s.host.id, { ...s.host, enabled: true }])).values()];
+  return { sessions: all, errors, hosts: [...hosts, ...cloudHosts], app };
 }
 
 // Cards without an explicit order sort by recency: newest at the top.
@@ -93,7 +100,12 @@ function matchesDirectory(f, dir) {
 }
 
 
+function sessionCardStates(sessions, state) {
+  return sessions; // archive and deletion belong exclusively to the agent
+}
+
 function matches(session, card, f, labelsById, hits, dir) {
+  if (!matchesDotScope(session, f.dotScope)) return false;
   if (f.agent && f.agent !== 'all' && session.agent !== f.agent) return false;
   if (f.host && (session.host?.id || 'local') !== f.host) return false;
   if (f.account && !matchesAccount(f.account, session)) return false;
@@ -105,7 +117,6 @@ function matches(session, card, f, labelsById, hits, dir) {
   if (f.status && (session.status || 'idle') !== f.status) return false;
   if (!f.includeArchived && session.archived) return false;
   if (!f.includeSubagents && session.subagent) return false;
-  if (!f.includeHidden && card?.hidden) return false;
   if (f.pinnedOnly && !session.pinnedInAgent) return false;
   // Sessions the user placed on the board stay visible regardless of age.
   if (f.days && !card?.listId && (session.updatedAt || 0) < Date.now() - f.days * 86400000) return false;
@@ -122,7 +133,7 @@ function matches(session, card, f, labelsById, hits, dir) {
 }
 
 export function matchesTask(t, links, status, f, labelsById, dir) {
-  if (!f.includeHidden && t.hidden) return false;
+  if (f.dotScope === 'only' && !links.some(s => s.dot)) return false;
   if (!matchesDirectory(f, dir)) return false;
   if (f.label && (f.label === '__none' ? t.labels?.length : !t.labels?.includes(f.label))) return false;
   if (f.status && status !== f.status) return false;
@@ -161,6 +172,7 @@ export function normalizeFilters(f = {}) {
     q: typeof f.q === 'string' ? f.q.trim() : '',
     includeArchived: !!f.includeArchived,
     includeSubagents: !!f.includeSubagents,
+    dotScope: ['all', 'only'].includes(f.dotScope) ? f.dotScope : 'exclude',
     includeHidden: !!f.includeHidden,
     pinnedOnly: !!f.pinnedOnly,
     groupBranch: !!f.groupBranch,
@@ -170,6 +182,7 @@ export function normalizeFilters(f = {}) {
 }
 
 function hostView(h) {
+  if (h.cloud) return { ...h, status: { state: 'cached' } };
   return { id: h.id, alias: h.alias, label: h.label, local: false, enabled: h.enabled, status: pool.hostStatus(h.id) };
 }
 
@@ -193,7 +206,7 @@ async function tickSearchImpl(store) {
 // Full-text hits: id -> snippet (local index + enabled remote hosts).
 async function fullTextHits(store, q, hosts) {
   const hits = new Map(searchFor(store).query(q).map((r) => [r.id, r.snippet]));
-  const enabled = hosts.filter((h) => h.enabled);
+  const enabled = hosts.filter((h) => h.enabled && !h.cloud);
   const remote = await Promise.all(enabled.map((h) => pool.search(h, q).catch(() => new Set())));
   for (const ids of remote) for (const id of ids) if (!hits.has(id)) hits.set(id, null);
   return hits;
@@ -269,6 +282,7 @@ export async function runRules(store, state, sessions, now = Date.now(), { ruleI
 
 async function runRulesOwned(store, state, sessions, now, ruleId) {
   state = await store.load();
+  sessions = sessionCardStates(sessions, state);
   const rule = ruleId === undefined ? null : state.settings.rules.find((r) => r.id === ruleId);
   if (ruleId !== undefined && !rule) throw new Error('自動化が見つかりません');
   if (rule && !state.lists.some((l) => l.id === rule.toListId)) throw new Error('移動先のリストが見つかりません');
@@ -318,7 +332,8 @@ async function tickRulesImpl(store) {
   let state = (await store.load());
   const pendingTasks = taskEntries(state).some(([, t]) => t.pending?.length);
   if (!pendingTasks && !state.settings.rules.some((r) => r.enabled)) return [];
-  const { sessions } = await allSessions(state);
+  const { sessions: sourceSessions } = await allSessions(state);
+  const sessions = sessionCardStates(sourceSessions, state);
   if ((await store.resolvePending(matchPending(state, sessions))).length) state = (await store.load());
   return runRules(store, state, sessions);
 }
@@ -329,8 +344,10 @@ export function buildBoard(...args) {
 
 async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
   const filters = normalizeFilters(rawFilters);
+  const loopSummaries = await store.loopSummaries();
   let state = (await store.load());
-  const { sessions, errors, hosts, app } = await allSessions(state, { force });
+  const { sessions: sourceSessions, errors, hosts, app } = await allSessions(state, { force });
+  const sessions = sessionCardStates(sourceSessions, state);
   if (await store.syncSessionCategories(sessions)) state = await store.load();
   if ((await store.resolvePending(matchPending(state, sessions))).length) state = (await store.load());
   if ((await runRules(store, state, sessions)).length) state = (await store.load());
@@ -357,7 +374,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
 
   for (const s of sessions) {
     const card = state.cards[s.id];
-    const visibleKind = (filters.includeSubagents || !s.subagent) && (filters.includeArchived || !s.archived);
+    const visibleKind = matchesDotScope(s, filters.dotScope) && (filters.includeSubagents || !s.subagent) && (filters.includeArchived || !s.archived);
     if (visibleKind) statusCounts[s.status || 'idle']++;
     if (s.project && visibleKind) projects.set(s.project, (projects.get(s.project) || 0) + 1);
     if (s.folder && s.folder !== s.project && visibleKind) folders.set(s.folder, (folders.get(s.folder) || 0) + 1);
@@ -387,9 +404,14 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       model: s.model,
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
-      archived: s.archived,
+      archived: !!s.archived,
+      canbanArchived: !!card?.archived,
       subagent: s.subagent,
       automation: s.automation,
+      dot: s.dot || null,
+      sourceKind: s.sourceKind || null,
+      cloud: s.cloud || null,
+      statusKnown: s.statusKnown !== false,
       preview: s.preview,
       prUrl: s.prUrl || null,
       canDesktop: !!launch.desktop,
@@ -397,12 +419,13 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       order: effectiveOrder(s, card),
       labels: card?.labels || [],
       note: card?.note || '',
+      slackRefs: card?.slackRefs || [],
       priority: card?.priority || null,
       due: card?.due || null,
-      hidden: !!card?.hidden,
       placed: !!card?.listId,
       status: s.status || 'idle',
       activity: s.activity || null,
+      last: s.lastSaid || null,
       signals: cardSignals(s.signals),
       git: s.status === 'running' || s.status === 'waiting' ? peekGit(s.cwd) : null,
       unread: (s.updatedAt || 0) > Math.max(seenAll, card?.seenAt || 0),
@@ -421,18 +444,20 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
   // Task cards: user-created cards that may have sessions linked to them.
   const now = Date.now();
   for (const [id, t] of taskEntries(state)) {
-    const links = (t.links || []).map((sid) => byId.get(sid)).filter(Boolean);
+    const allLinks = (t.links || []).map((sid) => byId.get(sid)).filter(Boolean);
+    const links = allLinks.filter(s => (filters.includeArchived || !s.archived));
     const status = aggregateStatus(links.map((x) => x.status || 'idle'));
-    const updatedAt = Math.max(t.createdAt || 0, ...links.map((x) => x.updatedAt || 0));
+    const taskUpdatedAt = typeof t.updatedAt === 'number' ? t.updatedAt : Date.parse(t.updatedAt) || 0;
+    const updatedAt = Math.max(t.createdAt || 0, taskUpdatedAt, ...links.map((x) => x.updatedAt || 0), ...(loopSummaries[id]?.cycles || []).map(c => c.updatedAt));
     const dir = resolveDirectory(state, t, t.target?.cwd || links.find((x) => x.cwd)?.cwd);
     const context = effectiveTaskContext(t, links);
-    if (!t.hidden && t.context?.project) projects.set(context.project, (projects.get(context.project) || 0) + 1);
-    if (!t.hidden && t.context?.folder) folders.set(context.folder, (folders.get(context.folder) || 0) + 1);
-    if (!t.hidden && t.context?.section) {
+    if (t.context?.project) projects.set(context.project, (projects.get(context.project) || 0) + 1);
+    if (t.context?.folder) folders.set(context.folder, (folders.get(context.folder) || 0) + 1);
+    if (t.context?.section) {
       const section = sections.get(context.section) || { id: context.section, name: context.section, count: 0 };
       sections.set(context.section, { ...section, count: section.count + 1 });
     }
-    if (!t.hidden) dirCounts.set(dir?.id || '__none', (dirCounts.get(dir?.id || '__none') || 0) + 1);
+    dirCounts.set(dir?.id || '__none', (dirCounts.get(dir?.id || '__none') || 0) + 1);
     if (!matchesTask(t, links, status, filters, labelsById, dir)) continue;
     const listId = t.listId && listIds.has(t.listId) ? t.listId : state.defaultListId;
     buckets.get(listId).push({
@@ -440,6 +465,8 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       kind: 'task',
       title: t.title,
       description: t.description || '',
+      loop: loopSummaries[id] || null,
+      slackRefs: t.slackRefs || [],
       directory: dirView(dir),
       context: t.context || {},
       directoryId: t.directoryId || null,
@@ -450,9 +477,9 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       account: context.account,
       codexSection: context.section ? { id: context.section, name: sections.get(context.section)?.name || context.section } : null,
       target: t.target || null,
-      links: links.map((x) => ({ id: x.id, agent: x.agent, account: x.account || null, title: x.title, status: x.status || 'idle', subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, updatedAt: x.updatedAt })),
+      links: links.map((x) => ({ id: x.id, agent: x.agent, account: x.account || null, title: x.title, status: x.status || 'idle', statusKnown: x.statusKnown !== false, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, updatedAt: x.updatedAt })),
       linkedSessionIds: [...(t.links || [])],
-      missingLinks: (t.links || []).length - links.length,
+      missingLinks: (t.links || []).length - allLinks.length,
       pending: (t.pending || []).map((p) => ({ agent: p.agent, startedAt: p.startedAt, expired: now - p.startedAt > PENDING_MS })),
       createdAt: t.createdAt,
       updatedAt,
@@ -461,7 +488,6 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       note: t.note || '',
       priority: t.priority || null,
       due: t.due || null,
-      hidden: !!t.hidden,
       placed: true,
       status,
       unread: links.some((x) => (x.updatedAt || 0) > Math.max(seenAll, t.seenAt || 0)),
@@ -579,8 +605,8 @@ export async function findSession(store, cardId) {
   const { sessions, hosts } = await allSessions(state);
   if (await store.syncSessionCategories(sessions)) state = await store.load();
   const s = sessions.find((x) => x.id === cardId);
-  if (!s) throw new Error(`セッションが見つかりません: ${cardId}`);
-  return { session: s, state, host: s.host?.local === false ? hosts.find((h) => h.id === s.host.id) : null };
+  if (!s) throw new Error('セッションが見つかりません');
+  return { session: s, state, host: !isCloudSession(s) && s.host?.local === false ? hosts.find((h) => h.id === s.host.id) : null };
 }
 
 export function sessionDetail(...args) {
@@ -614,7 +640,8 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   const taskId = toTask.get(cardId) || null;
   const listCard = taskId ? state.cards[taskId] : card;
   const listId = listCard.listId && state.lists.some((l) => l.id === listCard.listId) ? listCard.listId : state.defaultListId;
-  const { sessions: all } = await allSessions(state);
+  const { sessions: relatedSource } = await allSessions(state);
+  const all = sessionCardStates(relatedSource, state);
   const byId = new Map(all.map((x) => [x.id, x]));
   const key = branchKey(s);
   const sameBranch = key
@@ -625,10 +652,13 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     .map((c) => ({ id: c.id, title: c.title, status: c.status || 'idle', updatedAt: c.updatedAt, agentName: c.agentName || null }));
   const { host: h, ...rest } = s;
   const labels = state.settings.accounts.labels;
+  const claudeProfiles = await claudeResumeAccounts(s, labels);
+  const claudeExecutionAccounts = groupClaudeResumeAccounts(claudeProfiles, accountsView(state.settings.accounts).accounts, s, card.claudeExecution);
   return {
-    session: { ...rest, host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: accountLabel(s.account, labels) },
+    session: { ...rest, actions: sessionActions(s), host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: accountLabel(s.account, labels) },
     card: {
-      listId, labels: card.labels || [], note: card.note || '', priority: card.priority || null, due: card.due || null, hidden: !!card.hidden,
+      slackRefs: card.slackRefs || [],
+      listId, labels: card.labels || [], note: card.note || '', priority: card.priority || null, due: card.due || null, archived: !!s.archived,
       directory: dirView(resolveDirectory(state, card, s.cwd, s)), directoryId: card.directoryId || null,
     },
     list: state.lists.find((l) => l.id === listId),
@@ -639,13 +669,13 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     repo: s.repo || null,
     parentId: s.parentId || null,
     tasks: taskEntries(state).map(([id, t]) => ({ id, title: t.title })),
-    launch: withAccountNote(launchInfo(s), s, labels),
+    launch: { ...withAccountNote(launchInfo(s), s, labels), claudeAccounts: claudeProfiles, claudeExecutionAccounts, claudeExecution: normalizeClaudeExecution(card.claudeExecution) },
     settings: state.settings,
     terminals: installedTerminals(),
     recentMessages: recent,
-    messagesError,
+    messagesError: isCloudSession(s) ? '会話本文は保存済み情報に含まれていません。Codexで開いて確認してください。' : messagesError,
     feed,
     git,
-    dispatch: await dispatchView(store.dir, state, cardId, permission),
+    dispatch: { ...await dispatchView(store.dir, state, cardId, permission), unavailableReason: isCloudSession(s) ? CLOUD_OPERATION_REASON : null },
   };
 }

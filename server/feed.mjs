@@ -261,6 +261,21 @@ export function activityOf(items) {
   return null;
 }
 
+// The agent's last reply in the tail (what a card shows as its latest word).
+export function lastSaidOf(items) {
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (items[i].k !== 'assistant' || !items[i].text) continue;
+    const plain = items[i].text
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/^[ \t]*(?:#{1,6}[ \t]+|[-*+][ \t]+|\d+\.[ \t]+|>[ \t]?)/gm, '')
+      .replace(/(\*\*|__|\*|`)/g, '')
+      .replace(/\s+/g, ' ').trim();
+    if (plain) return clip(plain, 240);
+  }
+  return null;
+}
+
 // First read of a session: the tail, as folded items, and where to continue.
 export async function readFeed(session, { limit = FEED_ITEMS } = {}) {
   const { records, offset, size } = await readLines(session.sourcePath);

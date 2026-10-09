@@ -4,6 +4,7 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
 import { makeFixtures } from './helpers.mjs';
 import { RemotePool } from '../server/remote/pool.mjs';
 import { listCodexSessions, codexSessionMessages } from '../server/sources/codex.mjs';
@@ -22,6 +23,29 @@ const newPool = (opts = {}) =>
 // `account` is resolved on this machine only (accounts.mjs).
 const comparable = ({ id, host: _h, rawStatus, statusMtimeMs, account, ...rest }) => rest;
 const byNative = (a, b) => (a.agent + a.nativeId < b.agent + b.nativeId ? -1 : 1);
+
+test('remote Claude resume preserves the latest main worktree and branch like the local reader', async () => {
+  const moved = makeFixtures();
+  try {
+    const file = path.join(moved.claudeHome, 'projects', '-r-web', 'c2.jsonl');
+    fs.appendFileSync(file, [
+      { type: 'assistant', cwd: '/r/web/prototypes/card-ux', gitBranch: 'main' },
+      { type: 'assistant', cwd: '/r/web/.claude/worktrees/card-ux', gitBranch: 'worktree-card-ux' },
+      { type: 'assistant', isSidechain: true, cwd: '/other-agent', gitBranch: 'other-agent' },
+      { type: 'assistant', cwd: '  ', gitBranch: {} },
+      { type: 'assistant', cwd: 42 },
+    ].map(o => JSON.stringify(o) + '\n').join(''));
+    const original = moved.snapshot();
+    moved.lock();
+    const pool = newPool({ extraArgs: { codexHome: moved.codexHome, claudeHome: moved.claudeHome, desktopDir: moved.desktopDir } });
+    const remote = (await pool.sessions([host])).find(s => s.nativeId === 'c2');
+    const local = (await listClaudeSessions({ home: moved.claudeHome, desktopDir: moved.desktopDir })).sessions.find(s => s.nativeId === 'c2');
+    assert.equal(remote.cwd, '/r/web/.claude/worktrees/card-ux');
+    assert.equal(remote.branch, 'worktree-card-ux');
+    assert.deepEqual(comparable(remote), comparable(local));
+    assert.deepEqual(moved.snapshot(), original);
+  } finally { moved.cleanup(); }
+});
 
 test('collect.py matches the local readers (parity)', async () => {
   const pool = newPool();
@@ -125,4 +149,20 @@ test('dispatch.py: inspect reads only agent logs; start / poll / stop run the CL
 
 test('fixtures stay byte-for-byte unchanged', () => {
   assert.deepEqual(fx.snapshot(), before);
+});
+
+test('a cold host that is slower than waitMs does not hold the listing; it reports late instead', async () => {
+  const pool = newPool();
+  let late = 0;
+  pool.onLate = () => { late++; };
+  pool.refresh = (h) => new Promise((resolve) => setTimeout(() => {
+    pool.cache.set(h.id, { sessions: [{ id: 'x' }], summaries: new Map(), fetchedAt: Date.now(), errors: [] });
+    resolve();
+  }, 150));
+  const t = Date.now();
+  assert.deepEqual(await pool.sessions([host], { waitMs: 20 }), []);
+  assert.ok(Date.now() - t < 120);
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(late, 1);
+  assert.deepEqual((await pool.sessions([host], { waitMs: 20 })).map((s) => s.id), ['x']);
 });

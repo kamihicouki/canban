@@ -1,0 +1,50 @@
+/* The card overlay: the board dims a little and one card (or a task with its sessions) floats above it, as in Trello. */
+.pane-layer { position: fixed; inset: 0; top: 0; z-index: 800; display: flex; flex-direction: column; background: color-mix(in srgb, var(--overlay) 92%, transparent); }
+.pane-layer[hidden] { display: none; }
+.pane-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 8px; margin: 0 var(--gutter-right, 10%) 0 var(--gutter-left, 10%); padding: 8px 12px 0; min-height: 44px; background: none; color: var(--on-scrim); border-radius: 0; backdrop-filter: none; }
+.pane-bar .pb-title { margin-right: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; opacity: .9; }
+.pane-bar .hbtn { height: 30px; font-size: 12px; background: var(--scrim-ctl); color: var(--on-scrim); }
+.pane-bar .hbtn:hover { background: var(--scrim-ctl-hover); }
+.pane-bar .seg button { height: 26px; padding: 0 10px; font-size: 12px; color: var(--on-scrim); }
+.pane-bar .seg button[aria-pressed="true"] { background: var(--modal-bg); color: var(--list-fg); }
+.card-board { position: relative; flex: 1; min-height: 0; }
+.card-board-viewport { position: absolute; inset: 0 var(--gutter-right, 10%) 0 var(--gutter-left, 10%); overflow: hidden; }
+.pane-stage { height: 100%; min-width: 0; display: flex; overflow-x: auto; overflow-y: hidden; padding: 8px 12px 24px; scroll-snap-type: x proximity; overscroll-behavior: contain; }
+.pane-stage.can-scroll-right { mask-image: linear-gradient(to right, var(--on-scrim) calc(100% - 48px), transparent); }
+.pane-row { position: relative; display: flex; align-items: flex-start; gap: 16px; margin: 0 auto; width: max-content; height: 100%; max-height: 960px; }
+.card-board-end { position: absolute; inset: 0 0 0 auto; width: 1px; pointer-events: none; }
+.shortcut-map { position: absolute; z-index: 3; top: 8px; right: 8px; width: max-content; padding: 10px 12px; border-radius: 10px;
+  background: color-mix(in srgb, var(--modal-bg) 94%, transparent); color: var(--list-fg); box-shadow: var(--lift-shadow);
+  overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.shortcut-map-title { font: 700 11px/18px system-ui, sans-serif; letter-spacing: .03em; color: var(--list-muted); margin-bottom: 6px; }
+.shortcut-map[hidden] { display: none; }
+.shortcut-map .pb-hint { flex-direction: column; align-items: flex-start; flex-wrap: nowrap; gap: 5px; font-size: 11px; }
+.shortcut-map .shortcut-hint { width: 100%; align-items: start; white-space: normal; line-height: 18px; }
+.shortcut-map .shortcut-hint kbd { flex: none; margin-top: 1px; }
+.shortcut-map .shortcut-hint > span { min-width: 0; overflow-wrap: anywhere; }
+.pane { --fs: 13px; --pw: var(--w-session, 720px); position: relative; flex: none; display: flex; flex-direction: column; scroll-snap-align: center;
+  width: min(var(--pw), calc(var(--card-board-width, 80vw) - 24px)); background: var(--modal-bg); color: var(--list-fg); border-radius: 12px; overflow: hidden; font-size: var(--fs); line-height: 1.55;
+  box-shadow: var(--lift-shadow); }
+.pane[data-kind="task"] { --pw: var(--w-task, 520px); border-block-start: 3px solid var(--task-accent); }
+.pane[data-kind="task"] .pane-h { background: color-mix(in srgb, var(--task-accent) 9%, var(--modal-bg)); }
+.pane:focus { outline: none; }
+.pane:focus-within { box-shadow: var(--lift-shadow), 0 0 0 2px var(--focus); }
+.pane-width { position: absolute; z-index: 2; top: 0; bottom: 0; right: 0; width: 8px; cursor: ew-resize; touch-action: none; }
+.pane-width:hover, .pane-width:focus-visible { background: color-mix(in srgb, var(--accent) 45%, transparent); outline: none; }
+.pane.sheet { --pw: 1200px; }
+.pane.sheet .pane-h { height: auto; padding-bottom: 10px; border-bottom: 1px solid var(--btn-subtle-hover); }
+.pane.sheet .ph-top { align-items: center; }
+.sheet-ic { display: grid; color: var(--list-muted); }
+.sheet-b { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 12px 16px 20px; }
+.sheet-b .workspace-page { padding: 0; }
+.sheet-b .seg { background: var(--btn-subtle); }
+.sheet-b .seg button { color: var(--list-fg); }
+.sheet-b .seg button:hover { background: var(--btn-subtle-hover); }
+.sheet-b .seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-scrim); }
+.task-parent-actions { flex: none; padding: 10px 12px; border-top: 1px solid var(--btn-subtle-hover); }
+.task-parent-actions .task-request { width: 100%; background: color-mix(in srgb, var(--task-accent) 9%, var(--modal-bg)); color: var(--list-fg); }
+.task-related-more { font-size: 12px; margin: 4px 0 0; }
+.pane-layer.stack .pane-stage { padding-inline: 12px; }
+.pane-layer.stack .pane.sheet { width: calc(var(--card-board-width, 80vw) - 24px); }
+
+@media (prefers-reduced-motion: reduce) { .pane-layer, .pane { transition: none; } }

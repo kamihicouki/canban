@@ -13,6 +13,16 @@ const taskQuickAdd = {
     }
     closePopover();
     const soloLane = state.lanes.find(l => l.key === state.soloLane);
+    if (source.slackMessage) {
+      const message = source.slackMessage;
+      this.slackDrafts ||= new Map(); this.beforeSlackDraft = this.draft;
+      const previous = this.slackDrafts.get(message.key);
+      this.draft = previous?.title ? previous : { ...taskCreationDefaults(state.board, state.filters, { soloLane }),
+        title: (message.text.trim().split('\n')[0] || message.files?.[0]?.name || 'Slackの依頼').slice(0,300), description: '',
+        directory: slackUi.data.workspaces.find(w => w.id === message.team)?.channels.find(c => c.id === message.channel)?.directory || '__none',
+        slackSource: message.key, slackPreview: message, clientRequestId: null };
+      this.slackDrafts.set(message.key,this.draft); this.mount(); return;
+    }
     // A dismissed draft keeps its actual destination; chips make that destination visible.
     if (!this.draft || this.draft.editCardId || !this.draft.title) {
       this.draft = { ...taskCreationDefaults(state.board, state.filters, { ...source, soloLane }), title: '', description: '', clientRequestId: null };
@@ -39,6 +49,7 @@ const taskQuickAdd = {
     desc.value = draft.description;
     const feedback = this.feedback = h('div', { class: 'task-quick-feedback', role: 'status', hidden: true });
     const form = h('form', {}, title, this.attributes(draft, state.board, !edit),
+      draft.slackPreview ? h('details', {}, h('summary', { text: `Slack資料: ${draft.slackPreview.workspace} / ${draft.slackPreview.channelName}` }), h('p', { class: 'slack-body', text: draft.slackPreview.text })) : null,
       edit ? null : h('details', {}, h('summary', { text: '詳細' }), desc),
       h('div', { class: 'task-quick-actions' },
         h('button', { type: 'submit', class: 'btn-primary', text: edit ? '保存' : '作成' }),
@@ -55,6 +66,7 @@ const taskQuickAdd = {
         h('button', { type: 'button', class: 'icon-btn', text: '✕', 'aria-label': '閉じる', onclick: () => dialog.close() })), form);
     dialog.addEventListener('cancel', e => { if (draft.submitting) e.preventDefault(); });
     dialog.addEventListener('close', () => {
+      if (draft.slackSource) { this.draft = this.beforeSlackDraft; this.beforeSlackDraft = null; }
       if (edit) this.draft = this.creationDraft;
       const focus = this.returnFocus;
       if (focus?.isConnected && !focus.closest('[inert]')) focus.focus({ preventScroll: true });
@@ -84,7 +96,7 @@ const taskQuickAdd = {
     contextSelect('folder', 'フォルダ', (board.folders || []).map(f => [f.name, f.name]), 'フォルダなし');
     contextSelect('section', 'セクション', (board.codexSections || []).map(s => [s.id, s.name]), 'セクションなし');
     contextSelect('agent', 'AI App', [['codex', 'Codex'], ['claude', 'Claude Code']], '指定なし');
-    contextSelect('host', 'マシン', board.hosts.map(host => [host.local ? 'local' : host.id, host.local ? 'このマシン' : host.label]));
+    contextSelect('host', 'マシン', board.hosts.filter(host => !host.cloud).map(host => [host.local ? 'local' : host.id, host.local ? 'このマシン' : host.label]));
     contextSelect('account', 'アカウント', (board.accounts?.accounts || []).map(a => [a.key, a.label]), 'アカウント不明');
     const summary = h('summary');
     const paintLabels = () => { summary.textContent = `ラベル: ${draft.labels.length ? draft.labels.map(id => board.labels.find(l => l.id === id)?.name || id).join('・') : 'なし'}`; };
@@ -129,6 +141,7 @@ const taskQuickAdd = {
         refresh: () => load({ throwOnError: true }), newRequestId: () => typeof crypto.randomUUID === 'function' ? crypto.randomUUID() :
           [...crypto.getRandomValues(new Uint8Array(16))].map(n => n.toString(16).padStart(2, '0')).join('') });
       if (!saved) return;
+      if (draft.slackSource) slackUi.refresh();
       this.title.value = draft.title;
       const message = saved.matches ? `「${saved.result.title}」を作成しました。` : `前回の「${saved.result.title}」を確認しました。現在の入力は保持しています。`;
       const reasons = this.hiddenReasons(saved.result);
@@ -157,6 +170,7 @@ const taskQuickAdd = {
     const f = state.filters, card = this.projected(result), reasons = [];
     if (f.status && f.status !== 'idle') reasons.push('実行状態');
     if (f.pinnedOnly) reasons.push('ピン留め');
+    if (f.dotScope === 'only') reasons.push('dot');
     if (f.directory && (f.directory === '__none' ? !!card.directory : card.directory?.id !== f.directory)) reasons.push('カテゴリ');
     if (f.label && (f.label === '__none' ? card.labels.length : !card.labels.includes(f.label))) reasons.push('ラベル');
     for (const [key, label] of [['project', 'プロジェクト'], ['folder', 'フォルダ'], ['section', 'セクション'], ['agent', 'AI App'], ['host', 'マシン'], ['account', 'アカウント']]) {
@@ -178,7 +192,7 @@ const taskQuickAdd = {
   },
   openResult(result) {
     if (this.dialog?.open) this.dialog.close();
-    openTaskModal(result.cardId);
+    openCard(result.cardId);
   },
   summary(card) {
     const names = { project: 'プロジェクト', folder: 'フォルダ', section: 'セクション', agent: 'AI App', host: 'マシン', account: 'アカウント' };

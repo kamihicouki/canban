@@ -1,13 +1,15 @@
 // Kanban state store. This is the only module that writes to disk, and it only
 // writes inside the configured Canban data directory.
 import { isMainThread, proxyStore } from './sqlite-client.mjs';
-import { readBoard, writeBoard, transaction, currentFence } from './sqlite-backend.mjs';
+import { readBoard, writeBoard, transaction, currentFence, db, bump, readTransaction } from './sqlite-backend.mjs';
 import { defaultAccounts, normalizeAccounts, applyAccountPatch } from './accounts-settings.mjs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { resolveDataDirectory } from './data-directory.mjs';
 import { normalizeTaskDashboard, taskDashboardRecord } from './task-dashboard.mjs';
 import { normalizeTaskContext } from './task-context.mjs';
+import { attachSlackReference } from './slack-store.mjs';
+import { loopRecord, applyLoopCommand, loopProgress } from './loop.mjs';
 
 export const STORE_VERSION = 1;
 export const LIST_COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
@@ -37,7 +39,7 @@ export function defaultRules() {
 export function defaultSettings() {
   return {
     // How "resume" opens a session: in the agent's desktop app or in a terminal.
-    launch: { route: 'desktop', terminal: 'terminal', target: 'new-window' },
+    launch: { route: 'desktop', terminal: 'terminal', target: 'new-window', linkBrowser: '', linkProfile: '' },
     // Automatic moves on status transitions (all off by default).
     rules: defaultRules(),
     // Cards updated after this time (and after their own seenAt) are highlighted as new.
@@ -71,7 +73,7 @@ function normalizeDispatch(x) {
   };
 }
 
-const VIEW_FILTER_KEYS = ['agent', 'host', 'account', 'status', 'project', 'folder', 'section', 'directory', 'label', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'includeHidden', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
+const VIEW_FILTER_KEYS = ['agent', 'host', 'account', 'status', 'project', 'folder', 'section', 'directory', 'label', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'dotScope', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
 function normalizeView(v) {
   if (!v || typeof v.id !== 'string' || !String(v.name || '').trim()) return null;
   const filters = {};
@@ -103,6 +105,9 @@ function normalizeSettings(s) {
       route: LAUNCH_ROUTES.includes(l.route) ? l.route : d.launch.route,
       terminal: TERMINALS.includes(l.terminal) ? l.terminal : d.launch.terminal,
       target: TERMINAL_TARGETS.includes(l.target) ? l.target : d.launch.target,
+      // Browser for external links (Slack app settings, PRs). '' = the OS default.
+      linkBrowser: ['chrome', 'safari'].includes(l.linkBrowser) ? l.linkBrowser : '',
+      linkProfile: l.linkBrowser === 'chrome' && /^(Default|Profile \d+)$/.test(l.linkProfile) ? l.linkProfile : '',
     },
     rules: Array.isArray(s?.rules) ? s.rules.map(normalizeRule).filter(Boolean) : d.rules,
     seenAllAt: typeof s?.seenAllAt === 'number' ? s.seenAllAt : null,
@@ -357,6 +362,17 @@ export class Store {
   }
 
   // ---- cards -------------------------------------------------------------
+  setClaudeExecution({ cardId, execution }) {
+    if (!/^claude:/.test(cardId)) throw new Error('このマシンの Claude Code セッションを選んでください');
+    if (execution && (typeof execution.homeId !== 'string' || !execution.homeId || !/^claude:.+/.test(execution.account))) throw new Error('実行アカウントが正しくありません');
+    return this.mutate(s => {
+      const card = s.cards[cardId] ||= {};
+      if (execution) card.claudeExecution = { homeId: execution.homeId, account: execution.account };
+      else delete card.claudeExecution;
+      return card.claudeExecution || null;
+    });
+  }
+
   // `order` is a number in the same space as the implicit order (-updatedAt),
   // computed by the caller from its neighbours.
   moveCard({ cardId, toListId, order }) {
@@ -369,7 +385,15 @@ export class Store {
     });
   }
 
-  updateCard({ cardId, labels, note, priority, due, hidden, directory }) {
+  removeSessionMetadata(cardId) {
+    return this.mutate(s => {
+      delete s.cards[cardId];
+      for (const c of Object.values(s.cards)) if (c.kind === 'task') c.links = (c.links || []).filter(id => id !== cardId);
+      return { cardId };
+    });
+  }
+
+  updateCard({ cardId, labels, note, priority, due, directory }) {
     return this.mutate((s) => {
       const card = (s.cards[cardId] ||= {});
       if (labels !== undefined) {
@@ -385,14 +409,13 @@ export class Store {
       if (note !== undefined) card.note = String(note ?? '').slice(0, 20000);
       if (priority !== undefined) card.priority = ['high', 'medium', 'low'].includes(priority) ? priority : null;
       if (due !== undefined) card.due = due && !Number.isNaN(Date.parse(due)) ? due : null;
-      if (hidden !== undefined) card.hidden = !!hidden;
       card.updatedAt = new Date().toISOString();
       return { cardId, ...card };
     });
   }
 
   // ---- task cards (not backed by a session) -------------------------------
-  async createTask({ title, listId, description = '', directory, labels, context, clientRequestId }) {
+  async createTask({ title, listId, description = '', directory, labels, context, clientRequestId, slackSource }) {
     title = String(title || '').trim();
     if (!title) throw new Error('カード名を入力してください');
     if (clientRequestId !== undefined && (typeof clientRequestId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(clientRequestId))) throw new Error('作成リクエストが不正です');
@@ -408,8 +431,18 @@ export class Store {
       const card = { kind: 'task', title: title.slice(0, 300), description: String(description).slice(0, 20000), createdAt: Date.now(), links: [], pending: [], ...attrs, ...(clientRequestId ? { clientRequestId } : {}) };
       placeCard(card, lid, Date.now()); // positive orders sort after session cards: new tasks go to the bottom
       s.cards[id] = card;
+      if (slackSource) attachSlackReference(s, id, slackSource);
       return { cardId: id, ...card };
     });
+  }
+
+  linkSlack({ cardId, key, sourceTitle }) {
+    if (typeof cardId !== 'string' || !/^(?:task:|(?:codex|claude)(?:@[^:\s]{1,200})?:)/.test(cardId)) throw new Error('カードを確認してください');
+    return this.mutate(s => { if (cardId.startsWith('task:') && s.cards[cardId]?.kind !== 'task') throw new Error('タスクカードが見つかりません'); attachSlackReference(s, cardId, key); if (sourceTitle && !cardId.startsWith('task:')) s.cards[cardId].slackTitle = String(sourceTitle).slice(0,300); return { cardId, key }; });
+  }
+
+  unlinkSlack({ cardId, key }) {
+    return this.mutate(s => { const card = s.cards[cardId]; if (card) card.slackRefs = (card.slackRefs || []).filter(k => k !== key); return { cardId, key }; });
   }
 
   updateTask({ cardId, title, description, target, context, directory, labels }) {
@@ -444,6 +477,49 @@ export class Store {
 
   getTaskDashboard({ taskId }) {
     return taskDashboardRecord(this.load().cards[taskId], taskId);
+  }
+
+  getLoop({ taskId }) {
+    return readTransaction(() => {
+      const row = db().prepare("SELECT payload FROM board_records WHERE kind='cards' AND id=?").get(taskId);
+      const task = row && JSON.parse(row.payload);
+      const saved = db().prepare('SELECT payload FROM loop_state WHERE task_id=?').get(taskId);
+      task && (task.loop = saved ? JSON.parse(saved.payload) : null);
+      const rounds = db().prepare('SELECT payload FROM loop_rounds WHERE task_id=? ORDER BY rowid').all(taskId).map(r => JSON.parse(r.payload));
+      for (const c of task?.loop?.cycles || []) c.rounds = rounds.filter(r => r.cycleId === c.id);
+      return loopRecord(task, taskId);
+    });
+  }
+
+  loopSummaries() {
+    return readTransaction(() => Object.fromEntries(db().prepare('SELECT task_id FROM loop_state').all().flatMap(({ task_id: taskId }) => {
+      if (!db().prepare("SELECT 1 FROM board_records WHERE kind='cards' AND id=?").get(taskId)) return [];
+      const record = this.getLoop({ taskId });
+      return [[taskId, { revision: record.revision, cycles: record.cycles.map(c => ({ id: c.id, parentId: c.parentId, goal: c.goal,
+        status: c.status, phase: c.phase, version: c.version, maxRounds: c.maxRounds, count: c.rounds.filter(r => r.version === c.version).length,
+        progress: loopProgress(c), reason: c.reason, updatedAt: c.updatedAt })) }]];
+    })));
+  }
+
+  loopCommand(args) {
+    return transaction(() => {
+      const record = this.getLoop(args);
+      const saved = db().prepare('SELECT payload FROM loop_state WHERE task_id=?').get(args.taskId);
+      const task = { kind: 'task', loop: { ...(saved ? JSON.parse(saved.payload) : {}), ...record } };
+      const result = applyLoopCommand(task, args.taskId, args);
+      if (result.conflict || result.duplicate) return result;
+      for (const c of task.loop.cycles) for (const r of c.rounds) {
+        const payload = JSON.stringify({ ...r, cycleId: c.id });
+        const old = db().prepare('SELECT payload FROM loop_rounds WHERE task_id=? AND id=?').get(args.taskId, r.id);
+        if (old?.payload === payload) continue;
+        if (old && JSON.parse(old.payload).closedAt) throw new Error('確定済みの周回は変更できません');
+        db().prepare('INSERT INTO loop_rounds VALUES(?,?,?) ON CONFLICT(task_id,id) DO UPDATE SET payload=excluded.payload').run(args.taskId, r.id, payload);
+      }
+      const payload = JSON.stringify({ ...task.loop, cycles: task.loop.cycles.map(({ rounds, ...c }) => c) });
+      db().prepare('INSERT INTO loop_state VALUES(?,?) ON CONFLICT(task_id) DO UPDATE SET payload=excluded.payload').run(args.taskId, payload);
+      bump('board');
+      return result;
+    }, { fence: currentFence });
   }
 
   saveTaskDashboard({ taskId, expectedRevision, state }) {
@@ -624,6 +700,12 @@ export class Store {
 
   updateAccountSettings(patch = {}) {
     return this.mutate((s) => {
+      const migration = patch.executionHomeMigration;
+      if (migration && patch.profile?.id === migration.to && patch.profile?.key === migration.account) {
+        for (const card of Object.values(s.cards)) {
+          if (card.claudeExecution?.homeId === migration.from && card.claudeExecution.account === migration.account) card.claudeExecution.homeId = migration.to;
+        }
+      }
       s.settings = normalizeSettings({ ...s.settings, accounts: applyAccountPatch(s.settings.accounts, patch) });
       return s.settings.accounts;
     });

@@ -67,11 +67,17 @@ test('existing JSON requires explicit migration', async () => {
   assert.equal(fs.readFileSync(path.join(dir,'board.json'),'utf8'),'{broken');
 });
 
+const pick = (l) => [l.linkBrowser, l.linkProfile];
 test('launch settings are validated and persisted', async () => {
   const store = new Store(tmp());
-  assert.deepEqual((await store.load()).settings.launch, { route: 'desktop', terminal: 'terminal', target: 'new-window' });
+  assert.deepEqual((await store.load()).settings.launch, { route: 'desktop', terminal: 'terminal', target: 'new-window', linkBrowser: '', linkProfile: '' });
   await store.updateLaunchSettings({ route: 'terminal', terminal: 'ghostty', target: 'split' });
-  assert.deepEqual((await store.load()).settings.launch, { route: 'terminal', terminal: 'ghostty', target: 'split' });
+  assert.deepEqual((await store.load()).settings.launch, { route: 'terminal', terminal: 'ghostty', target: 'split', linkBrowser: '', linkProfile: '' });
+  await store.updateLaunchSettings({ linkBrowser: 'chrome', linkProfile: 'Profile 2' });
+  assert.deepEqual(pick((await store.load()).settings.launch), ['chrome', 'Profile 2']);
+  await store.updateLaunchSettings({ linkBrowser: 'safari', linkProfile: 'Profile 2' });
+  assert.deepEqual(pick((await store.load()).settings.launch), ['safari', '']);
+  await store.updateLaunchSettings({ linkBrowser: '', linkProfile: '' });
   await store.updateLaunchSettings({ target: 'bogus' });
   assert.equal((await store.load()).settings.launch.target, 'new-window');
 });
@@ -118,4 +124,18 @@ test('simultaneous shared view state writes accept only one writer for a revisio
   assert.equal(outcomes.filter((result) => result.conflict).length, 1);
   assert.equal((await store.getUiState()).revision, 1);
   assert.ok(['board', 'analytics'].includes((await store.getUiState()).state.view));
+});
+
+
+test('native deletion removes Canban metadata and links only for the target session', async () => {
+  const store = new Store(tmp());
+  await store.updateCard({ cardId: 'codex:one', note: 'one' });
+  await store.updateCard({ cardId: 'codex@remote:one', note: 'remote' });
+  const task = await store.createTask({ title: 'owner' });
+  await store.linkSession({ taskId: task.cardId, sessionId: 'codex:one' });
+  await store.removeSessionMetadata('codex:one');
+  const state = await store.load();
+  assert.equal(state.cards['codex:one'], undefined);
+  assert.equal(state.cards['codex@remote:one'].note, 'remote');
+  assert.deepEqual(state.cards[task.cardId].links, []);
 });

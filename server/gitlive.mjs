@@ -53,6 +53,23 @@ export function parseStatus(out) {
   return v;
 }
 
+// `git diff --numstat -z HEAD` → { added, removed, files: [{ path, added, removed }] } (binary files count 0/0).
+export function parseNumstat(out) {
+  const v = { added: 0, removed: 0, files: [] };
+  const parts = String(out || '').split('\0');
+  for (let i = 0; i < parts.length; i++) {
+    const m = /^(\d+|-)\t(\d+|-)\t(.*)$/.exec(parts[i]);
+    if (!m) continue;
+    let file = m[3];
+    if (!file) { file = parts[i + 2] || ''; i += 2; } // a rename lists "old\0new" as the next entries
+    const added = m[1] === '-' ? 0 : Number(m[1]), removed = m[2] === '-' ? 0 : Number(m[2]);
+    v.added += added;
+    v.removed += removed;
+    v.files.push({ path: file, added, removed });
+  }
+  return v;
+}
+
 const dirs = new Map(); // cwd -> Promise<{ top, gitDir } | null>
 export function gitDirOf(cwd) {
   if (!cwd) return Promise.resolve(null);
@@ -84,9 +101,10 @@ export function refreshGit(cwd, { grew = false, now = Date.now() } = {}) {
     const sig = await signature(d.gitDir);
     const hit = states.get(cwd);
     if (hit && hit.sig === sig && !(grew && now - hit.at >= REFRESH_MS)) return { value: hit.value, changed: false };
-    const out = await perf.timed('git.status', () => git(cwd, ['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=normal']));
+    const [out, numstat] = await perf.timed('git.status', () => Promise.all([git(cwd, ['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=normal']), git(cwd, ['diff', '--numstat', '-z', 'HEAD'])]));
     if (out == null) return { value: hit?.value ?? null, changed: false };
-    const value = parseStatus(out);
+    const { added, removed } = parseNumstat(numstat);
+    const value = { ...parseStatus(out), added, removed };
     states.set(cwd, { sig, at: now, value, gitDir: d.gitDir });
     return { value, changed: !hit || JSON.stringify(hit.value) !== JSON.stringify(value) };
   })().finally(() => inflight.delete(cwd));

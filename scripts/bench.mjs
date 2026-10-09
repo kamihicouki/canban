@@ -19,11 +19,19 @@ const opt = (n) => (argv.includes(n) ? argv[argv.indexOf(n) + 1] : null);
 
 const realData = resolveDataDirectory();
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-bench-'));
-try {
-  const board = JSON.parse(fs.readFileSync(path.join(realData, 'board.json'), 'utf8'));
-  if (!flag('--remote')) board.remoteHosts = {};
-  fs.writeFileSync(path.join(tmp, 'board.json'), JSON.stringify(board));
-} catch {}
+// Canban keeps its board in SQLite (0.14.0+): copy a consistent snapshot, not the live files.
+const realDb = path.join(realData, 'canban.sqlite');
+if (fs.existsSync(realDb)) {
+  const { DatabaseSync } = await import('node:sqlite');
+  const src = new DatabaseSync(realDb, { readOnly: true });
+  src.exec(`VACUUM INTO '${path.join(tmp, 'canban.sqlite').replaceAll("'", "''")}'`);
+  src.close();
+  if (!flag('--remote')) {
+    const copy = new DatabaseSync(path.join(tmp, 'canban.sqlite'));
+    copy.exec("DELETE FROM board_records WHERE kind='remoteHosts'");
+    copy.close();
+  }
+}
 process.env.CANBAN_DATA_DIR = tmp;
 process.env.CANBAN_BACKGROUND = '0';
 
@@ -46,10 +54,10 @@ async function benchOps() {
     return r;
   };
   perf.startLoopMonitor();
-  await run('allSessions (cold)', () => board.allSessions(store.load()));
+  await run('allSessions (cold)', async () => board.allSessions(await store.load()));
   await new Promise((r) => setTimeout(r, 4200)); // past the local cache TTL
-  const { sessions } = await run('allSessions (warm, cache expired)', () => board.allSessions(store.load()));
-  await run('allSessions (warm, cached)', () => board.allSessions(store.load()));
+  const { sessions } = await run('allSessions (warm, cache expired)', async () => board.allSessions(await store.load()));
+  await run('allSessions (warm, cached)', async () => board.allSessions(await store.load()));
   await run('buildBoard (warm)', () => board.buildBoard(store, { days: 30 }));
   await new Promise((r) => setTimeout(r, 4200));
   await run('buildBoard (cache expired)', () => board.buildBoard(store, { days: 30 }));

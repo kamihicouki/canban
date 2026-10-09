@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FrameDecoder, encodeNativeResponse } from '../server/native-messaging.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const log = (...parts) => process.stderr.write(`[canban chrome] ${parts.join(' ')}\n`);
+const uiToken = randomBytes(32).toString('hex');
 const child = spawn('/bin/sh', [path.join(root, 'scripts', 'launch.sh')], {
   cwd: root,
-  env: { ...process.env, CANBAN_CLIENT: 'canban-chrome' },
+  env: { ...process.env, CANBAN_CLIENT: 'canban-chrome', CANBAN_UI_TOKEN: uiToken },
   stdio: ['pipe', 'pipe', 'inherit'],
 });
 const decoder = new FrameDecoder();
@@ -33,6 +35,7 @@ function forward(message) {
     return;
   }
   pending.set(JSON.stringify(message.id), message.id);
+  if (['canban_review_loop', 'canban_send_loop'].includes(message.params?.name)) message = { ...message, params: { ...message.params, arguments: { ...message.params.arguments, uiToken } } };
   child.stdin.write(`${JSON.stringify(message)}\n`);
 }
 

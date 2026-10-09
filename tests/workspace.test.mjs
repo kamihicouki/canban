@@ -5,40 +5,13 @@ import vm from 'node:vm';
 import { boardHtml } from '../server/ui.mjs';
 
 const source = fs.readFileSync(new URL('../ui/workspace-model.js', import.meta.url), 'utf8');
-const model = new vm.Script(source + '\n({workspacePage, usageWindow, paneGeometry, normalizePaneLayout, paneBatch})').runInNewContext();
+const model = new vm.Script(source + '\n({workspacePage, usageWindow})').runInNewContext();
 const plain = value => JSON.parse(JSON.stringify(value));
 
-test('workspace routes preserve old home and analytics fallbacks', () => {
-  assert.equal(model.workspacePage('usage'), 'usage');
-  assert.equal(model.workspacePage('unknown', 'analytics'), 'analytics');
-  assert.equal(model.workspacePage(null), 'home');
-});
-test('a single fixed card fills the available height with twelve-pixel margins', () => {
-  const p = model.paneGeometry([{index:0,w:900,h:450,note:false}], 'grid', 1300, 850);
-  assert.deepEqual(plain(p.rects), [{index:0,x:200,y:12,h:826}]);
-  assert.equal(p.height,850);
-});
-test('two columns share the full height while notes stay compact', () => {
-  const p = model.paneGeometry([{index:0,w:560,h:450,note:false},{index:1,w:560,h:100,note:true}], 'grid', 1300, 850);
-  assert.equal(p.rects[0].h,826); assert.equal(p.rects[1].h,100);
-});
-test('grid rows distribute height and scroll if minimum readable height cannot fit', () => {
-  const items = [0,1].map(index => ({index,w:900,h:450,note:false}));
-  const fit = model.paneGeometry(items,'grid',1000,850);
-  assert.equal(fit.rects[0].h,407); assert.equal(fit.rects[1].h,407);
-  assert.equal(fit.height,850);
-  const scroll = model.paneGeometry(items,'grid',1000,500);
-  assert.ok(scroll.height>500); assert.ok(scroll.rects.every(r=>r.h===320));
-});
-test('column layout gives each card viewport height and row layout can scroll horizontally', () => {
-  const items=[0,1].map(index=>({index,w:700,h:500,note:false}));
-  const col=model.paneGeometry(items,'col',1000,600);
-  assert.equal(col.rects[0].h,576); assert.equal(col.rects[1].h,576); assert.ok(col.height>600);
-  const row=model.paneGeometry(items,'row',1000,600); assert.ok(row.width>1000);
-});
-test('tiny containers never create negative card geometry', () => {
-  const p=model.paneGeometry([{index:0,w:20,h:10,note:false}],'grid',10,10);
-  assert.ok(p.rects[0].h>=0);
+test('pages are the board and the management pages; analytics and Agent Usage open as sheets, not pages', () => {
+  assert.equal(model.workspacePage('rules'), 'rules');
+  assert.equal(model.workspacePage('settings'), 'settings');
+  for (const old of ['usage', 'analytics', 'cards', null]) assert.equal(model.workspacePage(old), 'home');
 });
 test('usage separates used and remaining amounts and names the limit window', () => {
   const now=1790760000000;
@@ -72,31 +45,23 @@ test('MCP UI includes feature modules and still compiles as one self-contained s
   new vm.Script(html.match(/<script>([\s\S]*?)<\/script>/)[1]);
 });
 
-test('restoring analytics migrates a legacy project scope before requesting category statistics', async () => {
+test('analytics follows the board filters and renders into its sheet, after the board has loaded', async () => {
   const html = boardHtml();
-  const loading = html.slice(html.indexOf('let loadSeq = 0;'), html.indexOf('function saveFilters()'));
-  const analytics = html.slice(html.indexOf('async function loadAnalytics('), html.indexOf('function svgEl('));
-  const calls = []; let saved = 0, rendered = 0;
-  const state = { view: 'analytics', board: null, filters: { project: 'Old Project', folder: '/old', swimlane: 'project', directory: '', agent: 'codex', host: 'local', account: 'a1' } };
-  const context = vm.createContext({ state, saveFilters: () => saved++, renderAnalytics: () => rendered++,
-    store: { values: new Map(), get(key, fallback) { return this.values.get(key) ?? fallback; }, set(key, value) { this.values.set(key, value); } },
-    bridge: { callTool: async (name, args) => {
-      calls.push([name, plain(args)]);
-      return name === 'canban_get_board' ? { directories: [{ id: 'd1', name: 'Old Project' }] } : {};
-    } },
-  });
-  await vm.runInContext(`${loading}\n${analytics}\nload();`, context);
-  assert.deepEqual(calls.map(([name]) => name), ['canban_get_board', 'canban_get_stats']);
-  assert.deepEqual(calls[1][1], { days: 30, agent: 'codex', host: 'local', account: 'a1', directory: 'd1' });
-  assert.equal(state.filters.project, ''); assert.equal(state.filters.folder, '');
-  assert.equal(state.filters.swimlane, 'directory'); assert.equal(saved, 1); assert.equal(rendered, 1);
-  Object.assign(state.filters, { project: 'New Project', folder: 'new-folder', swimlane: 'project', label: 'l1' });
-  await vm.runInContext('load();', context);
-  assert.equal(state.filters.project, 'New Project');
-  assert.equal(state.filters.folder, 'new-folder');
-  assert.equal(state.filters.swimlane, 'project');
-  assert.equal(calls.at(-1)[1].project, 'New Project');
-  assert.equal(calls.at(-1)[1].label, 'l1');
+  const analytics = html.slice(html.indexOf('let statsSeq = 0;'), html.indexOf('function svgEl('));
+  const calls = [], rendered = [];
+  const p = { id: 'view:analytics', el: {} }, panes = [p];
+  const state = { board: null, analyticsDays: 7, filters: { directory: 'd1', agent: 'codex', host: 'local', account: 'a1', label: 'l1' } };
+  const context = vm.createContext({ state, panes, $: () => ({ replaceChildren() {} }), h: () => ({}), renderAnalytics: (st, pane) => rendered.push([st, pane]),
+    bridge: { callTool: async (name, args) => { calls.push([name, plain(args)]); return { ok: true }; } } });
+  vm.runInContext(analytics, context);
+  await vm.runInContext('loadAnalytics(panes[0]);', context);
+  assert.equal(calls.length, 0); // no board yet: refreshViews() comes back after the board loads
+  state.board = { lists: [] };
+  await vm.runInContext('loadAnalytics(panes[0]);', context);
+  assert.deepEqual(calls, [['canban_get_stats', { days: 7, agent: 'codex', label: 'l1', host: 'local', account: 'a1', directory: 'd1' }]]);
+  assert.equal(rendered.length, 1); assert.equal(rendered[0][1], p);
+  panes.length = 0; await vm.runInContext('loadAnalytics(panes[0] || {el:{}});', context);
+  assert.equal(rendered.length, 1); // a sheet closed meanwhile is not drawn into
 });
 
 test('explicit shared-state reload keeps edited forms and open panes', async () => {
@@ -154,48 +119,31 @@ function workspaceHarness(extra={}) {
   return vm.runInNewContext(`${src}\nworkspace;`,{store:{get:(_key,fallback)=>fallback,set:()=>{}},workspacePage:model.workspacePage,state:{view:'board'},dashOpen:false,...extra});
 }
 
-test('shared layout restores cross-column moves, repairs duplicates and migrates old heights', () => {
-  const defaults = { main: ['conv','send'], side: ['resume','memo'] };
-  const result = plain(model.normalizePaneLayout({main:['resume','conv','conv','unknown'],side:['send'],ratio: .6,heights:{conv:180,memo:10000},collapsed:['conv','unknown','conv']},defaults,{conv:300,send:260,resume:290,memo:150}));
-  assert.deepEqual(result.main,['resume','conv']);
-  assert.deepEqual(result.side,['send','memo']);
-  assert.equal(result.ratio,.6); assert.equal(result.heights.conv,180); assert.equal(result.heights.memo,900);
-  assert.deepEqual(result.collapsed,['conv']);
-  const old = model.normalizePaneLayout(defaults,defaults,{conv:300});
-  assert.equal(old.ratio,2/3); assert.equal(old.heights.conv,300);
-});
-test('a batch mixes task/session cards, deduplicates open cards and rejects an oversized batch atomically', () => {
-  assert.deepEqual(plain(model.paneBatch(['task:1','codex:1','task:1'],['codex:1'],8)),{ids:['task:1','codex:1'],additions:['task:1'],fits:true});
-  const rejected = model.paneBatch(['task:1','claude:2'],['codex:1'],2);
-  assert.equal(rejected.fits,false); assert.equal(rejected.additions.length,2);
-});
-test('restoring a session retains its pane on a transient read failure and removes a genuinely missing session', async () => {
+test('a session that cannot be read keeps its card with a reload button; a genuinely missing one closes the layer on restore', async () => {
   const html = boardHtml();
-  const source = html.slice(html.indexOf('async function openCard('), html.indexOf('function updateNoteLine('));
-  const panes = []; let error = new Error('db_busy'), closed = 0;
-  const context = vm.createContext({ panes, PANE_MAX: 8, taskDash: null, batchOpening: false, state: {board:{lists:[]}},
-    closePopover: () => {}, bridge: {callTool: async () => {throw error;}},
-    newPane: id => {const p={id,el:{replaceChildren(...nodes){this.nodes=nodes;}}};panes.push(p);return p;},
-    closePane: () => {closed++;panes.splice(0);}, h: (tag,attrs) => ({tag,attrs}), toast: () => {},
-  });
-  await vm.runInContext(`${source}\nopenCard('codex:mock',{});`,context);
-  assert.equal(panes.length,1); assert.equal(closed,0);
-  assert.ok(panes[0].el.nodes.some(n => n.attrs.text === '再読み込み'));
-  panes.splice(0); error = new Error('セッションが見つかりません: codex:mock');
-  await vm.runInContext(`openCard('codex:mock',{});`,context);
-  assert.equal(panes.length,0); assert.equal(closed,1);
+  const source = html.slice(html.indexOf('async function loadSession('), html.indexOf('async function openTaskCard('));
+  const p = {id:'codex:mock',d:null,el:{replaceChildren(...nodes){this.nodes=nodes;}}}, panes = [p];
+  let error = new Error('db_busy'), closed = 0;
+  const context = vm.createContext({ panes, bridge: {callTool: async () => {throw error;}},
+    closeCards: () => {closed++;}, h: (tag,attrs) => ({tag,attrs}), toast: () => {}, renderPaneKeepingDrafts: () => {} });
+  await vm.runInContext(`${source}\nloadSession(panes[0],{restore:true});`,context);
+  assert.equal(closed,0); assert.ok(p.el.nodes.some(n => n.attrs.text === '再読み込み'));
+  error = new Error('セッションが見つかりません: codex:mock');
+  await vm.runInContext(`loadSession(panes[0],{restore:true});`,context);
+  assert.equal(closed,1);
+  closed = 0; await vm.runInContext(`loadSession(panes[0]);`,context);
+  assert.equal(closed,0); // outside a restore the error is shown, not hidden
 });
-test('restoration saves surviving session/task panes after a missing card without transiently leaving the dashboard', async () => {
+test('the card that was open comes back after a reload, and only that one', async () => {
   const html = boardHtml();
-  const source = html.slice(html.indexOf('async function restorePanes('), html.indexOf('function sharedUiSnapshot('));
-  const panes = []; let remembered, folded = 0;
-  const context = vm.createContext({ store: {get:()=>[{id:'codex:gone'},{id:'task:survives'}]}, panes, restoringPanes:false,
-    PANE_MAX:8, PANE_SPACES:[], PANE_MODES:[], PANE_SIZES:[], oneOf:(_v,_list,fallback)=>fallback,
-    openCard:async id=>{assert.equal(context.restoringPanes,true);if(id==='task:survives')panes.push({id});},
-    savePanes:()=>{remembered=panes.map(p=>p.id);}, workspace:{page:'cards'}, setDash:()=>{folded++;},
-  });
-  await vm.runInContext(`${source}\nrestorePanes();`,context);
-  assert.deepEqual(remembered,['task:survives']); assert.equal(folded,0); assert.equal(context.restoringPanes,false);
+  const start = html.indexOf('async function restoreCards('), source = html.slice(start, html.indexOf('\n}\n', start) + 3);
+  const opened = []; let stored = 'task:survives';
+  const context = vm.createContext({ store: {get:()=>stored}, restoringPanes:false,
+    openCard:async (id,opts)=>{assert.equal(context.restoringPanes,true);opened.push([id,opts.restore]);} });
+  await vm.runInContext(`${source}\nrestoreCards();`,context);
+  assert.deepEqual(opened,[['task:survives',true]]); assert.equal(context.restoringPanes,false);
+  stored = null; await vm.runInContext('restoreCards();',context);
+  assert.equal(opened.length,1);
 });
 test('task autosave advances only the submitted draft baseline', async()=>{
   const w=workspaceHarness(), input={value:'保存する値',defaultValue:''};
@@ -207,11 +155,47 @@ test('task autosave advances only the submitted draft baseline', async()=>{
   await w.saveField(input,async()=>{throw new Error('db_busy');});
   assert.equal(w.draftValues.get(input),'保存する値');
 });
-test('legacy task modals migrate to panes independently of home filters', async () => {
-  let opened = 0, saved = 0;
-  const w = workspaceHarness({ taskDash: { open: async (_id, opts) => { assert.equal(opts.reveal, false); opened++; } }, savePanes: () => { saved++; } });
-  w.pendingTask = 'task:mock'; w.page = 'home';
-  await w.restoreTask();
-  assert.equal(w.pendingTask, null); assert.equal(opened, 1); assert.equal(saved, 1); assert.equal(w.page, 'home');
-  await w.restoreTask(); assert.equal(opened, 1);
+test('only the management pages open the panel; the home board is the board itself', () => {
+  const w = workspaceHarness();
+  for (const [page, utility] of [['home', false], ['rules', true], ['settings', true]]) { w.page = page; assert.equal(w.utilityPage(), utility, page); }
+  assert.equal(model.workspacePage('cards'), 'home'); // the old card dashboard page folds into the board
+});
+test('a session linked again while its task is open is loaded afresh, a card that stayed is not', () => {
+  const html = boardHtml();
+  const start = html.indexOf('function reconcileCards('), source = html.slice(start, html.indexOf('\nasync function restoreCards(', start));
+  const root = { id: 'task:t', kind: 'task', el: {} }, a = { id: 'codex:a', kind: 'session', d: {} }, b = { id: 'codex:b', kind: 'session', d: {} };
+  const panes = [root, a], loaded = [];
+  const context = vm.createContext({ panes, paneLayer: { hidden: false }, $: () => null, h: () => ({}), STATUS_LABELS: {}, paintTaskRelated: () => {},
+    taskOverlayIds: (id, links, shown) => ({ ids: [id, ...[...shown.filter((x) => x !== id), ...links.map((l) => l.id)].filter((x, i, all) => all.indexOf(x) === i)] }),
+    showCards: (ids) => panes.splice(0, panes.length, ...ids.map((id) => [root, a, b].find((p) => p.id === id))), loadSession: (p) => loaded.push(p.id), styleIs: () => false, taskThreadChoice: () => null });
+  vm.runInContext(`${source}\nreconcileCards({lists:[{cards:[{id:'task:t',status:'idle',links:[{id:'codex:a'},{id:'codex:b'}]}]}]});`, context);
+  assert.deepEqual(loaded, ['codex:b']); // b has data from before it was unlinked, but its feed is gone
+});
+test('in the threads style a task stays beside one session, the one chosen', () => {
+  const html = boardHtml();
+  const start = html.indexOf('function reconcileCards('), source = html.slice(start, html.indexOf('\nasync function restoreCards(', start));
+  const root = { id: 'task:t', kind: 'task', el: {} }, a = { id: 'codex:a', kind: 'session', d: {} }, b = { id: 'codex:b', kind: 'session', d: {} };
+  const panes = [root, a], shownIds = [];
+  const context = vm.createContext({ panes, paneLayer: { hidden: false }, $: () => null, h: () => ({}), STATUS_LABELS: {}, paintTaskRelated: () => {},
+    taskOverlayIds: (id, links, shown, max) => ({ ids: [id, ...[...shown, ...links.map((l) => l.id)].filter((x, i, all) => all.indexOf(x) === i).slice(0, max)] }),
+    showCards: (ids) => { shownIds.push(ids); panes.splice(0, panes.length, ...ids.map((id) => [root, a, b].find((p) => p.id === id))); }, loadSession: () => {}, styleIs: () => true, taskThreadChoice: () => 'codex:b' });
+  vm.runInContext(`${source}\nreconcileCards({lists:[{cards:[{id:'task:t',status:'idle',links:[{id:'codex:a'},{id:'codex:b'}]}]}]});`, context);
+  assert.deepEqual(shownIds, [['task:t', 'codex:b']]);
+});
+test('the filters in effect become chips, except the axis the lanes follow', () => {
+  const html = boardHtml();
+  const source = html.slice(html.indexOf('const FILTER_KEYS ='), html.indexOf('function clearFilters('));
+  const defaults = html.match(/const DEFAULT_FILTERS = (\{[^\n]*\});/)[1];
+  const state = { filters: {} };
+  const context = vm.createContext({ state, STATUS_LABELS: { waiting: '入力待ち' } });
+  vm.runInContext(`const DEFAULT_FILTERS = ${defaults};\n${source}\nstate.filters = { ...DEFAULT_FILTERS };`, context);
+  const board = { directories: [{ id: 'd1', name: 'pical' }], labels: [], hosts: [], settings: { views: [{ name: '返事待ち', filters: { status: 'waiting' } }] } };
+  const chips = () => plain(vm.runInContext('filterChips(board).map(c => c.text)', Object.assign(context, { board })));
+  assert.deepEqual(chips(), ['dotを除く']); // the period is the time ribbon's, not a chip
+  Object.assign(context.state.filters, { agent: 'codex', directory: 'd1', status: 'waiting', days: 0 });
+  assert.deepEqual(chips(), ['Codex', '入力待ち', 'pical', 'dotを除く']);
+  context.state.filters.swimlane = 'directory';
+  assert.deepEqual(chips(), ['Codex', '入力待ち', 'dotを除く']); // lanes by category already show every category
+  Object.assign(context.state.filters, { agent: 'all', directory: '', swimlane: '', days: 30 });
+  assert.equal(vm.runInContext('activeView(board)?.name', context), '返事待ち');
 });

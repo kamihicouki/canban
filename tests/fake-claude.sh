@@ -1,11 +1,21 @@
 #!/bin/sh
 # Fake `claude -p --resume` for tests (see fake-codex.sh). Prints one --output-format json result.
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  node -e '
+    const fs = require("fs"), path = require("path"), os = require("os");
+    const file = process.env.CLAUDE_CONFIG_DIR ? path.join(process.env.CLAUDE_CONFIG_DIR, ".claude.json") : path.join(os.homedir(), ".claude.json");
+    let a; try { a = JSON.parse(fs.readFileSync(file)).oauthAccount; } catch {}
+    console.log(JSON.stringify({ loggedIn: !!a && process.env.FAKE_AUTH_LOGGED_IN !== "0", authMethod: "claude.ai", email: process.env.FAKE_AUTH_EMAIL || a?.emailAddress, orgId: a?.organizationUuid, accountUuid: a?.accountUuid }));
+  '
+  exit 0
+fi
 prompt="$(cat)"
 [ -n "$FAKE_AGENT_SLEEP" ] && sleep "$FAKE_AGENT_SLEEP"
 node -e '
 const fs = require("fs");
 const [prompt, ...argv] = process.argv.slice(1);
-if (process.env.FAKE_AGENT_LOG) fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: "claude", argv, prompt, cwd: process.cwd(), claudecode: process.env.CLAUDECODE ?? null, entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT ?? null }) + "\n");
+const authOverrides = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"].filter(key => process.env[key]);
+if (process.env.FAKE_AGENT_LOG) fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: "claude", argv, prompt, cwd: process.cwd(), claudeHome: process.env.CLAUDE_CONFIG_DIR ?? null, authOverrides, claudecode: process.env.CLAUDECODE ?? null, entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT ?? null }) + "\n");
 const fail = process.env.FAKE_AGENT_FAIL === "1";
 process.stdout.write(JSON.stringify({ type: "result", subtype: "success", is_error: fail, result: fail ? "Failed to authenticate" : "done: " + prompt.slice(0, 40) }) + "\n");
 ' "$prompt" "$@"

@@ -4,8 +4,10 @@ import { retrySqliteBusy as retry } from './sqlite-retry.mjs';
 import { openDatabase, db, revision, leaseAcquire, transaction, bump, setFence, currentFence, writeBoard } from './sqlite-backend.mjs';
 import { Store, defaultState } from './store.mjs';
 import { RequestStore } from './requests.mjs';
+import { SlackStore } from './slack-store.mjs';
 await retry(() => openDatabase(workerData.dir));
 const board = new Store(workerData.dir), requests = new RequestStore(workerData.dir);
+const slack = new SlackStore(workerData.dir);
 if (!db().prepare("SELECT 1 FROM metadata WHERE key='initialized'").get()) {
   await retry(() => transaction(() => { if (!db().prepare("SELECT 1 FROM metadata WHERE key='initialized'").get()) { writeBoard(defaultState()); db().prepare("INSERT INTO metadata VALUES('initialized','1')").run(); } }));
 }
@@ -33,7 +35,7 @@ parentPort.on('message', (message) => {
     const { id,target,method,args,fence } = message;
     try {
       setFence(fence || null);
-      const object = { board, requests, system }[target];
+      const object = { board, requests, system, slack }[target];
       if (!object || typeof object[method] !== 'function' || ['constructor','mutate'].includes(method)) throw new Error('Unknown database operation');
       const value = await retry(() => object[method](...args));
       parentPort.postMessage({ id,value });

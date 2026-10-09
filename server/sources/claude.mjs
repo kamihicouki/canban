@@ -3,7 +3,7 @@
 // Desktop app metadata: ~/Library/Application Support/Claude/claude-code-sessions/*/*/local_*.json
 // Summary normalization and message extraction are shared with the remote collector.
 import path from 'node:path';
-import { exists, listDir, listSubdirs, readJson, readJsonLines, readTailJsonLines, stat } from './readonly.mjs';
+import { exists, listDir, listSubdirs, readJson, readJsonLinesFrom, readTailJsonLines, stat } from './readonly.mjs';
 import { projectName, clip, cleanPrompt, firstLine, LOCAL_HOST, sessionKey } from './util.mjs';
 import { defaultClaudeHome, claudeDesktopSessionsDir, claudeDesktopFolders, claudeHomes, refreshAccounts, sessionAccount } from '../accounts.mjs';
 
@@ -14,8 +14,23 @@ export const claudeHome = defaultClaudeHome;
 // cleanup becomes the preview. Keep in sync with collect.py.
 export const SUMMARY_PROMPTS = 3;
 
-// Parsed transcript summaries keyed by file path, invalidated by mtime + size.
+// Parsed transcript summaries keyed by file path: { ino, mtimeMs, size, offset, summary }. A transcript only
+// grows, so a known one is read from `offset` (just past its last complete line) instead of from the start.
+// This reader never writes: server/summary-cache.mjs keeps the summaries in Canban's data directory, so a
+// new server (each app that shows the board starts one) does not parse hundreds of MB again.
 const cache = new Map();
+let cacheDirty = false;
+const summaryHooks = new Set();
+export function importSummaries(entries) {
+  for (const [file, e] of Object.entries(entries || {})) if (!cache.has(file) && e?.summary && Number.isFinite(e.offset)) cache.set(file, e);
+}
+export function onSummaries(fn) { summaryHooks.add(fn); return () => summaryHooks.delete(fn); }
+function reportSummaries(seen) {
+  if (!cacheDirty || !summaryHooks.size) return;
+  cacheDirty = false;
+  const entries = Object.fromEntries([...cache].filter(([file]) => seen.has(file)));
+  for (const fn of summaryHooks) try { fn(entries); } catch {}
+}
 
 export function textOf(content) {
   if (typeof content === 'string') return content;
@@ -60,8 +75,12 @@ export function foldSummary(s, o) {
     if (s.createdAt == null || ts < s.createdAt) s.createdAt = ts;
     if (s.updatedAt == null || ts > s.updatedAt) s.updatedAt = ts;
   }
-  if (o.cwd && !s.cwd) s.cwd = o.cwd;
-  if (o.gitBranch) s.branch = o.gitBranch;
+  // Resume where the main conversation last worked, not its initial checkout.
+  // Sidechains can run elsewhere; they must not redirect the parent session.
+  if (!o.isSidechain) {
+    if (typeof o.cwd === 'string' && o.cwd.trim()) s.cwd = o.cwd;
+    if (typeof o.gitBranch === 'string' && o.gitBranch.trim()) s.branch = o.gitBranch;
+  }
   if (!s.entrypoint && typeof o.entrypoint === 'string') s.entrypoint = o.entrypoint;
   switch (o.type) {
     case 'custom-title':
@@ -95,13 +114,17 @@ async function summarizeTranscript(file) {
   const st = await stat(file);
   if (!st) return null;
   const hit = cache.get(file);
-  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.summary;
-  const s = newSummary(path.basename(file, '.jsonl'));
-  for await (const o of readJsonLines(file)) foldSummary(s, o);
+  if (hit && hit.ino === st.ino && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.summary;
+  // Same file, grown: fold only what was appended. Anything else (replaced, truncated) starts over.
+  const grown = hit && hit.ino === st.ino && st.size >= hit.offset && hit.offset > 0;
+  const s = grown ? structuredClone(hit.summary) : newSummary(path.basename(file, '.jsonl'));
+  let offset = grown ? hit.offset : 0;
+  for await (const { value, end } of readJsonLinesFrom(file, offset)) { foldSummary(s, value); offset = end; }
   s.fileMtimeMs = st.mtimeMs;
   s.fileBirthMs = st.birthtimeMs || st.mtimeMs;
   s.file = file;
-  cache.set(file, { mtimeMs: st.mtimeMs, size: st.size, summary: s });
+  cache.set(file, { ino: st.ino, mtimeMs: st.mtimeMs, size: st.size, offset, summary: s });
+  cacheDirty = true;
   return s;
 }
 
@@ -203,6 +226,8 @@ export async function listClaudeSessions({ home = null, desktopDir = claudeDeskt
     const homes = home ? [{ id: 'default', dir: home, default: true }] : await claudeHomes();
     const desktop = await loadDesktopMeta(desktopDir);
     const byId = new Map();
+    const copyRank = new Map();
+    const seen = new Set();
     for (const h of homes) {
       const projectsDir = path.join(h.dir, 'projects');
       if (!exists(projectsDir)) continue;
@@ -210,15 +235,23 @@ export async function listClaudeSessions({ home = null, desktopDir = claudeDeskt
         if (!p.isDirectory()) continue;
         for (const f of await listDir(path.join(projectsDir, p.name))) {
           if (!f.isFile() || !f.name.endsWith('.jsonl')) continue;
-          const s = await summarizeTranscript(path.join(projectsDir, p.name, f.name));
+          const file = path.join(projectsDir, p.name, f.name);
+          seen.add(file);
+          const s = await summarizeTranscript(file);
           const session = s && normalizeClaudeSummary(s, desktop.get(s.sessionId));
           if (!session) continue;
           if (!h.default) Object.assign(session, { home: h.id, homeDir: h.dir });
           const prev = byId.get(session.id);
-          if (!prev || (session.updatedAt || 0) > (prev.updatedAt || 0)) byId.set(session.id, session);
+          const rank = [s.updatedAt || 0, s.fileMtimeMs || 0];
+          const previousRank = copyRank.get(session.id);
+          if (!prev || rank[0] > previousRank[0] || (rank[0] === previousRank[0] && rank[1] > previousRank[1])) {
+            byId.set(session.id, session);
+            copyRank.set(session.id, rank);
+          }
         }
       }
     }
+    reportSummaries(seen);
     const sessions = [...byId.values()];
     for (const s of sessions) s.account = sessionAccount(s);
     return { sessions, error: null };

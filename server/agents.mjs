@@ -1,6 +1,10 @@
 // Agent adapters: how to reopen a session in the agent's desktop app, and the
 // shell command that resumes it in a terminal. Add an entry here to support a new agent.
 
+import { claudeAuthOverrides } from './claude-auth-env.mjs';
+import { CODEX_AUTH_OVERRIDES } from './codex-auth-env.mjs';
+import { isCloudSession } from './sources/codex-dots.mjs';
+
 export function shq(s) {
   const v = String(s ?? '');
   return /^[\w@%+=:,./~-]+$/.test(v) ? v : `'${v.replace(/'/g, `'\\''`)}'`;
@@ -23,7 +27,7 @@ export const AGENTS = {
   claude: {
     label: 'Claude Code',
     app: 'Claude',
-    cli: (s) => `claude --resume ${shq(s.nativeId)}`,
+    cli: (s) => `claude --resume ${shq(s.resumePath || s.nativeId)}`,
     desktop(s) {
       if (s.host && !s.host.local) return null; // the desktop app cannot attach to a remote CLI transcript
       if (s.desktopSessionId && CLAUDE_DESKTOP_ID.test(s.desktopSessionId) && !s.archived) {
@@ -64,11 +68,12 @@ export const HEADLESS = {
   claude: {
     bin: 'claude',
     // `json` prints one result object at the end, which keeps run logs small.
-    args: (s, p) => ['-p', '--resume', s.nativeId, '--output-format', 'json', '--permission-mode', p.mode],
+    args: (s, p) => ['-p', '--resume', s.resumePath || s.nativeId, '--output-format', 'json', '--permission-mode', p.mode],
   },
 };
 
 export function headlessArgs(s, permission, { images = [] } = {}) {
+  if (isCloudSession(s)) return null;
   const h = HEADLESS[s.agent];
   if (!h || !s.nativeId) return null;
   const args = h.args(s, permission);
@@ -82,14 +87,16 @@ export function headlessArgs(s, permission, { images = [] } = {}) {
 
 // A session from another config folder (CLAUDE_CONFIG_DIR / CODEX_HOME profile) resumes there.
 export function homePrefix(s) {
-  if (!s.homeDir || (s.host && !s.host.local)) return '';
-  return `${s.agent === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR'}=${shq(s.homeDir)} `;
+ if (!s.homeDir || (s.host && !s.host.local)) return '';
+ if (s.agent === 'claude') return `env ${[...new Set([...claudeAuthOverrides(), 'CLAUDE_CONFIG_DIR'])].map(key => `-u ${shq(key)}`).join(' ')} ${s.claudeDefaultConfig ? '' : `CLAUDE_CONFIG_DIR=${shq(s.homeDir)} `}`;
+  return `env ${CODEX_AUTH_OVERRIDES.map(key => `-u ${shq(key)}`).join(' ')} CODEX_HOME=${shq(s.homeDir)} `;
 }
 
 export function resumeCommand(s) {
+  if (isCloudSession(s)) return null;
   const agent = AGENTS[s.agent];
   if (!agent) return null;
-  const inner = `${s.cwd ? `cd ${shq(s.cwd)} 2>/dev/null; ` : ''}${homePrefix(s)}${agent.cli(s)}`;
+  const inner = `${s.cwd ? `cd ${shq(s.cwd)} 2>/dev/null${s.resumePath ? ' &&' : ';'} ` : ''}${homePrefix(s)}${agent.cli(s)}`;
   return s.host && !s.host.local ? `ssh -t ${shq(s.host.alias)} ${shq(inner)}` : inner;
 }
 

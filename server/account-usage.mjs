@@ -2,7 +2,9 @@
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 import { cleanEnv, resolveBin } from './dispatch.mjs';
-import { credentialIdentity, claudeCredentials } from './account-credentials.mjs';
+import { isolatedCodexEnvironment } from './codex-auth-env.mjs';
+import { credentialIdentity, claudeCredentials, updateClaudeCredentials } from './account-credentials.mjs';
+import { withClaudeAuthLock } from './claude-auth-lock.mjs';
 
 export class UsageError extends Error {
   constructor(code) { super(code); this.code = code; }
@@ -29,8 +31,7 @@ export async function codexUsage({ key, home }, { spawner = spawn, bin = resolve
   if (key === 'codex:apikey') failure('unsupported');
   if (await credentialIdentity('codex', home) !== key) failure('login_required');
   if (!bin) failure('unavailable');
-  const env = { ...cleanEnv(), CODEX_HOME: home.dir };
-  for (const key of ['OPENAI_API_KEY', 'CODEX_API_KEY', 'OPENAI_BASE_URL']) delete env[key];
+  const env = isolatedCodexEnvironment(cleanEnv(), home.dir);
   const child = spawner(bin, ['app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="file"'],
     { cwd: home.dir, env, stdio: ['pipe', 'pipe', 'ignore'] });
   const pending = new Map(); let id = 0, bytes = 0;
@@ -63,28 +64,63 @@ export async function codexUsage({ key, home }, { spawner = spawn, bin = resolve
   } finally { clearTimeout(timer); lines.close(); child.stdin.end(); child.kill(); }
 }
 
-export async function claudeUsage({ key, home }, { fetcher = fetch, credentials = claudeCredentials, timeoutMs = 8000, now = Date.now } = {}) {
-  if (await credentialIdentity('claude', home) !== key) failure('login_required');
-  const saved = await credentials(home), auth = saved?.claudeAiOauth;
-  if (!auth?.accessToken || (Number.isFinite(auth.expiresAt) && auth.expiresAt <= now())) failure('login_required');
-  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeoutMs);
-  const get = async (endpoint) => {
-    // Fixed official origin; redirects cannot forward this bearer token elsewhere.
-    const r = await fetcher(`https://api.anthropic.com/api/oauth/${endpoint}`, { signal: controller.signal, redirect: 'error',
-      headers: { Authorization: `Bearer ${auth.accessToken}`, 'anthropic-beta': 'oauth-2025-04-20', 'Content-Type': 'application/json', 'User-Agent': 'canban/0.16.0' } });
-    if (r.status === 401 || r.status === 403) failure('login_required');
-    if (r.status === 429) failure('rate_limited');
-    if (!r.ok) failure('unavailable');
-    return r.json();
-  };
-  try {
-    const profile = await get('profile');
-    if (`claude:${profile?.account?.uuid}` !== key) failure('identity_changed');
-    const result = await get('usage');
-    if (await credentialIdentity('claude', home) !== key) failure('identity_changed');
-    return { ...claudeSnapshot(result, now()), plan: auth.subscriptionType || null };
-  } catch (error) {
-    if (error instanceof UsageError) throw error;
-    failure(controller.signal.aborted ? 'timeout' : 'unavailable');
-  } finally { clearTimeout(timer); }
+export async function claudeUsage({ key, home }, { fetcher = fetch, credentials = claudeCredentials, saveCredentials = updateClaudeCredentials, timeoutMs = 8000, now = Date.now } = {}) {
+  return withClaudeAuthLock(home, async (assertHeld) => {
+    if (await credentialIdentity('claude', home) !== key) failure('login_required');
+    const saved = await credentials(home);
+    let auth = saved?.claudeAiOauth, refreshed = false;
+    if (!auth?.accessToken) failure('login_required');
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeoutMs);
+    const get = async (endpoint) => {
+      // Fixed official origin; redirects cannot forward this bearer token elsewhere.
+      const r = await fetcher(`https://api.anthropic.com/api/oauth/${endpoint}`, { signal: controller.signal, redirect: 'error',
+        headers: { Authorization: `Bearer ${auth.accessToken}`, 'anthropic-beta': 'oauth-2025-04-20', 'Content-Type': 'application/json', 'User-Agent': 'canban/0.16.0' } });
+      if (r.status === 401 || r.status === 403) failure('login_required');
+      if (r.status === 429) failure('rate_limited');
+      if (!r.ok) failure('unavailable');
+      return r.json();
+    };
+    const renew = async () => {
+      if (refreshed || !auth.refreshToken) failure('login_required');
+      const body = { grant_type: 'refresh_token', refresh_token: auth.refreshToken, client_id: '9d1c250a-e61b-44d9-88ed-5944d1962f5e' };
+      // Reuse granted scopes; never request broader access while renewing a login.
+      if (Array.isArray(auth.scopes) && auth.scopes.length) body.scope = auth.scopes.join(' ');
+      const r = await fetcher('https://platform.claude.com/v1/oauth/token', {
+        method: 'POST', redirect: 'error', signal: controller.signal,
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      if ([400, 401, 403].includes(r.status)) failure('login_required');
+      if (r.status === 429) failure('rate_limited');
+      if (!r.ok) failure('unavailable');
+      const value = await r.json();
+      if (typeof value.access_token !== 'string' || !value.access_token || !Number.isFinite(value.expires_in) || value.expires_in <= 0 ||
+          (value.refresh_token != null && (typeof value.refresh_token !== 'string' || !value.refresh_token))) failure('unavailable');
+      auth = { ...auth, accessToken: value.access_token, refreshToken: value.refresh_token ?? auth.refreshToken, expiresAt: now() + value.expires_in * 1000 };
+      if (typeof value.scope === 'string') auth.scopes = value.scope.split(' ').filter(Boolean);
+      if (Number.isFinite(value.refresh_token_expires_in) && value.refresh_token_expires_in > 0) auth.refreshTokenExpiresAt = now() + value.refresh_token_expires_in * 1000;
+      refreshed = true;
+      // Rotation invalidates the old refresh token. Save before later API calls,
+      // so a usage timeout cannot lose the successful login renewal on restart.
+      await assertHeld();
+      if (await credentialIdentity('claude', home) !== key ||
+          !await saveCredentials(home, saved, { ...saved, claudeAiOauth: auth }, { assertOwner: assertHeld })) failure('identity_changed');
+    };
+    const verify = async () => {
+      const profile = await get('profile');
+      if (`claude:${profile?.account?.uuid}` !== key || await credentialIdentity('claude', home) !== key) failure('identity_changed');
+    };
+    try {
+      if (Number.isFinite(auth.expiresAt) && auth.expiresAt <= now()) await renew();
+      try { await verify(); }
+      catch (error) { if (error.code !== 'login_required' || refreshed) throw error; await renew(); await verify(); }
+      let result;
+      try { result = await get('usage'); }
+      catch (error) { if (error.code !== 'login_required' || refreshed) throw error; await renew(); await verify(); result = await get('usage'); }
+      if (await credentialIdentity('claude', home) !== key) failure('identity_changed');
+      return { ...claudeSnapshot(result, now()), plan: auth.subscriptionType || null };
+    } catch (error) {
+      if (error instanceof UsageError) throw error;
+      failure(controller.signal.aborted ? 'timeout' : 'unavailable');
+    } finally { clearTimeout(timer); }
+  }, { timeoutMs });
 }

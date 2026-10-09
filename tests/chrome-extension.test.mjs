@@ -7,10 +7,11 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { FrameDecoder, encodeNativeResponse } from '../server/native-messaging.mjs';
+import { boardHtml } from '../server/ui.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-test('Chrome build emits an MV3 toolbar extension with an external CSP-safe board', () => {
+test('Chrome build emits an MV3 toolbar extension with an external CSP-safe board', async () => {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-chrome-'));
   try {
     const build = spawnSync(process.execPath, [path.join(root, 'scripts', 'build-chrome.mjs'), '--outdir', out], { encoding: 'utf8' });
@@ -29,29 +30,41 @@ test('Chrome build emits an MV3 toolbar extension with an external CSP-safe boar
     assert.doesNotMatch(html, /<style\b/i);
     assert.doesNotMatch(html, /<script(?:\s[^>]*)?>\s*[^<]/i);
     assert.match(fs.readFileSync(path.join(out, 'board.js'), 'utf8'), /connectNative/);
-    assert.match(fs.readFileSync(path.join(out, 'service-worker.js'), 'utf8'), /chrome\.tabs\.create/);
+    const worker = fs.readFileSync(path.join(out, 'service-worker.js'), 'utf8');
+    assert.match(worker, /chrome\.tabs\.create/);
+    assert.match(worker, /runtime\.getContexts/); // the button brings an open board forward instead of adding a tab
+    // The worker answers the toolbar button: the open board comes forward, otherwise a new tab opens.
+    const calls = [];
+    let contexts = [{ contextType: 'TAB', documentUrl: 'chrome-extension://x/board.html#a', tabId: 7, windowId: 3 }];
+    let listener;
+    const chrome = { action: { onClicked: { addListener: (fn) => { listener = fn; } } },
+      runtime: { getURL: (p) => `chrome-extension://x/${p}`, getContexts: async () => contexts },
+      tabs: { create: async (o) => calls.push(['create', o.url]), update: async (id, o) => calls.push(['update', id, o.active]) },
+      windows: { update: async (id, o) => calls.push(['focus', id, o.focused]) } };
+    new Function('chrome', worker)(chrome);
+    await listener();
+    contexts = [];
+    await listener();
+    assert.deepEqual(calls, [['update', 7, true], ['focus', 3, true], ['create', 'chrome-extension://x/board.html']]);
   } finally {
     fs.rmSync(out, { recursive: true, force: true });
   }
 });
 
-test('adopting shared view state refreshes the board and analytics toggle', () => {
-  const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
+test('adopting shared state from an older version lands on the board: analytics is no longer a page', () => {
+  const html = boardHtml();
   const adopt = html.match(/function adoptSharedUi\(record\) \{([\s\S]*?)\n\}\n\nasync function applySharedUi/);
-  const toggle = html.match(/function syncViewButton\(\) \{[\s\S]*?\n\}/)[0];
-  const analytics = { setAttribute(name, value) { this[name] = value; } };
-  const boardView = { setAttribute(name, value) { this[name] = value; } };
-  const state = { view: 'board' };
-  const context = vm.createContext({ state, sharedUi: {}, SHARED_UI_KEYS: ['view'], workspacePage: (page,fallback) => page || fallback, workspace: { navigate() {} }, store: { cache() {} },
-    $: (selector) => selector === '#analyticsBtn' ? analytics : selector === '#boardViewBtn' ? boardView : null });
-  vm.runInContext(`${toggle}\nfunction adoptSharedUi(record) {${adopt[1]}\n}\nadoptSharedUi({revision: 1, state: {view: 'analytics'}});`, context);
-  assert.equal(state.view, 'analytics');
-  assert.equal(analytics['aria-pressed'], 'true');
-  assert.equal(boardView['aria-pressed'], 'false');
+  const pages = ['home', 'rules', 'settings'], navigated = [];
+  const state = { filters: {} };
+  const context = vm.createContext({ state, sharedUi: {}, SHARED_UI_KEYS: ['workspacePage'], workspacePage: (page, fallback = 'home') => (pages.includes(page) ? page : fallback),
+    workspace: { navigate(page) { navigated.push(page); } }, store: { cache() {} }, $: () => null });
+  vm.runInContext(`function adoptSharedUi(record) {${adopt[1]}\n}\nadoptSharedUi({revision: 1, state: {view: 'analytics', workspacePage: 'analytics'}});`, context);
+  assert.deepEqual(navigated, ['home']);
+  assert.equal(state.view, undefined);
 });
 
 test('Chrome bridge waits for every large-response chunk before decoding', () => {
-  const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
+  const html = boardHtml();
   const source = html.slice(html.indexOf('  function settleNative('), html.indexOf('  function connectNative('));
   const response = { id: 7, result: { text: '🍙'.repeat(350000) } };
   const chunks = encodeNativeResponse(response).flatMap((frame) => new FrameDecoder().push(frame)).reverse();
@@ -69,25 +82,25 @@ test('Chrome bridge waits for every large-response chunk before decoding', () =>
 });
 
 test('repainting adopted settings does not create an unsaved local change', () => {
-  const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
+  const html = boardHtml();
   const source = html.slice(html.indexOf('const SHARED_UI_KEYS ='), html.indexOf('const DEFAULT_FILTERS ='));
   const values = new Map();
   let saves = 0;
   const context = vm.createContext({ localStorage: { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) },
     scheduleSharedUiSave: () => saves++ });
-  vm.runInContext(`${source}\nsharedUi.ready = true; store.cache('dashOpen', true); store.set('dashOpen', true);`, context);
+  vm.runInContext(`${source}\nsharedUi.ready = true; store.cache('cardWidths', {}); store.set('cardWidths', {});`, context);
   assert.equal(vm.runInContext('sharedUi.dirty', context), false);
   assert.equal(saves, 0);
-  vm.runInContext("store.set('dashOpen', false)", context);
+  vm.runInContext("store.set('cardWidths', { task: 480 })", context);
   assert.equal(vm.runInContext('sharedUi.dirty', context), true);
   assert.equal(saves, 1);
 });
 
 test('foreground synchronization preserves an unsent session prompt', async () => {
-  const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
+  const html = boardHtml();
   const source = html.slice(html.indexOf('function hasUnsavedPaneInput()'), html.indexOf('function scheduleSharedUiCheck()'));
   let reads = 0;
-  const context = vm.createContext({ promptDrafts: new Map(), taskDash: null, sharedUi: { ready: true }, workspace: { hasDrafts: () => false }, idle: () => true,
+  const context = vm.createContext({ promptDrafts: new Map(), paneCache: new Map(), sharedUi: { ready: true }, workspace: { hasDrafts: () => false }, idle: () => true,
     document: { visibilityState: 'visible', querySelectorAll: () => [{ value: 'まだ送らない指示' }] },
     bridge: { callTool() { reads++; return Promise.resolve({ revision: 0 }); } },
     sharedUiRecord: (value) => value, applySharedUi() {}, console });
@@ -107,10 +120,10 @@ test('Native Messaging installer targets only the supplied Chrome extension id',
 });
 
 test('foreground synchronization preserves an edited card note', async () => {
-  const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
+  const html = boardHtml();
   const source = html.slice(html.indexOf('function hasUnsavedPaneInput()'), html.indexOf('function scheduleSharedUiCheck()'));
   let reads = 0;
-  const context = vm.createContext({ promptDrafts: new Map(), taskDash: null, sharedUi: { ready: true }, workspace: { hasDrafts: () => false }, idle: () => true,
+  const context = vm.createContext({ promptDrafts: new Map(), paneCache: new Map(), sharedUi: { ready: true }, workspace: { hasDrafts: () => false }, idle: () => true,
     document: { visibilityState: 'visible', querySelectorAll: (selector) => selector === 'textarea.note' ? [{ value: '編集中', defaultValue: '保存済み' }] : [] },
     bridge: { callTool() { reads++; } }, console });
   await vm.runInContext(`${source}\ncheckSharedUiOnReturn();`, context);
@@ -118,7 +131,7 @@ test('foreground synchronization preserves an edited card note', async () => {
 });
 
 test('startup preserves pending local settings after a revision conflict', async () => {
-  const html = fs.readFileSync(path.join(root, 'ui', 'board.html'), 'utf8');
+  const html = boardHtml();
   const source = html.slice(html.indexOf('async function initializeSharedUi()'), html.indexOf('function hasUnsavedPaneInput()'));
   let adopted = false, conflict = false;
   const sharedUi = {};

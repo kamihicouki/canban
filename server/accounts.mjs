@@ -21,7 +21,9 @@
 // 5-hour / weekly usage per organization from each desktop profile's plan-usage-history.json.
 // Sanitized live snapshots are merged from settings; credential/network operations live in account-usage.mjs.
 import os from 'node:os';
+import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { exists, listDir, listSubdirs, readJson, realpath, stat } from './sources/readonly.mjs';
 import { ACCOUNT_COLORS } from './accounts-settings.mjs';
 
@@ -45,6 +47,7 @@ export function claudeDesktopSessionsDir() {
 // Claude desktop app data folders: the default one (next to claude-code-sessions) and
 // other profiles beside it, one per real folder. { id, dir, sessionsDir, default }
 let desktopCache = { at: 0, roots: [] };
+export function invalidateDesktopRoots() { desktopCache.at = 0; registry.at = 0; }
 export async function claudeDesktopRoots(now = Date.now()) {
   if (now - desktopCache.at < DISCOVER_TTL_MS) return desktopCache.roots;
   const sessionsDir = claudeDesktopSessionsDir();
@@ -102,10 +105,10 @@ export async function claudeDesktopFolders() {
 
 // Settings → homes (called with state.settings.accounts whenever the board state is read).
 export function configureAccounts(s = {}) {
-  const same = JSON.stringify([s.claudeHomes, s.codexHomes, s.discover]) === JSON.stringify([config.claudeHomes, config.codexHomes, config.discover]);
+  const same = JSON.stringify([s.claudeHomes, s.codexHomes, s.discover, s.profiles]) === JSON.stringify([config.claudeHomes, config.codexHomes, config.discover, config.profiles]);
   config = { claudeHomes: s.claudeHomes || [], codexHomes: s.codexHomes || [], discover: s.discover !== false,
     usage: s.usage || {}, refresh: s.refresh || { enabled: true, intervalMinutes: 5 }, profiles: s.profiles || [] };
-  if (!same) discovered.at = desktopCache.at = 0;
+  if (!same) registry.at = discovered.at = desktopCache.at = 0;
   return !same;
 }
 
@@ -143,20 +146,47 @@ function slug(dir, taken) {
   return id;
 }
 
-function buildHomes(agent, def, extra, found) {
+async function buildHomes(agent, def, extra, found) {
   const norm = (p) => path.resolve(String(p).replace(/^~(?=\/|$)/, os.homedir()));
   const seen = new Set([norm(def)]);
   const taken = new Set();
-  const homes = [{ id: 'default', agent, dir: def, default: true, source: 'default' }];
+  const managedId = async dir => {
+    const profile = (config.profiles || []).find(p => p.agent === agent && !p.pending && norm(p.dir) === norm(dir));
+    if (profile) return profile.id;
+    // Older account additions can retain their marker after the pending-login
+    // records have been cleared. Preserve that existing UUID as well.
+    const marker = await fs.readFile(path.join(dir, '.canban-account-profile'), 'utf8').catch(() => '');
+    return /^[a-f0-9-]{36}$/i.test(marker.trim()) ? marker.trim() : null;
+  };
+  const homes = [{ id: await managedId(def) || 'default', agent, dir: def, default: true, source: 'default' }];
   for (const [list, source] of [[extra, 'settings'], [found, 'discovered']]) {
     for (const p of list) {
       const dir = norm(p);
       if (seen.has(dir) || homes.length >= MAX_HOMES) continue;
       seen.add(dir);
-      homes.push({ id: slug(dir, taken), agent, dir, default: false, source, missing: !exists(dir) });
+      const legacyId = slug(dir, taken);
+      const id = await managedId(dir) || `home-${createHash('sha256').update(`${agent}:${dir}`).digest('hex').slice(0, 24)}`;
+      homes.push({ id, legacyId, agent, dir, default: false, source, missing: !exists(dir) });
     }
   }
   return homes;
+}
+
+// Old collision slugs depend on enumeration order, so never resolve them.
+export function resolveAccountHome(agent, id = 'default', homes = registry.homes[agent] || []) {
+  const exact = homes.filter(h => h.id === id);
+  if (exact.length) return exact.length === 1 ? exact[0] : null;
+  if (id === 'default') return homes.find(h => h.default) || null;
+  const candidate = homes.find(h => h.legacyId === id);
+  if (!candidate) return null;
+  const basename = h => path.basename(h.dir).replace(/^\.+/, '').replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 40) || 'home';
+  return id === basename(candidate) && homes.filter(h => !h.default && basename(h) === id).length === 1 ? candidate : null;
+}
+
+export function normalizeClaudeExecution(execution) {
+  if (!execution) return null;
+  const home = resolveAccountHome('claude', execution.homeId);
+  return home && home.account === execution.account ? { ...execution, homeId: home.id } : execution;
 }
 
 export async function claudeHomes() {
@@ -288,7 +318,7 @@ export async function refreshAccounts({ force = false } = {}) {
   const homes = { claude: [], codex: [] };
   for (const h of ch) {
     const a = await claudeHomeAccount(h);
-    homes.claude.push({ ...h, account: accountKey('claude', a?.id) });
+    homes.claude.push({ ...h, account: accountKey('claude', a?.id), identity: a });
     if (a) {
       upsert(map, 'claude', a.id, { ...a, signedIn: [`cli:${h.id}`], homes: [h.id] });
       if (a.orgId) orgToAccount.set(a.orgId, accountKey('claude', a.id));
@@ -310,7 +340,7 @@ export async function refreshAccounts({ force = false } = {}) {
 }
 
 export function homeAccount(agent, homeId) {
-  return registry.homes[agent]?.find((h) => h.id === (homeId || 'default'))?.account || null;
+  return resolveAccountHome(agent, homeId || 'default')?.account || null;
 }
 
 // The account a session belongs to (see the header). Adds unknown ids to the registry.
@@ -354,7 +384,7 @@ function claudeLimits(accountKeyOf) {
     const key = accountKeyOf(org);
     if (!key) continue;
     const win = (k) => (typeof v.u[k] === 'number' ? { usedPercent: v.u[k], windowMinutes: CLAUDE_WINDOWS[k], resetsAt: null } : null);
-    out.push({ key, agent: 'claude', at: v.at, primary: win('fh'), secondary: win('sd'), plan: null, source: 'desktop' });
+    out.push({ key, agent: 'claude', orgId: org, at: v.at, primary: win('fh'), secondary: win('sd'), plan: null, source: 'desktop' });
   }
   return out;
 }
@@ -365,7 +395,8 @@ export function accountLimits(codexLimits = new Map(), now = Date.now()) {
   const out = [];
   for (const [key, l] of codexLimits) if (key) out.push({ ...l, key, agent: 'codex', primary: fresh(l.primary), secondary: fresh(l.secondary), source: 'log' });
   out.push(...claudeLimits((org) => registry.orgToAccount.get(org)));
-  const merged = new Map(out.map((l) => [l.key, l]));
+  const merged = new Map();
+  for (const l of out) if (!merged.has(l.key) || l.at > merged.get(l.key).at) merged.set(l.key, l);
   for (const [key, l] of Object.entries(config.usage || {})) {
     if (!l.at || (!l.primary && !l.secondary) || (merged.get(key)?.at || 0) > l.at) continue;
     merged.set(key, { ...l, key, agent: key.split(':')[0], primary: fresh(l.primary), secondary: fresh(l.secondary) });
@@ -385,6 +416,7 @@ function defaultShort(label) {
 export function accountsView({ labels = {}, marks = {}, hidden = [], sessions = [], codexLimits = new Map(), now = Date.now() } = {}) {
   const counts = new Map();
   for (const s of sessions) {
+    if (s.host?.local === false) continue;
     const k = s.account || `__none:${s.agent}`;
     counts.set(k, (counts.get(k) || 0) + 1);
   }

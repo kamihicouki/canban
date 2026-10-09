@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { database } from './sqlite-client.mjs';
-import { configureAccounts, refreshAccounts, accountsView } from './accounts.mjs';
+import { configureAccounts, refreshAccounts, accountsView, resolveAccountHome } from './accounts.mjs';
 import { limitsByAccount } from './signals.mjs';
 import { codexUsage, claudeUsage } from './account-usage.mjs';
 import { credentialIdentity, claudeCredentials } from './account-credentials.mjs';
@@ -13,6 +13,8 @@ import { shq } from './agents.mjs';
 import { runInTerminal } from './launcher.mjs';
 import { managedLogins, loginPreference } from './login.mjs';
 import { loginTarget } from './login-browsers.mjs';
+import { claudeAuthOverrides } from './claude-auth-env.mjs';
+import { CODEX_AUTH_OVERRIDES } from './codex-auth-env.mjs';
 
 export function accountActions({ store, allSessions, getLive = () => null, providers = { codex: codexUsage, claude: claudeUsage }, launch = runInTerminal, bin = resolveBin, loginManager = null, getClaudeCredentials = claudeCredentials, now = Date.now, dryRun = process.env.CANBAN_LAUNCH_DRYRUN === '1' }) {
   const db = database(store.dir);
@@ -74,7 +76,7 @@ export function accountActions({ store, allSessions, getLive = () => null, provi
   const loginCommand = (p, executable) => {
     const removed = ['CODEX_THREAD_ID', 'CLAUDECODE', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CODE_OAUTH_CLIENT_ID', 'CLAUDE_CODE_CUSTOM_OAUTH_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', 'CLAUDE_CODE_ACCOUNT_UUID', 'CLAUDE_CODE_ORGANIZATION_UUID', 'CLAUDE_CODE_USER_EMAIL', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'BROWSER', 'CANBAN_AUTH_SOCKET', 'CANBAN_AUTH_NONCE', 'CANBAN_AUTH_NODE', 'CANBAN_AUTH_HELPER'];
     const inherited = Object.keys(process.env).filter(k => /^(CLAUDE_(BG|PTY)_|CLAUDE_CODE_|CODEX_SANDBOX|CODEX_MANAGED_)/.test(k));
-    const env = [...new Set([...removed, ...inherited])].map(name => `-u ${shq(name)}`).join(' ');
+    const env = [...new Set([...removed, ...inherited, ...(p.agent === 'claude' ? claudeAuthOverrides() : CODEX_AUTH_OVERRIDES)])].map(name => `-u ${shq(name)}`).join(' ');
     return `cd ${shq(p.dir)} && env ${env} ${p.agent === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR'}=${shq(p.dir)} ${shq(executable)} ${p.agent === 'codex' ? 'login -c '+shq('cli_auth_credentials_store="file"') : 'auth login --claudeai'}`;
   };
   const profile = async (id) => {
@@ -159,8 +161,13 @@ export function accountActions({ store, allSessions, getLive = () => null, provi
     if (destination.startsWith(p.dir + path.sep) || p.dir.startsWith(destination + path.sep)) throw new Error('現在の保存先の親・子フォルダへは変更できません');
     if ((await fs.readFile(path.join(p.dir, '.canban-account-profile'), 'utf8').catch(() => null)) !== p.id || (await fs.lstat(p.dir)).isSymbolicLink()) throw new Error('Canban が作成した保存先だけを変更できます');
     if (await credentialIdentity(p.agent, { dir: p.dir, default: false }) !== p.key) throw new Error('保存先のアカウントが変わりました。ログイン状態を確認してください');
+    configureAccounts(settings);
+    const registry = await refreshAccounts({ force: true });
+    const oldHome = registry.homes[p.agent].find(h => path.resolve(h.dir) === path.resolve(p.dir));
+    const executionHomeMigration = p.agent === 'claude' && oldHome?.legacyId && resolveAccountHome('claude', oldHome.legacyId)?.dir === p.dir
+      ? { from: oldHome.legacyId, to: p.id, account: p.key } : null;
     const { sessions } = await allSessions(state);
-    if (sessions.some((s) => s.homeDir === p.dir && ['running', 'waiting'].includes(s.status))) throw new Error('この保存先のセッションを終了してから変更してください');
+    if (sessions.some((s) => ['running', 'waiting'].includes(s.status) && (s.homeDir === p.dir || (s.agent === p.agent && !s.homeDir && registry.homes[p.agent].find(h => h.default)?.dir === p.dir) || (p.agent === 'claude' && resolveAccountHome('claude', state.cards[s.id]?.claudeExecution?.homeId)?.dir === p.dir && state.cards[s.id]?.claudeExecution)))) throw new Error('この保存先のセッションを終了してから変更してください');
     return locked(`account-usage:${p.key}`, async () => {
       // Never merge with or overwrite an existing folder, including an empty one.
       await fs.mkdir(path.dirname(destination), { recursive: true });
@@ -176,8 +183,16 @@ export function accountActions({ store, allSessions, getLive = () => null, provi
           }
         }
         await fs.rename(p.dir, destination);
-        try { await store.updateAccountSettings({ profile: { ...p, dir: destination }, [`${p.agent}Homes`]: settings[`${p.agent}Homes`].map((d) => d === p.dir ? destination : d) }); }
-        catch (error) { await fs.rename(destination, p.dir); throw error; }
+        try {
+          // Vendor databases retain absolute rollout paths. Preserve earlier
+          // paths with links, including chains from repeated moves.
+          if (p.agent === 'codex') await fs.symlink(destination, p.dir);
+          await store.updateAccountSettings({ executionHomeMigration, profile: { ...p, dir: destination }, [`${p.agent}Homes`]: settings[`${p.agent}Homes`].map((d) => d === p.dir ? destination : d) });
+        } catch (error) {
+          if (p.agent === 'codex' && await fs.readlink(p.dir).catch(() => null) === destination) await fs.unlink(p.dir);
+          if (!await fs.lstat(p.dir).catch(() => null)) await fs.rename(destination, p.dir);
+          throw error;
+        }
       } catch { await fs.rmdir(destination).catch(() => {}); throw new Error('保存先を変更できませんでした。同じディスク内の未使用フォルダを指定してください'); }
       await changed((await store.load()).settings.accounts);
       return { dir: destination };

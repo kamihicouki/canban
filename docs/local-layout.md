@@ -11,6 +11,8 @@
 | `.local/data/` | 開発用データ、または既存共有データへの参照 |
 | `~/.canban/`（repo外） | 通常ユーザーのSQLite DB、検索索引、実行ログ、アカウントデータ |
 | `<Canban保存先>/prompt-images/` | プロンプトの添付画像・アップロード状態。通常は `~/.canban/prompt-images/`。開発・テストは明示した `.local/` 配下 |
+| `<Canban保存先>/cache/claude-summaries.json` | Claude の会話ログの要約（題名・最初の依頼・件数・読み終えた位置）。起動時に増えた分だけ読むための控えで、消しても次の一覧で作り直す。会話の本文は保存しない |
+| `<Canban保存先>/agent-bridges/` | Codex内のCanban MCPへ接続する一時的な探索レコード。会話・認証情報は保存しない |
 | `.local/chrome-main-test/` | 拡張の公開鍵・ID、ビルド記録、更新ロック |
 | `.local/backups/` | 配置移行・設定変更前の控え |
 
@@ -36,7 +38,23 @@ Codex・Claude・Chromeの保存先を別々に変更しない。保存先を移
 
 データ移動前にSQLiteの整合したバックアップを `.local/backups/` に取り、対象データを開くCanbanプロセスを一時停止する。DB・WAL・SHMを同じディレクトリごと移動し、inodeと整合性、各クライアントの参照先の一致を確認して再開する。失敗時は配置を戻し、停止したプロセスを再開する。
 
+## Claudeのマルチアカウント
+
+Canbanから追加するClaudeアカウントは `<Canban保存先>/accounts/claude/<プロフィールID>/` に専用の設定フォルダーを持つ。ログイン・送信・ターミナルでの再開は、そのフォルダーを `CLAUDE_CONFIG_DIR` に指定する。親プロセスのAPIキー・認証トークン・接続先の指定は引き継がない。認証はClaude CLIの設定フォルダー内の認証ファイル、macOSでは設定フォルダーごとに分かれたKeychain項目に保存し、ボードのSQLiteには保存しない。
+
+認証更新はClaude Code 2.1.285と共通の `<設定フォルダー>/.oauth_refresh.lock` と `<設定フォルダーの実パス>.lock` を、保存は `.storage-write.lock` を使って直列化する。別アカウントのフォルダーは並行して使える。同じフォルダーの別名・別Canbanプロセス・Claude CLIは共通のロックに従う。待機中はロックを奪わず、取得後に認証を読み直す。所有権を失った処理は保存せず、更新された認証情報で古い取得結果を上書きしない。
+
+ロックは認証情報を含まない一時ディレクトリで、処理中に更新し、終了時に自分が所有するものだけを外す。Claude CLIの失効判定と同じ時間を過ぎたロックは回収する。既存のプロフィール、保存先、Keychainの項目は更新処理で統合・移動しない。通常のClaude CLIも専用アカウントを使う場合は、同じ `CLAUDE_CONFIG_DIR` を指定する。
+
+Claude のセッションごとの実行先は共有SQLiteのカード属性 `claudeExecution` にCLI home IDとアカウントIDだけを保存する。Chrome・Codex・Claudeからの再開と送信はこの選択を使い、認証情報は保存しない。キューは追加時の実行先を保持する。標準の `~/.claude` を選ぶ場合は `CLAUDE_CONFIG_DIR` を外し、通常の `~/.claude.json` と標準Keychain項目を使う。明示的な設定フォルダーでは従来どおり同変数を指定する。0.24.3以降は実行前に公式 CLI の `auth status --json` を同じ認証環境で読み、未ログイン・メールや組織の不一致を拒否する。
+
+macOS の Desktop はCLIとは別のログインを使う。0.24.2以降、ログイン済みの `Claude-Profiles/*` / `Claude-*` と通常の `Claude` 保存先リンクがある場合、そのリンクだけをアプリ停止中に原子的に切り替える。フォルダー・認証・履歴は移動・統合しない。通常の Desktop 起動はこのリンクを参照するため選択が残る。切替はDesktop全体へ適用され、別のカードでの選択や外部プロフィール切替は後の選択が優先する。保存先が通常のディレクトリ、対象プロフィールがない、複数ある場合はCLIの選択だけを保存して理由を返す。Desktop の会話を開く操作は、不一致・未確認を拒否する。
+
+通常保存先が既存の `Claude-Profiles/<名前>` にリンクしている場合、0.24.3以降は同じ構成内の対象アカウントに一致するプロフィールを優先する。構成内の候補が一意でなければ切り替えない。構成外の旧 `Claude-*` は移動・削除しない。候補には対応Desktopプロフィールを表示し、Canban追加の判定は `.canban-account-profile` のID一致で行う。0.24.4以降、実行アカウント一覧はアプリバー・サイドバーと同じアカウントID単位にまとめ、CLI設定フォルダーは各アカウントの「接続設定を指定」に残す。保存済みhome IDは受動的な表示や同じアカウントの再選択で変更しない。
+
 ## ローカルmainとChrome更新
+
+Claude Desktop の拡張は `update:local` では更新されません。通常mainから `npm run pack:mcpb` で `dist/canban.mcpb` を生成し、Desktopの拡張設定で既存のCanbanを更新します。MCPBも `dist/codex-plugin/` のコミット済みGit管理ファイルだけを使い、`.local/` と未追跡資料を含めません。インストールコピーのmanifestと保存先を読み戻し、更新を確認します。アプリ管理キャッシュを手編集しません。
 
 ```sh
 cd /Users/d/Documents/repo/canban
@@ -49,8 +67,24 @@ npm run update:local
 
 ## Chrome Native Hostの実行ファイル
 
+Codexが保持中のセッションの履歴操作は、Codexから起動されたCanban MCPがApp Toolsに実行を依頼する。MCPはCodexが指定した署名済みNodeを優先し、`CODEX_APP_TOOLS_PIPE_PATH`・`CODEX_MCP_NODE_PATH`・`CODEX_THREAD_ID`を引き継ぐ。Chrome Native Hostはこの接続口へ直接アクセスせず、同じCanban保存先の`agent-bridges/`から選択したCodex homeと一致するCanban MCPを探す。ブリッジはアーカイブ・復元だけを受け付け、対象を本体で確認して実行中・入力待ちを拒否する。削除は所有者によるアーカイブの後にCodexの削除APIを呼ぶ。
+
+探索レコードは権限600、Unixソケットは権限700の一時ディレクトリに権限600で作り、MCPの終了時に除去する。終了異常による古いレコードは接続確認で無視する。プラグイン再導入後も旧MCPが動作している場合は、CanbanのMCP接続を再接続する。保持されていないセッションと追加アカウントの履歴には、選択したhomeで起動するCodex App Serverを使う。
+
 macOSのDocuments保護により、Chromeの子プロセスはDocuments内のrepoを読み取れない場合がある。ホストはrepoを直接起動せず、macOSでは `~/Library/Application Support/Canban/native-hosts/<host名>/`、Linuxでは `${XDG_DATA_HOME:-~/.local/share}/canban/native-hosts/<host名>/` のアプリ用配布物を起動する。OSのアクセス権を広げる必要はない。
 
 Main Testの更新はcommit済みmainを `git archive` でコミット別ディレクトリへ配布し、そのランチャーを登録する。`.git`、`.local`、未追跡資料は配布しない。旧コミットの実行ファイルは起動中プロセスのため保持する。拡張の登録先は引き続きrepoの `dist/chrome`。ビルド記録に実行ファイルの保存先も記録する。
 
 ストア版は既存の `com.kamihicouki.canban` を使い、Main Testとは別の実行ファイル・登録を持つ。通常版の `npm run install:chrome-native-host -- --extension-id <拡張ID>` も実行ファイルを配布し、以降の更新時は再実行する。Gitのない連携ソフトではプログラムに必要なファイルだけをコピーする。両ホストのデータは同じ `~/.canban/` を参照し、Main Testへの明示した保存先は維持する。追加の旧テストホストは有効なworktreeを参照する限り保持する。
+
+## 個人用Slackの認証情報
+
+0.24.0以降、個人用Slackの認証情報は同じCanban保存先の `slack/credentials.json` に保管する（0600、親ディレクトリ0700）。通常Chromeは `~/.canban/slack/credentials.json`、明示した `CANBAN_DATA_DIR` がある場合はその配下を使う。SQLiteには認証情報を入れない。ビルド・Git管理ファイル・共有UI状態に含めない。開発・テストは `.local/` またはテスト用の隔離ディレクトリに保存し、通常利用の認証情報をコピーしない。設定は [Slack接続手順](slack-setup.md)を参照する。
+
+### アカウント保存先の識別と移動（0.24.6）
+
+Canbanで追加した接続設定は管理UUID（設定レコード、または既存の管理マーカー）で識別し、保存先を移動しても実行先の選択を保持する。その他の接続設定はエージェントと絶対パスのハッシュで識別する。旧名が一意であれば読み取り時に互換解決し、同名が複数ある旧IDは選び直す。Claudeの管理保存先移動では保存済みの一意な旧IDも同じDB更新でUUIDへ移す。
+
+Codexの管理保存先を移動した後は旧パスから新パスへの互換リンクを残す。既存のstate DBやrolloutの絶対パスを変更せずに読むため、リンクを削除しない。複数回移動しても過去のパスを辿れる。DBへの保存失敗時は今回のリンクを除去してフォルダーを元へ戻す。
+
+CLIの選択保存とDesktopへの適用は別の結果として返す。Desktop起動中・切替中・適用不可でもCLIの選択は保存される。適用待ちはDesktopを終了した後の再開操作で適用する。起動中のDesktopには、開いているファイルのinodeと保存先が一致するプロフィールを確認できた場合だけ同じアカウントの再開を許可する。

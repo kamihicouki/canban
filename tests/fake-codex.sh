@@ -7,7 +7,7 @@ prompt="$(cat)"
 node -e '
 const fs = require("fs");
 const [prompt, ...argv] = process.argv.slice(1);
-if (process.env.FAKE_AGENT_LOG) fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: "codex", argv, prompt, cwd: process.cwd(), claudecode: process.env.CLAUDECODE ?? null, entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT ?? null }) + "\n");
+if (process.env.FAKE_AGENT_LOG) fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: "codex", argv, prompt, cwd: process.cwd(), claudecode: process.env.CLAUDECODE ?? null, entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT ?? null, uiToken: process.env.CANBAN_UI_TOKEN ?? null }) + "\n");
 ' "$prompt" "$@"
 echo '{"type":"thread.started","thread_id":"fake"}'
 echo '{"type":"turn.started"}'

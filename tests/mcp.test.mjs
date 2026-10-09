@@ -23,6 +23,30 @@ function rpc(method, params) {
 }
 const call = async (name, args = {}) => (await rpc('tools/call', { name, arguments: args })).result;
 
+test('UI loop confirmation rejects ordinary model calls and accepts the rendered UI capability', async () => {
+  const taskId = (await call('canban_create_task', { title: 'Loop confirmation fixture' })).structuredContent.cardId;
+  const args = { taskId, expectedRevision: 0, commandId: 'ui-config', command: { type: 'configure', goal: '確認する', criteria: ['根拠'] } };
+  for (const uiToken of [undefined, 'forged-token']) {
+    const denied = await call('canban_review_loop', { ...args, uiToken });
+    assert.equal(denied.isError, true); assert.match(denied.content[0].text, /ボードUI/);
+  }
+  const deniedSend = await call('canban_send_loop', {});
+  assert.equal(deniedSend.isError, true); assert.match(deniedSend.content[0].text, /ボードUI/);
+  const html = (await rpc('resources/read', { uri: 'ui://canban/board.html' })).result.contents[0].text;
+  const uiToken = html.match(/uiToken: '([a-f0-9]{64})'/)?.[1]; assert.ok(uiToken);
+  const configured = await call('canban_review_loop', { ...args, uiToken }); assert.ok(!configured.isError);
+  const cycleId = configured.structuredContent.cycleId;
+  await call('canban_update_task', { cardId: taskId, target: { agent: 'codex', host: 'local', cwd: dataDir } });
+  const started = await call('canban_loop_command', { taskId, expectedRevision: 1, commandId: 'agent-start', command: { type: 'start', cycleId, nextAction: '検証' } });
+  assert.equal(started.structuredContent.cycles[0].rounds[0].artifactFolder, null, 'non-Git work supports explicitly manual evidence');
+  const roundId = started.structuredContent.cycles[0].rounds[0].id;
+  const report = await call('canban_loop_command', { taskId, expectedRevision: 2, commandId: 'agent-record', source: 'human', command: { type: 'record', cycleId, roundId, version: 1, artifactRef: 'manual-v1', results: [{ criterionId: 'c1', pass: true, summary: '検証した', ref: 'fixture-log' }] } });
+  assert.notEqual(report.structuredContent.cycles[0].status, 'completed');
+  const confirmed = await call('canban_review_loop', { taskId, expectedRevision: 3, commandId: 'ui-confirm', uiToken, command: { type: 'confirm', cycleId, roundId, artifactRef: 'manual-v1' } });
+  assert.equal(confirmed.structuredContent.cycles[0].status, 'completed');
+  await call('canban_delete_task', { cardId: taskId });
+});
+
 test('quick tasks persist all inherited attributes through MCP, filtering and saved views', async () => {
   const directory = (await call('canban_create_directory', { name: 'Quick Task Category' })).structuredContent.result.id;
   const label = (await call('canban_create_label', { name: 'Quick Task Label' })).structuredContent.result.id;
@@ -46,6 +70,7 @@ test('quick tasks persist all inherited attributes through MCP, filtering and sa
   assert.ok(!edited.isError, edited.content?.[0]?.text);
   const none = (await call('canban_get_board', { directory: '__none', label: '__none' })).structuredContent;
   assert.ok(none.lists.flatMap(l => l.cards).some(c => c.id === taskId));
+  assert.ok(Number.isFinite(none.lists.flatMap(l => l.cards).find(c => c.id === taskId).updatedAt), 'edited task timestamps stay numeric for the lifetime view');
   await call('canban_delete_task', { cardId: taskId });
 });
 
@@ -291,4 +316,18 @@ test('task dashboards are app-only, retain closed linked panes and reject stale 
   assert.deepEqual(restored.links,['codex:t1']);assert.equal(restored.state.panes[1].hidden,true);
   await call('canban_unlink_session',{taskId,sessionId:'codex:t1'});
   assert.deepEqual((await call('canban_get_task_dashboard',{taskId})).structuredContent.state.panes.map(p=>p.id),[taskId]);
+});
+
+
+test('unsupported native lifecycle never changes Claude history or Canban state', async () => {
+  const before = fx.snapshot();
+  const detail = (await call('canban_get_session', { cardId: 'claude:c2' })).structuredContent;
+  assert.equal(detail.session.actions.available, false);
+  for (const action of ['archive', 'restore', 'delete']) {
+    const result = await call('canban_set_session_card_state', { cardId: 'claude:c2', action });
+    assert.equal(result.isError, true);
+  }
+  const after = (await call('canban_get_session', { cardId: 'claude:c2' })).structuredContent;
+  assert.deepEqual(after.card, detail.card);
+  assert.deepEqual(fx.snapshot(), before);
 });

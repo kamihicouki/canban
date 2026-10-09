@@ -237,10 +237,12 @@ def summarize(path, session_id):
                     s["createdAt"] = ts
                 if s["updatedAt"] is None or ts > s["updatedAt"]:
                     s["updatedAt"] = ts
-            if o.get("cwd") and not s["cwd"]:
-                s["cwd"] = o["cwd"]
-            if o.get("gitBranch"):
-                s["branch"] = o["gitBranch"]
+            # Follow the latest main-conversation checkout, never a sidechain.
+            if not o.get("isSidechain"):
+                if isinstance(o.get("cwd"), str) and o["cwd"].strip():
+                    s["cwd"] = o["cwd"]
+                if isinstance(o.get("gitBranch"), str) and o["gitBranch"].strip():
+                    s["branch"] = o["gitBranch"]
             if not s["entrypoint"] and isinstance(o.get("entrypoint"), str):
                 s["entrypoint"] = o["entrypoint"]
             t = o.get("type")

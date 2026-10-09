@@ -32,6 +32,9 @@ export function openDatabase(dir, { migration = false } = {}) {
     CREATE TABLE IF NOT EXISTS lease_generations (key TEXT PRIMARY KEY, generation INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS instances (owner TEXT PRIMARY KEY, pid INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS auxiliary (key TEXT PRIMARY KEY, payload TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS loop_state (task_id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS loop_rounds (task_id TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(task_id,id));
+    CREATE TABLE IF NOT EXISTS loop_dispatch (round_id TEXT PRIMARY KEY, request_id TEXT NOT NULL, payload TEXT NOT NULL);
     PRAGMA user_version=1;
     COMMIT;`);
   if (!migration && ['board.json','requests.json'].some((name) => fs.existsSync(path.join(dir,name))) && !db.prepare("SELECT 1 FROM metadata WHERE key='initialized'").get()) { db.close(); throw new Error('SQLiteへの移行が未完了です。移行コマンドを実行してください。'); }

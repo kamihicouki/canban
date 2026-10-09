@@ -31,6 +31,7 @@ Object.assign(process.env, {
   // An agent that started Canban: these must not reach the turn.
   CLAUDECODE: '1',
   CLAUDE_CODE_ENTRYPOINT: 'claude-desktop',
+  CANBAN_UI_TOKEN: 'ui-fixture-only',
 });
 
 const rollout = (name, records, ageMs) => {
@@ -171,6 +172,10 @@ test('run logs: codex events and claude results (is_error wins over subtype)', a
 });
 
 // ---- sending -----------------------------------------------------------------
+test('supervised agent environments never inherit the loop UI capability', () => {
+  const env = M.cleanEnv({ PATH: '/bin', CANBAN_UI_TOKEN: 'ui-fixture-only', CANBAN_DATA_DIR: dataDir, KEEP: 'yes' });
+  assert.equal(env.CANBAN_UI_TOKEN, undefined); assert.equal(env.CANBAN_DATA_DIR, dataDir); assert.equal(env.KEEP, 'yes');
+});
 test('send now: prompt on stdin, inherited sandbox, agent env scrubbed, result recorded', async () => {
   const d = freshDispatcher();
   const r = await d.submit({ cardId: 'codex:th-ok', prompt: 'テストを直して\n"quote" $(rm -rf /)', when: 'now' });
@@ -186,6 +191,7 @@ test('send now: prompt on stdin, inherited sandbox, agent env scrubbed, result r
   assert.equal(fs.realpathSync(run.cwd), fs.realpathSync(ws));
   assert.equal(run.claudecode, null);
   assert.equal(run.entrypoint, null);
+  assert.equal(run.uiToken, null);
   assert.equal(done.permission.source, 'session');
 });
 

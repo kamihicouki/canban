@@ -17,7 +17,7 @@ function applyAccountLimits(list) {
   for (const l of list) { const a = state.board.accounts.accounts.find((x) => x.key === l.key); if (a) a.limits = l; }
   renderUsage(state.board.accounts);
   workspace.renderLimitChip(state.board.limits);
-  if (workspace.page === 'usage') workspace.render(state.board);
+  if (openViewKind() === 'usage') refreshViews();
 }
 function accountKv(s) {
   return [...(s.host ? [] : kv('アカウント', s.accountLabel || '不明（記録なし）')), ...(s.homeDir ? kv('設定フォルダ', s.homeDir) : [])];
@@ -100,16 +100,37 @@ function ensureUsageRefreshTimer() {
     if (!document.hidden && state.board?.accounts?.refresh?.enabled) refreshAccountUsage({ automatic: true });
   }, 30000);
 }
+// Weekly pacing uses the provider's rolling reset, not calendar weeks.
+function weeklyUsagePace(value, at, failed = false, now = Date.now()) {
+  if (value?.windowMinutes !== 10080) return null;
+  const w = usageWindow(value, at, now);
+  const duration = 10080 * 60000;
+  if (!w || w.stale || failed || !Number.isFinite(value.resetsAt)
+    || value.resetsAt <= now || value.resetsAt > now + duration) return { unavailable: true };
+  const elapsed = now - (value.resetsAt - duration);
+  const target = elapsed / duration * 100;
+  const delta = value.usedPercent - target;
+  const kind = delta > 5 ? 'ahead' : delta < -5 ? 'room' : 'steady';
+  const status = kind === 'ahead' ? '使いすぎ' : kind === 'room' ? '余裕あり' : '順調';
+  const gap = `${Math.abs(delta).toFixed(1)}pt${delta >= 0 ? '多い' : '少ない'}`;
+  return { target, kind, status, gap, elapsedDays: elapsed / 86400000, remainingDays: (duration - elapsed) / 86400000 };
+}
 function accountUsageContent(a) {
   const limits = a.limits;
   const windows = usageWindows(limits).map(value => ({ value, w: usageWindow(value, limits?.at) })).filter(({ w }) => w);
   if (!windows.length) return h('p', { class: 'muted acct-usage-empty', text: '使用量は未取得です' });
-  return h('div', { class: `acct-usage-grid${windows.length === 1 ? ' single' : ''}` }, ...windows.map(({ value, w }) => {
+  return h('div', { class: `acct-usage-grid${windows.length === 1 ? ' single' : ''}${windows.some(({ value }) => value.windowMinutes === 10080) ? ' has-week' : ''}` }, ...windows.map(({ value, w }) => {
     const old = w?.stale || a.usage?.status === 'error';
-    return h('div', {},
+    const pace = weeklyUsagePace(value, limits?.at, old);
+    const description = pace && !pace.unavailable ? `今の目安 ${pace.target.toFixed(1)}%・${pace.status}・目安より${pace.gap}` : '';
+    return h('div', { class: pace ? 'acct-week' : 'acct-short-window' },
       h('div', { class: 'acct-window-label' }, h('span', { text: w.label }),
         h('strong', { text: w ? `${old ? '前回 ' : ''}${Math.round(value.usedPercent)}%` : '未取得' })),
-      h('div', { class: `acct-meter${old ? ' stale' : ''}`, ...(w ? { role: 'meter', 'aria-label': `${a.label} ${w.label}の使用率`, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': value.usedPercent, 'aria-valuetext': `${old ? '前回の値 ' : ''}${Math.round(value.usedPercent)}% 使用${old ? '・要更新' : ''}` } : {}) }, w ? h('i', { class: heat(value.usedPercent), style: { width: `${value.usedPercent}%` } }) : null),
+      h('div', { class: `acct-meter${old ? ' stale' : ''}`, ...(w ? { role: 'meter', 'aria-label': `${a.label} ${w.label}の使用率`, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': value.usedPercent, 'aria-valuetext': `${old ? '前回の値 ' : ''}${Math.round(value.usedPercent)}% 使用${old ? '・要更新' : ''}${description ? `・${description}` : ''}` } : {}) }, w ? h('i', { class: pace ? (pace.unavailable ? 'neutral' : `pace-${pace.kind}`) : heat(value.usedPercent), style: { width: `${value.usedPercent}%` } }) : null, pace && !pace.unavailable ? h('span', { class: 'acct-target', 'aria-hidden': 'true', style: { left: `${pace.target}%` } }) : null),
+      pace ? h('div', { class: `acct-pace ${pace.kind || 'unavailable'}` },
+        h('strong', { text: pace.unavailable ? '判定保留' : `${pace.status}・目安より${pace.gap}` }),
+        h('span', { text: pace.unavailable ? 'リセット不明・古いデータは要更新' : `今の目安 ${pace.target.toFixed(1)}%（縦線）` }),
+        pace.unavailable ? null : h('span', { class: 'muted', text: `${pace.elapsedDays.toFixed(1)}日経過 / あと${pace.remainingDays.toFixed(1)}日・基準14.3%/日` })) : null,
       h('span', { class: 'acct-reset muted', text: value?.resetsAt ? fmtReset(value.resetsAt) : w ? (old ? '要更新' : 'リセット時刻の記録なし') : '更新すると表示されます' }));
   }));
 }
@@ -305,6 +326,7 @@ function accountsMenu(anchor) {
   const addHome = () => { const d = dirInput.value.trim(); if (d) saveHomes(homeAgent.value, [...extra[homeAgent.value], d]); };
   dirInput.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) addHome(); };
   const body = h('div', { class: 'acct-menu' }, auto,
+    h('p', { class: 'muted acct-pace-legend', text: '週間枠の縦線＝今の目安・差±5pt以内は順調' }),
     rows.length > 5 ? rowFilter(rows) : null,
     rows.length ? rows : h('p', { class: 'muted', text: 'アカウントが見つかりません。ログインして追加できます。' }),
     h('section', { class: 'acct-add' }, h('div', { class: 'field-label', text: 'アカウントを追加' }),

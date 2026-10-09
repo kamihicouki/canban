@@ -1,0 +1,10 @@
+{
+  "display_information": { "name": "Canban Personal", "description": "個人用Canbanで会話を読み取り、カードの資料にする" },
+  "oauth_config": { "scopes": { "user": ["channels:read", "channels:history", "groups:read", "groups:history", "im:read", "im:history", "mpim:read", "mpim:history", "users:read"] } },
+  "settings": {
+    "socket_mode_enabled": true,
+    "event_subscriptions": { "user_events": ["message.channels", "message.groups", "message.im", "message.mpim"] },
+    "org_deploy_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

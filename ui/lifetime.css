@@ -1,0 +1,103 @@
+/* Lifetime (ui/lifetime.js): the time ribbon over the board, the dormant fold, the lens, the view switch.
+   Colors come from board.html's tokens; text on the board's background uses the --on-board family. */
+.stage { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.stage > .board { min-height: 0; }
+
+/* Phases: one color each, used by the ribbon, the timeline and the lens. */
+.life-live { --life: var(--c-green); }
+.life-fresh { --life: var(--c-sky); }
+.life-active { --life: var(--on-board-dim); }
+.life-dormant { --life: var(--c-purple); }
+
+/* ---- the ribbon: phases | one bar per day | period ---- */
+.time-ribbon { display: flex; align-items: center; gap: 14px; padding: 8px 12px 2px; color: var(--on-board); min-width: 0; flex: none; }
+.time-ribbon:empty { display: none; }
+.rb-phases { display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--on-board-btn); flex: none; }
+.rb-phase { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border-radius: 7px; font-size: 12.5px; font-weight: 600; color: var(--on-board-dim); white-space: nowrap; }
+.rb-phase i { width: 8px; height: 8px; border-radius: 50%; background: var(--life); flex: none; }
+.rb-phase.life-live i { box-shadow: 0 0 0 0 var(--life); animation: life-pulse 2s ease-out infinite; }
+.rb-phase.life-dormant i { background: none; box-shadow: inset 0 0 0 2px var(--life); }
+.rb-phase b { font: 600 11.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--on-board); opacity: .9; }
+.rb-phase:hover { background: var(--on-board-btn-hover); color: var(--on-board); }
+.rb-phase[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-fg); }
+.rb-phase[aria-pressed="true"] b { color: var(--pressed-fg); }
+@keyframes life-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--life) 70%, transparent); } 70%, 100% { box-shadow: 0 0 0 6px transparent; } }
+
+.rb-track { position: relative; flex: 1 1 auto; min-width: 120px; height: 44px; }
+.rb-bars { position: absolute; inset: 2px 0 13px; display: grid; grid-template-columns: repeat(var(--days), minmax(0, 1fr)); gap: 2px; align-items: end; }
+.rb-day { position: relative; height: 100%; display: flex; align-items: flex-end; justify-content: center; padding: 0 0 1px; border-radius: 4px; }
+.rb-day i { display: block; width: min(100%, 12px); height: calc(var(--h) * 100%); min-height: 3px; border-radius: 3px; background: var(--on-board); opacity: .55; transition: opacity .12s, background-color .12s, transform .12s; }
+.rb-day:hover i { transform: scaleY(1.06); transform-origin: bottom; }
+.rb-day.is-empty i { opacity: .18; height: 3px; }
+.rb-day.is-dormant i { background: var(--c-purple); opacity: .5; }
+.rb-day.is-today i { background: var(--c-green); opacity: 1; }
+.rb-day:hover i, .rb-day:focus-visible i { opacity: 1; }
+.rb-day:hover, .rb-day:focus-visible { background: var(--on-board-btn); }
+.rb-day[aria-pressed="true"] { background: var(--on-board-btn-hover); }
+.rb-day[aria-pressed="true"] i { opacity: 1; background: var(--pressed-bg); box-shadow: 0 0 0 1px var(--pressed-fg); }
+.rb-marks { position: absolute; inset: auto 0 0; height: 12px; font-size: 10.5px; line-height: 12px; color: var(--on-board-dim); pointer-events: none; }
+.rb-marks > span { position: absolute; bottom: 0; white-space: nowrap; transform: translateX(50%); }
+.rb-today { right: 0; transform: none !important; }
+.rb-week { padding-right: 4px; transform: none !important; }
+.rb-week::after { content: ""; position: absolute; right: -2px; bottom: 12px; height: 26px; border-right: 1px dashed var(--on-board-dim); opacity: .7; }
+.rb-mark { opacity: .8; }
+.rb-clear { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 14px; background: var(--pressed-bg); color: var(--pressed-fg); font-size: 12px; font-weight: 600; white-space: nowrap; flex: none; }
+.rb-clear .x { font-size: 10px; opacity: .7; }
+.rb-period { display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--on-board-btn); flex: none; }
+.rb-period button { height: 28px; padding: 0 9px; border-radius: 7px; font-size: 12.5px; font-weight: 600; color: var(--on-board-dim); white-space: nowrap; }
+.rb-period button:hover { background: var(--on-board-btn-hover); color: var(--on-board); }
+.rb-period button[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-fg); }
+@media (max-width: 900px) { .rb-phase span { display: none; } .rb-phase { padding: 0 7px; } }
+@media (max-width: 640px) { .rb-track { display: none; } .time-ribbon { justify-content: space-between; } }
+
+/* ---- cards by lifetime ---- */
+.card.face.life-fresh::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 0 2px 2px 0; background: var(--c-sky); }
+.card.face.life-live::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 0 2px 2px 0; background: var(--c-green); }
+.card.face.life-dormant:not(:hover):not(:focus):not(.peeking) { opacity: .8; }
+.card.face.life-dormant .ftitle { font-weight: 550; }
+
+/* ---- the lens: the chosen time is lit, the rest steps back ---- */
+.board .card[data-card-id] { transition: opacity .16s ease, filter .16s ease, box-shadow .16s ease; }
+.board.lens-on .card[data-card-id]:not(.lens-hit) { opacity: .26; filter: saturate(.3); }
+.board.lens-on .card.face.lens-hit { opacity: 1; box-shadow: 0 0 0 2px var(--focus), var(--card-shadow); }
+.board.lens-on .irow.lens-hit { opacity: 1; box-shadow: inset 3px 0 0 var(--focus); }
+.board.lens-on .life-fold:not(.lens-hit) .fold-head { opacity: .45; }
+@media (prefers-reduced-motion: reduce) { .board .card[data-card-id] { transition: none; } .rb-phase.life-live i { animation: none; } }
+
+/* ---- the dormant fold at the foot of a list ---- */
+.life-fold { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.fold-head { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 8px; border-radius: 8px; font-size: 12.5px; color: var(--list-muted); text-align: left; border: 1px dashed color-mix(in srgb, var(--list-muted) 45%, transparent); }
+.fold-head:hover { background: var(--btn-subtle-hover); color: var(--list-fg); }
+.fold-head > span:first-child { display: grid; color: var(--c-purple); }
+.fold-n { font-weight: 700; color: var(--list-fg); }
+.fold-hits:not(:empty) { padding: 1px 6px; border-radius: 8px; background: var(--focus); color: #fff; font-size: 11px; font-weight: 700; }
+.fold-why { font-size: 11.5px; }
+.fold-chev { display: grid; transition: transform .15s; transform: rotate(-90deg); }
+.life-fold.open .fold-chev { transform: none; }
+.life-fold.open .fold-head { border-style: solid; border-color: transparent; background: var(--btn-subtle); }
+.fold-body { display: flex; flex-direction: column; gap: 6px; }
+
+/* ---- the view switch in the app bar ---- */
+.view-switch { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border-radius: 8px; background: var(--header-btn); flex: none; }
+.view-switch button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 6px; color: var(--header-fg); font-weight: 600; font-size: 13px; }
+.view-switch button > span:first-child { display: grid; }
+.view-switch button:hover { background: var(--header-btn-hover); }
+.view-switch button[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-fg); }
+.view-switch .keycap { margin: 0 4px 0 2px; }
+
+/* ---- the timeline's groups ---- */
+.inbox-gh i { width: 8px; height: 8px; border-radius: 50%; background: var(--list-muted); flex: none; }
+.tg-need i { background: var(--c-yellow); } .tg-live i { background: var(--c-green); } .tg-today i { background: var(--c-sky); }
+.tg-yesterday i { background: var(--c-blue); } .tg-week i { background: var(--list-muted); } .tg-month i, .tg-older i { background: none; box-shadow: inset 0 0 0 2px var(--c-purple); }
+
+/* ---- color theme (the sidebar's 色 and ⌘K) ---- */
+.theme-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.theme-modes button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; border-radius: 8px; background: var(--btn-subtle); font-weight: 600; }
+.theme-modes button:hover { background: var(--btn-subtle-hover); }
+.theme-modes button[aria-pressed="true"] { background: var(--accent); color: var(--primary-fg); }
+:root:not([data-theme="dark"]) .theme-modes button[aria-pressed="true"] { color: #fff; }
+
+/* Live counts beside a category in the sidebar. */
+.dir-live { font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 2px 5px; border-radius: 8px; flex: none; }
+.dir-live.s-run { background: var(--c-green); color: #0b3a26; }
+.dir-live.s-wait { background: var(--c-yellow); color: #533f04; }

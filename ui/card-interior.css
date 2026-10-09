@@ -1,0 +1,47 @@
+/* Card interiors: one structure for sessions and tasks. A card never grows past the card board, so its
+   close button stays in view; a task with its session beside it scrolls sideways instead. */
+.pane[data-kind="session"], .pane[data-kind="task"] {
+  width: min(var(--pw), calc(var(--card-board-width, 80vw) - 24px)); height: min(var(--ph), 100%); max-height: 100%;
+  background: var(--card-bg); color: var(--card-fg); border-radius: 12px;
+  --ph: var(--h-session, 860px);
+}
+.pane[data-kind="task"] { --ph: var(--h-task, 860px); }
+/* The reading area grows with the card. */
+.pane:not(.sheet) .title-input { height: auto; width: 100%; min-height: 34px; font-size: 21px; line-height: 1.4; font-weight: 700; padding: 0; }
+.pane:not(.sheet) .sub { flex-wrap: wrap; white-space: normal; gap: 6px 8px; }
+.card-crumb { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; font-size: 12px; color: var(--list-muted); }
+.card-crumb .picker-btn { font-size: 12px; height: 24px; background: transparent; padding: 0 4px; }
+.card-crumb .link-btn { text-align: left; overflow-wrap: anywhere; }
+.card-list-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.card-list-step { padding: 0 4px; min-height: 24px; }
+.card-list-step:disabled { opacity: .4; cursor: default; }
+.card-actions { position: absolute; top: 10px; right: 10px; z-index: 2; }
+.pane:not(.sheet) .pane-close { width: 28px; height: 28px; border-radius: 6px; background: transparent; color: var(--card-fg); }
+.pane:not(.sheet) .kv { grid-template-columns: minmax(72px,.7fr) minmax(0,1.3fr); gap: 6px 12px; font-size: 12px; margin: 0; }
+.pane:not(.sheet) .kv dd { overflow-wrap: anywhere; word-break: normal; }
+.pane:not(.sheet) .side-btn { background: transparent; padding: 7px 4px; margin: 0; }
+.pane:not(.sheet) .side-btn:hover { background: var(--btn-subtle); }
+.pane:not(.sheet) .msg { background: var(--btn-subtle); border-radius: 10px; }
+.pane-height { position: absolute; left: 0; right: 16px; bottom: 0; height: 7px; cursor: ns-resize; touch-action: none; z-index: 2; }
+.pane-height:hover, .pane-height:focus-visible { background: color-mix(in srgb,var(--accent) 35%, transparent); }
+.pane-corner { position: absolute; right: 0; bottom: 0; width: 22px; height: 22px; cursor: nwse-resize; touch-action: none; z-index: 3; color: var(--list-muted); display: grid; place-items: center; opacity: .3; }
+.pane-corner:hover, .pane-corner:focus-visible { opacity: 1; color: var(--accent); }
+
+/* In the default main column the conversation receives all space left by the composer. */
+.pane:not(.sheet) .send-box { padding: 0; background: transparent; margin-bottom: 0; }
+
+.pane[data-kind="session"] .send-box textarea { min-height: 64px; height: 64px; border-radius: 8px; }
+
+.pane:not(.sheet) textarea.title-input { field-sizing: content; font-family: inherit; resize: none; min-height: 1.4em; max-height: 200px; }
+.pane:not(.sheet) .task-related-row { align-items: flex-start; gap: 6px; padding: 8px 0; background: transparent; }
+.pane:not(.sheet) .task-related-row .sdot { margin-top: 5px; margin-right: 0; }
+.task-related-copy { min-width: 0; }
+.task-related-copy > .link-btn { display: block; width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; line-height: 1.5; }
+.task-related-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; font-size: 11px; }
+.task-related-actions { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none; }
+
+.session-card-dialog { width: 480px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); margin: auto; padding: 24px; border: 1px solid var(--btn-subtle-hover); border-radius: 12px; background: var(--modal-bg); color: var(--list-fg); box-shadow: var(--card-shadow); }
+.session-card-dialog::backdrop { background: var(--overlay); }
+.session-card-dialog h2 { font-size: 18px; margin: 0 0 16px; }
+.session-card-dialog p { line-height: 1.6; overflow-wrap: anywhere; }
+.session-card-dialog .row { justify-content: flex-end; margin-top: 20px; }
