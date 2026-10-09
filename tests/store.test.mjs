@@ -67,11 +67,17 @@ test('existing JSON requires explicit migration', async () => {
   assert.equal(fs.readFileSync(path.join(dir,'board.json'),'utf8'),'{broken');
 });
 
+const pick = (l) => [l.linkBrowser, l.linkProfile];
 test('launch settings are validated and persisted', async () => {
   const store = new Store(tmp());
-  assert.deepEqual((await store.load()).settings.launch, { route: 'desktop', terminal: 'terminal', target: 'new-window' });
+  assert.deepEqual((await store.load()).settings.launch, { route: 'desktop', terminal: 'terminal', target: 'new-window', linkBrowser: '', linkProfile: '' });
   await store.updateLaunchSettings({ route: 'terminal', terminal: 'ghostty', target: 'split' });
-  assert.deepEqual((await store.load()).settings.launch, { route: 'terminal', terminal: 'ghostty', target: 'split' });
+  assert.deepEqual((await store.load()).settings.launch, { route: 'terminal', terminal: 'ghostty', target: 'split', linkBrowser: '', linkProfile: '' });
+  await store.updateLaunchSettings({ linkBrowser: 'chrome', linkProfile: 'Profile 2' });
+  assert.deepEqual(pick((await store.load()).settings.launch), ['chrome', 'Profile 2']);
+  await store.updateLaunchSettings({ linkBrowser: 'safari', linkProfile: 'Profile 2' });
+  assert.deepEqual(pick((await store.load()).settings.launch), ['safari', '']);
+  await store.updateLaunchSettings({ linkBrowser: '', linkProfile: '' });
   await store.updateLaunchSettings({ target: 'bogus' });
   assert.equal((await store.load()).settings.launch.target, 'new-window');
 });

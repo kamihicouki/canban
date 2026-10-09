@@ -246,6 +246,7 @@ function noteCall(name, startedAt, pendingAtStart, concurrent) {
 
 bridge.hooks.pending = () => live.inflight > 0;
 bridge.hooks.after = noteCall;
+bridge.hooks.linkBrowser = () => state.board?.settings?.launch?.linkBrowser;
 
 async function liveLoop() {
   let failures = 0;

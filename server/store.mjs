@@ -38,7 +38,7 @@ export function defaultRules() {
 export function defaultSettings() {
   return {
     // How "resume" opens a session: in the agent's desktop app or in a terminal.
-    launch: { route: 'desktop', terminal: 'terminal', target: 'new-window' },
+    launch: { route: 'desktop', terminal: 'terminal', target: 'new-window', linkBrowser: '', linkProfile: '' },
     // Automatic moves on status transitions (all off by default).
     rules: defaultRules(),
     // Cards updated after this time (and after their own seenAt) are highlighted as new.
@@ -104,6 +104,9 @@ function normalizeSettings(s) {
       route: LAUNCH_ROUTES.includes(l.route) ? l.route : d.launch.route,
       terminal: TERMINALS.includes(l.terminal) ? l.terminal : d.launch.terminal,
       target: TERMINAL_TARGETS.includes(l.target) ? l.target : d.launch.target,
+      // Browser for external links (Slack app settings, PRs). '' = the OS default.
+      linkBrowser: ['chrome', 'safari'].includes(l.linkBrowser) ? l.linkBrowser : '',
+      linkProfile: l.linkBrowser === 'chrome' && /^(Default|Profile \d+)$/.test(l.linkProfile) ? l.linkProfile : '',
     },
     rules: Array.isArray(s?.rules) ? s.rules.map(normalizeRule).filter(Boolean) : d.rules,
     seenAllAt: typeof s?.seenAllAt === 'number' ? s.seenAllAt : null,

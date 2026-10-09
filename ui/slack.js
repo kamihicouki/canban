@@ -1,4 +1,29 @@
 // Slack stays on the board; the server owns credentials, transport and history.
+// Same as docs/slack-app-manifest.json (tests keep them equal); the link prefills Slack's "From a manifest" screen.
+const SLACK_MANIFEST = {
+  display_information: { name: 'Canban Personal', description: '個人用Canbanで会話を読み取り、カードの資料にする' },
+  oauth_config: { scopes: { user: ['channels:read', 'channels:history', 'groups:read', 'groups:history', 'im:read', 'im:history', 'mpim:read', 'mpim:history', 'users:read'] } },
+  settings: { socket_mode_enabled: true, event_subscriptions: { user_events: ['message.channels', 'message.groups', 'message.im', 'message.mpim'] }, org_deploy_enabled: false, token_rotation_enabled: false },
+};
+const SLACK_NEW_APP_URL = `https://api.slack.com/apps?new_app=1&manifest_json=${encodeURIComponent(JSON.stringify(SLACK_MANIFEST))}`;
+const SLACK_NAMES_HINT = 'DMの相手の名前を出すには、Slackのアプリ設定「OAuth & Permissions」の User Token Scopes に users:read を足し、「Reinstall to Workspace」してから、新しいユーザートークンを「トークンを入れ直す」で貼ってください。';
+const SLACK_STATUS = {
+  接続中: { tone: 'good', text: '接続中 · 新しいメッセージを受け取っています' },
+  接続待ち: { tone: 'warn', text: '再接続を待っています · 続く場合はAppトークンを入れ直してください' },
+  待機: { tone: '', text: '接続を準備しています' },
+};
+// Mirrors server/slack-model.mjs slackTokenProblem so mistakes show while typing.
+function slackTokenProblem(kind, v) {
+  if (kind === 'user') {
+    if (/^xoxb-/.test(v)) return 'これはBotトークン（xoxb-）です。「OAuth & Permissions」の「User OAuth Token」（xoxp-）を貼ってください';
+    if (/^xapp-/.test(v)) return 'これはAppトークンです。下の「Appトークン」欄に貼ってください';
+    if (!/^(xoxp-|xoxe\.xoxp-)[\w.-]+$/.test(v)) return 'ユーザートークンは xoxp- で始まります。「OAuth & Permissions」の「User OAuth Token」をコピーしてください';
+  } else {
+    if (/^(xoxp-|xoxe\.xoxp-|xoxb-)/.test(v)) return 'これはOAuthトークンです。「Basic Information」の「App-Level Tokens」で作る xapp- の値を貼ってください';
+    if (!/^xapp-[\w.-]+$/.test(v)) return 'Appトークンは xapp- で始まります。「Basic Information」→「App-Level Tokens」で作成してください';
+  }
+  return null;
+}
 const slackUi = {
   visible: !!store.get('slackVisible', false), data: { workspaces: [], messages: [], status: {} }, filter: '', query: '', shown: 50,
   async call(name, args = {}) { const response = await bridge.callTool(`canban_slack_${name}`, args); return response.result || response; },
@@ -37,7 +62,8 @@ const slackUi = {
     if (!this.feed) return;
     const messages = this.data.messages.filter(m => (!this.filter || `${m.team}:${m.channel}` === this.filter) && (!this.query || `${m.text} ${m.author} ${m.channelName}`.toLocaleLowerCase().includes(this.query.toLocaleLowerCase())));
     const nodes = messages.slice(0, this.shown).map((m, i) => this.message(m, i));
-    if (!this.data.workspaces.length) nodes.push(h('p', { class: 'slack-notice', text: '管理の「Slack接続」から個人用Slackを接続してください。' }));
+    if (!this.data.workspaces.length) nodes.push(h('div', { class: 'slack-notice' }, h('p', { text: 'まだSlackに接続していません。' }), h('button', { class: 'btn-primary', text: 'Slackを接続する', onclick: () => workspace.navigate('slack') })));
+    else if (!this.data.workspaces.some(w => w.channels.length)) nodes.push(h('div', { class: 'slack-notice' }, h('p', { text: '接続済みです。読む会話を選んでください。' }), h('button', { class: 'btn', text: '読む会話を選ぶ', onclick: () => workspace.navigate('slack') })));
     else if (!messages.length) nodes.push(h('p', { class: 'slack-notice', text: '読む会話を選ぶか、本文を取得してください。' }));
     if (messages.length > this.shown) nodes.push(h('button', { class: 'btn', text: 'さらに50件表示', onclick: () => { this.shown += 50; this.paintMessages(); } }));
     for (const w of this.data.workspaces) for (const c of w.channels) if (!this.filter || this.filter === `${w.id}:${c.id}`) {
@@ -139,26 +165,36 @@ const slackUi = {
       } catch (error) { area.textContent = error.message; }
     }; refresh(); return area;
   },
+  async browserChooser() {
+    const L = state.board?.settings?.launch || {};
+    const save = async patch => { try { await bridge.callTool('canban_update_settings', patch); await load?.(); } catch (error) { toast(error.message, true); } };
+    let browsers = []; try { browsers = (await bridge.callTool('canban_login_browsers', {})).result?.browsers || []; } catch {}
+    const browser = h('select', { 'aria-label': 'リンクを開くブラウザ' }, h('option', { value: '', text: 'OSの既定のブラウザ' }), browsers.map(b => h('option', { value: b.id, text: b.label })));
+    const profile = h('select', { 'aria-label': 'Chromeのプロファイル' });
+    const fill = () => { const list = browsers.find(b => b.id === browser.value)?.profiles || []; profile.hidden = !list.length;
+      profile.replaceChildren(...list.map(p => h('option', { value: p.id, text: p.label }))); profile.value = list.some(p => p.id === L.linkProfile) ? L.linkProfile : list[0]?.id || ''; };
+    browser.value = browsers.some(b => b.id === L.linkBrowser) ? L.linkBrowser : ''; fill();
+    browser.onchange = () => { fill(); save({ linkBrowser: browser.value, linkProfile: profile.value }); };
+    profile.onchange = () => save({ linkBrowser: browser.value, linkProfile: profile.value });
+    return h('label', { class: 'page-help' }, 'リンクを開くブラウザ（PRなど他のリンクにも使います） ', browser, profile);
+  },
   async settings(body) {
     const generation = body._slackGeneration = (body._slackGeneration || 0) + 1;
     body.textContent = 'Slack接続を取得しています…';
     try {
       this.data = await this.call('view'); if (generation !== body._slackGeneration || !body.isConnected) return; body.replaceChildren();
-      body.append(h('p', { class: 'page-help', text: '個人用Slackアプリの読み取り権限で接続します。認証情報はこのMacのCanban保存先に保管します。' }),
-        h('button', { class: 'link-btn', text: 'Slackアプリの設定を開く', onclick: () => bridge.openLink('https://api.slack.com/apps') }));
-      const userToken = h('input', { class: 'text-input', type: 'password', autocomplete: 'off', 'aria-label': 'Slackユーザートークン', placeholder: 'ユーザートークン（xoxp-）' });
-      const appToken = h('input', { class: 'text-input', type: 'password', autocomplete: 'off', 'aria-label': 'Slack Appトークン', placeholder: 'Appトークン（xapp-）' });
-      const feedback = h('p', { role: 'status', class: 'page-help' });
-      const connect = h('button', { class: 'btn-primary', text: '接続を保存', onclick: async () => {
-        connect.disabled = true; try { await this.call('connect', { userToken: userToken.value.trim(), appToken: appToken.value.trim() }); userToken.value = appToken.value = ''; await this.settings(body); }
-        catch (error) { feedback.textContent = error.message; } finally { connect.disabled = false; }
-      } });
-      body.append(h('section', { class: 'page-panel slack-setup' }, h('h3', { text: 'ワークスペースを追加・再接続' }),
-        h('label', {}, 'ユーザートークン', userToken), h('label', {}, 'Socket Mode用Appトークン', appToken), connect, feedback));
+      const connected = this.data.workspaces.length > 0;
+      body.append(h('p', { class: 'page-help', text: '自分専用の読み取りアプリをSlackに作り、2つのトークンをここに貼ると、選んだ会話をボードで読めます。Slackへの書き込み・既読の更新はしません。' }));
+      body.append(this.setupGuide(body, connected));
       for (const w of this.data.workspaces) {
-        const panel = h('section', { class: 'page-panel' }, h('h3', { text: w.name }), h('p', { class: 'page-help', text: this.data.status[w.id]?.state || '待機' }));
+        const status = SLACK_STATUS[this.data.status[w.id]?.state] || SLACK_STATUS['待機'];
+        const panel = h('section', { class: 'page-panel', 'data-slack-workspace': w.id }, h('h3', { text: w.name }),
+          h('p', { class: `slack-status ${status.tone}`, role: 'status' }, h('span', { class: 'slack-status-dot' }), status.text),
+          w.channels.length ? h('p', { class: 'page-help', text: `読む会話 ${w.channels.length}件: ${w.channels.slice(0, 5).map(c => c.name).join('、')}${w.channels.length > 5 ? ' ほか' : ''}` })
+            : h('p', { class: 'slack-next', text: '次に、ボードで読む会話を選んでください。' }),
+          this.data.namesMissing?.includes(w.id) ? h('p', { class: 'page-help', text: SLACK_NAMES_HINT }) : null);
         const editor = h('div');
-        panel.append(h('button', { class: 'btn', text: '読む会話とカテゴリを選ぶ', onclick: () => this.channelSettings(editor, w) }), editor, h('button', { class: 'link-btn', text: '接続を解除', onclick: async () => {
+        panel.append(h('button', { class: w.channels.length ? 'btn' : 'btn-primary', text: '読む会話とカテゴリを選ぶ', onclick: () => this.channelSettings(editor, w) }), editor, h('button', { class: 'link-btn', text: '接続を解除', onclick: async () => {
           if (!confirmInline(panel, 'このMacの接続と認証情報を削除します。カードに保存した資料は残ります。')) return;
           try { await this.call('disconnect', { workspaceId: w.id }); await this.settings(body); await this.refresh(); } catch (error) { toast(error.message,true); }
         } })); body.append(panel);
@@ -176,12 +212,76 @@ const slackUi = {
           if (!sources.length) list.textContent = '保存した履歴はありません。'; button.after(list);
         } catch (error) { toast(error.message,true); } finally { button.disabled = false; }
       } }));
+      body.append(h('section', { class: 'page-panel' }, h('h3', { text: 'リンクの開き方' }), await this.browserChooser()));
       workspace.trackDrafts(body);
+      if (this.justConnected) { const id = this.justConnected; this.justConnected = null;
+        body.querySelector(`[data-slack-workspace="${id}"] .btn-primary`)?.click(); }
     } catch (error) { body.textContent = error.message; }
   },
-  async channelSettings(body, workspace) {
-    const selected = new Map(workspace.channels.map(c => [c.id,{...c}]));
-    const rows = h('div'), query = h('input', { class: 'text-input', type: 'search', 'aria-label': 'Slackの会話を絞り込む', placeholder: '会話名を絞り込む', oninput: e => {
+  // Steps in the order Slack's screens appear; each step says which Slack menu to open and what to copy.
+  setupGuide(body, connected) {
+    const openApps = url => bridge.openLink(url).catch(() => navigator.clipboard?.writeText(url).then(() => toast('開けませんでした。URLをコピーしました', true)));
+    const field = (kind, label, placeholder) => {
+      const input = h('input', { class: 'text-input', type: 'password', autocomplete: 'off', spellcheck: false, 'aria-label': label, placeholder });
+      const hint = h('p', { class: 'slack-hint', 'aria-live': 'polite' });
+      return { kind, input, hint };
+    };
+    const user = field('user', 'Slackユーザートークン', 'xoxp-…'), app = field('app', 'Slack Appトークン', 'xapp-…');
+    const feedback = h('p', { role: 'status', class: 'slack-hint bad' });
+    const connect = h('button', { class: 'btn-primary', text: '接続を確認して保存', disabled: true });
+    // A whole token pasted into the other box is moved where it belongs instead of rejected.
+    const sort = () => {
+      const u = user.input.value.trim(), a = app.input.value.trim();
+      if (/^xapp-[\w.-]+$/.test(u) && !a) { app.input.value = u; user.input.value = ''; }
+      else if (/^(xoxp-|xoxe\.xoxp-)[\w.-]+$/.test(a) && !u) { user.input.value = a; app.input.value = ''; }
+      check();
+    };
+    const check = () => {
+      let ready = true;
+      for (const f of [user, app]) {
+        const value = f.input.value.trim(), problem = value ? slackTokenProblem(f.kind, value) : null;
+        f.hint.className = `slack-hint ${problem ? 'bad' : value ? 'good' : ''}`;
+        f.hint.textContent = problem || (value ? '形式は正しいです' : '');
+        if (!value || problem) ready = false;
+      }
+      connect.disabled = !ready; feedback.textContent = '';
+    };
+    for (const f of [user, app]) { f.input.addEventListener('input', check); f.input.addEventListener('change', sort); f.input.addEventListener('paste', () => setTimeout(sort)); }
+    connect.onclick = async () => {
+      connect.disabled = true; connect.textContent = 'Slackに確認しています…';
+      try { const view = await this.call('connect', { userToken: user.input.value.trim(), appToken: app.input.value.trim() });
+        const before = new Set(this.data.workspaces.map(w => w.id)); user.input.value = app.input.value = '';
+        this.justConnected = view.workspaces.find(w => !before.has(w.id) && !w.channels.length)?.id || null;
+        toast('Slackに接続しました。次に読む会話を選んでください'); await this.settings(body); this.refresh(); }
+      catch (error) { feedback.textContent = error.message; connect.disabled = false; }
+      finally { connect.textContent = '接続を確認して保存'; }
+    };
+    const step = (n, title, ...content) => h('li', { class: 'slack-step' }, h('span', { class: 'slack-step-n', text: n }), h('div', {}, h('strong', { text: title }), ...content));
+    const menu = text => h('code', { text });
+    const steps = h('ol', { class: 'slack-steps' },
+      step('1', 'Slackにアプリを作る',
+        h('p', { class: 'page-help' }, 'ボタンで設定入りの作成画面が開きます。ワークスペースを選んで ', menu('Next'), ' → ', menu('Create'), ' を押します。'),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn-primary', text: 'Slackでアプリを作る', onclick: () => openApps(SLACK_NEW_APP_URL) }),
+          h('button', { class: 'link-btn', text: '設定をコピー（貼り付けて作るとき）', onclick: () => navigator.clipboard?.writeText(JSON.stringify(SLACK_MANIFEST, null, 2)).then(() => toast('設定（manifest）をコピーしました。From a manifest に貼り付けてください')) }))),
+      step('2', 'ワークスペースに入れて、ユーザートークンを貼る',
+        h('p', { class: 'page-help' }, '作ったアプリの左メニュー ', menu('OAuth & Permissions'), ' → ', menu('Install to Workspace'), ' → ', menu('許可する'), '。表示された ', menu('User OAuth Token'), '（xoxp-）をコピーします。'),
+        h('label', { class: 'slack-token' }, 'ユーザートークン', user.input), user.hint),
+      step('3', 'Appトークンを作って貼る',
+        h('p', { class: 'page-help' }, '左メニュー ', menu('Basic Information'), ' → ', menu('App-Level Tokens'), ' → ', menu('Generate Token and Scopes'), '。名前は自由、', menu('Add Scope'), ' で ', menu('connections:write'), ' を選んで ', menu('Generate'), '。xapp- の値をコピーします。'),
+        h('label', { class: 'slack-token' }, 'Appトークン', app.input), app.hint),
+      step('4', '接続を確認する',
+        h('p', { class: 'page-help', text: '2つのトークンが同じアプリのものかをSlackに確認して保存します。トークンはこのMacのCanban保存先だけに保管します。チャットやスクリーンショットには貼らないでください。' }),
+        connect, feedback),
+    );
+    const top = h('div', { class: 'row' }, h('button', { class: 'link-btn', text: 'Slackのアプリ一覧を開く', onclick: () => openApps('https://api.slack.com/apps') }));
+    if (!connected) return h('section', { class: 'page-panel slack-setup' }, h('h3', { text: 'Slackを接続する（4ステップ・約3分）' }), steps, top);
+    return h('details', { class: 'page-panel slack-setup' }, h('summary', { text: 'ワークスペースを追加・トークンを入れ直す' }), steps, top);
+  },
+  async channelSettings(body, team) {
+    const selected = new Map(team.channels.map(c => [c.id,{...c}]));
+    const names = h('p', { class: 'slack-next', hidden: !this.data.namesMissing?.includes(team.id), text: SLACK_NAMES_HINT });
+    const rows = h('div'), query = h('input', { class: 'text-input', type: 'search', 'aria-label': 'Slackの会話を絞り込む', placeholder: '会話名・IDで絞り込む', oninput: e => {
       for (const row of rows.children) row.hidden = !row.dataset.name.toLocaleLowerCase().includes(e.target.value.toLocaleLowerCase());
     } });
     const addRows = channels => { for (const channel of channels) {
@@ -200,14 +300,14 @@ const slackUi = {
           } catch (error) { toast(error.message, true); }
         }; directory.after(form); directory.value = selected.get(channel.id)?.directory || '__none'; form.querySelector('input').focus();
       } });
-      rows.append(h('div', { class: 'slack-channel-row', 'data-channel': channel.id, 'data-name': channel.name }, h('label', {}, check, ` ${channel.name}`), directory));
+      rows.append(h('div', { class: 'slack-channel-row', 'data-channel': channel.id, 'data-name': `${channel.name} ${channel.id}`, title: channel.id }, h('label', {}, check, ` ${channel.name}`), directory));
     } };
     let cursor = ''; const more = h('button', { class: 'btn', text: '会話を取得', onclick: async () => {
-      more.disabled = true; try { const result = await this.call('channels', { workspaceId: workspace.id, cursor }); addRows(result.channels); cursor = result.cursor; more.textContent = cursor ? 'さらに会話を取得' : '取得済み'; more.hidden = !cursor; }
+      more.disabled = true; try { const result = await this.call('channels', { workspaceId: team.id, cursor }); names.hidden = !result.namesMissing; addRows(result.channels); cursor = result.cursor; more.textContent = cursor ? 'さらに会話を取得' : '取得済み'; more.hidden = !cursor; }
       catch (error) { toast(error.message,true); } finally { more.disabled = false; }
     } });
-    addRows(workspace.channels); body.replaceChildren(query, rows, more, h('button', { class: 'btn-primary', text: '読む会話を保存', onclick: async () => {
-      try { this.data = await this.call('select', { workspaceId: workspace.id, channels: [...selected.values()] }); this.paint(); body.dataset.unsavedForm = 'false'; workspace.trackDrafts(body); toast('読む会話を保存しました'); }
+    addRows(team.channels); body.replaceChildren(names, query, rows, more, h('button', { class: 'btn-primary', text: '読む会話を保存', onclick: async () => {
+      try { this.data = await this.call('select', { workspaceId: team.id, channels: [...selected.values()] }); this.paint(); body.dataset.unsavedForm = 'false'; workspace.trackDrafts(body); toast('読む会話を保存しました'); }
       catch (error) { toast(error.message,true); }
     } }));
   },
