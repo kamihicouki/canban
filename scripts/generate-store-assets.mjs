@@ -72,8 +72,8 @@ try {
     await capture(file);
   };
   const icon = (px, inset) => `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 ${px} ${px}"><g transform="translate(${inset} ${inset}) scale(${(px - inset * 2) / 32})">${logo.replace(/<svg[^>]*>|<\/svg>/g, '')}</g></svg>`;
-  for (const px of [16, 48, 128]) await render(icon(px, px === 128 ? 16 : 0), px, px, path.join(root, `chrome/icons/icon-${px}.png`));
-  await render(icon(512, 64), 512, 512, path.join(root, 'assets/canban.png'));
+  for (const px of [16, 48, 128]) await render(icon(px, 0), px, px, path.join(root, `chrome/icons/icon-${px}.png`));
+  await render(icon(512, 0), 512, 512, path.join(root, 'assets/canban.png'));
   const mark = (x, y, px) => `<g transform="translate(${x} ${y}) scale(${px / 32})">${logo.replace(/<svg[^>]*>|<\/svg>/g, '')}</g>`;
   const font = 'font-family="Avenir Next, Hiragino Sans, sans-serif"';
   const bg = `<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="${color('board-bg')}"/><stop offset="1" stop-color="${color('board-bg-2')}"/></linearGradient></defs>`;
