@@ -46,7 +46,7 @@ test('Slack intake through Chrome and ten layout/theme screenshots', { timeout: 
   const message=page.locator(`[data-slack-key="${parent.key}"]`).first();await message.focus();await page.keyboard.press('c');
   await page.locator('dialog[open] input').first().fill('予約ページの見積もり');await page.locator('dialog[open]').getByRole('button',{name:'作成して開く',exact:true}).click();
   await page.locator('dialog[open]').waitFor({state:'hidden'});await page.locator('.slack-source').first().waitFor();assert.equal(await page.locator('.slack-add-prompt').count(),1);
-  const prompt=page.locator('.pane .psec[data-sec=send] textarea').first();
+  const prompt=page.locator('.pane [data-sec=send] textarea').first();
   // Explicit source addition only changes the prompt; no agent is dispatched.
   await page.locator('.slack-add-prompt').click();assert.match(await prompt.inputValue(),/見積もりをお願いします/);
   assert.equal((await store.load()).cards[existing.cardId].title,'予約ページの改善');
@@ -67,7 +67,7 @@ test('Slack intake through Chrome and ten layout/theme screenshots', { timeout: 
   const deferred=page.locator('.slack-message.deferred').last();await deferred.focus();await page.keyboard.press('c');
   await page.locator('dialog[open] input').first().fill('書きかけの依頼');await page.keyboard.press('Escape');await deferred.focus();await page.keyboard.press('c');
   assert.equal(await page.locator('dialog[open] input').first().inputValue(),'書きかけの依頼');await page.keyboard.press('Escape');
-  await palette('Slack接続を開く');const token=page.getByLabel('Slackユーザートークン');await token.fill('入力途中の架空文字列');
+  await palette('Slack接続を開く');await page.getByText('ワークスペースを追加・トークンを入れ直す',{exact:true}).click();const token=page.getByLabel('Slackユーザートークン');await token.fill('入力途中の架空文字列');
   await palette('Slackタイムラインを隠す');assert.equal(await token.inputValue(),'入力途中の架空文字列');
   assert.deepEqual(errors,[]);
 });
