@@ -5,7 +5,8 @@ import { executionContext } from './sqlite-client.mjs';
 import { SlackStore } from './slack-store.mjs';
 import { SLACK_CACHE_MS, slackKey, slackMessage, safeSlackUrl, slackTokenProblem, slackErrorText } from './slack-model.mjs';
 
-const METHODS = new Set(['auth.test', 'conversations.list', 'conversations.history', 'conversations.replies', 'apps.connections.open']);
+const METHODS = new Set(['auth.test', 'conversations.list', 'conversations.history', 'conversations.replies', 'apps.connections.open', 'users.list']);
+const USER_ID = /^[UW][A-Z0-9]{1,30}$/;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 export class SlackApi {
   constructor({ fetcher = fetch, now = Date.now } = {}) { this.fetcher = fetcher; this.now = now; this.cooldowns = new Map(); this.queue = Promise.resolve(); this.pending = 0; }
@@ -37,6 +38,40 @@ export class SlackService {
     this.board = store; this.db = new SlackStore(store.dir); this.api = api; this.Socket = Socket;
     this.sockets = new Map(); this.socketTeams = new Map(); this.attempts = new Map(); this.loading = new Map(); this.stopped = false; this.generation = 0; this.eventQueue = Promise.resolve(); this.pendingEvents = 0;
     this.credentialsFile = path.join(store.dir, 'slack', 'credentials.json');
+    this.users = new Map(); this.usersLoading = new Map();
+  }
+  // People's names for DMs and authors. One users.list walk per workspace, kept for six hours; without users:read the IDs stay.
+  async loadUsers(workspaceId) {
+    if (this.usersLoading.has(workspaceId)) return this.usersLoading.get(workspaceId);
+    const operation = (async () => {
+      const credential = (await this.credentials())[workspaceId]; if (!credential) return { names: {}, missing: false };
+      const names = {}; let cursor = '', missing = false, failed = false;
+      try { for (let page = 0; page < 20; page++) {
+        const result = await this.api.call(credential.userToken, 'users.list', { limit: '200', ...(cursor ? { cursor } : {}) });
+        for (const u of result.members || []) if (USER_ID.test(u.id || '')) names[u.id] = String(u.profile?.display_name || u.real_name || u.name || u.id).slice(0, 200);
+        cursor = result.response_metadata?.next_cursor || ''; if (!cursor) break;
+      } } catch (e) { if (/missing_scope/.test(e.message)) missing = true; else failed = true; }
+      // A transient failure retries after five minutes instead of six hours.
+      const entry = { at: failed ? Date.now() - SLACK_CACHE_MS + 5 * 60000 : Date.now(), names: { ...(this.users.get(workspaceId)?.names || {}), ...names }, missing };
+      this.users.set(workspaceId, entry); return entry;
+    })();
+    this.usersLoading.set(workspaceId, operation);
+    try { return await operation; } finally { this.usersLoading.delete(workspaceId); }
+  }
+  userEntry(workspaceId, { wait = false } = {}) {
+    const hit = this.users.get(workspaceId);
+    if (hit && hit.at > Date.now() - SLACK_CACHE_MS) return hit;
+    const loading = this.loadUsers(workspaceId).catch(() => ({ names: {}, missing: false }));
+    return wait ? loading : hit || { names: {}, missing: false };
+  }
+  async view(args = {}) {
+    const value = await this.db.view(args), missing = [];
+    const named = {};
+    for (const w of value.workspaces) { const entry = await this.userEntry(w.id); named[w.id] = entry.names; if (entry.missing) missing.push(w.id); }
+    const dm = (team, name) => name?.replace(/^DM · ([UW][A-Z0-9]+)$/, (all, id) => named[team]?.[id] ? `DM · ${named[team][id]}` : all);
+    return { ...value, namesMissing: missing,
+      workspaces: value.workspaces.map(w => ({ ...w, channels: w.channels.map(c => ({ ...c, name: dm(w.id, c.name) })) })),
+      messages: value.messages.map(m => ({ ...m, channelName: dm(m.team, m.channelName), author: named[m.team]?.[m.author] || m.author })) };
   }
   async credentials() { try { return JSON.parse(await fs.readFile(this.credentialsFile, 'utf8')); } catch (e) { if (e.code === 'ENOENT') return {}; throw new Error('Slack認証情報を読み込めません'); } }
   async saveCredentials(team, value) {
@@ -68,15 +103,16 @@ export class SlackService {
     await this.saveCredentials(auth.team_id, { userToken, appToken });
     await this.db.saveWorkspace({ id: auth.team_id, name: String(auth.team || auth.team_id).slice(0,200), userId: auth.user_id, url: safeSlackUrl(auth.url) });
     await this.db.status(auth.team_id, { state: '待機', at: Date.now(), incomplete: true });
-    await this.tick(); return this.db.view();
+    await this.tick(); return this.view();
   }
-  async disconnect({ workspaceId }) { await this.saveCredentials(workspaceId, null); this.config = await this.db.removeWorkspace(workspaceId); this.closeSockets(); this.attempts.clear(); await this.tick(); return this.db.view(); }
+  async disconnect({ workspaceId }) { await this.saveCredentials(workspaceId, null); this.config = await this.db.removeWorkspace(workspaceId); this.closeSockets(); this.attempts.clear(); await this.tick(); return this.view(); }
   async listChannels({ workspaceId, cursor = '' }) {
     const credential = (await this.credentials())[workspaceId]; if (!credential) throw new Error('Slack接続が見つかりません');
     const result = await this.api.call(credential.userToken, 'conversations.list', { types: 'public_channel,private_channel,im,mpim', exclude_archived: 'true', limit: '100', cursor });
-    return { channels: (result.channels || []).map(c => ({ id: c.id, name: c.name || (c.is_im ? `DM · ${c.user}` : c.id) })), cursor: result.response_metadata?.next_cursor || '' };
+    const users = await this.userEntry(workspaceId, { wait: true });
+    return { channels: (result.channels || []).map(c => ({ id: c.id, name: c.name || (c.is_im ? `DM · ${users.names[c.user] || c.user}` : c.id) })), cursor: result.response_metadata?.next_cursor || '', namesMissing: users.missing };
   }
-  async selectChannels(args) { this.config = await this.db.selectChannels(args); await this.tick(); return this.db.view(); }
+  async selectChannels(args) { this.config = await this.db.selectChannels(args); await this.tick(); return this.view(); }
   async history({ workspaceId, channelId, more = false, threadTs = null, cursor = '' }) {
     const tag = `${workspaceId}:${channelId}:${threadTs || ''}:${more}:${cursor}`;
     if (this.loading.has(tag)) return this.loading.get(tag);
@@ -88,7 +124,7 @@ export class SlackService {
     if (!channel) throw new Error('読む会話を接続設定から選択してください');
     const credential = (await this.credentials())[workspaceId]; if (!credential) throw new Error('Slack認証情報を確認してください');
     const previous = await this.db.cachedMeta(workspaceId, channelId);
-    if (more && !threadTs && !previous?.cursor) return this.db.view();
+    if (more && !threadTs && !previous?.cursor) return this.view();
     const result = await this.api.call(credential.userToken, threadTs ? 'conversations.replies' : 'conversations.history', { channel: channelId, limit: '100', ...(threadTs ? { ts: threadTs } : {}), ...((threadTs ? cursor : more && previous?.cursor) ? { cursor: threadTs ? cursor : previous.cursor } : {}) });
     const latest = await this.db.getConfig();
     if (!latest.workspaces.find(w => w.id === workspaceId)?.channels.some(c => c.id === channelId) || (await this.credentials())[workspaceId]?.userToken !== credential.userToken) throw new Error('Slack接続設定が変わりました。再取得してください');
@@ -96,7 +132,8 @@ export class SlackService {
     await this.db.cache({ team: workspaceId, channel: channelId, messages, cursor: threadTs ? previous?.cursor || '' : result.response_metadata?.next_cursor || '', append: more || !!threadTs, thread: !!threadTs });
     const cached = threadTs ? await this.db.cached(workspaceId, channelId) : null;
     const refs = threadTs ? await this.db.refs(messages.map(m => m.key)) : null;
-    return threadTs ? { messages: messages.map(m => ({ ...(cached?.messages.find(c => c.key === m.key) || m), refs: refs[m.key] || [] })), cursor: result.response_metadata?.next_cursor || '' } : this.db.view({workspaceId,channelId});
+    const names = threadTs ? (await this.userEntry(workspaceId)).names : {};
+    return threadTs ? { messages: messages.map(m => { const v = cached?.messages.find(c => c.key === m.key) || m; return { ...v, author: names[v.author] || v.author, refs: refs[m.key] || [] }; }), cursor: result.response_metadata?.next_cursor || '' } : this.db.view({workspaceId,channelId});
   }
   async start(leader) {
     this.leader = leader;
@@ -205,7 +242,7 @@ export class SlackService {
 export function slackTools({ service, store, appTool, validateCard }) {
   const text = { type: 'string' };
   return [
-    appTool('canban_slack_view', 'Slackタイムラインを取得', { workspaceId: text, channelId: text }, [], a => service.db.view(a)),
+    appTool('canban_slack_view', 'Slackタイムラインを取得', { workspaceId: text, channelId: text }, [], a => service.view(a)),
     appTool('canban_slack_connect', '個人用Slackを接続', { userToken: text, appToken: text }, ['userToken', 'appToken'], a => service.connect(a)),
     appTool('canban_slack_disconnect', 'Slack接続を解除', { workspaceId: text }, ['workspaceId'], a => service.disconnect(a)),
     appTool('canban_slack_channels', 'Slackの会話を取得', { workspaceId: text, cursor: text }, ['workspaceId'], a => service.listChannels(a)),

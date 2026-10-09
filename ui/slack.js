@@ -2,10 +2,11 @@
 // Same as docs/slack-app-manifest.json (tests keep them equal); the link prefills Slack's "From a manifest" screen.
 const SLACK_MANIFEST = {
   display_information: { name: 'Canban Personal', description: '個人用Canbanで会話を読み取り、カードの資料にする' },
-  oauth_config: { scopes: { user: ['channels:read', 'channels:history', 'groups:read', 'groups:history', 'im:read', 'im:history', 'mpim:read', 'mpim:history'] } },
+  oauth_config: { scopes: { user: ['channels:read', 'channels:history', 'groups:read', 'groups:history', 'im:read', 'im:history', 'mpim:read', 'mpim:history', 'users:read'] } },
   settings: { socket_mode_enabled: true, event_subscriptions: { user_events: ['message.channels', 'message.groups', 'message.im', 'message.mpim'] }, org_deploy_enabled: false, token_rotation_enabled: false },
 };
 const SLACK_NEW_APP_URL = `https://api.slack.com/apps?new_app=1&manifest_json=${encodeURIComponent(JSON.stringify(SLACK_MANIFEST))}`;
+const SLACK_NAMES_HINT = 'DMの相手の名前を出すには、Slackのアプリ設定「OAuth & Permissions」の User Token Scopes に users:read を足し、「Reinstall to Workspace」してから、新しいユーザートークンを「トークンを入れ直す」で貼ってください。';
 const SLACK_STATUS = {
   接続中: { tone: 'good', text: '接続中 · 新しいメッセージを受け取っています' },
   接続待ち: { tone: 'warn', text: '再接続を待っています · 続く場合はAppトークンを入れ直してください' },
@@ -190,7 +191,8 @@ const slackUi = {
         const panel = h('section', { class: 'page-panel', 'data-slack-workspace': w.id }, h('h3', { text: w.name }),
           h('p', { class: `slack-status ${status.tone}`, role: 'status' }, h('span', { class: 'slack-status-dot' }), status.text),
           w.channels.length ? h('p', { class: 'page-help', text: `読む会話 ${w.channels.length}件: ${w.channels.slice(0, 5).map(c => c.name).join('、')}${w.channels.length > 5 ? ' ほか' : ''}` })
-            : h('p', { class: 'slack-next', text: '次に、ボードで読む会話を選んでください。' }));
+            : h('p', { class: 'slack-next', text: '次に、ボードで読む会話を選んでください。' }),
+          this.data.namesMissing?.includes(w.id) ? h('p', { class: 'page-help', text: SLACK_NAMES_HINT }) : null);
         const editor = h('div');
         panel.append(h('button', { class: w.channels.length ? 'btn' : 'btn-primary', text: '読む会話とカテゴリを選ぶ', onclick: () => this.channelSettings(editor, w) }), editor, h('button', { class: 'link-btn', text: '接続を解除', onclick: async () => {
           if (!confirmInline(panel, 'このMacの接続と認証情報を削除します。カードに保存した資料は残ります。')) return;
@@ -276,9 +278,10 @@ const slackUi = {
     if (!connected) return h('section', { class: 'page-panel slack-setup' }, h('h3', { text: 'Slackを接続する（4ステップ・約3分）' }), steps, top);
     return h('details', { class: 'page-panel slack-setup' }, h('summary', { text: 'ワークスペースを追加・トークンを入れ直す' }), steps, top);
   },
-  async channelSettings(body, workspace) {
-    const selected = new Map(workspace.channels.map(c => [c.id,{...c}]));
-    const rows = h('div'), query = h('input', { class: 'text-input', type: 'search', 'aria-label': 'Slackの会話を絞り込む', placeholder: '会話名を絞り込む', oninput: e => {
+  async channelSettings(body, team) {
+    const selected = new Map(team.channels.map(c => [c.id,{...c}]));
+    const names = h('p', { class: 'slack-next', hidden: !this.data.namesMissing?.includes(team.id), text: SLACK_NAMES_HINT });
+    const rows = h('div'), query = h('input', { class: 'text-input', type: 'search', 'aria-label': 'Slackの会話を絞り込む', placeholder: '会話名・IDで絞り込む', oninput: e => {
       for (const row of rows.children) row.hidden = !row.dataset.name.toLocaleLowerCase().includes(e.target.value.toLocaleLowerCase());
     } });
     const addRows = channels => { for (const channel of channels) {
@@ -297,14 +300,14 @@ const slackUi = {
           } catch (error) { toast(error.message, true); }
         }; directory.after(form); directory.value = selected.get(channel.id)?.directory || '__none'; form.querySelector('input').focus();
       } });
-      rows.append(h('div', { class: 'slack-channel-row', 'data-channel': channel.id, 'data-name': channel.name }, h('label', {}, check, ` ${channel.name}`), directory));
+      rows.append(h('div', { class: 'slack-channel-row', 'data-channel': channel.id, 'data-name': `${channel.name} ${channel.id}`, title: channel.id }, h('label', {}, check, ` ${channel.name}`), directory));
     } };
     let cursor = ''; const more = h('button', { class: 'btn', text: '会話を取得', onclick: async () => {
-      more.disabled = true; try { const result = await this.call('channels', { workspaceId: workspace.id, cursor }); addRows(result.channels); cursor = result.cursor; more.textContent = cursor ? 'さらに会話を取得' : '取得済み'; more.hidden = !cursor; }
+      more.disabled = true; try { const result = await this.call('channels', { workspaceId: team.id, cursor }); names.hidden = !result.namesMissing; addRows(result.channels); cursor = result.cursor; more.textContent = cursor ? 'さらに会話を取得' : '取得済み'; more.hidden = !cursor; }
       catch (error) { toast(error.message,true); } finally { more.disabled = false; }
     } });
-    addRows(workspace.channels); body.replaceChildren(query, rows, more, h('button', { class: 'btn-primary', text: '読む会話を保存', onclick: async () => {
-      try { this.data = await this.call('select', { workspaceId: workspace.id, channels: [...selected.values()] }); this.paint(); body.dataset.unsavedForm = 'false'; workspace.trackDrafts(body); toast('読む会話を保存しました'); }
+    addRows(team.channels); body.replaceChildren(names, query, rows, more, h('button', { class: 'btn-primary', text: '読む会話を保存', onclick: async () => {
+      try { this.data = await this.call('select', { workspaceId: team.id, channels: [...selected.values()] }); this.paint(); body.dataset.unsavedForm = 'false'; workspace.trackDrafts(body); toast('読む会話を保存しました'); }
       catch (error) { toast(error.message,true); }
     } }));
   },
