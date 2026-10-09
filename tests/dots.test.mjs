@@ -10,6 +10,21 @@ import { sessionActions } from '../server/session-actions.mjs';
 import { dotFixture } from './fixtures/dots.mjs';
 import { makeFixtures } from './helpers.mjs';
 
+// Set up (and register the clean-up) before the first test: on Node 22 a top-level after() registered
+// after tests have started, across a top-level await, runs before the remaining tests.
+const fx = makeFixtures(), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-dots-'));
+process.env.CANBAN_CODEX_HOME = fx.codexHome; process.env.CANBAN_CLAUDE_HOME = fx.claudeHome;
+process.env.CANBAN_CLAUDE_DESKTOP_DIR = fx.desktopDir;
+process.env.CANBAN_GH = path.resolve('tests/fake-gh.sh'); process.env.CANBAN_GLAB = path.resolve('tests/fake-glab.sh');
+process.env.FAKE_GH_DATA = '/dev/null';
+const file = path.join(fx.codexHome, '.codex-global-state.json');
+fs.writeFileSync(file, JSON.stringify(dotFixture()));
+const { Store } = await import('../server/store.mjs');
+const { buildBoard, sessionDetail, allSessions, dropLocalCache } = await import('../server/board.mjs');
+const { Dispatcher, staticProblem, resolveSession } = await import('../server/dispatch.mjs');
+const store = new Store(dir);
+after(async () => { await store.close(); fx.cleanup(); fs.rmSync(dir, { recursive: true, force: true }); });
+
 test('only explicitly visible chats attached to an orbit profile are dot sessions', () => {
   const raw = dotFixture(1791500000000), result = parseDotCache(raw);
   assert.deepEqual(result.sessions.map(s => s.nativeId), ['dot-created', 'dot-related', 'dot-sub']);
@@ -42,18 +57,6 @@ test('cached cloud sessions cannot produce terminal commands, headless turns or 
   assert.equal(desktopLink(s).url, 'codex://threads/dot-created?hostId=durable');
 });
 
-const fx = makeFixtures(), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-dots-'));
-process.env.CANBAN_CODEX_HOME = fx.codexHome; process.env.CANBAN_CLAUDE_HOME = fx.claudeHome;
-process.env.CANBAN_CLAUDE_DESKTOP_DIR = fx.desktopDir;
-process.env.CANBAN_GH = path.resolve('tests/fake-gh.sh'); process.env.CANBAN_GLAB = path.resolve('tests/fake-glab.sh');
-process.env.FAKE_GH_DATA = '/dev/null';
-const file = path.join(fx.codexHome, '.codex-global-state.json');
-fs.writeFileSync(file, JSON.stringify(dotFixture()));
-const { Store } = await import('../server/store.mjs');
-const { buildBoard, sessionDetail, allSessions, dropLocalCache } = await import('../server/board.mjs');
-const { Dispatcher, staticProblem, resolveSession } = await import('../server/dispatch.mjs');
-const store = new Store(dir);
-after(async () => { await store.close(); fx.cleanup(); fs.rmSync(dir, { recursive: true, force: true }); });
 
 test('board defaults exclude dots; all and only work with task links and saved views', async () => {
   const before = fx.snapshot();
