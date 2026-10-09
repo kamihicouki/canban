@@ -162,7 +162,7 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
   // One entry per panel: the labelled buttons in the header (with their keys) open and close it.
   const side = h('aside', { class: 'th-side', 'aria-label': '詳細パネル', hidden: true }, h('div', { class: 'th-side-b' }));
   // The attributes: every section the module layout has, in one reading order.
-  const order = [['progress', true], ['add', true], ['labels', true], ['prio', true], ['task', false], ['related', true], ['pr', true], ['memo', true], ['resume', true], ['detail', false], ['first', false], ['slack', true], ['other', false], ['actions', false]];
+  const order = [['progress', true], ['add', true], ['labels', true], ['prio', true], ['task', false], ['related', true], ['pr', true], ['memo', true], ['resume', true], ['detail', false], ['first', false], ['other', false], ['actions', false]];
   p.detailNodes = order.filter(([id]) => secs[id]).map(([id, open]) => detailSection(id, secs[id].title ?? secTitle(id), secs[id].nodes, { open, extra: secs[id].extra }));
   const sig = s.signals, git = d.git;
   const chips = [
@@ -183,7 +183,8 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
   const title = h('div', { class: 'th-title' }, secs.status.nodes[0], secs.title.nodes[0]);
   const main = h('div', { class: 'th-main' },
     h('div', { class: 'th-conv', 'data-sec': 'conv' }, ...secs.conv.nodes),
-    h('div', { class: 'th-dock', 'data-sec': 'send' }, ...secs.send.nodes));
+    // Slack material sits beside the input it feeds (「依頼文に追加」), not in the details panel.
+    h('div', { class: 'th-dock', 'data-sec': 'send' }, secs.slack ? h('details', { class: 'th-attach', 'data-sec': 'slack' }, h('summary', {}, h('span', { html: picon('message', 13) }), `Slack資料（${card.slackRefs.length}）`), ...secs.slack.nodes) : null, ...secs.send.nodes));
   el.replaceChildren(...[head, threadStrip(p, d), title].filter(Boolean), h('div', { class: 'th-meta' }, ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('session'));
   paintThreadStat(p, git);
   paintThreadSide(p);
@@ -197,7 +198,7 @@ function taskSection(id, title, extra, nodes) {
 }
 function renderTaskThreadPane(p, card, secs) {
   const side = h('aside', { class: 'th-side', 'aria-label': '詳細パネル', hidden: true }, h('div', { class: 'th-side-b' }));
-  const order = [['add', true], ['prio', true], ['memo', true], ['slack', true], ['other', false]];
+  const order = [['add', true], ['prio', true], ['memo', true], ['other', false]];
   p.detailNodes = order.filter(([id]) => secs[id]).map(([id, open]) => detailSection(id, secs[id].title ?? secTitle(id), secs[id].nodes, { open, extra: secs[id].extra }));
   const labels = card.labels.map((id) => state.board.labels.find((l) => l.id === id)).filter(Boolean);
   const chips = [
@@ -216,6 +217,7 @@ function renderTaskThreadPane(p, card, secs) {
   const main = h('div', { class: 'th-main' },
     h('div', { class: 'th-conv th-task' },
       taskSection('conv', '説明', null, secs.conv.nodes),
+      secs.slack ? taskSection('slack', 'Slack資料', null, secs.slack.nodes) : null,
       taskSection('related', secs.related.title, secs.related.extra, secs.related.nodes)),
     h('div', { class: 'th-dock', 'data-sec': 'send' }, h('div', { class: 'th-sec-t' }, secs.send.title, secs.send.extra || null), ...secs.send.nodes));
   p.el.replaceChildren(head, title, h('div', { class: 'th-meta' }, ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('task'));

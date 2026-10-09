@@ -188,12 +188,12 @@ function confirmDeleteList(anchor, list) {
       h('button', { class: 'btn-danger', text: '削除', onclick: () => { closePopover(); act('canban_delete_list', { listId: list.id, moveCardsTo: sel.value }, { okMsg: 'リストを削除しました' }); } }))));
 }
 
-// 色: light / dark / system. The only matter of taste left; everything else on the board follows the cards' lifetime.
+// The single entry for layout and color preferences.
 const THEME_CHOICES = [['light', 'sun', 'ライト'], ['dark', 'moon', 'ダーク'], ['system', 'system', 'システム']];
 function themeMenu(anchor) {
-  popover(anchor, '色', h('div', { class: 'theme-modes', role: 'group', 'aria-label': '色' }, THEME_CHOICES.map(([k, ic, n]) =>
+  popover(anchor, 'レイアウトと色', h('div', {}, layoutChooser(), h('div', { class: 'field-label', text: '色' }), h('div', { class: 'theme-modes', role: 'group', 'aria-label': '色' }, THEME_CHOICES.map(([k, ic, n]) =>
     h('button', { type: 'button', 'aria-pressed': String((state.themePref || 'system') === k), onclick: () => { setThemePref(k); themeMenu(anchor); } },
-      h('span', { html: picon(ic, 16) }), n))), { width: 300 });
+      h('span', { html: picon(ic, 16) }), n)))), { width: 380 });
 }
 
 function labelsManager(anchor) {

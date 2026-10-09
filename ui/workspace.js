@@ -58,6 +58,7 @@ const workspace = {
     for (const b of $$('#sidebar [data-page]')) b.setAttribute('aria-current', b.dataset.page === this.current() ? 'page' : 'false');
     this.title.replaceChildren(h('span', { html: picon(PAGE_ICONS[this.page] || 'more', 20) }), WORKSPACE_PAGES.find(([id]) => id === this.page)?.[1] || '');
     for (const entry of this.entries.values()) entry.el.hidden = entry.page !== this.page || (entry.page === 'settings' && entry.tab !== this.settingsTab);
+    if (typeof paintLayoutChrome === 'function') paintLayoutChrome();
     $('.shell').inert = !paneLayer.hidden; // the board waits while the overlay is open; the app bar stays usable
   },
   trackDrafts(root) {

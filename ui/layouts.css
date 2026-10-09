@@ -1,0 +1,137 @@
+/* Layout themes (ui/layouts.js). body[data-layout] arranges the same parts five ways.
+   Trello keeps the gradient; the other four use calm, solid surfaces in both color themes. */
+
+.omni-pop { width: auto; background: none; color: var(--list-fg); --header-fg: var(--list-fg); --header-dim: var(--list-muted); --header-btn: var(--btn-subtle); --header-btn-hover: var(--btn-subtle-hover); --side-active: var(--btn-subtle-hover); }
+.omni-pop .icon-btn { color: var(--list-muted); }
+
+body[data-layout]:not([data-layout="trello"]) {
+  --board-bg: var(--layout-board-bg);
+  --board-bg-2: var(--layout-board-bg-2);
+  --list-bg: var(--layout-list-bg);
+  --header-bg: var(--layout-header-bg);
+  --header-fg: var(--layout-header-fg);
+  --header-dim: var(--layout-header-dim);
+  --header-btn: var(--layout-header-btn);
+  --header-btn-hover: var(--layout-header-btn-hover);
+  --side-bg: var(--layout-side-bg);
+  --side-active: var(--layout-side-active);
+  --chrome-line: var(--layout-chrome-line);
+  --on-board: var(--layout-on-board);
+  --on-board-dim: var(--layout-on-board-dim);
+  --on-board-btn: var(--layout-on-board-btn);
+  --on-board-btn-hover: var(--layout-on-board-btn-hover);
+  --pressed-bg: var(--layout-pressed-bg);
+  --pressed-fg: var(--layout-pressed-fg);
+  --primary-bg: var(--layout-primary-bg);
+  --primary-fg: var(--layout-primary-fg);
+  --logo-bg: var(--layout-logo-bg);
+  --logo-fg: var(--layout-logo-fg);
+  --dock-bg: var(--layout-dock-bg);
+}
+body:not([data-layout="trello"]) .topbar { border-bottom: 1px solid var(--chrome-line); }
+body:not([data-layout="trello"]) .mgmt-drawer { border-right: 1px solid var(--chrome-line); }
+body:not([data-layout="trello"]) .sidebar { border-right: 1px solid var(--chrome-line); }
+body:not([data-layout="trello"]) .list { box-shadow: none; }
+
+/* Grid layouts: the board area is one grid; .shell dissolves so the sidebar can span rows.
+   The management panel has a column of its own next to the navigation; it is empty (0 wide) while closed. */
+@media (min-width: 721px) {
+  body[data-layout="classic"] .app-content, body[data-layout="rail"] .app-content, body[data-layout="hud"] .app-content {
+    display: grid; position: relative; grid-template-columns: auto auto minmax(0, 1fr);
+  }
+  body[data-layout="classic"] .app-content > .shell, body[data-layout="rail"] .app-content > .shell, body[data-layout="hud"] .app-content > .shell { display: contents; }
+  body[data-layout] .app-content > .topbar { grid-area: top; }
+  body[data-layout] .app-content > #errbar { grid-area: err; }
+  body[data-layout] .live-hud { grid-area: hud; }
+  body[data-layout] .layout-rail { grid-area: rail; }
+  body[data-layout="classic"] .shell > .sidebar, body[data-layout="rail"] .shell > .sidebar, body[data-layout="hud"] .shell > .sidebar { grid-area: side; }
+  body[data-layout="classic"] .shell > .mgmt-drawer, body[data-layout="hud"] .shell > .mgmt-drawer { grid-area: panel; min-height: 0; }
+  body[data-layout="classic"] .shell > .stage, body[data-layout="rail"] .shell > .stage, body[data-layout="hud"] .shell > .stage { grid-area: main; min-height: 0; }
+
+  /* A: the sidebar runs to the top and carries the logo; the app bar spans the panel and the board. */
+  body[data-layout="classic"] .app-content {
+    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-areas: "side top top" "side err err" "side panel main";
+  }
+
+
+
+  /* B: rail (where) → context column (views and categories, or the management page) → board. */
+  body[data-layout="rail"] .app-content {
+    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-areas: "rail side top" "rail side err" "rail side main";
+  }
+  body[data-layout="rail"] .shell > .mgmt-drawer { grid-area: side; min-height: 0; }
+  body[data-layout="rail"]:not([data-page="home"]) .shell > .sidebar { display: none; }
+  body[data-layout="rail"] .layout-rail { display: flex; }
+  body[data-layout="rail"] .topbar .brand { display: none; } /* the rail lists every place */
+  body[data-layout="rail"] .sidebar { background: var(--header-bg); }
+
+  /* D: app bar with tabs, then the live HUD across the whole width, then spaces, panel and the board. */
+  body[data-layout="hud"] .app-content {
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-areas: "top top top" "hud hud hud" "err err err" "side panel main";
+  }
+}
+body[data-layout="rail"] .shell { position: static; }
+
+/* B: the rail */
+.layout-rail { flex-direction: column; align-items: center; gap: 2px; width: 76px; padding: 10px 0; background: var(--side-bg); border-right: 1px solid var(--chrome-line); overflow-y: auto; }
+.rail-logo .logo-mark { width: 32px; height: 32px; margin: 2px 0 12px; }
+.rail-item { width: 64px; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 0 7px; border-radius: 10px; color: var(--header-dim); font-size: 11px; font-weight: 600; position: relative; }
+.rail-item:hover { background: var(--header-btn); color: var(--header-fg); }
+.rail-item[aria-current="true"] { background: var(--pressed-bg); color: var(--pressed-fg); }
+.rail-item[aria-current="true"]::before { content: ""; position: absolute; left: -6px; top: 12px; bottom: 12px; width: 3px; border-radius: 2px; background: var(--pressed-fg); }
+.rail-sep { width: 40px; height: 1px; margin: 6px 0; background: var(--chrome-line); flex: none; }
+
+/* C: omnibar: no sidebar; categories as a strip in the app bar, places in the dock */
+body[data-layout="omni"] #sidebar, body[data-layout="omni"] #sideBtn, body[data-layout="omni"] .board-name { display: none; }
+body[data-layout="omni"] .topbar .hsearch-wrap { flex: 0 1 380px !important; }
+body[data-layout="omni"] .topbar .hsearch { height: 36px; border-radius: 10px; }
+body[data-layout="omni"] .topbar > .spacer { display: none; }
+body[data-layout="omni"] .omni-filter { display: inline-flex; }
+
+body[data-layout="omni"] .cat-strip { display: flex; flex: 1 1 auto !important; min-width: 200px; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.cat-pill { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: 16px; background: var(--header-btn); color: var(--header-fg); font-weight: 600; white-space: nowrap; flex: none; }
+.cat-pill i { width: 9px; height: 9px; border-radius: 3px; }
+.cat-pill .n { font: 11.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--header-dim); }
+.cat-pill[aria-pressed="true"] { background: var(--header-fg); color: var(--header-bg); }
+.cat-pill[aria-pressed="true"] .n { color: var(--header-bg); opacity: .7; }
+body[data-layout="omni"] .layout-dock { display: flex; }
+body[data-layout="omni"] .board { padding-bottom: 152px; }
+.layout-dock { position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 100; align-items: flex-end; gap: 4px; padding: 7px; border-radius: 18px;
+  background: var(--dock-bg); backdrop-filter: blur(14px); border: 1px solid var(--chrome-line); box-shadow: 0 14px 40px var(--layout-shadow); max-width: calc(100vw - 24px); overflow-x: auto; }
+.dock-item { width: 70px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0 6px; border-radius: 12px; font-size: 11px; font-weight: 600; color: var(--list-muted); position: relative; flex: none; }
+.dock-item:hover { background: var(--btn-subtle-hover); color: var(--list-fg); }
+.dock-item[aria-current="true"] { background: var(--pressed-bg); color: var(--pressed-fg); }
+.dock-item[aria-current="true"]::after { content: ""; position: absolute; bottom: -4px; width: 4px; height: 4px; border-radius: 50%; background: var(--pressed-fg); }
+.dock-sep { width: 1px; align-self: stretch; margin: 6px 4px; background: var(--chrome-line); flex: none; }
+
+/* D: header tabs, live HUD and category "spaces" */
+body[data-layout="hud"] .layout-tabs { display: flex; gap: 2px; margin-left: 6px; }
+.layout-tab { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-radius: 8px; font-weight: 600; color: var(--header-dim); }
+.layout-tab .place-ic { display: grid; }
+.layout-tab:hover { background: var(--header-btn); color: var(--header-fg); }
+.layout-tab[aria-current="true"] { color: var(--header-fg); background: var(--header-btn); box-shadow: inset 0 -2px 0 var(--pressed-fg); }
+body[data-layout="hud"] .live-hud { display: flex; }
+.live-hud { gap: 10px; padding: 10px 14px; overflow-x: auto; background: var(--side-bg); border-bottom: 1px solid var(--chrome-line); align-items: stretch; flex: none; }
+.hud-head { display: flex; flex-direction: column; justify-content: center; gap: 3px; padding-right: 10px; border-right: 1px solid var(--chrome-line); flex: none; color: var(--header-dim); font-size: 11.5px; white-space: nowrap; }
+.hud-head b { font-size: 22px; line-height: 1; color: var(--header-fg); }
+.hud-wait { color: var(--tone-wait); font-weight: 700; }
+.hud-empty { align-self: center; color: var(--header-dim); font-size: 13px; }
+.hud-tile { flex: 0 0 236px; display: flex; flex-direction: column; gap: 6px; padding: 9px 11px; border-radius: 10px; background: var(--card-bg); color: var(--card-fg); box-shadow: var(--card-shadow); text-align: left; min-width: 0; }
+.hud-tile.is-waiting { box-shadow: 0 0 0 2px var(--c-yellow), var(--card-shadow); }
+.hud-r1 { display: flex; gap: 5px; font-size: 11.5px; line-height: 1; }
+.hud-t { font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-act { font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--card-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The picker */
+.layout-chooser { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.lc-card { display: flex; flex-direction: column; gap: 4px; padding: 10px; border-radius: 8px; border: 1px solid var(--btn-subtle-hover); text-align: left; background: var(--modal-panel); }
+.lc-card:hover { background: var(--btn-subtle); }
+.lc-card[aria-pressed="true"] { border-color: var(--accent); background: var(--pressed-bg); }
+.lc-desc { font-size: 12px; color: var(--list-muted); line-height: 1.45; }
+@media (max-width: 720px) {
+  .layout-tabs .place-lbl { display: none; }
+  .dock-item { width: 54px; }
+  body[data-layout="rail"] .sidebar .side-foot { display: flex; }
+}

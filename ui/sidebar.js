@@ -185,7 +185,8 @@ function filterSection(b, hit = () => true) {
         h('span', { class: 'dot', style: { background: d.color ? colorVar(d.color) : 'var(--header-btn-hover)' } }),
         h('span', { class: 'grow ellipsis', text: d.name }), ...liveBadges(live.get(d.id)), sideCountEl(d.count)),
       d.id === '__none' ? null : h('button', { class: 'icon-btn', 'aria-label': `${d.name} の設定`, text: '⋯', onclick: (e) => directoryMenu(e.currentTarget, d.id) })) })),
-      h('button', { class: 'side-mini', title: `${T.category}を管理`, 'aria-label': `${T.category}を管理`, html: picon('gear', 14), onclick: () => workspace.toggle('directories') }));
+      state.layout === 'omni' || (state.layout === 'rail' && matchMedia('(min-width: 721px)').matches) ? null :
+        h('button', { class: 'side-mini', title: `${T.category}を管理`, 'aria-label': `${T.category}を管理`, html: picon('gear', 14), onclick: () => workspace.toggle('directories') }));
   }
   const hosts = (b.hosts || []).filter((x) => x.local || x.enabled);
   if (!laneHides('host') && hosts.length > 1) group('マシン', hosts.map((x) => { const id = x.local ? 'local' : x.id;
@@ -199,12 +200,13 @@ function filterSection(b, hit = () => true) {
 }
 // The foot of the sidebar: the sheets, the management pages and the color theme.
 function sideFoot(b) {
+  if (state.layout === 'omni' || (state.layout === 'rail' && matchMedia('(min-width: 721px)').matches)) return h('div');
   return h('div', { class: 'side-foot' },
-    h('div', { class: 'side-foot-look side-sec-look' }, SIDE_LOOK.map((x) => sideEntry(b, x))),
+    h('div', { class: 'side-foot-look side-sec-look' }, (state.layout === 'hud' ? [] : SIDE_LOOK).map((x) => sideEntry(b, x))),
     h('div', { class: 'side-head side-sec-manage' }, h('span', { class: 'grow', text: '管理' })),
     h('div', { class: 'side-foot-grid side-sec-manage' }, SIDE_MANAGE.map((x) => sideEntry(b, x))),
-    h('button', { class: 'side-row side-entry', type: 'button', 'data-look': '', title: 'ライト・ダーク・システム', onclick: (e) => themeMenu(e.currentTarget) },
-      h('span', { class: 'side-ic', html: picon(THEME_CHOICES.find(([k]) => k === (state.themePref || 'system'))[1], 18) }), h('span', { class: 'grow ellipsis', text: '色' }),
+    h('button', { class: 'side-row side-entry', type: 'button', 'data-look': '', title: 'レイアウトと色', onclick: (e) => themeMenu(e.currentTarget) },
+      h('span', { class: 'side-ic', html: picon(THEME_CHOICES.find(([k]) => k === (state.themePref || 'system'))[1], 18) }), h('span', { class: 'grow ellipsis', text: 'レイアウトと色' }),
       h('span', { class: 'count', text: THEME_CHOICES.find(([k]) => k === (state.themePref || 'system'))[2] })));
 }
 function renderSidebar(b) {

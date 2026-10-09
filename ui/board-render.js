@@ -54,6 +54,7 @@ function render() {
   renderRibbon(b);
   renderViewSwitch();
   applyLens();
+  paintLayoutChrome();
   if (focused && focused !== document.body && boardEl.contains(focused)) focused.focus({ preventScroll: true });
   else if (focusedCard) $(`.card[data-card-id="${CSS.escape(focusedCard)}"]`, boardEl)?.focus({ preventScroll: true });
   boardEl.scrollLeft = scroll;

@@ -108,3 +108,25 @@ button { cursor: pointer; border: 0; background: none; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 
 /* ---------- header ---------- */
+
+/* Solid surfaces for the restored classic/rail/omni/HUD layouts. */
+:root {
+  --layout-board-bg: #f3f5f8; --layout-board-bg-2: #f3f5f8; --layout-list-bg: #e7eaef;
+  --layout-header-bg: #ffffff; --layout-header-fg: #172b4d; --layout-header-dim: #5b6a82;
+  --layout-header-btn: rgba(9, 30, 66, 0.06); --layout-header-btn-hover: rgba(9, 30, 66, 0.12);
+  --layout-side-bg: #f9fafb; --layout-side-active: #e3edff; --layout-chrome-line: rgba(9, 30, 66, 0.12);
+  --layout-on-board: #172b4d; --layout-on-board-dim: #44546f; --layout-on-board-btn: rgba(9, 30, 66, 0.07); --layout-on-board-btn-hover: rgba(9, 30, 66, 0.13);
+  --layout-pressed-bg: #e3edff; --layout-pressed-fg: #0c55c8; --layout-primary-bg: #0c66e4; --layout-primary-fg: #ffffff;
+  --layout-logo-bg: #0c66e4; --layout-logo-fg: #ffffff; --layout-dock-bg: rgba(255, 255, 255, 0.9);
+}
+:root[data-theme="dark"] {
+  --layout-board-bg: #0f1216; --layout-board-bg-2: #0f1216; --layout-list-bg: #171b21;
+  --layout-header-bg: #161a20; --layout-header-fg: #dee4ea; --layout-header-dim: #9fadbc;
+  --layout-header-btn: rgba(255, 255, 255, 0.06); --layout-header-btn-hover: rgba(255, 255, 255, 0.12);
+  --layout-side-bg: #13171c; --layout-side-active: #1c2b41; --layout-chrome-line: rgba(255, 255, 255, 0.08);
+  --layout-on-board: #dee4ea; --layout-on-board-dim: #9fadbc; --layout-on-board-btn: rgba(255, 255, 255, 0.07); --layout-on-board-btn-hover: rgba(255, 255, 255, 0.13);
+  --layout-pressed-bg: #1c2b41; --layout-pressed-fg: #85b8ff; --layout-primary-bg: #579dff; --layout-primary-fg: #0f1216;
+  --layout-logo-bg: #579dff; --layout-logo-fg: #0f1216; --layout-dock-bg: rgba(26, 31, 39, 0.9);
+}
+
+:root { --layout-shadow: rgba(9, 30, 66, 0.25); }

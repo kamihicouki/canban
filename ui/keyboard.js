@@ -175,6 +175,7 @@ function commandPalette() {
     ...Object.entries(LANE_MODES).map(([v, t]) => ({ label: `スイムレーン: ${t}`, run: () => { f.swimlane = v; state.soloLane = null; saveFilters(); render(); } })),
     ...Object.entries(LANE_HEIGHTS).map(([v, [t]]) => ({ label: `レーンの高さ: ${t}`, run: () => { f.laneHeight = v; saveFilters(); render(); } })),
     { label: 'キーボードショートカット', run: showShortcuts, hint: '?' },
+    ...LAYOUTS.map(([id, name]) => ({ label: `レイアウト: ${name}`, run: () => setLayout(id) })),
     { label: timelineOn() ? 'ボードで表示' : '時間軸で表示', run: toggleBoardView, hint: 'i' },
     ...PERIODS.filter(([k]) => Number(f.days) !== k).map(([k, n]) => ({ label: `期間: ${n}`, run: () => setScope({ days: k }) })),
     ...Object.entries(LIFE_LABELS).map(([k, n]) => ({ label: `${n}のカードを照らす`, run: () => pinLens({ life: k }) })),
