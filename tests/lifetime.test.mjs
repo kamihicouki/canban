@@ -59,11 +59,13 @@ test('a list keeps its order for awake cards and folds the dormant ones', () => 
   assert.deepEqual(plain(dormant.map((c) => c.id)), ['a']);
 });
 
-test('one board, one look: no layout or component-style choosers remain, and lifetime is wired in', () => {
+test('shared card styling and lifetime remain wired in across selectable layouts', () => {
   const html = boardHtml({ version: '0.0.0' });
-  assert.doesNotMatch(html, /componentStyleChooser|layoutChooser|COMPONENT_STYLES|data-cs-/);
-  assert.doesNotMatch(html, /SHARED_UI_KEYS = \[[^\]]*'(layout|componentStyles|cardFit|cardLayouts)'/);
+  assert.doesNotMatch(html, /componentStyleChooser|COMPONENT_STYLES|data-cs-/);
+  assert.doesNotMatch(html, /SHARED_UI_KEYS = \[[^\]]*'(componentStyles|cardFit|cardLayouts)'/);
   assert.match(html, /SHARED_UI_KEYS = \[[^\]]*'boardView'/);
+  assert.match(html, /SHARED_UI_KEYS = \[[^\]]*'layout'/);
+  assert.match(html, /function layoutChooser/);
   assert.match(html, /id="ribbon"/);
   assert.match(html, /splitByLife\(list\.cards\)/);
   assert.match(html, /i: toggleBoardView/);

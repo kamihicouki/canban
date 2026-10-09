@@ -32,6 +32,8 @@ function moreMenu(anchor) {
     // A group (the filters in effect, the run state): its buttons, pressed where they are.
     if (el.getAttribute('role') === 'group' && !el.classList.contains('view-switch')) return el.querySelector('button') ? h('div', {}, h('div', { class: 'field-label', text: el.getAttribute('aria-label') }), h('div', { class: 'more-row' },
       ...[...el.querySelectorAll('button')].map((b) => h('button', { 'aria-pressed': b.getAttribute('aria-pressed'), title: b.title, text: (b.title || b.textContent).replace(/（.*$/, '').trim() || b.getAttribute('aria-label'), onclick: go(() => b.click()) })))) : null;
+    if (el.classList.contains('layout-tabs')) return h('div', {}, h('div', { class: 'field-label', text: '見る' }), h('div', { class: 'more-row' },
+      ...[...el.querySelectorAll('button')].map(b => h('button', { text: b.getAttribute('aria-label'), onclick: go(() => b.click()) }))));
     if (el.classList.contains('view-switch')) return h('div', {}, h('div', { class: 'field-label', text: '表示' }), h('div', { class: 'more-row' },
       ...[...el.querySelectorAll('button')].map((b) => h('button', { 'aria-pressed': b.getAttribute('aria-pressed'), text: b.getAttribute('aria-label'), onclick: go(() => b.click()) }))));
     if (el.classList.contains('ft-toggle')) {

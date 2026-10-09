@@ -2,7 +2,7 @@
 const PAGE = 40;
 const COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
 const COLOR_NAMES = { gray: 'グレー', blue: '青', green: '緑', yellow: '黄', orange: 'オレンジ', red: '赤', purple: '紫', pink: 'ピンク', sky: '水色', lime: 'ライム' };
-const SHARED_UI_KEYS = ['filters', 'themePref', 'boardView', 'sidebar', 'workspacePage', 'paneGlobal', 'cardWidths', 'cardHeights', 'collapsedLanes'];
+const SHARED_UI_KEYS = ['filters', 'themePref', 'layout', 'boardView', 'sidebar', 'workspacePage', 'paneGlobal', 'cardWidths', 'cardHeights', 'collapsedLanes'];
 const sharedUi = { revision: null, ready: false, dirty: false, blocked: false, applying: false, inflight: false, generation: 0, timer: null, checkTimer: null };
 const store = {
   get(k, d) { try { const v = localStorage.getItem(`sk:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
