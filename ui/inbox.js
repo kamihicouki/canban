@@ -8,9 +8,9 @@ const inboxRows = () => $$('#board .irow');
 function inboxRow(x) {
   const { card, list } = x, task = card.kind === 'task';
   const row = h('article', { class: 'card irow', tabindex: 0, role: 'option', 'data-card-id': card.id, 'data-life': lifeOf(card), 'data-day': daysAgo(card.updatedAt), 'aria-selected': String(state.inbox.sel === card.id), title: card.title },
-    faceGlyph(card.status),
+    faceGlyph(card.status, card.statusKnown),
     h('div', { class: 'grow' }, h('div', { class: 'irow-t', text: card.title }),
-      h('div', { class: 'irow-s' }, faceWho(task ? 'task' : card.agent), h('span', { class: 'ellipsis', text: (task ? card.links.length ? `${card.links.length} セッション` : 'セッションなし' : card.git?.branch || card.branch || card.directory?.name || '') }), card.unread ? h('span', { class: 'fflag fflag-new', text: '新着' }) : null)),
+      h('div', { class: 'irow-s' }, faceWho(task ? 'task' : card.agent), dotPill(card), h('span', { class: 'ellipsis', text: (task ? card.links.length ? `${card.links.length} セッション` : 'セッションなし' : card.git?.branch || card.branch || card.directory?.name || '') }), card.unread ? h('span', { class: 'fflag fflag-new', text: '新着' }) : null)),
     h('span', { class: 'irow-time', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }));
   row.addEventListener('click', () => inboxSelect(card.id));
   row.addEventListener('dblclick', () => openCard(card.id));
@@ -57,14 +57,14 @@ async function paintInboxMain(main) {
   const hit = state.inbox.sel ? findCard(state.inbox.sel) : null;
   if (!hit) return main.replaceChildren(h('div', { class: 'muted pane-pad', text: 'カードを選ぶと、ここで読んで返信できます' }));
   const { card } = hit;
-  const head = h('div', { class: 'inbox-h' }, faceGlyph(card.status), h('h2', { text: card.title }), h('span', { class: 'grow' }),
+  const head = h('div', { class: 'inbox-h' }, faceGlyph(card.status, card.statusKnown), h('h2', { text: card.title }), h('span', { class: 'grow' }),
     h('button', { class: 'btn', type: 'button', onclick: () => openCard(card.id) }, 'カードを開く ', ...keycap('Enter')));
   const meta = h('div', { class: 'inbox-meta' }, faceWho(card.kind === 'task' ? 'task' : card.agent), dirPill(card.directory || { name: 'カテゴリ無し' }),
     card.git?.branch || card.branch ? h('span', { class: 'fbranch ellipsis', text: card.git?.branch || card.branch }) : null, card.kind === 'task' ? null : faceStat(card),
     card.pr ? prPill(card.pr) : null, h('span', { class: 'ftime', text: relTime(card.updatedAt) }));
   if (card.kind === 'task') {
     return main.replaceChildren(head, meta, h('div', { class: 'inbox-body' }, card.description ? h('div', { class: 'ptext', text: card.description }) : h('div', { class: 'muted', text: '説明はありません' }),
-      ...card.links.map((l) => h('button', { class: 'flink-row', type: 'button', onclick: () => inboxSelect(l.id) }, faceGlyph(l.status), faceWho(l.agent), h('span', { class: 'ellipsis grow', text: l.title }), h('span', { class: 'muted', text: relTime(l.updatedAt) })))));
+      ...card.links.map((l) => h('button', { class: 'flink-row', type: 'button', onclick: () => inboxSelect(l.id) }, faceGlyph(l.status, l.statusKnown), faceWho(l.agent), h('span', { class: 'ellipsis grow', text: l.title }), h('span', { class: 'muted', text: relTime(l.updatedAt) })))));
   }
   const cached = state.inbox.d && state.inbox.d.session.id === card.id && state.inbox.d.session.updatedAt === card.updatedAt ? state.inbox.d : null;
   const show = (d) => {

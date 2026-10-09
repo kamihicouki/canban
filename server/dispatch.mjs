@@ -26,6 +26,7 @@ import { stat, readTailJsonLines } from './sources/readonly.mjs';
 import { findCodexSession } from './sources/codex.mjs';
 import { listClaudeSessions } from './sources/claude.mjs';
 import { codexAppState, annotateCodexApp } from './sources/codex-app.mjs';
+import { isCloudSession, CLOUD_OPERATION_REASON } from './sources/codex-dots.mjs';
 import { pool, hostsWithState } from './board.mjs';
 import { perf } from './perf.mjs';
 import { homeEnv, configureAccounts } from './accounts.mjs';
@@ -155,15 +156,16 @@ function readTail(file, bytes = RESULT_BYTES) {
 // ---- sessions (resolved one at a time) -------------------------------------
 const KEY = /^(codex|claude)(?:@([^:]+))?:(.+)$/;
 
-export async function resolveSession(store, cardId, claudeHome) {
+export async function resolveSession(store, cardId, claudeHome, { allowCloud = true } = {}) {
   const m = KEY.exec(String(cardId || ''));
   if (!m) throw new Error(String(cardId).startsWith('task:') ? 'タスクカードには送れません。紐付いたセッションに送ってください' : `セッションが見つかりません: ${cardId}`);
   const [, agent, alias, nativeId] = m;
   if (!alias) {
     configureAccounts((await store.load()).settings.accounts); // sessions from the extra config folders too
-    const s = agent === 'codex' ? await findCodexSession(nativeId) : (await listClaudeSessions()).sessions.find((x) => x.nativeId === nativeId);
+    const app = await codexAppState();
+    const s = agent === 'codex' ? await findCodexSession(nativeId) || (allowCloud && app.dotSessions.find(x => x.nativeId === nativeId)) : (await listClaudeSessions()).sessions.find((x) => x.nativeId === nativeId);
     if (!s) throw new Error(`セッションが見つかりません: ${cardId}`);
-    annotateCodexApp([s], await codexAppState());
+    annotateCodexApp([s], app);
     return { session: await savedClaudeExecutionSession(s, await store.load(), claudeHome), host: null };
   }
   const host = (await hostsWithState((await store.load()))).find((h) => h.alias === alias);
@@ -196,6 +198,7 @@ export function liveStatus(session, insp, now = Date.now()) {
 
 // Checks that do not depend on timing; failures are permanent for this session.
 export function staticProblem(session) {
+  if (isCloudSession(session)) return CLOUD_OPERATION_REASON;
   if (!headlessArgs(session, { sandbox: 'read-only', mode: 'default' })) return 'このエージェントには送れません';
   if (!NATIVE_ID.test(session.nativeId || '')) return 'セッション ID が不正です';
   if (session.subagent) return 'サブエージェントには送れません。親セッションに送ってください';
@@ -308,7 +311,7 @@ export class Dispatcher {
     if (!claim.ok) return claim;
     let preflight = true;
     try {
-      const fresh = await resolveSession(this.store,req.cardId,req.claudeHome);
+      const fresh = await resolveSession(this.store,req.cardId,req.claudeHome, { allowCloud: false });
       if (req.executionAccount && fresh.session.executionAccount !== req.executionAccount) throw new Error('キュー追加後に Claude アカウントが変わりました。実行先を選び直してください');
       const checked = await inspect(fresh.session,fresh.host);
       const reason = !checked.mtimeMs ? 'セッションの状態を確認できません' : timingProblem(fresh.session,checked) || ((fresh.session.updatedAt || 0) !== (session.updatedAt || 0) || checked.mtimeMs !== insp.mtimeMs ? '確認中にセッションが更新されました' : null);
@@ -462,7 +465,7 @@ export class Dispatcher {
     const started = [];
     for (const head of heads) {
       try {
-        const { session, host } = await resolveSession(this.store, head.cardId, head.claudeHome);
+        const { session, host } = await resolveSession(this.store, head.cardId, head.claudeHome, { allowCloud: false });
         const problem = staticProblem(session);
         if (problem) {
           (await this.requests.transition(head.id, ['queued'], { state: 'failed', endedAt: now, error: problem }));

@@ -96,7 +96,7 @@ const taskQuickAdd = {
     contextSelect('folder', 'フォルダ', (board.folders || []).map(f => [f.name, f.name]), 'フォルダなし');
     contextSelect('section', 'セクション', (board.codexSections || []).map(s => [s.id, s.name]), 'セクションなし');
     contextSelect('agent', 'AI App', [['codex', 'Codex'], ['claude', 'Claude Code']], '指定なし');
-    contextSelect('host', 'マシン', board.hosts.map(host => [host.local ? 'local' : host.id, host.local ? 'このマシン' : host.label]));
+    contextSelect('host', 'マシン', board.hosts.filter(host => !host.cloud).map(host => [host.local ? 'local' : host.id, host.local ? 'このマシン' : host.label]));
     contextSelect('account', 'アカウント', (board.accounts?.accounts || []).map(a => [a.key, a.label]), 'アカウント不明');
     const summary = h('summary');
     const paintLabels = () => { summary.textContent = `ラベル: ${draft.labels.length ? draft.labels.map(id => board.labels.find(l => l.id === id)?.name || id).join('・') : 'なし'}`; };
@@ -170,6 +170,7 @@ const taskQuickAdd = {
     const f = state.filters, card = this.projected(result), reasons = [];
     if (f.status && f.status !== 'idle') reasons.push('実行状態');
     if (f.pinnedOnly) reasons.push('ピン留め');
+    if (f.dotScope === 'only') reasons.push('dot');
     if (f.directory && (f.directory === '__none' ? !!card.directory : card.directory?.id !== f.directory)) reasons.push('カテゴリ');
     if (f.label && (f.label === '__none' ? card.labels.length : !card.labels.includes(f.label))) reasons.push('ラベル');
     for (const [key, label] of [['project', 'プロジェクト'], ['folder', 'フォルダ'], ['section', 'セクション'], ['agent', 'AI App'], ['host', 'マシン'], ['account', 'アカウント']]) {

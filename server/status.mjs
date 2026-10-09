@@ -9,6 +9,7 @@ import { stat } from './sources/readonly.mjs';
 import { itemsFor, activityOf, lastSaidOf, readLines, FEED_MAX_DELTA } from './feed.mjs';
 import { newAcc, foldSignals, signalsView, limitsFrom, noteLimits } from './signals.mjs';
 import { limitsAccount } from './accounts.mjs';
+import { isCloudSession } from './sources/codex-dots.mjs';
 
 export const STATUSES = ['running', 'waiting', 'completed', 'aborted', 'idle'];
 export const RECENT_MS = 24 * 3600e3; // older sessions are always idle
@@ -139,6 +140,7 @@ export async function localStatus(session, now = Date.now()) {
 export async function annotateStatus(sessions, now = Date.now()) {
   await Promise.all(
     sessions.map(async (s) => {
+      if (isCloudSession(s)) { s.status = 'idle'; s.statusKnown = false; return; }
       if (s.host && s.host.local === false) {
         const recent = (s.updatedAt || 0) >= now - RECENT_MS;
         const raw = s.agent === 'claude' ? refineClaude(s.rawStatus, s.desktopStatus) : s.rawStatus;

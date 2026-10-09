@@ -6,8 +6,9 @@ import path from 'node:path';
 import { exists, readJson, stat, queryReadOnly } from './readonly.mjs';
 import { codexHome, findStateDb } from './codex.mjs';
 import { perf } from '../perf.mjs';
+import { parseDotCache } from './codex-dots.mjs';
 
-const EMPTY = Object.freeze({ projects: new Map(), assignments: new Map(), followUps: new Map(), pinned: new Set(), remoteConnections: [] });
+const EMPTY = Object.freeze({ projects: new Map(), assignments: new Map(), followUps: new Map(), pinned: new Set(), remoteConnections: [], dots: new Map(), dotSessions: [] });
 const cache = new Map(); // file -> { sig, value }
 export const codexAppCounters = { parses: 0, hits: 0 };
 
@@ -74,7 +75,8 @@ export function parseAppState(raw, extraProjects = []) {
 
   const pinned = new Set((Array.isArray(raw?.['pinned-thread-ids']) ? raw['pinned-thread-ids'] : []).filter((x) => typeof x === 'string'));
   const remoteConnections = Array.isArray(raw?.['codex-managed-remote-connections']) ? raw['codex-managed-remote-connections'] : [];
-  return { projects, assignments, followUps, pinned, remoteConnections };
+  const dotCache = parseDotCache(raw);
+  return { projects, assignments, followUps, pinned, remoteConnections, dots: dotCache.dots, dotSessions: dotCache.sessions };
 }
 
 // Put the app's view on Codex sessions. `project` becomes the Codex project when the
@@ -83,6 +85,8 @@ export function annotateCodexApp(sessions, app) {
   for (const s of sessions) {
     s.folder = s.folder ?? s.project ?? null;
     if (s.agent !== 'codex') continue;
+    const dot = app.dots?.get(s.nativeId);
+    s.dot = dot ? { ...dot, relation: s.threadSource === 'aeon_child' ? 'created' : dot.relation } : null;
     const p = app.projects.get(app.assignments.get(s.nativeId));
     s.codexProject = p ? { id: p.id, name: p.name } : null;
     s.project = p ? p.name : s.folder; // recomputed each time: remote sessions are cached objects

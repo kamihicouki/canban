@@ -4,9 +4,10 @@ import readline from 'node:readline';
 import { resolveBin, cleanEnv } from './dispatch.mjs';
 import { codexHome } from './sources/codex.mjs';
 import { findDesktopArchive } from './codex-desktop-bridge.mjs';
+import { isCloudSession, CLOUD_OPERATION_REASON } from './sources/codex-dots.mjs';
 
 export function sessionActions(session) {
-  const reason = session.agent !== 'codex'
+  const reason = isCloudSession(session) ? CLOUD_OPERATION_REASON : session.agent !== 'codex'
     ? 'Claudeのアーカイブ・削除を外部から実行するAPIが利用できません。Claudeで操作してください。'
     : session.host?.local === false ? 'このリモート接続の履歴操作には対応していません。Codexで操作してください。'
     : ['running', 'waiting'].includes(session.status) ? '実行中・入力待ちのセッションは、Codexで停止してから操作してください。' : null;

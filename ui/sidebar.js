@@ -1,7 +1,7 @@
 // Part of board.html: included into its script by server/ui.mjs and shares its scope.
 // Sidebar: lanes (jump), directories and projects (one-click filters)
 // ---- filters in effect, as chips in the app bar (each ✕ takes one off) ----
-const FILTER_KEYS = ['agent', 'days', 'status', 'directory', 'project', 'folder', 'section', 'label', 'host', 'account', 'includeArchived', 'includeSubagents', 'pinnedOnly'];
+const FILTER_KEYS = ['agent', 'days', 'status', 'directory', 'project', 'folder', 'section', 'label', 'host', 'account', 'includeArchived', 'includeSubagents', 'dotScope', 'pinnedOnly'];
 const sameFilters = (a, b) => FILTER_KEYS.every((k) => (a[k] ?? DEFAULT_FILTERS[k]) === (b[k] ?? DEFAULT_FILTERS[k]));
 function activeView(b) { return (b?.settings?.views || []).find((v) => sameFilters({ ...DEFAULT_FILTERS, ...v.filters }, state.filters)); }
 // The lane axis is not also a filter: lanes by category already show every category.
@@ -19,6 +19,7 @@ function filterChips(b) {
   if (f.label && !laneHides('label')) add(`ラベル: ${f.label === '__none' ? 'なし' : b?.labels.find((l) => l.id === f.label)?.name || f.label}`, { label: '' });
   if (f.host && !laneHides('host')) { const x = b?.hosts.find((y) => (y.local ? 'local' : y.id) === f.host); add(x?.local ? 'このマシン' : x?.label || f.host, { host: '' }); }
   if (f.account && !laneHides('account')) add(`アカウント: ${b?.accounts?.accounts?.find((a) => a.key === f.account)?.label || f.account}`, { account: '' });
+  if (f.dotScope !== 'all') add(f.dotScope === 'only' ? 'dotだけ' : 'dotを除く', { dotScope: 'all' });
   if (f.includeArchived) add('アーカイブ済みも表示', { includeArchived: false });
   if (f.includeSubagents) add('サブエージェントも表示', { includeSubagents: false });
   if (f.pinnedOnly) add('ピン留めだけ', { pinnedOnly: false });
@@ -26,7 +27,7 @@ function filterChips(b) {
 }
 function clearFilters() {
   const keep = { swimlane: state.filters.swimlane, laneHeight: state.filters.laneHeight, groupBranch: state.filters.groupBranch, fulltext: state.filters.fulltext, q: state.filters.q };
-  setScope({ ...Object.fromEntries(FILTER_KEYS.map((k) => [k, DEFAULT_FILTERS[k]])), days: 0, ...keep });
+  setScope({ ...Object.fromEntries(FILTER_KEYS.map((k) => [k, DEFAULT_FILTERS[k]])), days: 0, dotScope: 'all', ...keep });
 }
 function renderFilterChips(b) {
   const chips = filterChips(b);
@@ -42,6 +43,7 @@ function scopeLabel(b) {
     host && `マシン: ${host.local ? 'このマシン' : host.label}`].filter(Boolean);
   return parts.length ? parts.join(' · ') : 'すべて';
 }
+function toggleDotScope() { setScope({ dotScope: state.filters.dotScope === 'exclude' ? 'all' : 'exclude' }); }
 function setScope(patch) {
   if (workspace.utilityPage()) workspace.navigate('home', { reload: false });
   Object.assign(state.filters, patch);
@@ -93,7 +95,7 @@ const LANE_AXES = [['', 'なし'], ['directory', T.category], ['agent', 'AI Apps
 const LANE_MORE = [['project', 'プロジェクト'], ['section', 'Codex セクション'], ['account', 'アカウント']];
 function sideCount(b, page) {
   return { rules: b.settings?.rules?.length, views: b.settings?.views?.length, labels: b.labels?.length, directories: b.directories?.length,
-    hosts: (b.hosts || []).filter((x) => !x.local && x.enabled).length || null }[page] ?? null;
+    hosts: (b.hosts || []).filter((x) => !x.local && !x.cloud && x.enabled).length || null }[page] ?? null;
 }
 function sideEntry(b, [page, icon, label, key]) {
   const n = sideCount(b, page);
@@ -195,6 +197,7 @@ function filterSection(b, hit = () => true) {
     choice(l.name, f.label === l.id, () => setScope({ label: f.label === l.id ? '' : l.id }), h('span', { class: 'dot', style: { background: l.color ? colorVar(l.color) : 'var(--header-btn-hover)' } }))));
   const scope = (key, label) => h('label', { class: 'side-check' }, h('input', { type: 'checkbox', checked: !!f[key], onchange: (e) => setScope({ [key]: e.target.checked }) }), label);
   nodes.push(h('label', { class: 'side-check' }, h('input', { type: 'checkbox', checked: slackUi.visible, onchange: e => slackUi.toggle(e.target.checked) }), 'Slackタイムライン ', keycap('v')));
+  nodes.push(sideHead('dotのセッション', keycap('Shift+V')), seg('dotのセッション', [['exclude', '除く'], ['all', '含める'], ['only', 'dotだけ']], k => f.dotScope === k, k => setScope({ dotScope: k })));
   nodes.push(sideHead('表示する対象'), scope('includeArchived', 'アーカイブ済みも表示'), scope('includeSubagents', 'サブエージェントも表示'), scope('pinnedOnly', 'Codex でピン留めしたものだけ'));
   return h('section', { class: 'side-sec-filters' }, nodes);
 }

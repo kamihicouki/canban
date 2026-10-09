@@ -30,6 +30,10 @@ function renderDispatch(d) {
   const D = d.dispatch;
   const box = h('div', { class: 'send-section' });
   const title = h('div', { class: 'section-title', text: '指示を送る' });
+  if (D.unavailableReason) {
+    box.append(title, h('div', { class: 'muted', text: D.unavailableReason }));
+    return box;
+  }
   if (!D.settings.enabled) {
     box.append(title, h('div', { class: 'muted', text: '指示の送信は設定でオフになっています（⚙ 設定）。' }));
     return box;

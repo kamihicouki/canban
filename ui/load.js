@@ -15,7 +15,7 @@ function migrateLegacyScope(board) {
 async function load({ refresh = false, throwOnError = false } = {}) {
   const seq = ++loadSeq;
   const f = state.filters;
-  const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, pinnedOnly: !!f.pinnedOnly, groupBranch: !!f.groupBranch, fulltext: !!f.fulltext, refresh };
+  const args = { agent: f.agent, q: f.q, days: Number(f.days), includeArchived: f.includeArchived, includeSubagents: f.includeSubagents, dotScope: f.dotScope, pinnedOnly: !!f.pinnedOnly, groupBranch: !!f.groupBranch, fulltext: !!f.fulltext, refresh };
   if (f.project) args.project = f.project;
   if (f.folder) args.folder = f.folder;
   if (f.section) args.section = f.section;

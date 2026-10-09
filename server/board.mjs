@@ -11,6 +11,7 @@ import { permissionFor } from './permissions.mjs';
 import { RequestStore, requestSummary } from './requests.mjs';
 import { listRemoteHosts } from './sources/remotes.mjs';
 import { codexAppState, annotateCodexApp, codexProjectList } from './sources/codex-app.mjs';
+import { mergeDotSessions, matchesDotScope, isCloudSession, CLOUD_OPERATION_REASON } from './sources/codex-dots.mjs';
 import { LOCAL_HOST } from './sources/util.mjs';
 import { RemotePool } from './remote/pool.mjs';
 import { launchInfo } from './agents.mjs';
@@ -45,7 +46,7 @@ export function dropLocalCache() {
 async function localSessions({ force = false } = {}) {
   if (!force && localCache && Date.now() - localCache.at < LOCAL_TTL_MS) return localCache.value;
   const [codex, claude] = await Promise.all([perf.timed('codex.list', () => listCodexSessions()), perf.timed('claude.list', () => listClaudeSessions())]);
-  const value = { sessions: [...codex.sessions, ...claude.sessions], errors: [codex.error, claude.error].filter(Boolean) };
+  const value = { sessions: [...codex.sessions, ...claude.sessions], errors: [codex.error, claude.error].filter(Boolean), codexAvailable: !codex.error };
   localCache = { at: Date.now(), value };
   return value;
 }
@@ -71,19 +72,20 @@ async function allSessionsImpl(state, { force = false } = {}) {
   const hosts = await hostsWithState(state);
   const enabled = hosts.filter((h) => h.enabled);
   const [local, remote] = await Promise.all([localSessions({ force }), perf.timed('remote.list', () => pool.sessions(enabled, { force, waitMs: force ? Infinity : REMOTE_FIRST_WAIT_MS }))]);
-  const all = [...local.sessions, ...remote];
   const app = await codexAppState();
+  const all = mergeDotSessions([...local.sessions, ...remote], app, { includeCloud: local.codexAvailable });
   annotateCodexApp(all, app); // Codex projects, pins and follow-ups kept by the Codex app
   await perf.timed('status', () => annotateStatus(all));
   for (const fn of sessionHooks) fn(local.sessions);
   const now = Date.now();
-  await prs.annotate(all.filter((s) => (s.updatedAt || 0) >= now - PR_WINDOW_MS || state.cards[s.id]?.listId));
+  await prs.annotate(all.filter((s) => !isCloudSession(s) && ((s.updatedAt || 0) >= now - PR_WINDOW_MS || state.cards[s.id]?.listId)));
   const errors = [...local.errors];
   for (const h of enabled) {
     const st = pool.hostStatus(h.id);
     if (st.state === 'error' && st.error) errors.push(`${h.label}: ${st.error}`);
   }
-  return { sessions: [...local.sessions, ...remote], errors, hosts, app };
+  const cloudHosts = [...new Map(all.filter(isCloudSession).map(s => [s.host.id, { ...s.host, enabled: true }])).values()];
+  return { sessions: all, errors, hosts: [...hosts, ...cloudHosts], app };
 }
 
 // Cards without an explicit order sort by recency: newest at the top.
@@ -103,6 +105,7 @@ function sessionCardStates(sessions, state) {
 }
 
 function matches(session, card, f, labelsById, hits, dir) {
+  if (!matchesDotScope(session, f.dotScope)) return false;
   if (f.agent && f.agent !== 'all' && session.agent !== f.agent) return false;
   if (f.host && (session.host?.id || 'local') !== f.host) return false;
   if (f.account && !matchesAccount(f.account, session)) return false;
@@ -130,6 +133,7 @@ function matches(session, card, f, labelsById, hits, dir) {
 }
 
 export function matchesTask(t, links, status, f, labelsById, dir) {
+  if (f.dotScope === 'only' && !links.some(s => s.dot)) return false;
   if (!matchesDirectory(f, dir)) return false;
   if (f.label && (f.label === '__none' ? t.labels?.length : !t.labels?.includes(f.label))) return false;
   if (f.status && status !== f.status) return false;
@@ -168,6 +172,7 @@ export function normalizeFilters(f = {}) {
     q: typeof f.q === 'string' ? f.q.trim() : '',
     includeArchived: !!f.includeArchived,
     includeSubagents: !!f.includeSubagents,
+    dotScope: ['all', 'only'].includes(f.dotScope) ? f.dotScope : 'exclude',
     includeHidden: !!f.includeHidden,
     pinnedOnly: !!f.pinnedOnly,
     groupBranch: !!f.groupBranch,
@@ -177,6 +182,7 @@ export function normalizeFilters(f = {}) {
 }
 
 function hostView(h) {
+  if (h.cloud) return { ...h, status: { state: 'cached' } };
   return { id: h.id, alias: h.alias, label: h.label, local: false, enabled: h.enabled, status: pool.hostStatus(h.id) };
 }
 
@@ -200,7 +206,7 @@ async function tickSearchImpl(store) {
 // Full-text hits: id -> snippet (local index + enabled remote hosts).
 async function fullTextHits(store, q, hosts) {
   const hits = new Map(searchFor(store).query(q).map((r) => [r.id, r.snippet]));
-  const enabled = hosts.filter((h) => h.enabled);
+  const enabled = hosts.filter((h) => h.enabled && !h.cloud);
   const remote = await Promise.all(enabled.map((h) => pool.search(h, q).catch(() => new Set())));
   for (const ids of remote) for (const id of ids) if (!hits.has(id)) hits.set(id, null);
   return hits;
@@ -367,7 +373,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
 
   for (const s of sessions) {
     const card = state.cards[s.id];
-    const visibleKind = (filters.includeSubagents || !s.subagent) && (filters.includeArchived || !s.archived);
+    const visibleKind = matchesDotScope(s, filters.dotScope) && (filters.includeSubagents || !s.subagent) && (filters.includeArchived || !s.archived);
     if (visibleKind) statusCounts[s.status || 'idle']++;
     if (s.project && visibleKind) projects.set(s.project, (projects.get(s.project) || 0) + 1);
     if (s.folder && s.folder !== s.project && visibleKind) folders.set(s.folder, (folders.get(s.folder) || 0) + 1);
@@ -401,6 +407,10 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       canbanArchived: !!card?.archived,
       subagent: s.subagent,
       automation: s.automation,
+      dot: s.dot || null,
+      sourceKind: s.sourceKind || null,
+      cloud: s.cloud || null,
+      statusKnown: s.statusKnown !== false,
       preview: s.preview,
       prUrl: s.prUrl || null,
       canDesktop: !!launch.desktop,
@@ -464,7 +474,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       account: context.account,
       codexSection: context.section ? { id: context.section, name: sections.get(context.section)?.name || context.section } : null,
       target: t.target || null,
-      links: links.map((x) => ({ id: x.id, agent: x.agent, account: x.account || null, title: x.title, status: x.status || 'idle', subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, updatedAt: x.updatedAt })),
+      links: links.map((x) => ({ id: x.id, agent: x.agent, account: x.account || null, title: x.title, status: x.status || 'idle', statusKnown: x.statusKnown !== false, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, updatedAt: x.updatedAt })),
       linkedSessionIds: [...(t.links || [])],
       missingLinks: (t.links || []).length - allLinks.length,
       pending: (t.pending || []).map((p) => ({ agent: p.agent, startedAt: p.startedAt, expired: now - p.startedAt > PENDING_MS })),
@@ -593,7 +603,7 @@ export async function findSession(store, cardId) {
   if (await store.syncSessionCategories(sessions)) state = await store.load();
   const s = sessions.find((x) => x.id === cardId);
   if (!s) throw new Error('セッションが見つかりません');
-  return { session: s, state, host: s.host?.local === false ? hosts.find((h) => h.id === s.host.id) : null };
+  return { session: s, state, host: !isCloudSession(s) && s.host?.local === false ? hosts.find((h) => h.id === s.host.id) : null };
 }
 
 export function sessionDetail(...args) {
@@ -660,9 +670,9 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     settings: state.settings,
     terminals: installedTerminals(),
     recentMessages: recent,
-    messagesError,
+    messagesError: isCloudSession(s) ? '会話本文は保存済み情報に含まれていません。Codexで開いて確認してください。' : messagesError,
     feed,
     git,
-    dispatch: await dispatchView(store.dir, state, cardId, permission),
+    dispatch: { ...await dispatchView(store.dir, state, cardId, permission), unavailableReason: isCloudSession(s) ? CLOUD_OPERATION_REASON : null },
   };
 }

@@ -3,6 +3,7 @@
 
 import { claudeAuthOverrides } from './claude-auth-env.mjs';
 import { CODEX_AUTH_OVERRIDES } from './codex-auth-env.mjs';
+import { isCloudSession } from './sources/codex-dots.mjs';
 
 export function shq(s) {
   const v = String(s ?? '');
@@ -72,6 +73,7 @@ export const HEADLESS = {
 };
 
 export function headlessArgs(s, permission, { images = [] } = {}) {
+  if (isCloudSession(s)) return null;
   const h = HEADLESS[s.agent];
   if (!h || !s.nativeId) return null;
   const args = h.args(s, permission);
@@ -91,6 +93,7 @@ export function homePrefix(s) {
 }
 
 export function resumeCommand(s) {
+  if (isCloudSession(s)) return null;
   const agent = AGENTS[s.agent];
   if (!agent) return null;
   const inner = `${s.cwd ? `cd ${shq(s.cwd)} 2>/dev/null${s.resumePath ? ' &&' : ';'} ` : ''}${homePrefix(s)}${agent.cli(s)}`;

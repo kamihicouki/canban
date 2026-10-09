@@ -63,6 +63,7 @@ export function normalizeCodexRow(r, host = LOCAL_HOST) {
     archived: !!r.archived,
     subagent: isSubagent(r),
     automation: r.thread_source === 'automation',
+    threadSource: r.thread_source || null,
     pinnedInAgent: !!r.is_pinned,
     preview: clip(firstPrompt || r.preview || '', 280),
     sourcePath: r.rollout_path || null,
