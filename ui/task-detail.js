@@ -74,10 +74,11 @@ async function loadTask(p, found) {
 
   // --- start a new session
   const t = { ...card.target, ...(card.context?.agent ? { agent: card.context.agent } : {}), ...(card.context?.host ? { hostId: card.context.host } : {}) };
+  if (t.hostId && !b.hosts.some(host => !host.cloud && (host.local ? 'local' : host.id) === t.hostId)) t.hostId = 'local';
   const agentSel = h('select', { class: 'text-input', 'aria-label': 'AI App' }, h('option', { value: 'codex', text: 'Codex' }), h('option', { value: 'claude', text: 'Claude Code' }));
   agentSel.value = t.agent || 'codex';
   const hostSel = pickerButton({ title: 'マシン', value: t.hostId || 'local', stack: false,
-    items: () => b.hosts.map((x) => ({ value: x.local ? 'local' : x.id, label: x.local ? 'このマシン' : `⌂ ${x.label}${x.enabled ? '' : '（読み取りオフ）'}`, keywords: x.alias || '' })),
+    items: () => b.hosts.filter(x => !x.cloud).map((x) => ({ value: x.local ? 'local' : x.id, label: x.local ? 'このマシン' : `⌂ ${x.label}${x.enabled ? '' : '（読み取りオフ）'}`, keywords: x.alias || '' })),
     onChange: () => { fillFolders(); composer.contextChanged(); } });
   const dl = h('datalist', { id: `folders-${cardId}` });
   const cwd = h('input', { class: 'text-input', list: dl.id, placeholder: '作業フォルダ（絶対パス）', value: t.cwd || '', 'aria-label': '作業フォルダ' });

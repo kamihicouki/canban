@@ -13,6 +13,7 @@ import { leaderFor } from './leader.mjs';
 import { perf } from './perf.mjs';
 import { dispatcherFor, tickDispatch, setSpawner, dryRunSpawner } from './dispatch.mjs';
 import { buildBoard, sessionDetail, allSessions, findSession, hostsWithState, effectiveOrder, dropLocalCache, runRules, tickRules, tickSearch, pool } from './board.mjs';
+import { isCloudSession, CLOUD_OPERATION_REASON } from './sources/codex-dots.mjs';
 import { RULE_TRIGGERS } from './store.mjs';
 import { computeStats } from './stats.mjs';
 import { desktopLink, resumeCommand, newSessionLink, newSessionCommand } from './agents.mjs';
@@ -95,6 +96,7 @@ const filterProps = {
   q: { type: 'string', description: 'タイトル・最初の依頼・メモ・ラベルの部分一致検索' },
   includeArchived: { type: 'boolean' },
   includeSubagents: { type: 'boolean' },
+  dotScope: { type: 'string', enum: ['exclude', 'all', 'only'], description: 'dotのセッション: 除く（既定）／含める／dotだけ' },
   pinnedOnly: { type: 'boolean', description: 'Codex アプリでピン留めしたスレッドだけ' },
   groupBranch: { type: 'boolean', description: '同じリポジトリ＋ブランチのセッションをまとめる' },
   fulltext: { type: 'boolean', description: 'q を会話の本文でも検索する（3 文字以上）' },
@@ -118,6 +120,7 @@ const TOOLS = [
     if (a.cardId) {
       const resolved = await resolveSession(store, a.cardId);
       context = resolved.session; host = resolved.host;
+      if (isCloudSession(context)) return { skills: [], reason: CLOUD_OPERATION_REASON };
     } else if (a.hostId && a.hostId !== 'local') {
       host = (await hostsWithState(await store.load())).find(h => h.id === a.hostId);
       if (!host) throw new Error('Codex に登録されていない接続です');
@@ -129,6 +132,7 @@ const TOOLS = [
   }),
   appTool('canban_get_changes', '作業フォルダの変更を取得', { cardId: { type: 'string' }, path: { type: 'string' } }, ['cardId'], async ({ cardId, path: file }) => {
     const { session, host } = await findSession(store, cardId);
+    if (isCloudSession(session)) return { available: false, reason: CLOUD_OPERATION_REASON };
     if (host) return { available: false, reason: 'リモートのセッションの変更はまだ表示できません' };
     if (file) return { available: true, diff: await fileDiff(session.cwd, file) };
     return listChanges(session.cwd);
@@ -323,6 +327,7 @@ const TOOLS = [
     _meta: appAndModel,
     handler: async ({ cardId, route, terminal, target, claudeHome }) => {
       const { session: source, state } = await findSession(store, cardId);
+      if (isCloudSession(source) && route === 'terminal') throw new Error(CLOUD_OPERATION_REASON);
       const session = await savedClaudeExecutionSession(source, state, claudeHome);
       const selected = !!session.executionAccount;
       if (selected) {
@@ -333,7 +338,7 @@ const TOOLS = [
       }
       await store.markSeen({ cardId });
       const prefs = state.settings.launch;
-      let useRoute = selected && !route ? 'terminal' : route || prefs.route;
+      let useRoute = isCloudSession(session) ? 'desktop' : selected && !route ? 'terminal' : route || prefs.route;
       const link = selected ? await desktopExecutionLink(source, session.executionAccount) : desktopLink(session);
       if (selected && useRoute === 'desktop' && !link) throw new Error('Desktop からこの会話を取り込めません。同じ会話をターミナルで再開してください');
       if (useRoute === 'desktop' && !link) {
@@ -656,7 +661,7 @@ const TOOLS = [
     name: 'canban_get_stats',
     title: '分析',
     description: 'セッション数・トークン量の推移、プロジェクト／カテゴリ／マシン別の内訳、リストの滞留時間、完了までのサイクルタイムを返す。',
-    inputSchema: { type: 'object', properties: { days: { type: 'number' }, agent: filterProps.agent, host: filterProps.host, account: filterProps.account, project: filterProps.project, directory: filterProps.directory, includeSubagents: { type: 'boolean' } }, additionalProperties: false },
+    inputSchema: { type: 'object', properties: { days: { type: 'number' }, agent: filterProps.agent, host: filterProps.host, account: filterProps.account, project: filterProps.project, directory: filterProps.directory, includeSubagents: { type: 'boolean' }, dotScope: filterProps.dotScope }, additionalProperties: false },
     annotations: { readOnlyHint: true },
     _meta: appAndModel,
     handler: async (args) => {

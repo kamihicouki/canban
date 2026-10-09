@@ -14,7 +14,7 @@ async function loadAnalytics(p) {
   try {
     if (!state.board) return; // the board loads first; refreshViews() comes back after it
     const f = state.filters;
-    const args = { days: state.analyticsDays || 30, agent: f.agent };
+    const args = { days: state.analyticsDays || 30, agent: f.agent, dotScope: f.dotScope };
     for (const key of ['project', 'folder', 'section', 'label']) if (f[key]) args[key] = f[key];
     if (f.host) args.host = f.host;
     if (f.account) args.account = f.account;

@@ -191,11 +191,11 @@ test('the filters in effect become chips, except the axis the lanes follow', () 
   vm.runInContext(`const DEFAULT_FILTERS = ${defaults};\n${source}\nstate.filters = { ...DEFAULT_FILTERS };`, context);
   const board = { directories: [{ id: 'd1', name: 'pical' }], labels: [], hosts: [], settings: { views: [{ name: '返事待ち', filters: { status: 'waiting' } }] } };
   const chips = () => plain(vm.runInContext('filterChips(board).map(c => c.text)', Object.assign(context, { board })));
-  assert.deepEqual(chips(), []); // the period is the time ribbon's, not a chip
+  assert.deepEqual(chips(), ['dotを除く']); // the period is the time ribbon's, not a chip
   Object.assign(context.state.filters, { agent: 'codex', directory: 'd1', status: 'waiting', days: 0 });
-  assert.deepEqual(chips(), ['Codex', '入力待ち', 'pical']);
+  assert.deepEqual(chips(), ['Codex', '入力待ち', 'pical', 'dotを除く']);
   context.state.filters.swimlane = 'directory';
-  assert.deepEqual(chips(), ['Codex', '入力待ち']); // lanes by category already show every category
+  assert.deepEqual(chips(), ['Codex', '入力待ち', 'dotを除く']); // lanes by category already show every category
   Object.assign(context.state.filters, { agent: 'all', directory: '', swimlane: '', days: 30 });
   assert.equal(vm.runInContext('activeView(board)?.name', context), '返事待ち');
 });

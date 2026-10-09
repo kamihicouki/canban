@@ -108,6 +108,7 @@ const SHORTCUTS = [
     ['i', 'ボード（リストごと）と時間軸（時間ごと）を切り替え'], ['時間の帯で ← →', '日を移動（Home / End で最古 / 今日）。Enter で照らす'],
     ['Esc', '照らすのをやめる（ボード）'], ['⌘K', '「期間: …」「…のカードを照らす」'],
   ]],
+  ['dot', [['Shift+V', 'dotのセッションを含める / 除く（ボード・時間軸）'], ['⌘K', 'dotだけ / 含める / 除く']]],
   ['Slack', [['v', 'Slackタイムラインの表示 / 非表示（ボード）'], ['c / l / t', 'メッセージ上: タスク作成 / カードへ追加 / 返信'], ['Alt+s', 'カード内: Slack資料の追加ボタンへ'], ['Esc', 'タイムライン内: 非表示']]],
   ['カードを選択中', [
     ['Enter', '詳細を開く'], ['Space / r', 'その場で読んで返信（r は入力欄へ）'], ['l', 'ラベル'], ['g', `${T.category}`], ['m', 'リストへ移動'],
@@ -151,6 +152,7 @@ function commandPalette() {
     { label: 'すべて既読にする', run: () => act('canban_mark_all_seen', {}, { okMsg: 'すべて既読にしました' }) },
     { label: state.sideOpen ? 'サイドバーを閉じる' : 'サイドバーを開く', run: () => toggleSidebar(), hint: 'b' },
     { label: 'タスクを追加', run: () => taskQuickAdd.open(), hint: 'c' },
+    ...[['exclude', 'dotのセッションを除く'], ['all', 'dotのセッションを含める'], ['only', 'dotのセッションだけ表示']].map(([dotScope, label]) => ({ label, run: () => setScope({ dotScope }), hint: dotScope === 'only' ? '' : 'Shift+V' })),
     { label: slackUi.visible ? 'Slackタイムラインを隠す' : 'Slackタイムラインを表示', run: () => slackUi.toggle(), hint: 'v' },
     ...((slackUi.selected && slackUi.visible) ? [
       { label: '選択したSlackメッセージをタスクにする', run: () => slackUi.create(slackUi.selected), hint: 'c' },
@@ -171,7 +173,7 @@ function commandPalette() {
       { label: 'カード: サイズを初期化', run: resetCardLayout },
       { label: 'カード: サイズを変更', run: () => focusedPane()?.el.querySelector('.pane-corner')?.focus() },
     ] : []),
-    { label: '絞り込みをすべて解除', run: () => { $('#q').value = ''; setScope({ directory: '', project: '', q: '', status: '', host: '' }); } },
+    { label: '絞り込みをすべて解除', run: () => { $('#q').value = ''; f.q = ''; clearFilters(); } },
     ...Object.entries(LANE_MODES).map(([v, t]) => ({ label: `スイムレーン: ${t}`, run: () => { f.swimlane = v; state.soloLane = null; saveFilters(); render(); } })),
     ...Object.entries(LANE_HEIGHTS).map(([v, [t]]) => ({ label: `レーンの高さ: ${t}`, run: () => { f.laneHeight = v; saveFilters(); render(); } })),
     { label: 'キーボードショートカット', run: showShortcuts, hint: '?' },
@@ -211,6 +213,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (e.key === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.isComposing && !typingIn(e.target) && !taskQuickAdd.dialog?.open && !document.querySelector('.popover')) { e.preventDefault(); quickAdd(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing || !paneLayer.hidden || typingIn(e.target) || document.querySelector('.popover')) return;
+  if (e.shiftKey && e.key.toLowerCase() === 'v') { e.preventDefault(); toggleDotScope(); return; }
   const onCard = e.target.classList?.contains('card');
   const k = e.key;
   const run = {

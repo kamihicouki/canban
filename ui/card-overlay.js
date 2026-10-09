@@ -583,7 +583,9 @@ function renderPane(p, d) {
     return h('button', { class: 'seg-btn', disabled: !ok, title: ok ? `${term.label} で${label}` : `${term ? term.label : 'ターミナル'}では未対応`, text: label,
       onclick: () => resume(s.id, { route: 'terminal', target }) });
   };
-  const resumeBox = h('div', { class: 'resume-box' },
+  const resumeBox = s.sourceKind === 'codex-cloud' ? h('div', { class: 'resume-box' },
+    h('button', { class: 'btn-primary resume-main', 'data-pane-key': 'o', type: 'button', title: L.desktop.url, onclick: () => resume(s.id, { route: 'desktop' }) }, h('span', { html: picon('free', 14) }), 'Codexで開く', ...keycap('o')),
+    h('div', { class: 'muted', text: d.dispatch.unavailableReason })) : h('div', { class: 'resume-box' },
     accountPicker ? h('div', { class: 'field-label' }, h('span', { text: '実行アカウント' }), ...keycap('Alt+a')) : null,
     accountPicker,
     accountPicker ? h('div', { class: 'muted', text: '選択は CLI の再開と指示に使います。Desktop は別途適用状態を表示します。' }) : null,
@@ -656,7 +658,7 @@ function renderPane(p, d) {
   secs.title = { nodes: [h('h2', { text: s.title, title: s.title })] };
   secs.status = { nodes: [h('div', { class: 'sub row' }, h('span', { class: `badge ${s.agent}`, text: s.agent === 'codex' ? 'Codex' : 'Claude' }),
     s.host ? h('span', { class: 'host-chip', text: s.host.label }) : null,
-    h('span', { class: 'row pane-status' }, h('span', { class: `sdot s-${s.status || 'idle'}` }), STATUS_LABELS[s.status || 'idle']), h('span', { class: 'pill viewer-pill viewers', hidden: true }))] };
+    h('span', { class: 'row pane-status' }, h('span', { class: `sdot s-${s.status || 'idle'}` }), s.statusKnown === false ? '状態未取得' : STATUS_LABELS[s.status || 'idle']), h('span', { class: 'pill viewer-pill viewers', hidden: true }))] };
   secs.actions = { nodes: sessionCardActions(p, card) };
   secs.conv = { title: d.feed ? '会話' : '直近のやりとり', nodes: d.feed ? [renderFeed(d, p)] : msgs,
     extra: d.feed ? h('span', { class: `live-badge${live.on ? ' on' : ''}`, title: live.on ? 'セッションの変化をそのまま表示します' : '', text: live.on ? 'ライブ' : '' }) : null };
@@ -667,7 +669,9 @@ function renderPane(p, d) {
   secs.memo = { nodes: [note] };
   secs.detail = { nodes: [h('dl', { class: 'kv' },
     ...kv('AI App', s.agent === 'codex' ? 'Codex' : 'Claude Code'),
-    ...kv('マシン', s.host ? `${s.host.label}（SSH: ${s.host.alias}）` : 'このマシン'),
+    ...kv('マシン', s.sourceKind === 'codex-cloud' ? 'Codex Cloud' : s.host ? `${s.host.label}（SSH: ${s.host.alias}）` : 'このマシン'),
+    ...(s.dot ? kv('dot', dotTitle(s)) : []),
+    ...(s.cloud ? kv('保存済み情報の更新', s.cloud.cachedAt ? fmtDate(s.cloud.cachedAt) : '時刻不明') : []),
     ...accountKv(s),
     ...kv(`${T.category}`, card.directory ? `${card.directory.name}${card.directoryId ? '' : '（自動）'}` : 'カテゴリ無し'),
     ...kv(T.folder, s.folder || '-'),

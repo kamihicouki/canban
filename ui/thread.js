@@ -166,6 +166,7 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
   p.detailNodes = order.filter(([id]) => secs[id]).map(([id, open]) => detailSection(id, secs[id].title ?? secTitle(id), secs[id].nodes, { open, extra: secs[id].extra }));
   const sig = s.signals, git = d.git;
   const chips = [
+    dotPill(s),
     dirPill(card.directory || { name: 'カテゴリ無し' }),
     git ? gitPill(git, s.branch) : s.branch ? h('span', { class: 'ellipsis', title: s.branch, text: `⎇ ${s.branch}` }) : null,
     d.pr ? prPill(d.pr) : null,
@@ -302,6 +303,6 @@ function threadStrip(p, d) {
   const links = task.links.filter((l) => !l.subagent);
   return h('div', { class: 'th-threads', role: 'tablist', 'aria-label': `${T.taskCard}のスレッド` },
     ...links.map((l) => h('button', { class: 'th-thread', type: 'button', role: 'tab', 'aria-selected': String(l.id === p.id), title: l.title, onclick: () => l.id !== p.id && selectTaskThread(task.id, l.id) },
-      faceGlyph(l.status), faceWho(l.agent), h('span', { class: 'ellipsis', text: l.title }))),
+      faceGlyph(l.status, l.statusKnown), faceWho(l.agent), h('span', { class: 'ellipsis', text: l.title }))),
     h('button', { class: 'th-thread th-new', type: 'button', title: 'このタスクで新しいセッションを始める', onclick: () => { revealPane(task.id); requestAnimationFrame(() => panes[0]?.el.querySelector('[data-sec="send"] textarea')?.focus()); } }, h('span', { html: picon('plus', 13) }), '新しいスレッド'));
 }

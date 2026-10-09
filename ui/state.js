@@ -22,7 +22,7 @@ const store = {
   },
   cache(k, v) { try { localStorage.setItem(`sk:${k}`, JSON.stringify(v)); } catch {} },
 };
-const DEFAULT_FILTERS = { agent: 'all', host: '', account: '', status: '', project: '', directory: '', label: '', q: '', days: 30, includeArchived: false, includeSubagents: false, groupBranch: false, fulltext: false, swimlane: '', laneHeight: 'normal' };
+const DEFAULT_FILTERS = { agent: 'all', host: '', account: '', status: '', project: '', directory: '', label: '', q: '', days: 30, includeArchived: false, includeSubagents: false, dotScope: 'exclude', groupBranch: false, fulltext: false, swimlane: '', laneHeight: 'normal' };
 const LANE_HEIGHTS = { compact: ['コンパクト', '240px'], normal: ['標準', '420px'], full: ['すべて', 'none'] };
 const state = {
   board: null,

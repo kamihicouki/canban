@@ -6,14 +6,18 @@ const FACE_TONE = { running: 'run', waiting: 'wait', aborted: 'err', completed: 
 const FACE_BY_LIFE = { live: 'rich', fresh: 'standard', active: 'standard', dormant: 'compact' };
 
 // The status as one small mark: a spinner while it works, an amber dot while it waits for you.
-function faceGlyph(status) {
+function faceGlyph(status, statusKnown = true) {
   const tone = FACE_TONE[status] || 'idle';
-  const g = h('span', { class: `glyph g-${tone}`, role: 'img', title: STATUS_LABELS[status] || STATUS_LABELS.idle, 'aria-label': STATUS_LABELS[status] || STATUS_LABELS.idle });
+  const label = statusKnown === false ? '状態未取得' : STATUS_LABELS[status] || STATUS_LABELS.idle;
+  const g = h('span', { class: `glyph g-${tone}`, role: 'img', title: label, 'aria-label': label });
   if (tone === 'done') g.innerHTML = picon('check', 12);
   else if (tone === 'err') g.innerHTML = picon('alert', 11);
   return g;
 }
 const faceWho = (agent) => h('span', { class: `who who-${agent}`, text: agent === 'codex' ? 'Codex' : agent === 'claude' ? 'Claude' : T.taskCard });
+
+const dotTitle = s => s.dot ? `${s.dot.name} ${s.dot.relation === 'created' ? 'が作成したセッション' : 'に関連するセッション'}` : '';
+const dotPill = s => s.dot ? h('span', { class: 'pill dot-pill', title: dotTitle(s), text: s.dot.name === 'dot' ? 'dot' : `dot · ${s.dot.name}` }) : null;
 
 // "+74 −5" (what the folder changed) or, without git numbers, the files this turn edited.
 function faceStat(card) {
@@ -69,7 +73,7 @@ function renderCard(card, list) {
   el.dataset.life = life;
   el.dataset.day = daysAgo(card.updatedAt);
   const rich = kind === 'rich', compact = kind === 'compact';
-  el.append(h('div', { class: 'frow' }, faceGlyph(card.status), h('div', { class: 'ftitle', text: card.title }), compact ? null : faceFlags(card),
+  el.append(h('div', { class: 'frow' }, faceGlyph(card.status, card.statusKnown), h('div', { class: 'ftitle', text: card.title }), compact ? dotPill(card) : faceFlags(card),
     compact ? h('i', { class: `fagent fagent-${task ? 'task' : card.agent}`, title: task ? T.taskCard : card.agent === 'codex' ? 'Codex' : 'Claude' }) : null,
     compact ? h('span', { class: 'ftime', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }) : null));
   if (compact) return finishFace(el, card, list);
@@ -83,9 +87,9 @@ function renderCard(card, list) {
     if (!task && card.status === 'waiting') el.append(h('div', { class: 'fask' },
       card.canDesktop ? h('button', { class: 'btn-primary', type: 'button', text: 'アプリで答える', onpointerdown: (e) => e.stopPropagation(), onclick: (e) => { e.stopPropagation(); resume(card.id, { route: 'desktop' }); } }) : null,
       h('button', { class: 'btn', type: 'button', text: 'その場で読む', onpointerdown: (e) => e.stopPropagation(), onclick: (e) => { e.stopPropagation(); togglePeek(card); } })));
-    if (task && card.links.length) el.append(h('div', { class: 'flinks' }, ...card.links.slice(0, 3).map((l) => h('span', { class: 'flink', title: l.title }, faceGlyph(l.status), faceWho(l.agent), h('span', { class: 'ellipsis', text: l.title })))));
+    if (task && card.links.length) el.append(h('div', { class: 'flinks' }, ...card.links.slice(0, 3).map((l) => h('span', { class: 'flink', title: l.title }, faceGlyph(l.status, l.statusKnown), faceWho(l.agent), h('span', { class: 'ellipsis', text: l.title })))));
   }
-  const foot = h('div', { class: 'ffoot' }, faceWho(task ? 'task' : card.agent), dirPill(card.directory || { name: 'カテゴリ無し' }));
+  const foot = h('div', { class: 'ffoot' }, faceWho(task ? 'task' : card.agent), dotPill(card), dirPill(card.directory || { name: 'カテゴリ無し' }));
   if (!task) {
     const branch = card.git?.branch || card.branch;
     if (branch) foot.append(h('span', { class: 'fbranch ellipsis', title: gitTitleOr(card), text: branch }));
@@ -189,7 +193,11 @@ function peekContent(card, d, { limit = 3, onSent, onClose }) {
       h('div', { class: 'row' }, d.launch?.desktop ? h('button', { class: 'btn-primary', type: 'button', text: 'アプリで開く', onclick: () => resume(card.id, { route: 'desktop' }) }) : null,
         h('button', { class: 'btn', type: 'button', text: '詳細を開く', onclick: () => openCard(card.id) }))));
   } else if (s.status === 'aborted') out.push(h('div', { class: 'pwait pwait-err' }, h('b', { text: '中断しました' }), h('span', { text: '続けるには指示を送ってください。' })));
-  if (!D.settings.enabled) { out.push(h('div', { class: 'muted', text: '指示の送信は設定でオフになっています。' })); return out; }
+  if (D.unavailableReason || !D.settings.enabled) {
+    out.push(h('div', { class: 'muted', text: D.unavailableReason || '指示の送信は設定でオフになっています。' }));
+    if (d.launch?.desktop) out.push(h('button', { class: 'btn', type: 'button', text: s.agent === 'codex' ? 'Codexで開く' : 'Claudeで開く', onclick: () => resume(card.id, { route: 'desktop' }) }));
+    return out;
+  }
   const elevated = !!D.permission?.elevated;
   const busy = s.status === 'running' || s.status === 'waiting' || !!s.codexFollowUps;
   const ta = h('textarea', { class: 'peek-input', rows: 1, 'aria-label': '返信', placeholder: elevated ? '制限なしのセッションです。詳細で確認してから送ってください' : busy ? '実行中です。送ると順番待ちに入ります' : 'このセッションに返信', disabled: elevated });

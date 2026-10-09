@@ -68,7 +68,7 @@ async function perfPanel(anchor) {
 function hostsMenu(anchor) {
   const b = state.board;
   const statusText = (st) => ({ ok: '取得済み', connecting: '接続中…', error: 'エラー', idle: '未取得' })[st?.state] || '';
-  const rows = b.hosts.map((host) => {
+  const rows = b.hosts.filter(host => !host.cloud).map((host) => {
     const sel = (state.filters.host || '') === (host.local ? 'local' : host.id);
     const toggle = host.local ? h('span', { class: 'muted', text: '常に有効' }) : h('label', { class: 'row' },
       h('input', { type: 'checkbox', checked: host.enabled, 'aria-label': `${host.label} を読む`,
