@@ -6,7 +6,7 @@
 // ---- hooks called from board.html ----
 function renderAccountsButton(b) {
   const active = state.filters.account === '__none' ? { label: 'アカウント不明' } : (b.accounts?.accounts || []).find((a) => a.key === state.filters.account);
-  $('#accountsBtn .acct-lbl').textContent = active ? active.label : '';
+  $('#accountsBtn .acct-lbl').textContent = active ? (active.key ? accountName(active.key) : active.label) : '';
   $('#accountsBtn').setAttribute('aria-pressed', String(!!active));
   renderUsage(b.accounts);
   ensureUsageRefreshTimer();
@@ -23,9 +23,9 @@ function accountKv(s) {
   return [...(s.host ? [] : kv('アカウント', s.accountLabel || '不明（記録なし）')), ...(s.homeDir ? kv('設定フォルダ', s.homeDir) : [])];
 }
 function accountLaneKey(card) {
-  if (card.account) return `${card.agent === 'codex' || card.account.startsWith('codex:') ? 'Codex' : 'Claude'} · ${accountLabel(card.account)}`;
+  if (card.account) return accountName(card.account);
   if (card.host) return `⌂ ${card.host.label}`;
-  return card.account ? `${card.agent === 'codex' ? 'Codex' : 'Claude'} · ${accountLabel(card.account)}` : 'アカウント不明';
+  return 'アカウント不明';
 }
 function accountsPanel(st, legend, tip) {
   return st.accounts?.length ? h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', { text: 'アカウント別' }), legend.cloneNode(true)), breakdownRows(st.accounts, tip)) : null;
@@ -46,7 +46,7 @@ function usageWindows(l) { return l ? [l.primary, l.secondary].filter(Boolean) :
 function usageTitle(a) {
   const l = a.limits;
   const ws = usageWindows(l).map(w => usageWindow(w, l.at)).filter(Boolean);
-  return [`${a.agent === 'codex' ? 'Codex' : 'Claude'}: ${a.label}${a.plan ? `（${a.plan}）` : ''}`,
+  return [`${accountName(a.key)}${a.plan ? `（${a.plan}）` : ''}`,
     ...ws.map(w => `${w.label}: ${w.stale ? '要更新' : `${w.used}% 使用・残り ${w.remaining}%`}${w.resetsAt ? ` · ${fmtReset(w.resetsAt)}` : ''}`),
     l ? `${fmtDate(l.at)} 時点（${l.source === 'live' ? 'サービスから取得' : l.source === 'desktop' ? 'Claude Desktopの記録' : 'セッションログ'}）` : '未取得',
     a.usage?.status === 'error' ? ACCOUNT_USAGE_ERRORS[a.usage.code] || ACCOUNT_USAGE_ERRORS.unavailable : null].filter(Boolean).join('\n');
@@ -82,12 +82,27 @@ function renderUsage(v) {
 function accountLabel(key) {
   return (state.board?.accounts?.accounts || []).find((a) => a.key === key)?.label || String(key || '').split(':').slice(1).join(':').slice(0, 8);
 }
+// How every picker, chip title and note names an account: the AI App, then the account
+// (server/accounts.mjs accountName() is the same), so Codex and Claude of one email differ.
+const ACCOUNT_AGENTS = { codex: 'Codex', claude: 'Claude' };
+function accountName(key) {
+  if (!key) return 'アカウント不明';
+  const agent = String(key).split(':')[0];
+  return `${ACCOUNT_AGENTS[agent] || agent} · ${accountLabel(key)}`;
+}
+// Picker items for the accounts of one AI App (or all), with where each is signed in.
+function accountItems(agent) {
+  const where = (a) => a.signedIn.map((x) => x === 'desktop' || x.startsWith('desktop:') ? 'デスクトップ' : 'CLI').filter((x, i, all) => all.indexOf(x) === i).join('・');
+  return (state.board?.accounts?.accounts || []).filter((a) => !agent || a.agent === agent).map((a) => ({
+    value: a.key, label: accountName(a.key), description: a.signedIn.length ? `ログイン中: ${where(a)}${a.plan ? ` · ${a.plan}` : ''}` : 'ログインの記録なし',
+    keywords: [a.label, a.email, a.name, a.agent, a.key].filter(Boolean).join(' ') }));
+}
 // Only worth a chip when there is more than one account.
 function acctChip(card) {
   if (!card.account || (state.board?.accounts?.accounts || []).length < 2) return null;
   const a = state.board.accounts.accounts.find((x) => x.key === card.account);
   const label = accountLabel(card.account);
-  return h('span', { class: 'acct-chip', title: `アカウント: ${label}${card.home ? `（設定フォルダ: ${card.home}）` : ''}` },
+  return h('span', { class: 'acct-chip', title: `アカウント: ${accountName(card.account)}${card.home ? `（設定フォルダ: ${card.home}）` : ''}` },
     a ? h('span', { class: 'acct-dot', style: { background: colorVar(a.color), width: '13px', height: '13px', fontSize: '8px', marginRight: '3px' }, text: a.short }) : null, shortWho(label));
 }
 

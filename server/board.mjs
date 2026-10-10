@@ -19,7 +19,7 @@ import { claudeResumeAccounts, groupClaudeResumeAccounts } from './claude-handof
 import { installedTerminals } from './launcher.mjs';
 import { annotateStatus, STATUSES } from './status.mjs';
 import { currentLimits, cardSignals, limitsByAccount } from './signals.mjs';
-import { configureAccounts, accountsView, accountLabel } from './accounts.mjs';
+import { configureAccounts, accountsView, accountName } from './accounts.mjs';
 import { matchesAccount, withAccountNote } from './accounts-mcp.mjs';
 import { effectiveTaskContext } from './task-context.mjs';
 
@@ -655,7 +655,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   const claudeProfiles = await claudeResumeAccounts(s, labels);
   const claudeExecutionAccounts = groupClaudeResumeAccounts(claudeProfiles, accountsView(state.settings.accounts).accounts, s, card.claudeExecution);
   return {
-    session: { ...rest, actions: sessionActions(s), host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: accountLabel(s.account, labels) },
+    session: { ...rest, actions: sessionActions(s), host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: s.account ? accountName(s.account, labels) : null },
     card: {
       slackRefs: card.slackRefs || [],
       listId, labels: card.labels || [], note: card.note || '', priority: card.priority || null, due: card.due || null, archived: !!s.archived,

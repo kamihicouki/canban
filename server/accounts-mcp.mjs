@@ -3,7 +3,7 @@
 // server/accounts.mjs; this file only wires it in (index.mjs / board.mjs call these).
 import fs from 'node:fs';
 import path from 'node:path';
-import { configureAccounts, codexHomes, claudeHomes, claudeDesktopRoots, claudeDesktopSessionsDir, refreshAccounts, accountsView, accountLabel, desktopAccountMismatch } from './accounts.mjs';
+import { configureAccounts, codexHomes, claudeHomes, claudeDesktopRoots, claudeDesktopSessionsDir, refreshAccounts, accountsView, accountName, desktopAccountMismatch } from './accounts.mjs';
 import { limitsByAccount } from './signals.mjs';
 
 export const accountFilterProp = { type: 'string', description: "アカウントで絞り込み（canban_get_usage の key。例 'claude:<uuid>' / 'codex:<id>'）。'__none' でアカウント不明" };
@@ -17,7 +17,7 @@ export function matchesAccount(account, s) {
 // account's session there would not find it, so say so (the terminal resumes it).
 export function accountDesktopNote(s, labels) {
   const m = desktopAccountMismatch(s);
-  return m ? `このセッションは ${accountLabel(m.session, labels)} のものです。Claude デスクトップは今 ${accountLabel(m.active, labels)} でサインインしているため、開くにはアカウントを切り替えるか、ターミナルで再開してください。` : null;
+  return m ? `このセッションは ${accountName(m.session, labels)} のものです。Claude デスクトップは今 ${accountName(m.active, labels)} でサインインしているため、開くにはアカウントを切り替えるか、ターミナルで再開してください。` : null;
 }
 export function withAccountNote(launch, s, labels) {
   const note = launch.desktop && accountDesktopNote(s, labels);
@@ -69,7 +69,7 @@ export function accountTools({ store, allSessions, appTool, meta, getLive = () =
           const l = a.limits;
           const usage = l ? `${[windowText(l.primary), windowText(l.secondary)].filter(Boolean).join(' · ')} / ${new Date(l.at).toISOString()} 時点${a.usage?.status === 'error' ? '（更新失敗・前回の値）' : ''}` : '使用量の記録なし';
           const signed = a.signedIn.length ? `（サインイン中: ${a.signedIn.map(signedText).join(', ')}）` : '';
-          return `${a.agent === 'codex' ? 'Codex' : 'Claude'} ${a.label}${a.plan ? ` [${a.plan}]` : ''}: ${usage} / ${a.count} セッション${signed}`;
+          return `${accountName(a.key, state.settings.accounts.labels)}${a.plan ? ` [${a.plan}]` : ''}: ${usage} / ${a.count} セッション${signed}`;
         });
         if (v.unknown.codex || v.unknown.claude) lines.push(`アカウント不明: Codex ${v.unknown.codex} / Claude ${v.unknown.claude} セッション`);
         return { text: lines.join('\n') || 'アカウントが見つかりません', structured: v };

@@ -97,7 +97,7 @@ const taskQuickAdd = {
     contextSelect('section', 'セクション', (board.codexSections || []).map(s => [s.id, s.name]), 'セクションなし');
     contextSelect('agent', 'AI App', [['codex', 'Codex'], ['claude', 'Claude Code']], '指定なし');
     contextSelect('host', 'マシン', board.hosts.filter(host => !host.cloud).map(host => [host.local ? 'local' : host.id, host.local ? 'このマシン' : host.label]));
-    contextSelect('account', 'アカウント', (board.accounts?.accounts || []).map(a => [a.key, a.label]), 'アカウント不明');
+    contextSelect('account', 'アカウント', (board.accounts?.accounts || []).map(a => [a.key, accountName(a.key)]), 'アカウント不明');
     const summary = h('summary');
     const paintLabels = () => { summary.textContent = `ラベル: ${draft.labels.length ? draft.labels.map(id => board.labels.find(l => l.id === id)?.name || id).join('・') : 'なし'}`; };
     paintLabels();
@@ -200,7 +200,7 @@ const taskQuickAdd = {
       let text = value || 'なし';
       if (key === 'agent' && value) text = value === 'codex' ? 'Codex' : 'Claude Code';
       if (key === 'host' && value) text = value === 'local' ? 'このマシン' : state.board.hosts.find(h => h.id === value)?.label || value;
-      if (key === 'account' && value) text = accountLabel(value);
+      if (key === 'account' && value) text = accountName(value);
       if (key === 'section' && value) text = state.board.codexSections?.find(s => s.id === value)?.name || value;
       return h('span', { text: `${names[key]}: ${text}` });
     }));
