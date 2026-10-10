@@ -21,7 +21,7 @@ test('real lane construction keeps stable attribute IDs even when display names 
     { id: 'b', kind: 'task', agent: 'codex', account: 'codex:b', project: 'p', labels: ['l2'], codexSection: { id: 's2', name: '同名' }, directory: { id: 'd2', name: '同名' } },
   ];
   const board = { labels, lists: [{ id: 'inbox', cards }], projects: [{ name: 'p' }], directories: [{ id: 'd1', name: '同名' }, { id: 'd2', name: '同名' }, { id: 'empty', name: '空' }] };
-  const context = vm.createContext({ state: { board }, T: { category: 'カテゴリ', taskCard: 'タスクカード' }, accountLaneKey: () => '同じ表示名' });
+  const context = vm.createContext({ state: { board }, T: { category: 'カテゴリ', taskCard: 'タスクカード' }, accountLaneKey: () => '同じ表示名', accountName: key => `Codex · ${key}` });
   vm.runInContext(fs.readFileSync(new URL('../ui/task-quick-add-model.js', import.meta.url), 'utf8') + '\n' + code, context);
   for (const mode of ['directory', 'label', 'section', 'account']) {
     const lanes = context.buildLanes(board, mode).filter(l => l.count);

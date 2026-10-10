@@ -265,7 +265,7 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .title-input { width: calc(100% - 40px); font-size: 20px; font-weight: 700; border: 0; background: transparent; color: inherit; padding: 2px 4px; border-radius: 4px; }
 .title-input:focus { background: var(--input-bg); outline: 2px solid var(--focus); }
 .start-grid { display: grid; grid-template-columns: 140px 1fr; gap: 6px; margin-bottom: 6px; }
-.start-grid input { grid-column: 1 / -1; }
+.start-grid input, .start-grid .start-account { grid-column: 1 / -1; }
 .sub-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 6px 8px; border-radius: 6px; background: var(--modal-panel); margin-bottom: 4px; font-size: 13px; }
 .link-btn { color: var(--accent); text-align: left; }
 .link-btn:hover { text-decoration: underline; }

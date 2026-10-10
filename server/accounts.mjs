@@ -376,6 +376,15 @@ export function accountLabel(key, labels = {}) {
   return labels[key] || a?.email || a?.name || a?.profile || a?.orgName || shortId(key.split(':').slice(1).join(':'));
 }
 
+// How every picker and note names an account: the AI App, then the account
+// (the board's accountName() in ui/accounts.js is the same).
+export const AGENT_NAMES = { codex: 'Codex', claude: 'Claude' };
+export function accountName(key, labels = {}) {
+  if (!key) return 'アカウント不明';
+  const agent = key.split(':')[0];
+  return `${AGENT_NAMES[agent] || agent} · ${accountLabel(key, labels)}`;
+}
+
 // Plan usage windows (Claude's keys; unknown keys are ignored).
 const CLAUDE_WINDOWS = { fh: 300, sd: 10080 };
 function claudeLimits(accountKeyOf) {

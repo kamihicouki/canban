@@ -26,6 +26,7 @@ import { Presence, appLabel } from './presence.mjs';
 import { codexHome } from './sources/codex.mjs';
 import { claudeHome, claudeDesktopSessionsDir } from './sources/claude.mjs';
 import { accountTools, accountFilterProp, accountDesktopNote, extraWatchRoots } from './accounts-mcp.mjs';
+import { accountName, desktopAccountMismatch } from './accounts.mjs';
 import { accountActions, accountActionTools } from './account-actions.mjs';
 import { shutdownLogins } from './login.mjs';
 import { boardHtml } from './ui.mjs';
@@ -33,6 +34,7 @@ import { taskContextSchema } from './task-context.mjs';
 import { uploadImage, promptImages, listSkills, withSkills, withImagePaths, remoteImages } from './prompt-input.mjs';
 import { resolveSession, inspect, timingProblem } from './dispatch.mjs';
 import { claudeExecutionSession, savedClaudeExecutionSession } from './claude-handoff.mjs';
+import { startAccount } from './start-account.mjs';
 import { desktopProfilePlan, withDesktopAccount, saveClaudeExecutionAccount, desktopExecutionLink } from './claude-desktop-profile.mjs';
 import { SlackService, slackTools } from './slack.mjs';
 import { listChanges, fileDiff } from './changes.mjs';
@@ -386,14 +388,28 @@ const TOOLS = [
       }
       // Claude desktop signed in to another account would not find the session: the
       // default route resumes it in the terminal instead (an explicit desktop still opens).
-      const accountNote = selected ? null : accountDesktopNote(session, state.settings.accounts.labels);
-      if (useRoute === 'desktop' && accountNote && !route) useRoute = 'terminal';
+      let accountNote = selected ? null : accountDesktopNote(session, state.settings.accounts.labels);
+      // A signed-in Desktop profile of the session's own account opens it there.
+      const owner = accountNote && useRoute === 'desktop' ? desktopAccountMismatch(session)?.session : null;
+      const ownerPlan = owner ? await desktopProfilePlan(owner) : null;
+      if (ownerPlan?.available) accountNote = null;
+      let terminalNote = null;
+      if (useRoute === 'desktop' && accountNote && !route) { useRoute = 'terminal'; terminalNote = accountNote; }
       if (useRoute === 'desktop') {
         if (selected) await withDesktopAccount(session.executionAccount, async () => {
           await claudeExecutionSession(source, session.home, session.executionAccount);
           await openUrl(link.url);
         });
-        else await openUrl(link.url);
+        else if (ownerPlan?.available) {
+          try { await withDesktopAccount(owner, () => openUrl(link.url)); }
+          catch (error) {
+            if (route || !['desktop_running', 'desktop_busy', 'desktop_unavailable'].includes(error.code)) throw new Error(`${accountName(owner, state.settings.accounts.labels)} の Desktop で開けません。${error.message}`);
+            useRoute = 'terminal';
+            terminalNote = `${accountName(owner, state.settings.accounts.labels)} の Desktop へ切り替えられないため、ターミナルで再開しました。${error.message}`;
+          }
+        } else await openUrl(link.url);
+      }
+      if (useRoute === 'desktop') {
         const note = accountNote || link.note || null;
         return { text: `${link.label}: ${link.url}${accountNote ? `\n${note}` : ''}`, structured: { route: 'desktop', url: link.url, exact: link.exact, note, executionAccount: session.executionAccount || null } };
       }
@@ -401,7 +417,7 @@ const TOOLS = [
       if (!installedTerminals().some((t) => t.id === term)) throw new Error(`${TERMINAL_LABELS[term] || term} が見つかりません。設定でターミナルを選んでください。`);
       const command = resumeCommand(session);
       const res = await runInTerminal({ terminal: term, target: target || prefs.target, command });
-      return { text: `${TERMINAL_LABELS[term]} で再開: ${command}`, structured: { route: 'terminal', command, executionAccount: session.executionAccount || null, ...res } };
+      return { text: `${TERMINAL_LABELS[term]} で再開: ${command}${terminalNote ? `\n${terminalNote}` : ''}`, structured: { route: 'terminal', command, executionAccount: session.executionAccount || null, note: terminalNote, ...res } };
     },
   },
   {
@@ -593,12 +609,13 @@ const TOOLS = [
         route: { type: 'string', enum: ['desktop', 'terminal'] },
         terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
         target: { type: 'string', enum: ['new-window', 'new-tab', 'split', 'current'] },
+        account: { type: ['string', 'null'], description: "開始するアカウント（canban_get_usage の key。例 'claude:<uuid>'）。省略・null はいまのログイン。Claude Desktop はそのアカウントのプロフィールへ切り替えて開く" },
       },
       required: ['taskId', 'agent'],
       additionalProperties: false,
     },
     _meta: appAndModel,
-    handler: async ({ taskId, agent, hostId = 'local', cwd = '', prompt, imageIds = [], skills = [], route, terminal, target }) => {
+    handler: async ({ taskId, agent, hostId = 'local', cwd = '', prompt, imageIds = [], skills = [], route, terminal, target, account = null }) => {
       const state = (await store.load());
       const task = state.cards[taskId];
       if (task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
@@ -619,20 +636,22 @@ const TOOLS = [
       const prefs = state.settings.launch;
       const useRoute = route || prefs.route;
       let detail;
+      const labels = state.settings.accounts.labels;
+      const as = await startAccount({ agent, account, host, route: useRoute, labels });
       if (useRoute === 'desktop') {
         const link = newSessionLink(agent, { host, cwd, prompt: text });
-        await openUrl(link.url);
-        detail = { route: 'desktop', url: link.url };
+        await as.open(() => openUrl(link.url));
+        detail = { route: 'desktop', url: link.url, account: as.account };
       } else {
         const term = terminal || prefs.terminal;
         if (!installedTerminals().some((t) => t.id === term)) throw new Error(`${TERMINAL_LABELS[term] || term} が見つかりません。設定でターミナルを選んでください。`);
-        const command = newSessionCommand(agent, { host, cwd, prompt: agent === 'codex' ? skillPrompt : text, images });
+        const command = newSessionCommand(agent, { host, cwd, prompt: agent === 'codex' ? skillPrompt : text, images, prefix: as.prefix });
         detail = { route: 'terminal', command, ...(await runInTerminal({ terminal: term, target: target || prefs.target, command })) };
       }
-      await store.updateTask({ cardId: taskId, target: { agent, hostId: host.local === false ? host.id : 'local', cwd } });
+      await store.updateTask({ cardId: taskId, target: { agent, hostId: host.local === false ? host.id : 'local', cwd, account: as.account } });
       await store.addPending({ taskId, pending: { agent, hostId: host.local === false ? host.id : 'local', cwd, prompt: text.slice(0, 200), startedAt: Date.now() } });
       const note = remoteEnabled ? null : `${host.label} の読み取りがオフのため自動では紐付きません。「マシン」でオンにしてください。`;
-      return { text: `${agent === 'codex' ? 'Codex' : 'Claude'} でセッションを開始しました`, structured: { ...detail, note } };
+      return { text: `${as.account ? accountName(as.account, labels) : agent === 'codex' ? 'Codex' : 'Claude'} でセッションを開始しました`, structured: { ...detail, note } };
     },
   },
   {

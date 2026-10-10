@@ -260,7 +260,9 @@ function paneKeyButton(p, k) {
   return find();
 }
 // The Claude account picker sits in the resume part: in the thread layout, open the details panel first.
+// On a task card, Alt+a picks the account of the new session instead.
 function claudeAccountPicker(p) {
+  if (p?.kind === 'task') { const start = p.el.querySelector('.start-account'); return start && !start.disabled ? start : null; }
   const find = () => p?.el.querySelector('.claude-account-picker');
   if (!find() && p?.detailNodes) openThreadSide(p, 'details');
   return find();
@@ -555,7 +557,7 @@ function renderPane(p, d) {
       h('span', { class: 'grow', text: home.label })));
     const details = h('details', { class: 'claude-execution-details' },
       h('summary', {}, h('span', { class: 'ic', html: picon('chev', 14) }), '接続設定を指定'),
-      h('div', { class: 'claude-execution-help', text: identity?.label || '元のアカウント' }),
+      h('div', { class: 'claude-execution-help', text: identity ? accountName(identity.key) : '元のアカウント' }),
       rowFilter(rows, '設定名で検索'),
       h('div', { class: 'claude-profile-list', role: 'radiogroup', 'aria-label': 'Claude の接続設定' }, rows),
       h('code', { class: 'claude-profile-id', text: `現在の設定: ${current}` }));
@@ -568,7 +570,7 @@ function renderPane(p, d) {
   const accountPicker = executionIdentities.length ? pickerButton({
     title: 'Claude の実行アカウント', popoverTitle: '実行アカウント', value: executionKey(), stack: false, width: 340,
     placeholder: 'メールで検索', popoverClass: 'claude-identity-picker', footer: executionFooter,
-    items: () => executionIdentities.map(a => ({ value: a.key, label: a.label, description: a.description, keywords: a.keywords,
+    items: () => executionIdentities.map(a => ({ value: a.key, label: accountName(a.key), description: a.description, keywords: a.keywords,
       tag: a.sameAccount ? '元' : null, tagTitle: '元のアカウント' })),
     onChange: key => {
       const identity = executionIdentities.find(a => a.key === key);
@@ -619,7 +621,7 @@ function renderPane(p, d) {
       }
     resumeBox.querySelector('.resume-main').title = selected ? '選択した Claude CLI アカウントで再開' : `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`;
     const note = p.el.querySelector('.claude-execution-note');
-    if (note) note.textContent = selected ? `実行アカウント: ${option?.label || '選択したアカウント（利用できません）'}` : `実行アカウント: ${s.accountLabel || '元のアカウント'}`;
+    if (note) note.textContent = selected ? `実行アカウント: ${option ? accountName(option.account) : '選択したアカウント（利用できません）'}` : `実行アカウント: ${s.accountLabel || '元のアカウント'}`;
   }
   updateExecutionChoice();
 
