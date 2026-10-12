@@ -54,8 +54,9 @@ test('10 processes preserve 1000 accepted updates with bounded contention', { ti
   for(const result of results) {
     assert.equal(result.code,0,result.err);
     const stats=JSON.parse(result.out);
-    // IPC and OS scheduling time is diagnostic. Check the worker's retry budget;
-    // dedicated lock and injected-clock tests enforce the two-second contract.
+    // Keep both end-to-end latency and the worker retry measurement bounded,
+    // with the same 500ms scheduling slack as the dedicated lock test.
+    assert.ok(Number.isFinite(stats.max)&&stats.max>=0&&stats.max<2500,result.out);
     assert.ok(Number.isFinite(stats.maxBusy)&&stats.maxBusy>=0&&stats.maxBusy<2500,result.out);
     assert.equal(stats.accepted,100);max=Math.max(max,stats.max);
     rejected+=stats.rejected;
