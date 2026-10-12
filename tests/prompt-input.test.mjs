@@ -11,6 +11,38 @@ import { headlessArgs, newSessionCommand } from '../server/agents.mjs';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/9l0AAAAASUVORK5CYII=', 'base64');
 const fixture = () => fs.mkdtempSync(path.join(os.tmpdir(), 'canban-prompt-'));
 
+test('bundled Meetings workflow is selectable for Codex and includes its connector', () => {
+  const dir = fixture();
+  try {
+    const file = path.resolve('skills/meetings-to-tasks/SKILL.md');
+    const skill = listSkills({ agent: 'codex', homeDir: dir }).find(s => s.path === file);
+    assert.ok(skill);
+    assert.equal(skill.name, 'canban-meetings-to-tasks');
+    assert.ok(!listSkills({ agent: 'claude', homeDir: dir }).some(s => s.path === file));
+    const prompt = withSkills('今週の会議をタスクにして', [skill, skill]);
+    assert.equal(prompt.split('app://connector_openai_chatgpt_meetings').length, 2);
+    assert.match(prompt, /今週の会議/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('skill connector mentions come from an owning plugin, with missing metadata tolerated', () => {
+  const dir = fixture();
+  try {
+    const root = path.join(dir, 'plugin'), file = path.join(root, 'skills', 'flow', 'SKILL.md');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.mkdirSync(path.join(root, '.codex-plugin'));
+    fs.writeFileSync(file, 'skill');
+    const skill = { name: 'flow', path: file };
+    assert.ok(!withSkills('check', [skill]).includes('app://'));
+    fs.writeFileSync(path.join(root, '.codex-plugin/plugin.json'), JSON.stringify({ skills: './skills/', apps: './.app.json' }));
+    fs.writeFileSync(path.join(root, '.app.json'), JSON.stringify({ apps: { valid: { id: 'connector_example' }, invalid: { id: 'https://example.com' } } }));
+    assert.match(withSkills('check', [skill]), /app:\/\/connector_example/);
+    assert.ok(!withSkills('check', [skill]).includes('https://example.com'));
+    fs.writeFileSync(path.join(root, '.codex-plugin/plugin.json'), JSON.stringify({ skills: './elsewhere/', apps: './.app.json' }));
+    assert.ok(!withSkills('check', [skill]).includes('app://'));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('image upload chunks survive a restart; only completed, unchanged images are usable', () => {
   const dir = fixture();
   try {

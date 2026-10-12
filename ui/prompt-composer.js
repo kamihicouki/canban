@@ -134,6 +134,7 @@ function promptComposer(input, { key, context, submit, chips = false }) {
     renderChoices();
     if (!token) search.focus();
   }
+  root.addEventListener('canban:pick-skill', () => { token = null; toggleSkills(true); });
   search.addEventListener('input', renderChoices);
   picker.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeSkills(); input.focus(); } });
   input.addEventListener('input', event => {

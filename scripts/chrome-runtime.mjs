@@ -35,7 +35,7 @@ export function installChromeRuntime({ repository, runtimeDirectory, sha, dataDi
       run('tar', ['-xf', '-', '-C', staging], { input: run('git', ['archive', '--format=tar', sha]) });
     } else {
       // Bare companion installations have no Git metadata. Copy only program files.
-      for (const entry of ['server', 'ui', 'assets', 'scripts/chrome-native-host.sh', 'scripts/chrome-native-host.mjs', 'scripts/launch.sh', 'package.json', '.codex-plugin/plugin.json']) {
+      for (const entry of ['server', 'ui', 'assets', 'skills', '.app.json', 'scripts/chrome-native-host.sh', 'scripts/chrome-native-host.mjs', 'scripts/launch.sh', 'package.json', '.codex-plugin/plugin.json']) {
         const source = path.join(repository, entry);
         if (!fs.existsSync(source)) continue;
         fs.mkdirSync(path.dirname(path.join(staging, entry)), { recursive: true });

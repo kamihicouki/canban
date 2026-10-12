@@ -124,7 +124,7 @@ const SHORTCUTS = [
     ['Alt+a', 'Claude の実行アカウントを選ぶ（このマシンのセッション）/ タスク: 開始するアカウントを選ぶ'],
     ['Shift+← / →', '左右の隣のリストへ移動（端で停止、入力中・配置調整中は無効）'],
     ['j / k', '表示リストの次 / 前のカードを開く（端で停止）'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'],
-    ['z', 'エージェントのセッションをアーカイブ / 復元'], ['Delete', 'セッションと会話履歴を削除（確認あり）'], ['i', '指示の入力欄へ'], ['d / f', 'スレッド表示: 詳細パネル / 変更を開閉'], ['⌥Enter', '入力欄: キューに追加（⌘Enter は送信）'], ['o', '再開'], ['l g m', 'ラベル / ' + T.category + ' / リスト移動'], ['c', 'タスクを追加'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
+    ['z', 'エージェントのセッションをアーカイブ / 復元'], ['Delete', 'セッションと会話履歴を削除（確認あり）'], ['i', '指示の入力欄へ'], ['$', '入力欄: スキルを選ぶ（⌘Kからも選択）'], ['d / f', 'スレッド表示: 詳細パネル / 変更を開閉'], ['⌥Enter', '入力欄: キューに追加（⌘Enter は送信）'], ['o', '再開'], ['l g m', 'ラベル / ' + T.category + ' / リスト移動'], ['c', 'タスクを追加'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
   ]],
   ['カードのサイズ', [['右端・下端 + 矢印', 'カードの幅と高さを調整（同じ種類のカードで共通）'], ['右端・下端 + Home', '既定のサイズへ戻す']]],
   ['ピッカー', [['文字を入力', '絞り込み'], ['↑ ↓ / Enter', '選ぶ'], ['Space', '複数選択の切り替え（入力が空のとき）'], ['Esc', '閉じる']]],
@@ -151,7 +151,14 @@ function commandPalette() {
     ] : []),
     ...(!paneLayer.hidden && panes[0]?.kind !== 'view' ? [
       ...PANE_MODES.map(([mode, label], i) => ({ label: `会話を${label}で表示`, run: () => setPaneMode(mode), hint: String(i + 1) })),
-      ...(panePromptInput() ? [{ label: '指示欄にフォーカス', run: focusPanePrompt, hint: 'i' }] : []),
+      ...(panePromptInput() ? [
+        { label: '指示欄にフォーカス', run: focusPanePrompt, hint: 'i' },
+        { label: 'スキルを選ぶ（Meetingsなど）', run: () => {
+          const input = panePromptInput();
+          input?.closest('.prompt-composer')?.dispatchEvent(new Event('canban:pick-skill'));
+          input?.closest('.prompt-composer')?.scrollIntoView({ block: 'nearest' });
+        }, hint: '$' },
+      ] : []),
       { label: 'カードを閉じる', run: closeCards, hint: 'Esc' },
     ] : []),
     ...DRAWER_PAGES.map((page) => ({ label: `${WORKSPACE_PAGES.find(([id]) => id === page)[1]}を開く`, run: () => workspace.navigate(page) })),
