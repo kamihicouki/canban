@@ -62,7 +62,7 @@ function buildLanes(b, mode) {
     for (const host of b.hosts || []) lane({ context: { host: host.local ? 'local' : host.id } }, host.local ? 'このマシン' : host.label);
   }
   if (mode === 'account') {
-    for (const account of b.accounts?.accounts || []) lane({ context: { account: account.key } }, `${account.key.startsWith('codex:') ? 'Codex' : 'Claude'} · ${account.label}`);
+    for (const account of b.accounts?.accounts || []) lane({ context: { account: account.key } }, accountName(account.key));
     lane({ context: { account: null } }, 'アカウント不明');
     for (const host of b.hosts || []) if (!host.local) lane({ context: { account: null, host: host.id } }, `⌂ ${host.label}`);
   }

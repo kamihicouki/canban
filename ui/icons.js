@@ -61,4 +61,4 @@ function fillIcons(root = document) {
   }
 }
 // The logo: three columns of different lengths (a kanban board) and a dot (an agent at work).
-const LOGO_SVG = '<svg class="logo-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="var(--logo-bg)"/><g fill="var(--logo-fg)"><rect x="7" y="7" width="5" height="17" rx="2.5"/><rect x="13.5" y="7" width="5" height="11" rx="2.5" opacity=".8"/><rect x="20" y="7" width="5" height="6.5" rx="2.5" opacity=".62"/><circle cx="22.5" cy="21.5" r="3.2"/></g></svg>';
+const LOGO_SVG = '<svg class="logo-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="var(--logo-bg)"/><g fill="var(--logo-fg)" transform="translate(16 16) scale(1.4) translate(-16.35 -15.85)"><rect x="7" y="7" width="5" height="17" rx="2.5"/><rect x="13.5" y="7" width="5" height="11" rx="2.5" opacity=".8"/><rect x="20" y="7" width="5" height="6.5" rx="2.5" opacity=".62"/><circle cx="22.5" cy="21.5" r="3.2"/></g></svg>';

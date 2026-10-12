@@ -18,7 +18,7 @@ function filterChips(b) {
   if (f.section && !laneHides('section')) add(`§ ${f.section === '__none' ? 'セクションなし' : b?.codexSections?.find((x) => x.id === f.section)?.name || f.section}`, { section: '' });
   if (f.label && !laneHides('label')) add(`ラベル: ${f.label === '__none' ? 'なし' : b?.labels.find((l) => l.id === f.label)?.name || f.label}`, { label: '' });
   if (f.host && !laneHides('host')) { const x = b?.hosts.find((y) => (y.local ? 'local' : y.id) === f.host); add(x?.local ? 'このマシン' : x?.label || f.host, { host: '' }); }
-  if (f.account && !laneHides('account')) add(`アカウント: ${b?.accounts?.accounts?.find((a) => a.key === f.account)?.label || f.account}`, { account: '' });
+  if (f.account && !laneHides('account')) add(`アカウント: ${f.account === '__none' ? 'アカウント不明' : accountName(f.account)}`, { account: '' });
   if (f.dotScope !== 'all') add(f.dotScope === 'only' ? 'dotだけ' : 'dotを除く', { dotScope: 'all' });
   if (f.includeArchived) add('アーカイブ済みも表示', { includeArchived: false });
   if (f.includeSubagents) add('サブエージェントも表示', { includeSubagents: false });

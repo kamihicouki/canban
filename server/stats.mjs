@@ -2,7 +2,7 @@
 // lists and cycle time to the last list (read from the cards' move history).
 import { resolveDirectory } from './store.mjs';
 import { matchesDotScope } from './sources/codex-dots.mjs';
-import { accountLabel } from './accounts.mjs';
+import { accountName } from './accounts.mjs';
 
 const DAY = 86400e3;
 
@@ -92,7 +92,7 @@ export function computeStats(state, sessions, { days = 30, agent = 'all', host =
     directories: breakdown(inRange, (s) => dirOf(s)?.name || 'カテゴリ無し', 12),
     hosts: breakdown(inRange, (s) => (s.host?.local === false ? s.host.label : 'このマシン'), 12),
     agents: breakdown(inRange, (s) => (s.agent === 'codex' ? 'Codex' : 'Claude Code'), 5),
-    accounts: breakdown(inRange, (s) => (s.account ? `${s.agent === 'codex' ? 'Codex' : 'Claude'} · ${accountLabel(s.account, state.settings.accounts?.labels)}` : null), 12),
+    accounts: breakdown(inRange, (s) => (s.account ? accountName(s.account, state.settings.accounts?.labels) : null), 12),
     lists: lists.map(({ dwell, ...l }) => ({ ...l, medianDwellMs: median(dwell) })),
     cycle: {
       doneListId: lastList,

@@ -459,7 +459,8 @@ export class Store {
       if (description !== undefined) card.description = String(description ?? '').slice(0, 20000);
       if (target !== undefined) {
         card.target = target && typeof target === 'object'
-          ? { agent: ['codex', 'claude'].includes(target.agent) ? target.agent : 'codex', hostId: typeof target.hostId === 'string' ? target.hostId : 'local', cwd: typeof target.cwd === 'string' ? target.cwd : '' }
+          ? { agent: ['codex', 'claude'].includes(target.agent) ? target.agent : 'codex', hostId: typeof target.hostId === 'string' ? target.hostId : 'local', cwd: typeof target.cwd === 'string' ? target.cwd : '',
+            ...(typeof target.account === 'string' && /^(codex|claude):[A-Za-z0-9._@:-]{1,128}$/.test(target.account) ? { account: target.account } : {}) }
           : null;
       }
       card.updatedAt = new Date().toISOString();

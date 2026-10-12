@@ -132,10 +132,11 @@ export function newSessionLink(agent, { host, cwd, prompt }) {
   return null;
 }
 
-export function newSessionCommand(agent, { host, cwd, prompt, images = [] }) {
+// prefix: homePrefix() of the account to start with (local only).
+export function newSessionCommand(agent, { host, cwd, prompt, images = [], prefix = '' }) {
   const bin = agent === 'codex' ? 'codex' : agent === 'claude' ? 'claude' : null;
   if (!bin) return null;
   const imageArgs = agent === 'codex' ? images.map(i => ` --image ${shq(i.path)}`).join('') : '';
-  const inner = `${cwd ? `cd ${shq(cwd)} 2>/dev/null; ` : ''}${bin}${imageArgs}${prompt ? `${imageArgs ? ' --' : ''} ${shq(prompt)}` : ''}`;
+  const inner = `${cwd ? `cd ${shq(cwd)} 2>/dev/null; ` : ''}${prefix}${bin}${imageArgs}${prompt ? `${imageArgs ? ' --' : ''} ${shq(prompt)}` : ''}`;
   return host && host.local === false ? `ssh -t ${shq(host.alias)} ${shq(inner)}` : inner;
 }

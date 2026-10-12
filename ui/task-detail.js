@@ -79,7 +79,20 @@ async function loadTask(p, found) {
   agentSel.value = t.agent || 'codex';
   const hostSel = pickerButton({ title: 'マシン', value: t.hostId || 'local', stack: false,
     items: () => b.hosts.filter(x => !x.cloud).map((x) => ({ value: x.local ? 'local' : x.id, label: x.local ? 'このマシン' : `⌂ ${x.label}${x.enabled ? '' : '（読み取りオフ）'}`, keywords: x.alias || '' })),
-    onChange: () => { fillFolders(); composer.contextChanged(); } });
+    onChange: () => { fillFolders(); paintAccount(); composer.contextChanged(); } });
+  // The account to start with: Claude Desktop switches to that account's signed-in profile.
+  const accountFor = (agent) => [t.account, card.context?.account].find(k => k && k.split(':')[0] === agent) || '';
+  const acctSel = pickerButton({ title: 'アカウント', popoverTitle: '開始するアカウント', value: accountFor(agentSel.value), stack: false, width: 340, placeholder: 'メールで検索',
+    items: () => [{ value: '', label: `${agentSel.value === 'codex' ? 'Codex' : 'Claude'} · いまのログイン`, description: 'Desktop・CLI の現在のアカウントで開始' }, ...accountItems(agentSel.value)] });
+  acctSel.classList.add('start-account');
+  const paintAccount = () => {
+    const remote = hostSel.value !== 'local';
+    if (remote || (acctSel.value && acctSel.value.split(':')[0] !== agentSel.value)) acctSel.value = remote ? '' : accountFor(agentSel.value);
+    acctSel.disabled = remote; acctSel.repaint();
+    if (remote) acctSel.title = 'リモートのマシンでは、そのマシンのログインで開始します';
+  };
+  agentSel.addEventListener('change', paintAccount);
+  paintAccount();
   const dl = h('datalist', { id: `folders-${cardId}` });
   const cwd = h('input', { class: 'text-input', list: dl.id, placeholder: '作業フォルダ（絶対パス）', value: t.cwd || '', 'aria-label': '作業フォルダ' });
   const fillFolders = () => dl.replaceChildren(...b.folders.filter((f) => f.hostId === hostSel.value).map((f) => h('option', { value: f.cwd, label: f.project || '' })));
@@ -96,8 +109,8 @@ async function loadTask(p, found) {
     try {
       const payload = composer.payload();
       composer.setSending(true); startButtons.forEach(b => { b.disabled = true; });
-      const r = await bridge.callTool('canban_start_session', { taskId: cardId, agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim(), prompt: prompt.value, ...payload, ...opts });
-      toast(r.note || `${agentSel.value === 'codex' ? 'Codex' : 'Claude'} で開始しました。セッションが現れると自動で紐付きます`, !!r.note);
+      const r = await bridge.callTool('canban_start_session', { taskId: cardId, agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim(), prompt: prompt.value, account: acctSel.value || null, ...payload, ...opts });
+      toast(r.note || `${acctSel.value ? accountName(acctSel.value) : agentSel.value === 'codex' ? 'Codex' : 'Claude'} で開始しました。セッションが現れると自動で紐付きます`, !!r.note);
       composer.clear();
       prompt.value = ''; workspace.draftValues.set(prompt, '');
       load();
@@ -127,7 +140,7 @@ async function loadTask(p, found) {
     conv: { title: '説明', nodes: [desc], hint: '説明は Canban に保存します。新しいセッションの依頼文にも使います。' },
     memo: { title: 'メモ', nodes: [memo] },
     related: { title: taskRelatedTitle(card), extra: taskLinkButton(cardId), nodes: taskRelatedNodes(card), hint: 'ホームのセッションをこのカードへドラッグして紐付けることもできます。' },
-    send: { title: '新しいセッションを開始', extra: keycap('i'), nodes: [h('div', { class: 'start-grid' }, agentSel, hostSel, cwd, dl),
+    send: { title: '新しいセッションを開始', extra: h('span', {}, ...keycap('i'), ' ', ...keycap('Alt+a')), nodes: [h('div', { class: 'start-grid' }, agentSel, hostSel, acctSel, cwd, dl),
       h('button', { class: 'btn', text: '説明・メモを依頼文に取り込む', onclick: () => {
         if (prompt.value !== prompt.defaultValue && prompt.value.trim()) return toast('入力中の依頼文があります。先に内容を確認してください', true);
         prompt.value = taskRequestText(title.value, desc.value, memo.value);
