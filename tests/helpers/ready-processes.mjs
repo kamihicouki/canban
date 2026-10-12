@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 // Initialize one connection at a time, then release every writer together.
 // An exited client must retain its original error instead of stranding siblings.
 export async function runReadyProcesses({ inputs, cwd, signal, spawnImpl = spawn }) {
-  const children = [], results = [];
+  const children = [], results = [], closed = [];
   let started = false, failEarly;
   const earlyExit = new Promise((resolve, reject) => { failEarly = reject; });
   try {
@@ -14,6 +14,7 @@ export async function runReadyProcesses({ inputs, cwd, signal, spawnImpl = spawn
         cwd, signal, stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
       });
       children.push(child);
+      closed.push(new Promise(resolve => child.once('close', resolve)));
       let out = '', err = '';
       child.stdout.on('data', value => { out += value; });
       child.stderr.on('data', value => { err += value; });
@@ -34,6 +35,6 @@ export async function runReadyProcesses({ inputs, cwd, signal, spawnImpl = spawn
     return await Promise.all(results);
   } finally {
     for (const child of children) if (child.exitCode === null && !child.killed) child.kill();
-    await Promise.allSettled(results);
+    await Promise.allSettled(closed);
   }
 }

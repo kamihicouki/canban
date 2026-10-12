@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { runReadyProcesses } from './helpers/ready-processes.mjs';
 
-function fixture({ failure, exitReady, neverReady = false } = {}) {
+function fixture({ failure, exitReady, neverReady = false, deferAbortClose = false } = {}) {
   const children = [];
   let initializing = 0, ready = 0;
   function spawnImpl(command, args, options) {
@@ -14,6 +14,7 @@ function fixture({ failure, exitReady, neverReady = false } = {}) {
       if (child.exitCode !== null) return;
       child.exitCode = code; child.emit('close', code);
     };
+    child.finish = close;
     child.kill = () => { child.killed = true; queueMicrotask(() => close(null)); };
     child.send = message => {
       assert.equal(message, 'start'); assert.equal(ready, 10, 'all connections must be ready before any write');
@@ -33,7 +34,7 @@ function fixture({ failure, exitReady, neverReady = false } = {}) {
       });
     } };
     options.signal?.addEventListener('abort', () => {
-      child.emit('error', options.signal.reason); close(1);
+      child.emit('error', options.signal.reason); if (!deferAbortClose) close(1);
     }, { once: true });
     children.push(child); return child;
   }
@@ -76,4 +77,18 @@ test('a real child startup error is reported without a sibling readiness timeout
     "throw new Error('fixture-startup-failure');",
   ] }), /fixture-startup-failure/);
   t.diagnostic(`original startup cause returned in ${performance.now() - start}ms; waiting sibling cleaned up`);
+});
+
+test('cancellation waits for child close before completing cleanup', async () => {
+  const f = fixture({ neverReady: true, deferAbortClose: true }), controller = new AbortController();
+  const error = new Error('fixture cancelled');
+  const result = runReadyProcesses({ inputs: ['fixture'], signal: controller.signal, spawnImpl: f.spawnImpl });
+  f.children[0].kill = () => { f.children[0].killed = true; };
+  let settled = false;
+  const observed = result.then(() => { settled = true; }, actual => { settled = true; return actual; });
+  controller.abort(error);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false, 'cleanup must wait for process close, not just its error');
+  f.children[0].finish(1);
+  assert.equal(await observed, error); assert.ok(f.children[0].killed);
 });
