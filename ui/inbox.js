@@ -5,6 +5,12 @@
 state.inbox = { sel: null, d: null, id: null, loading: false, error: null };
 const inboxOn = () => timelineOn();
 const inboxRows = () => $$('#board .irow');
+const inboxReadingPositions = new Map();
+function rememberInboxReadingPosition(main) {
+  const scroll = main && $('.inbox-body', main);
+  const id = main?.dataset.cardId;
+  if (scroll && id) inboxReadingPositions.set(id, { top: scroll.scrollTop, following: atFeedEnd(scroll) });
+}
 function inboxRow(x) {
   const { card, list } = x, task = card.kind === 'task';
   const row = h('article', { class: 'card irow', tabindex: 0, role: 'option', 'data-card-id': card.id, 'data-life': lifeOf(card), 'data-day': daysAgo(card.updatedAt), 'aria-selected': String(state.inbox.sel === card.id), title: card.title },
@@ -24,6 +30,7 @@ function inboxRow(x) {
   return row;
 }
 function renderInbox(b) {
+  rememberInboxReadingPosition($('.inbox-main'));
   const groups = timelineGroups(b);
   const first = groups.flatMap((g) => g[1])[0];
   if (!groups.some((g) => g[1].some((x) => x.card.id === state.inbox.sel))) state.inbox.sel = first?.card.id ?? null;
@@ -54,6 +61,8 @@ function inboxStep(delta) {
 }
 async function paintInboxMain(main) {
   if (!main?.isConnected) return;
+  rememberInboxReadingPosition(main);
+  delete main.dataset.cardId;
   const hit = state.inbox.sel ? findCard(state.inbox.sel) : null;
   if (!hit) return main.replaceChildren(h('div', { class: 'muted pane-pad', text: 'カードを選ぶと、ここで読んで返信できます' }));
   const { card } = hit;
@@ -72,8 +81,10 @@ async function paintInboxMain(main) {
     const nodes = peekContent(card, d, { limit: 8, onClose: () => $(`.irow[data-card-id="${CSS.escape(card.id)}"]`)?.focus(), onSent: async () => { state.inbox.d = null; load(); await paintInboxMain($('.inbox-main')); } });
     const dock = nodes.filter((n) => n.matches?.('.peek-compose, .peek-foot')), body = nodes.filter((n) => !dock.includes(n));
     const scroll = h('div', { class: 'inbox-body' }, ...body);
+    const position = inboxReadingPositions.get(card.id);
+    main.dataset.cardId = card.id;
     main.replaceChildren(head, meta, scroll, h('div', { class: 'inbox-dock' }, ...dock));
-    scroll.scrollTop = scroll.scrollHeight;
+    scroll.scrollTop = position && !position.following ? position.top : scroll.scrollHeight;
     $('.peek-input', main)?.dispatchEvent(new Event('input'));
   };
   if (cached) return show(cached);
