@@ -72,6 +72,8 @@ function applyFeed(f, feed) {
       t.icon.className = `ti ${it.ok ? 'ok' : 'error'}`;
       t.icon.textContent = TOOL_ICONS[it.ok ? 'ok' : 'error'];
       if (it.out) { t.out.textContent = it.out; t.out.hidden = false; }
+      const group = t.el.closest('.tg');
+      if (group) paintToolGroup(group);
       continue;
     }
     if (it.k === 'assistant') f.pane.lastText = it.text;

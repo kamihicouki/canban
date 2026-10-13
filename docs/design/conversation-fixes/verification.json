@@ -1,0 +1,59 @@
+{
+  "label": "pr",
+  "viewport": "1280x800",
+  "question": "定期チェックの頻度はどれにしますか？",
+  "answer": "6時間ごと",
+  "themes": [
+    {
+      "theme": "light",
+      "toolStatus": [
+        {
+          "ok": true,
+          "running": false,
+          "error": false
+        },
+        {
+          "ok": false,
+          "running": false,
+          "error": true
+        }
+      ],
+      "cardOpenToComposerMs": 109.03120899999999,
+      "replyHeight": 77,
+      "replyWidth": 315.375,
+      "fontSize": "14px",
+      "lineHeight": "19px",
+      "text": "あなた質問: 定期チェックの頻度はどれにしますか？\n\n回答: 6時間ごと",
+      "draftPreserved": true,
+      "focus": true,
+      "scrollPreserved": true,
+      "timelineReplyMatches": true
+    },
+    {
+      "theme": "dark",
+      "toolStatus": [
+        {
+          "ok": true,
+          "running": false,
+          "error": false
+        },
+        {
+          "ok": false,
+          "running": false,
+          "error": true
+        }
+      ],
+      "cardOpenToComposerMs": 106.6007080000004,
+      "replyHeight": 77,
+      "replyWidth": 315.375,
+      "fontSize": "14px",
+      "lineHeight": "19px",
+      "text": "あなた質問: 定期チェックの頻度はどれにしますか？\n\n回答: 6時間ごと",
+      "draftPreserved": true,
+      "focus": true,
+      "scrollPreserved": true,
+      "timelineReplyMatches": true
+    }
+  ],
+  "pageErrors": []
+}
