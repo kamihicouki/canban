@@ -31,7 +31,7 @@ test('10 processes preserve 1000 accepted updates with bounded contention', { ti
     const s=new Store(${JSON.stringify(dir)});
     await s.load();
     const started=new Promise(resolve=>process.once('message',resolve));
-    process.send('ready');await started;process.disconnect();
+    process.send('ready');await started;
     let max=0,maxBusy=0,rejected=0,accepted=0;
     for(let i=0;i<100;i++){
       for(let attempt=0;;attempt++){
@@ -47,10 +47,14 @@ test('10 processes preserve 1000 accepted updates with bounded contention', { ti
         await new Promise(resolve=>setTimeout(resolve,50+Math.random()*150));
       }
     }
-    console.log(JSON.stringify({max,maxBusy,rejected,accepted}));await s.close();
+    console.log(JSON.stringify({max,maxBusy,rejected,accepted}));
+    // close() writes to instances; keep it out of other clients' write phase.
+    const closing=new Promise(resolve=>process.once('message',resolve));
+    process.send('written');await closing;
+    try {await s.close();} finally {process.disconnect();}
   `);
   const diagnostics=process.env.CANBAN_SQLITE_FIXTURE_DIAGNOSTICS==='1';
-  const results=await runReadyProcesses({inputs,cwd:root,signal:t.signal,diagnostics});
+  const results=await runReadyProcesses({inputs,cwd:root,signal:t.signal,diagnostics,finishTogether:true});
   if(diagnostics)for(const result of results)for(const line of result.err.split('\n'))
     if(line.startsWith('CANBAN_SQLITE_DIAGNOSTIC '))t.diagnostic(line);
   let rejected=0,max=0;
