@@ -25,7 +25,10 @@ const cardSizeObserver = new ResizeObserver(entries => {
     const p = panes.find(p => p.el === target), feed = p && live.feeds.get(p.id);
     const following = feed && atFeedEnd(feed.list);
     target.style.setProperty('--card-visible-height', `${Math.round(contentRect.height)}px`);
-    if (following) requestAnimationFrame(() => { if (target.isConnected && live.feeds.get(p.id) === feed) scrollFeedToEnd(feed); });
+    const scrollTop = feed?.list.scrollTop;
+    if (following) requestAnimationFrame(() => {
+      if (target.isConnected && live.feeds.get(p.id) === feed && feed.list.scrollTop === scrollTop) scrollFeedToEnd(feed);
+    });
   }
 });
 const applyCardWidths = () => { for (const kind of CARD_KINDS) { paneLayer.style.setProperty(`--w-${kind}`, `${cardWidths[kind]}px`); paneLayer.style.setProperty(`--h-${kind}`, `${cardHeights[kind]}px`); } };
