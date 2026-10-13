@@ -126,3 +126,63 @@ test('diagnostic preload preserves requests queued before the worker installs it
   assert.equal(results[0].code, 0, results[0].err);
   assert.equal(results[0].out.trim(), 'startup request preserved');
 });
+
+for (const failureAt of ['before', 'after']) {
+  for (const scenario of ['saved', 'invalid', 'busy']) {
+    const fails = scenario === 'invalid', blocked = scenario === 'busy';
+    test(`CPU sampler failure ${failureAt} native execution preserves ${blocked ? 'the native busy error' : fails ? 'the original error and rollback' : 'the accepted write'}`, { timeout: 60000 }, async t => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-cpu-guard-'));
+      t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+      const workerModule = new URL('../server/sqlite-worker.mjs', import.meta.url).href;
+      const bootstrap = `
+        process.threadCpuUsage = previous => {
+          if (${JSON.stringify(failureAt)} === 'before' || previous) throw new Error('synthetic-cpu-sampler-failure');
+          return {user:0,system:0};
+        };
+        await import(${JSON.stringify(workerModule)});
+      `;
+      const results = await runReadyProcesses({ cwd: root, diagnostics: true, signal: t.signal, inputs: [`
+        import { Worker } from 'node:worker_threads';
+        import { DatabaseSync } from 'node:sqlite';
+        const worker = new Worker(new URL('data:text/javascript,' + encodeURIComponent(${JSON.stringify(bootstrap)})), {
+          workerData: {dir:${JSON.stringify(dir)}}, execArgv:['--no-warnings']
+        });
+        let id=0;
+        const call = (target,method,args=[]) => new Promise((resolve,reject) => {
+          worker.once('message',resolve);worker.once('error',reject);
+          worker.postMessage({id:++id,target,method,args});
+        });
+        const loaded=await call('board','load');if(loaded.error)throw new Error('fixture load failed');
+        process.send('ready');await new Promise(resolve=>process.once('message',resolve));
+        const blocker=${blocked} ? new DatabaseSync(${JSON.stringify(path.join(dir, 'canban.sqlite'))}) : null;
+        blocker?.exec('BEGIN IMMEDIATE');
+        const result=await call('board','moveCard',[{cardId:'codex:cpu-guard',toListId:${JSON.stringify(fails ? 'invalid-list' : 'doing')},order:0}]);
+        blocker?.exec('ROLLBACK');blocker?.close();
+        const state=await call('board','load');
+        const closed=await call('system','close');
+        await worker.terminate();process.disconnect();
+        console.log(JSON.stringify({error:result.error||null,listId:result.value?.listId||null,
+          persistedList:state.value?.cards['codex:cpu-guard']?.listId||null,closeError:closed.error||null}));
+      `] });
+      assert.equal(results[0].code, 0, results[0].err);
+      const result = JSON.parse(results[0].out);
+      assert.equal(result.closeError, null, 'the DB transaction must still be closed normally');
+      if (blocked) {
+        assert.equal(result.error.code, 'db_busy');
+        assert.equal(result.error.message, '別の画面が更新中です。少し待って再操作してください。');
+        assert.ok(Number.isFinite(result.error.busyElapsedMs)); assert.equal(result.persistedList, null);
+      } else if (fails) {
+        assert.equal(result.error.message, '移動先のリストが見つかりません');
+        assert.equal(result.persistedList, null, 'the failed mutation must roll back');
+      } else {
+        assert.equal(result.error, null); assert.equal(result.listId, 'doing'); assert.equal(result.persistedList, 'doing');
+      }
+      const reportLine = results[0].err.split('\n').find(line => line.startsWith(prefix));
+      const operation = JSON.parse(reportLine.slice(prefix.length)).operations[0];
+      assert.equal(operation.outcome, blocked ? 'exhausted' : fails ? 'error' : 'success');
+      const native = operation.events.filter(event => event.phase === 'native');
+      assert.ok(native.length > 0); assert.ok(native.every(event => event.cpuMs === null));
+      assert.ok(!results[0].err.includes('synthetic-cpu-sampler-failure'));
+    });
+  }
+}

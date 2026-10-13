@@ -7,6 +7,13 @@ const prefix = 'CANBAN_SQLITE_DIAGNOSTIC ';
 const phases = new Set(['start', 'attempt', 'busy', 'sleep', 'wake', 'success', 'error', 'exhausted']);
 const number = value => typeof value === 'number' && Number.isFinite(value) ? value : null;
 
+function sampleCpu(previous) {
+  try {
+    const { user, system } = process.threadCpuUsage?.(previous) || {};
+    return Number.isFinite(user) && Number.isFinite(system) && user >= 0 && system >= 0 ? { user, system } : null;
+  } catch { return null; }
+}
+
 // Fixture-only observer: no SQL, arguments, errors, paths, or environment values.
 // Keep 64 events for each of the three slowest operations; write only at close.
 export function createFixtureRecorder(client, write = text => process.stderr.write(text)) {
@@ -58,13 +65,13 @@ if (!isMainThread && Number.isInteger(client) && client >= 0 && client < 10) {
   DatabaseSync.prototype.exec = function (sql) {
     if (!measuring) return original.call(this, sql);
     const start = performance.now();
-    const cpuStart = process.threadCpuUsage?.();
+    const cpuStart = sampleCpu();
     let outcome = 'success';
     try { return original.call(this, sql); }
     catch (error) { outcome = /database (?:is )?(?:locked|busy)/i.test(error.message) ? 'busy' : 'error'; throw error; }
     finally {
       const wallMs = performance.now() - start;
-      const cpu = cpuStart && process.threadCpuUsage(cpuStart);
+      const cpu = cpuStart && sampleCpu(cpuStart);
       const kind = sql === 'BEGIN IMMEDIATE' ? 'begin' : sql === 'COMMIT' ? 'commit' : sql === 'ROLLBACK' ? 'rollback' : 'other';
       recorder.native(kind, wallMs, cpu ? (cpu.user + cpu.system) / 1000 : null, outcome);
     }
