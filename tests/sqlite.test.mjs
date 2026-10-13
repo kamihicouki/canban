@@ -49,7 +49,10 @@ test('10 processes preserve 1000 accepted updates with bounded contention', { ti
     }
     console.log(JSON.stringify({max,maxBusy,rejected,accepted}));await s.close();
   `);
-  const results=await runReadyProcesses({inputs,cwd:root,signal:t.signal});
+  const diagnostics=process.env.CANBAN_SQLITE_FIXTURE_DIAGNOSTICS==='1';
+  const results=await runReadyProcesses({inputs,cwd:root,signal:t.signal,diagnostics});
+  if(diagnostics)for(const result of results)for(const line of result.err.split('\n'))
+    if(line.startsWith('CANBAN_SQLITE_DIAGNOSTIC '))t.diagnostic(line);
   let rejected=0,max=0;
   for(const result of results) {
     assert.equal(result.code,0,result.err);

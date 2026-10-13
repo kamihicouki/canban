@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 
 // Initialize one connection at a time, then release every writer together.
 // An exited client must retain its original error instead of stranding siblings.
-export async function runReadyProcesses({ inputs, cwd, signal, spawnImpl = spawn }) {
+export async function runReadyProcesses({ inputs, cwd, signal, spawnImpl = spawn, diagnostics = false }) {
   const children = [], results = [], closed = [];
   let started = false, failEarly;
   const earlyExit = new Promise((resolve, reject) => { failEarly = reject; });
@@ -12,6 +12,10 @@ export async function runReadyProcesses({ inputs, cwd, signal, spawnImpl = spawn
       const ready = new Promise(resolve => { markReady = resolve; });
       const child = spawnImpl(process.execPath, ['--no-warnings', '--input-type=module'], {
         cwd, signal, stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+        ...(diagnostics ? { env: { ...process.env,
+          NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --import=${new URL('./sqlite-fixture-diagnostics.mjs', import.meta.url).href}`,
+          CANBAN_SQLITE_DIAGNOSTIC_CLIENT: String(index),
+        } } : {}),
       });
       children.push(child);
       closed.push(new Promise(resolve => child.once('close', resolve)));
