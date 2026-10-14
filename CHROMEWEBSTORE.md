@@ -6,7 +6,11 @@
 
 - `main`: 開発とローカルChrome Main Test／Codexプラグインの更新元。
 - `production`（prod）: Chrome Web Store公開用。公開するときは同じrepoの`main`からリリースPRを作り、検証後に取り込みます。productionへのpushはストア申請を起動するため、公開の承認後に行います。
-- 今回はローカルmainを0.29.3へ統合し、productionは0.27.1のまま保持します。ストアへの送信・申請は行っていません。
+- 今回はローカルmainを0.29.4へ統合し、productionは0.27.1のまま保持します。ストアへの送信・申請は行っていません。
+
+## ローカル統合版 0.29.4
+
+- 別作業で完了した0.29.2のClaude Desktopグループ対応も開発用mainへ統合しました。Chrome権限の追加はありません。公開用productionは0.27.1を保持します。
 
 ## ローカル統合版 0.29.3
 
