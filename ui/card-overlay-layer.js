@@ -25,6 +25,10 @@ function mdHtml(src) {
 
 // ---- the layer that holds the cards ----
 const paneLayer = h('div', { id: 'paneLayer', class: 'pane-layer', hidden: true });
+// The same layer docks on the right of the 時間軸 (inbox.js): no scrim, the list stays usable, Enter opens it large.
+const paneDocked = () => !paneLayer.hidden && paneLayer.classList.contains('docked');
+const overlayOpen = () => !paneLayer.hidden && !paneLayer.classList.contains('docked');
+const inDockedPane = (el) => paneDocked() && !!el?.closest?.('#paneLayer');
 const paneBar = h('div', { class: 'pane-bar', role: 'toolbar', 'aria-label': 'カードの表示' });
 const paneStage = h('div', { class: 'pane-stage' });
 const paneRow = h('div', { class: 'pane-row' });

@@ -40,7 +40,7 @@ function displayedListCards(id, origin = cardReturn) {
   return list ? $$('.card', list).filter(el => el.getClientRects().length) : [];
 }
 function stepDisplayedCard(delta) {
-  const overlay = !paneLayer.hidden;
+  const overlay = overlayOpen() || inDockedPane(document.activeElement);
   if (overlay) return stepOpenCard(delta);
   if (inboxOn()) return inboxStep(delta);
   const focused = document.activeElement?.closest?.('#board .card');
@@ -63,43 +63,39 @@ function focusPanePrompt() {
   input.focus({ preventScroll: true });
   input.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
+// The key guide (key-guide.js) lists the keys of whatever has the focus: the board, the 時間軸 with its docked
+// card, or the card overlay. One panel in one place; only its entries change.
 function refreshShortcutHints() {
   const upper = document.querySelector('.popover, dialog[open]');
   const input = document.activeElement;
   const typing = typingIn(input);
   const modKey = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
   const globalKeys = [['?', 'キー一覧'], [`${modKey}K`, 'コマンド']];
+  const inCard = overlayOpen() || inDockedPane(input);
   let entries;
-  if (!paneLayer.hidden) {
-    if (upper) entries = [];
-    else if (typing) entries = [
-      ...(input.closest('[data-sec="send"]') && input.closest('.prompt-composer') ? [[`${modKey}Enter`, input.closest('.pane').dataset.kind === 'task' ? 'セッション開始' : '送信']] : []),
-      ['Esc', '入力を抜ける'], [`${modKey}K`, 'コマンド'],
-    ];
-    else if (panes[0]?.kind === 'view') entries = [[{ analytics: 'a', usage: 'u', orbit: 'Shift+O' }[openViewKind()], '閉じる'], ['r', '更新'], ...globalKeys, ['Esc', '閉じる']];
-    else {
-      const cards = displayedListCards(panes[0]?.id), index = cards.findIndex(el => el.dataset.cardId === panes[0]?.id);
-      entries = [['k', '前のカード', index <= 0], ['j', '次のカード', index < 0 || index === cards.length - 1],
-        ['⇧←', '左のリストへ', !adjacentPaneList(focusedPane(), -1)], ['⇧→', '右のリストへ', !adjacentPaneList(focusedPane(), 1)],
-        ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
-        ...(focusedPane()?.kind === 'session' ? [['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
-        ...(panePromptInput() ? [['i', '指示欄']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ['f', '変更']] : []), ['r', '更新'], ...globalKeys, ['Esc', '閉じる']];
-    }
-    paneHints.replaceChildren(...shortcutHints(entries).childNodes);
-    shortcutMap.hidden = entries.length === 0;
-    positionShortcutMap();
+  if (upper) entries = [];
+  else if (inCard && typing) entries = [
+    ...(input.closest('[data-sec="send"]') && input.closest('.prompt-composer') ? [[`${modKey}Enter`, input.closest('.pane').dataset.kind === 'task' ? 'セッション開始' : '送信']] : []),
+    ['Esc', '入力を抜ける'], [`${modKey}K`, 'コマンド'],
+  ];
+  else if (inCard && panes[0]?.kind === 'view') entries = [[{ analytics: 'a', usage: 'u', orbit: 'Shift+O' }[openViewKind()], '閉じる'], ['r', '更新'], ...globalKeys, ['Esc', '閉じる']];
+  else if (inCard) {
+    const docked = paneDocked();
+    const cards = displayedListCards(panes[0]?.id), index = cards.findIndex(el => el.dataset.cardId === panes[0]?.id);
+    entries = [['k', '前のカード', index <= 0], ['j', '次のカード', index < 0 || index === cards.length - 1],
+      ['⇧←', '左のリストへ', !adjacentPaneList(focusedPane(), -1)], ['⇧→', '右のリストへ', !adjacentPaneList(focusedPane(), 1)],
+      ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
+      ...(focusedPane()?.kind === 'session' ? [['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
+      ...(panePromptInput() ? [['i', '指示欄']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ['f', '変更']] : []), ['r', '更新'], ...globalKeys,
+      ...(docked ? [['Enter', '大きく開く'], ['Esc', '一覧へ戻る']] : [['Esc', timelineOn() ? '時間軸へ戻す' : '閉じる']])];
   }
-  boardKeyHints.hidden = !paneLayer.hidden || !!upper;
-  if (!boardKeyHints.hidden) {
-    if (typing) entries = input.id === 'q' ? [['↓ / Enter', 'カードへ'], ['Esc', '検索をクリア']] : [['⌘K / Ctrl+K', 'コマンド']];
-    else if (workspace.utilityPage()) entries = [...globalKeys, ['Esc', 'パネルを閉じる']];
-    else if (input?.matches('.card')) entries = [['j / k', '次 / 前'], ['Enter', '開く'], ['Space', 'その場で返信'], ['l', 'ラベル'], ['m', 'リストへ移動'], ...globalKeys];
-    else entries = [['j / k', 'カード選択'], ['/', '検索'], ['c', 'タスク追加'], ['i', timelineOn() ? 'ボード' : '時間軸'], ...(state.lens ? [['Esc', '照らすのをやめる']] : []), ['b', 'ナビゲーション'], ['a / u', '分析 / Usage'], ['r', '更新'], ...globalKeys];
-    boardKeyHints.replaceChildren(...shortcutHints(entries).childNodes);
-  }
+  else if (typing) entries = input.id === 'q' ? [['↓ / Enter', 'カードへ'], ['Esc', '検索をクリア']] : [['⌘K / Ctrl+K', 'コマンド']];
+  else if (workspace.utilityPage()) entries = [...globalKeys, ['Esc', 'パネルを閉じる']];
+  else if (input?.matches('.irow')) entries = [['j / k', '次 / 前'], ['Enter', '大きく開く'], ['r', '返信'], ['1 2 3', 'テキスト / プレビュー / 要点'], ['d', '詳細パネル'], ['l', 'ラベル'], ['m', 'リストへ移動'], ['i', 'ボード'], ...globalKeys];
+  else if (input?.matches('.card')) entries = [['j / k', '次 / 前'], ['Enter', '開く'], ['Space', 'その場で返信'], ['l', 'ラベル'], ['m', 'リストへ移動'], ...globalKeys];
+  else entries = [['j / k', 'カード選択'], ['/', '検索'], ['c', 'タスク追加'], ['i', timelineOn() ? 'ボード' : '時間軸'], ...(state.lens ? [['Esc', '照らすのをやめる']] : []), ['b', 'ナビゲーション'], ['a / u', '分析 / Usage'], ['r', '更新'], ...globalKeys];
+  paintKeyGuide(entries);
 }
-const boardKeyHints = shortcutHints([], 'board-shortcuts');
-document.body.append(boardKeyHints);
 document.addEventListener('focusin', refreshShortcutHints);
 document.addEventListener('focusout', () => queueMicrotask(refreshShortcutHints));
 document.addEventListener('click', refreshShortcutHints);
@@ -112,7 +108,9 @@ const SHORTCUTS = [
   ['時間（寿命）', [
     ['i', 'ボード（リストごと）と時間軸（時間ごと）を切り替え'], ['時間の帯で ← →', '日を移動（Home / End で最古 / 今日）。Enter で照らす'],
     ['Esc', '照らすのをやめる（ボード）'], ['⌘K', '「期間: …」「…のカードを照らす」'],
+    ['時間軸の一覧で j / k', '選んだカードを右に開く'], ['時間軸の一覧で Enter', 'カードを大きく開く（Esc で右へ戻す）'], ['時間軸の一覧で r / 1 2 3 / d', '返信欄へ / 表示 / 詳細パネル'], ['時間軸のカードで Esc', '一覧へ戻る'],
   ]],
+  ['キーの案内', [['見出しをドラッグ / 矢印キー', '置き場所: 右上・右下・下端・左下（Home で下端）'], ['– / 見出しで Enter', '畳む / 開く']]],
   ['dot', [['Shift+V', 'dotのセッションを含める / 除く（ボード・時間軸）'], ['⌘K', 'dotだけ / 含める / 除く']]],
   ['Slack', [['v', 'Slackタイムラインの表示 / 非表示（ボード）'], ['c / l / t', 'メッセージ上: タスク作成 / カードへ追加 / 返信'], ['Alt+s', 'カード内: Slack資料の追加ボタンへ'], ['Esc', 'タイムライン内: 非表示']]],
   ['カードを選択中', [
@@ -227,7 +225,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (e.key === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.isComposing && !typingIn(e.target) && !taskQuickAdd.dialog?.open && !document.querySelector('.popover')) { e.preventDefault(); quickAdd(); return; }
-  if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing || !paneLayer.hidden || typingIn(e.target) || document.querySelector('.popover')) return;
+  if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing || overlayOpen() || inDockedPane(e.target) || typingIn(e.target) || document.querySelector('.popover')) return;
   if (e.shiftKey && e.key.toLowerCase() === 'v') { e.preventDefault(); toggleDotScope(); return; }
   const onCard = e.target.classList?.contains('card');
   const k = e.key;
