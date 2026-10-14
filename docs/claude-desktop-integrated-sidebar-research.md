@@ -73,3 +73,13 @@ Desktop のネイティブな取り込み（`claude://resume`・別プロフィ�
 - **書き戻し**：監視プロセス（`node server/claude-desktop-guests.mjs watch`）が Desktop の終了を待って行う。台帳がある間に Canban が起動したときも、Desktop が止まっていれば片付け、起動中なら監視を付け直す。手動では `node server/claude-desktop-guests.mjs restore`（`plan`・`status` は読むだけ）。
 - **ボード**：統合中は同じ会話の記録が 2 か所にあるが、台帳にあるゲストは元のアカウントの会話として 1 枚に表示する。進行はゲスト側の新しい値を使い、ログイン中のアカウントからも届くものとして扱う（`desktopReach`）。
 - **未確認**：同じ保存先に同じ `sessionId` が 2 つある状態での Desktop の動き（前回の検証は別の保存先に置いた）。Desktop の読み込みはログイン中のアカウントのフォルダだけなので、表示には影響しない見込み。初回の統合起動で、サイドバーの表示・続きの追記・⌘Q 後の書き戻しを確かめる。
+
+## グループ（0.29.2、Codex と検討）
+
+- 手動グループは会話の記録ではなく `claude_desktop_config.json` の `preferences.epitaxyPrefs["dframe-group-scopes"]["<account>/<org>"]`（`groups`・`assignments`（`code:<sessionId>` → `cg-…`）・`order`）にある。グループ ID はアカウントごとに違う。サイドバーの `dframe-code-sections` の `members` は `assignments`/`order` から作られる派生状態。
+- 実データでは kamihicouki（cb1e）だけが手動グループを持つ。ppb（50e8）の「canban」は作業フォルダによる自動のまとまり。
+- Desktop は起動時に設定ファイルを IPC で読み、変更のたびに書く。`code:local_*` の割り当てはサーバー同期（`/api/claude_code/organizations/<org>/user_settings`）の対象外。
+- Desktop は localStorage の `dframe-store` にも同じ状態を持ち、起動時に設定ファイルと混ぜる。同じキーは cache が勝ち（`{...prefs, ...cache}`）、設定ファイルから消した割り当ても cache から戻る。
+- そのため、統合時に割り当てを足すだけにし、書き戻しでは消さない。足す先は、元の手動グループの名前、なければ作業フォルダの名前（`projectName`）と一致するログイン中のアカウントのグループ（一意のとき）。既に割り当てがあれば触らない。cache に古い値があればそちらが表示される。
+- 残った割り当ては、会話がなければ表示されない。ただし `order` に残り、同名グループの選択・空グループの一時保持・統計の件数に数えられる（Codex による配布コードの確認）。
+- 設定ファイルは MCP の設定も含むため、書くのは Desktop の停止中（`ps` の失敗は起動中扱い）、読み書きで1バイトも変わらないとき、ログイン中のアカウントのグループ以外が同一のときだけ。書き換え直前にハッシュを再確認する。

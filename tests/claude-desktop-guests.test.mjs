@@ -6,6 +6,7 @@ import path from 'node:path';
 import { configureAccounts, resetAccountsForTest } from '../server/accounts.mjs';
 import { listClaudeSessions } from '../server/sources/claude.mjs';
 import { planGuests, placeGuests, restoreGuests, openIntegrated, recoverGuests, readLedger, setGuestRunningCheck, guestPaths } from '../server/claude-desktop-guests.mjs';
+import { planGuestGroups } from '../server/claude-desktop-groups.mjs';
 
 // Pure layout: one Desktop folder, signed in to "host"; "other" is the second account.
 const HOST = 'host-account', OTHER = 'other-account';
@@ -129,4 +130,64 @@ test('opening integrates only while Desktop is stopped, and never a quit-interru
   assert.equal((await recoverGuests({ watch })).restored, 1);
   assert.equal(await exists(path.join(hostDir, `${ids.open}.json`)), false);
   assert.equal(guestPaths().state, path.join(root, 'state'));
+});
+
+// Desktop's manual groups (claude_desktop_config.json), keyed by "<account>/<org>".
+const config = (scopes, extra = {}) => JSON.stringify({ coworkUserFilesPath: '/x', preferences: { mcp: { keep: [1, 2.5, 'é'] }, epitaxyPrefs: { 'dframe-group-scopes': scopes, other: true } }, ...extra }, null, 2);
+const configFile = () => path.join(app, 'claude_desktop_config.json');
+const hostScope = `${HOST}/org-h`;
+const canban = { id: 'cg-host-canban', name: 'canban' };
+
+test('a guest joins the host group of the same name, and the assignment stays after the restore', async () => {
+  await write(path.join(otherDir, `${ids.open}.json`), record(ids.open, 'a', { cwd: '/Users/d/repo/canban/.claude/worktrees/x' }));
+  const before = config({ [hostScope]: { groups: [canban, { id: 'cg-sdw', name: 'sdw' }], assignments: { [`code:${ids.mine}`]: 'cg-sdw' }, order: { 'cg-sdw': [`code:${ids.mine}`] } } });
+  await write(configFile(), before);
+  const placed = await placeGuests({ labelOf: () => 'other' });
+  assert.equal(placed.grouped, 1);
+  const scope = JSON.parse(await fs.readFile(configFile(), 'utf8')).preferences.epitaxyPrefs['dframe-group-scopes'][hostScope];
+  assert.equal(scope.assignments[`code:${ids.open}`], 'cg-host-canban');
+  assert.deepEqual(scope.order['cg-host-canban'], [`code:${ids.open}`]);
+  assert.deepEqual((await readLedger()).groups.placed.map(p => [p.sessionId, p.via]), [[ids.open, 'project']]);
+  assert.equal((await restoreGuests()).restored, 1);
+  const after = JSON.parse(await fs.readFile(configFile(), 'utf8'));
+  const a = after.preferences.epitaxyPrefs['dframe-group-scopes'][hostScope];
+  // Kept on purpose: Desktop's cache would revive it, and the next integration reuses it.
+  assert.equal(a.assignments[`code:${ids.open}`], 'cg-host-canban');
+  assert.equal(a.assignments[`code:${ids.mine}`], 'cg-sdw');
+  assert.deepEqual(after.preferences.mcp, { keep: [1, 2.5, 'é'] });
+  assert.equal(await readLedger(), null);
+});
+
+test('group placement follows the origin group, needs a unique name, and never touches an odd config', async () => {
+  const scopes = {
+    [hostScope]: { groups: [canban, { id: 'cg-a', name: 'dup' }, { id: 'cg-b', name: 'dup' }], assignments: { 'code:local_pre': 'cg-a' }, order: {} },
+    [`${OTHER}/org-o`]: { groups: [{ id: 'cg-o1', name: 'research' }, { id: 'cg-o2', name: 'dup' }], assignments: { 'code:local_r': 'cg-o1', 'code:local_d': 'cg-o2' }, order: {} },
+  };
+  const data = JSON.parse(config(scopes));
+  const g = (sessionId, cwd) => ({ sessionId, account: OTHER, org: 'org-o', cwd });
+  const plan = planGuestGroups(data, hostScope, [g('local_r', '/repo/canban'), g('local_d', '/repo/canban'), g('local_p', '/Users/d/repo/canban'), g('local_pre', '/repo/canban'), g('local_n', '/repo/other')]);
+  assert.deepEqual(plan.map(p => p.groupId || p.skip), ['no-group', 'no-group', 'cg-host-canban', 'preexisting', 'no-group']);
+  // A config that would not round-trip byte-for-byte is left alone.
+  await write(path.join(otherDir, `${ids.open}.json`), record(ids.open, 'a', { cwd: '/repo/canban' }));
+  const odd = config({ [hostScope]: { groups: [canban], assignments: {}, order: {} } }) + '\n';
+  await write(configFile(), odd);
+  assert.equal((await placeGuests({ labelOf: () => 'other' })).grouped, 0);
+  assert.equal(await fs.readFile(configFile(), 'utf8'), odd);
+  assert.equal((await readLedger()).groups, undefined);
+  await restoreGuests();
+  // Invalid UTF-8 would not survive a rewrite: left alone too.
+  const bad = Buffer.concat([Buffer.from(config({ [hostScope]: { groups: [canban], assignments: {}, order: {} } }).replace('"/x"', '"/x_"')), Buffer.alloc(0)]);
+  const at = bad.indexOf('_'); bad[at] = 0xff;
+  await fs.writeFile(configFile(), bad);
+  assert.equal((await placeGuests({ labelOf: () => 'other' })).grouped, 0);
+  assert.ok((await fs.readFile(configFile())).equals(bad));
+});
+
+test('place and restore never run at the same time', async () => {
+  await Promise.all([placeGuests({ labelOf: () => 'other' }), restoreGuests(), placeGuests({ labelOf: () => 'other' })].map(p => p.catch(e => e)));
+  const state = path.join(root, 'state');
+  assert.deepEqual((await fs.readdir(state)).filter(f => f.startsWith('lock')), []);
+  await restoreGuests();
+  assert.equal(await readLedger(), null);
+  assert.equal(await exists(path.join(hostDir, `${ids.open}.json`)), false);
 });
