@@ -26,6 +26,7 @@ function render() {
   const listScroll = new Map();
   const listScrollKey = (l) => JSON.stringify([l.closest('.lane')?.dataset.lane || '', l.dataset.listId]);
   const scrollTop = boardEl.scrollTop;
+  const inboxScroll = $('.inbox-list', boardEl)?.scrollTop || 0;
   boardEl.querySelectorAll('.list').forEach((l) => listScroll.set(listScrollKey(l), $('.cards', l)?.scrollTop || 0));
 
   const focused = document.activeElement;
@@ -60,6 +61,8 @@ function render() {
   boardEl.scrollLeft = scroll;
   boardEl.scrollTop = scrollTop;
   boardEl.querySelectorAll('.list').forEach((l) => { const c = $('.cards', l); if (c) c.scrollTop = listScroll.get(listScrollKey(l)) || 0; });
+  const inboxList = $('.inbox-list', boardEl); if (inboxList) inboxList.scrollTop = inboxScroll;
+  syncDockedCard();
   bridge.reportSize();
 }
 

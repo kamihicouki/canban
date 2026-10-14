@@ -13,7 +13,7 @@ function exchangePill(card, compact = false) {
 }
 
 function selectedExchangeCard() {
-  const pane = !paneLayer.hidden ? focusedPane() : null;
+  const pane = !paneLayer.hidden && (!paneDocked() || inDockedPane(document.activeElement)) ? focusedPane() : null;
   const id = pane?.kind === 'session' ? pane.id : document.activeElement?.closest?.('[data-card-id]')?.dataset.cardId || (inboxOn() ? state.inbox.sel : null);
   const hit = id ? findCard(id) : null;
   const card = hit?.link || hit?.card || pane?.d?.session;
@@ -21,7 +21,7 @@ function selectedExchangeCard() {
 }
 function openSelectedExchanges(card = selectedExchangeCard()) {
   if (!card) return;
-  const pane = !paneLayer.hidden ? focusedPane()?.el : null;
+  const pane = !paneLayer.hidden && (!paneDocked() || inDockedPane(document.activeElement)) ? focusedPane()?.el : null;
   const anchor = pane?.querySelector('.th-meta, h3') || pane || $(`[data-card-id="${CSS.escape(card.id)}"] .exchange-pill`);
   if (anchor) openExchanges(anchor, card);
 }
@@ -80,6 +80,7 @@ async function openExchanges(anchor, card) {
   for (const [key, label] of [['timeline', '時系列'], ['peer', '相手別']]) modes.append(h('button', { type: 'button', 'data-exchange-mode': key,
     'aria-pressed': String(exchangesView === key), text: label, onclick: () => { positions[exchangesView] = history.scrollTop; exchangesView = key; draw(); } }));
   body.append(modes, summary, history);
+  modes.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
   try {
     const result = await bridge.callTool('canban_exchanges', { cardId: card.id });
     if (!popup.isConnected) return;

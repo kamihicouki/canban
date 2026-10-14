@@ -6,6 +6,7 @@ import path from 'node:path';
 import { exists, listDir, listSubdirs, readJson, readJsonLinesFrom, readTailJsonLines, stat } from './readonly.mjs';
 import { projectName, clip, cleanPrompt, firstLine, LOCAL_HOST, sessionKey } from './util.mjs';
 import { defaultClaudeHome, claudeDesktopSessionsDir, claudeDesktopFolders, claudeHomes, refreshAccounts, sessionAccount } from '../accounts.mjs';
+import { guestIndex } from '../claude-desktop-guests.mjs';
 
 export { claudeDesktopSessionsDir };
 export const claudeHome = defaultClaudeHome;
@@ -201,18 +202,24 @@ async function desktopFolders(dir) {
 
 async function loadDesktopMeta(dir = claudeDesktopSessionsDir()) {
   const meta = new Map();
+  // A guest of the integrated sidebar (claude-desktop-guests.mjs) is its original
+  // session: owned by the original account, and reachable from the host account too.
+  const guests = dir === claudeDesktopSessionsDir() ? guestIndex() : new Map();
   for (const folder of await desktopFolders(dir)) {
     for (const f of await listDir(folder.dir)) {
       if (!f.isFile() || !/^local_.*\.json$/.test(f.name)) continue;
-      const j = await readMeta(path.join(folder.dir, f.name));
+      let j = await readMeta(path.join(folder.dir, f.name));
       if (!j?.cliSessionId) continue;
+      const guest = guests.get(path.join(folder.dir, f.name));
+      if (guest && typeof j.title === 'string' && j.title.startsWith(guest.prefix)) j = { ...j, title: j.title.slice(guest.prefix.length) };
+      const owner = guest ? { owner: guest.account, org: guest.org } : folder;
       const prev = meta.get(j.cliSessionId);
-      const reach = [...new Set([...(prev?._reach || []), ...folder.reach])];
+      const reach = [...new Set([...(prev?._reach || []), ...folder.reach, ...(guest ? [guest.account] : [])])];
       if (prev && Number(prev.lastActivityAt || 0) >= Number(j.lastActivityAt || 0)) {
         prev._reach = reach;
         continue;
       }
-      meta.set(j.cliSessionId, { ...j, _account: folder.owner, _org: folder.org, _reach: reach });
+      meta.set(j.cliSessionId, { ...j, _account: owner.owner, _org: owner.org, _reach: reach });
     }
   }
   return meta;

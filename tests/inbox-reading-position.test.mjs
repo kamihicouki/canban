@@ -3,37 +3,41 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-function fixture() {
-  const src = fs.readFileSync(new URL('../ui/inbox.js', import.meta.url), 'utf8');
-  const position = src.slice(src.indexOf('const inboxReadingPositions'), src.indexOf('function inboxRow'));
-  const paint = src.slice(src.indexOf('async function paintInboxMain'));
-  const main = { isConnected: true, dataset: { cardId: 'a' }, children: [], replaceChildren(...children) { this.children = children; } };
-  const body = () => main.children.find(n => n.className === 'inbox-body');
-  const h = (tag, props = {}, ...children) => ({ className: props.class || '', children, scrollTop: 0, scrollHeight: 1000, clientHeight: 200 });
-  main.children = [h('div', { class: 'inbox-body' })];
-  body().scrollTop = 100;
-  const card = { id: 'a', updatedAt: 1, title: '架空の会話' };
-  const state = { inbox: { sel: 'a', d: { session: card } } };
-  const context = { state, h, atFeedEnd: el => el.scrollHeight - el.scrollTop - el.clientHeight < 48, findCard: () => ({ card }), faceGlyph() {}, faceWho() {}, dirPill() {}, faceStat() {}, relTime() {}, keycap: () => [], peekContent: () => [],
-    $: (selector, el) => selector === '.inbox-body' ? el.children.find(n => n.className === 'inbox-body') : null };
-  vm.runInNewContext((position.startsWith('const inboxReadingPositions') ? position : '') + paint + '\nthis.paint = paintInboxMain;', context);
-  return { main, body, card, state, paint: () => context.paint(main) };
+function fixture({ timeline = true, docked = true, visible = true } = {}) {
+  const source = fs.readFileSync(new URL('../ui/inbox.js', import.meta.url), 'utf8');
+  const feed = { scrollTop: 100 };
+  const calls = [];
+  const context = {
+    state: { inbox: { sel: 'a' } }, panes: [{ id: 'a', feed }], paneLayer: { hidden: !visible },
+    inboxOn: () => timeline, paneDocked: () => docked, inboxRows: () => [],
+    $: selector => selector === '#board .inbox-main' ? {} : null, CSS: { escape: value => value },
+    findCard: () => ({}), paneMetrics: () => calls.push('metrics'),
+    closeCards: () => calls.push('close'), openCard: () => calls.push('open'),
+  };
+  vm.runInNewContext(source.slice(source.indexOf('function syncDockedCard()')), context);
+  return { ...context, feed, calls };
 }
 
-test('timeline repaint preserves the position while reading earlier messages', async () => {
-  const f = fixture(); await f.paint(); assert.equal(f.body().scrollTop, 100);
+test('timeline redraw keeps the existing docked conversation and its reading position', () => {
+  const f = fixture(); f.syncDockedCard();
+  assert.equal(f.panes[0].feed, f.feed);
+  assert.equal(f.feed.scrollTop, 100);
+  assert.deepEqual(f.calls, ['metrics']);
 });
-test('timeline repaint follows the end when the reader was at the end', async () => {
-  const f = fixture(); f.body().scrollTop = 800; await f.paint(); assert.equal(f.body().scrollTop, 1000);
+test('selecting the same timeline row does not recreate the conversation', () => {
+  const f = fixture(); f.inboxSelect('a');
+  assert.equal(f.panes[0].feed, f.feed);
+  assert.equal(f.feed.scrollTop, 100);
+  assert.deepEqual(f.calls, []);
 });
-test('timeline selection remembers each conversation independently', async () => {
-  const f = fixture(); await f.paint(); f.card.id = 'b'; f.state.inbox.sel = 'b'; await f.paint();
-  assert.equal(f.body().scrollTop, 1000);
-  f.body().scrollTop = 300; f.card.id = 'a'; f.state.inbox.sel = 'a'; await f.paint(); assert.equal(f.body().scrollTop, 100);
+test('returning to the board closes the docked card but keeps a large overlay open', () => {
+  for (const docked of [true, false]) {
+    const f = fixture({ timeline: false, docked }); f.syncDockedCard();
+    assert.deepEqual(f.calls, docked ? ['close'] : []);
+  }
 });
-test('a task preview does not overwrite the previous session position', async () => {
-  const f = fixture(); await f.paint();
-  f.card.id = 'task'; f.card.kind = 'task'; f.card.links = []; f.state.inbox.sel = 'task'; await f.paint();
-  f.body().scrollTop = 300;
-  f.card.id = 'a'; delete f.card.kind; f.state.inbox.sel = 'a'; await f.paint(); assert.equal(f.body().scrollTop, 100);
+test('a redraw does not replace a card opened large while the timeline is visible', () => {
+  const f = fixture({ docked: false }); f.syncDockedCard();
+  assert.equal(f.panes[0].feed, f.feed);
+  assert.deepEqual(f.calls, []);
 });

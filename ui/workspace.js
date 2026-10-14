@@ -21,7 +21,7 @@ const workspace = {
     this.drawer = h('aside', { class: 'mgmt-drawer', hidden: true, 'aria-label': '管理パネル' }, this.toolbar, this.pages);
     $('#sidebar').after(this.drawer);
     document.addEventListener('keydown', e => {
-      if (e.key !== 'Escape' || e.defaultPrevented || !this.utilityPage() || !paneLayer.hidden || document.querySelector('.popover, dialog[open]') || typingIn(e.target)) return;
+      if (e.key !== 'Escape' || e.defaultPrevented || !this.utilityPage() || overlayOpen() || document.querySelector('.popover, dialog[open]') || typingIn(e.target)) return;
       e.preventDefault(); this.navigate('home');
     });
     this.initialized = true;
@@ -59,7 +59,7 @@ const workspace = {
     this.title.replaceChildren(h('span', { html: picon(PAGE_ICONS[this.page] || 'more', 20) }), WORKSPACE_PAGES.find(([id]) => id === this.page)?.[1] || '');
     for (const entry of this.entries.values()) entry.el.hidden = entry.page !== this.page || (entry.page === 'settings' && entry.tab !== this.settingsTab);
     if (typeof paintLayoutChrome === 'function') paintLayoutChrome();
-    $('.shell').inert = !paneLayer.hidden; // the board waits while the overlay is open; the app bar stays usable
+    $('.shell').inert = overlayOpen(); // the board waits while the overlay is open; the app bar stays usable
   },
   trackDrafts(root) {
     for (const el of root.querySelectorAll('input:not([type=checkbox]):not([type=radio]),textarea,select')) {

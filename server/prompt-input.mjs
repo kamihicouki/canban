@@ -70,6 +70,7 @@ export function skillRoots({ agent = 'codex', cwd = '', homeDir } = {}) {
   if (!['codex', 'claude'].includes(agent)) throw new Error('未対応のAI Appです');
   const home = homeDir || (agent === 'codex' ? codexHome() : claudeHome());
   const roots = [path.join(home, 'skills'), path.join(home, 'plugins', 'cache')];
+  if (agent === 'codex') roots.unshift(path.resolve(import.meta.dirname, '..', 'skills'));
   if (agent === 'codex') roots.push(path.join(os.homedir(), '.agents', 'skills'));
   if (cwd) {
     if (!path.isAbsolute(cwd)) throw new Error('作業フォルダは絶対パスで指定してください');
@@ -110,7 +111,25 @@ export function listSkills(context = {}) {
 export function withSkills(prompt, skills = []) {
   if (!Array.isArray(skills) || skills.length > 20 || skills.some(s => !s || !/^[\w.:-]+$/.test(s.name) || typeof s.path !== 'string' || !path.isAbsolute(s.path) || path.basename(s.path) !== 'SKILL.md' || /[\r\n]/.test(s.path))) throw new Error('スキルの指定が不正です');
   if (!skills.length) return String(prompt || '').trim();
-  return `${String(prompt || '').trim()}\n\n使用するスキル（各 SKILL.md を読み、適用してください）:\n${skills.map(s => `$${s.name} — ${JSON.stringify(s.path)}`).join('\n')}`.trim();
+  const apps = new Set(skills.flatMap(s => skillApps(s.path)));
+  const mentions = apps.size ? `\n\n使用する接続アプリ:\n${[...apps].map(id => `[$${id}](app://${id})`).join('\n')}` : '';
+  return `${String(prompt || '').trim()}\n\n使用するスキル（各 SKILL.md を読み、適用してください）:\n${skills.map(s => `$${s.name} — ${JSON.stringify(s.path)}`).join('\n')}${mentions}`.trim();
+}
+
+// Read dependencies from the installed plugin that owns this skill. The UI sends
+// only the skill path; app IDs are resolved on the executing machine, not trusted
+// from client input. This also works for a plugin served by a Chrome native host.
+function skillApps(file) {
+  const root = path.resolve(path.dirname(file), '..', '..');
+  if (path.dirname(file) !== path.join(root, 'skills', path.basename(path.dirname(file)))) return [];
+  try {
+    const plugin = JSON.parse(fs.readFileSync(path.join(root, '.codex-plugin', 'plugin.json'), 'utf8'));
+    if (path.resolve(root, plugin.skills || 'skills') !== path.join(root, 'skills') || !plugin.apps) return [];
+    const manifest = path.resolve(root, plugin.apps);
+    if (manifest !== path.join(root, '.app.json')) return [];
+    const apps = JSON.parse(fs.readFileSync(manifest, 'utf8')).apps;
+    return Object.values(apps || {}).map(app => app?.id).filter(id => typeof id === 'string' && /^connector_[A-Za-z0-9_]+$/.test(id));
+  } catch { return []; }
 }
 
 export function withImagePaths(prompt, images) {

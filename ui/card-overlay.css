@@ -13,15 +13,6 @@
 .pane-stage.can-scroll-right { mask-image: linear-gradient(to right, var(--on-scrim) calc(100% - 48px), transparent); }
 .pane-row { position: relative; display: flex; align-items: flex-start; gap: 16px; margin: 0 auto; width: max-content; height: 100%; max-height: 960px; }
 .card-board-end { position: absolute; inset: 0 0 0 auto; width: 1px; pointer-events: none; }
-.shortcut-map { position: absolute; z-index: 3; top: 8px; right: 8px; width: max-content; padding: 10px 12px; border-radius: 10px;
-  background: color-mix(in srgb, var(--modal-bg) 94%, transparent); color: var(--list-fg); box-shadow: var(--lift-shadow);
-  overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
-.shortcut-map-title { font: 700 11px/18px system-ui, sans-serif; letter-spacing: .03em; color: var(--list-muted); margin-bottom: 6px; }
-.shortcut-map[hidden] { display: none; }
-.shortcut-map .pb-hint { flex-direction: column; align-items: flex-start; flex-wrap: nowrap; gap: 5px; font-size: 11px; }
-.shortcut-map .shortcut-hint { width: 100%; align-items: start; white-space: normal; line-height: 18px; }
-.shortcut-map .shortcut-hint kbd { flex: none; margin-top: 1px; }
-.shortcut-map .shortcut-hint > span { min-width: 0; overflow-wrap: anywhere; }
 .pane { --fs: 13px; --pw: var(--w-session, 720px); position: relative; flex: none; display: flex; flex-direction: column; scroll-snap-align: center;
   width: min(var(--pw), calc(var(--card-board-width, 80vw) - 24px)); background: var(--modal-bg); color: var(--list-fg); border-radius: 12px; overflow: hidden; font-size: var(--fs); line-height: 1.55;
   box-shadow: var(--lift-shadow); }
@@ -47,4 +38,16 @@
 .pane-layer.stack .pane-stage { padding-inline: 12px; }
 .pane-layer.stack .pane.sheet { width: calc(var(--card-board-width, 80vw) - 24px); }
 
+/* Docked on the 時間軸: the layer is the right side of the timeline (placed by paneMetrics), no scrim, the card fills it. */
+.pane-layer.docked { inset: auto; z-index: 30; background: none; }
+.pane-layer.docked .pane-bar { margin: 0; padding: 0 2px 6px; min-height: 0; color: var(--on-board); }
+.pane-layer.docked .pane-bar .hbtn, .pane-layer.docked .pane-bar .seg button:not([aria-pressed="true"]) { color: var(--on-board); }
+.pane-layer.docked .card-board-viewport { inset: 0; }
+.pane-layer.docked .pane-stage { padding: 0; }
+.pane-layer.docked .pane-row { gap: 12px; width: 100%; max-height: none; }
+.pane-layer.docked .pane { flex: 1 1 0; width: auto; min-width: min(100%, 420px); height: 100%; box-shadow: var(--card-shadow); }
+.pane-layer.docked .pane:focus-within { box-shadow: var(--card-shadow), 0 0 0 2px var(--focus); }
+.pane-layer.docked :is(.pane-width, .pane-height, .pane-corner) { display: none; } /* the 時間軸 sizes a docked card */
+.pane-layer.docked :is(.pane-close, .pb-title) { display: none; } /* docked, the card goes with the 時間軸; Enter opens it large */
+.pane-bar .pb-expand[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) { .pane-layer, .pane { transition: none; } }

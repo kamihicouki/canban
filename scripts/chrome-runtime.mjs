@@ -32,10 +32,14 @@ export function installChromeRuntime({ repository, runtimeDirectory, sha, dataDi
   const staging = fs.mkdtempSync(path.join(runtimeDirectory, '.runtime-'));
   try {
     if (sha) {
-      run('tar', ['-xf', '-', '-C', staging], { input: run('git', ['archive', '--format=tar', sha]) });
+      // Through a file, not a buffer: the archive (docs/design images included) outgrows any fixed maxBuffer.
+      const archive = path.join(staging, '.archive.tar');
+      run('git', ['archive', '--format=tar', `--output=${archive}`, sha]);
+      run('tar', ['-xf', archive, '-C', staging]);
+      fs.rmSync(archive);
     } else {
       // Bare companion installations have no Git metadata. Copy only program files.
-      for (const entry of ['server', 'ui', 'assets', 'scripts/chrome-native-host.sh', 'scripts/chrome-native-host.mjs', 'scripts/launch.sh', 'package.json', '.codex-plugin/plugin.json']) {
+      for (const entry of ['server', 'ui', 'assets', 'skills', '.app.json', 'scripts/chrome-native-host.sh', 'scripts/chrome-native-host.mjs', 'scripts/launch.sh', 'package.json', '.codex-plugin/plugin.json']) {
         const source = path.join(repository, entry);
         if (!fs.existsSync(source)) continue;
         fs.mkdirSync(path.dirname(path.join(staging, entry)), { recursive: true });

@@ -1,5 +1,26 @@
 # セッション間のやり取り — 実装検証
 
+## main統合版（0.29.2）
+
+2026-10-15、ユーザーのmain取り込み・拡張再読み込みの依頼により、ローカルmain 0.29.1と統合した。時間軸の右側は最新mainのカードそのものを維持し、共通のキー案内へShift+Mを追加した。時間軸の行と右側のカードでは、それぞれフォーカス中のセッションを対象にする。
+
+- `npm test`: 465件成功、失敗0件。
+- 実Chromeの`board-smoke.browser.mjs`: 1件成功、失敗0件。時間軸でShift+Mを使い、Escでポップオーバーだけ閉じて右側カードが残ることも確認した。
+- `npm run build:chrome`: 成功。ソースのpackage・manifest・pluginは0.29.2。
+- Chrome起動待ちで止まった初回は受け入れず、再実行の成功を確認した。
+- 独立レビューのキーボード所見2件を修正した。開いた履歴へフォーカスを移し、Escを最上位のポップオーバーで消費する。時間の照らしを維持する回帰テストと、実Chromeでのフォーカス確認も成功した。
+- 旧時間軸プレビューのテストは、現行のドッキングしたカードの会話・読む位置を保つ検証へ移した。
+- mainでのローカル配布・登録先・再読み込み後の読み戻しは、通常repoの`.local/verification/session-exchanges-main/`に保存する。初期実装版の検証記録は以下に保持する。
+
+| 表示 | 時系列 | 相手別 |
+|---|---|---|
+| ボード・ライト | [画像](main-0.29.2/board-light-timeline.png) | [画像](main-0.29.2/board-light-peer.png) |
+| ボード・ダーク | [画像](main-0.29.2/board-dark-timeline.png) | [画像](main-0.29.2/board-dark-peer.png) |
+| 時間軸・ライト | [画像](main-0.29.2/timeline-light-timeline.png) | [画像](main-0.29.2/timeline-light-peer.png) |
+| 時間軸・ダーク | [画像](main-0.29.2/timeline-dark-timeline.png) | [画像](main-0.29.2/timeline-dark-peer.png) |
+
+## 初期実装版（0.27.13）
+
 2026-10-14、0.27.12を基準にした作業ブランチ `codex/session-exchanges` の実装版0.27.13。既存カードの吹き出しから、レイヤー4のポップオーバーで「時系列／相手別」を切り替える。相手別は折りたためる。別セッションと実際のMulti Agentの起動関係を区別する。
 
 ## 検証結果

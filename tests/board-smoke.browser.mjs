@@ -51,9 +51,15 @@ await step('fold', () => document.querySelector('.fold-head')?.click());
   });
   await step('exchanges esc', () => { key('Escape'); if (document.querySelector('.exchange-popover')) throw new Error('popup stayed open'); });
   await step('exchanges keyboard', async () => {
+    document.querySelector('.rb-phase.life-fresh').click();
+    const lens = document.querySelector('#board');
+    if (!lens.classList.contains('lens-on')) throw new Error('time highlight missing before popup');
     document.querySelector('[data-card-id="codex:t1"]').focus();
     key('M', { shiftKey: true }); await w(500);
     if (!document.querySelector('.exchange-popover')) throw new Error('Shift+M did not open popup');
+    if (!document.activeElement.closest('.exchange-popover')) throw new Error('keyboard focus stayed outside popup');
+    key('Escape');
+    if (!lens.classList.contains('lens-on')) throw new Error('Esc also cleared the time highlight');
     key('Escape');
   });
 await step('lanes', () => [...document.querySelectorAll('.side-sec-lanes button')].find((b) => b.textContent === 'AI Apps').click(), 1000);
@@ -64,6 +70,13 @@ await step('palette', () => key('k', { metaKey: true }));
 await step('esc', () => key('Escape'));
 await step('time axis', () => key('i'), 1000);
 await step('row', () => document.querySelector('.irow')?.click(), 1500);
+await step('timeline exchanges keyboard', async () => {
+  document.querySelector('.irow[data-card-id="codex:t1"]').focus();
+  key('M', { shiftKey: true }); await w(500);
+  if (!document.querySelector('.exchange-popover')) throw new Error('timeline Shift+M did not open popup');
+  key('Escape');
+  if (!document.querySelector('#paneLayer').classList.contains('docked')) throw new Error('Esc closed the docked card');
+});
 await step('board', () => key('i'), 800);
 await step('session', () => document.querySelector('.card.face:not(.task)').click(), 3000);
 await step('details', () => key('d'));
@@ -132,9 +145,9 @@ test('the board, the ribbon, the time axis and the card layers run without page 
     for (const layout of ['board', 'timeline']) for (const theme of ['light', 'dark']) for (const mode of ['timeline', 'peer']) {
       const capture = await cdp('Runtime.evaluate', { expression: `(async()=>{
         document.querySelector('.exchange-popover .close')?.click();
-        document.querySelector('.pane-close')?.click();
+        if(!document.querySelector('#paneLayer').classList.contains('docked'))document.querySelector('.pane-close')?.click();
         await new Promise(r=>setTimeout(r,200));
-        if(!document.querySelector('#paneLayer').hidden)throw new Error('sheet still overlays the board');
+        if(!document.querySelector('#paneLayer').hidden&&!document.querySelector('#paneLayer').classList.contains('docked'))throw new Error('sheet still overlays the board');
         if (!!document.querySelector('.inbox') !== ${layout === 'timeline'}) document.dispatchEvent(new KeyboardEvent('keydown',{key:'i',bubbles:true}));
         await new Promise(r=>setTimeout(r,400));
         if(!!document.querySelector('.inbox') !== ${layout === 'timeline'})throw new Error('wrong board view');
