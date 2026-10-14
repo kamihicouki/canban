@@ -26,7 +26,8 @@ import { Presence, appLabel } from './presence.mjs';
 import { codexHome } from './sources/codex.mjs';
 import { claudeHome, claudeDesktopSessionsDir } from './sources/claude.mjs';
 import { accountTools, accountFilterProp, accountDesktopNote, extraWatchRoots } from './accounts-mcp.mjs';
-import { accountName, desktopAccountMismatch } from './accounts.mjs';
+import { accountName, accountLabel, desktopAccountMismatch } from './accounts.mjs';
+import { openIntegrated, recoverGuests } from './claude-desktop-guests.mjs';
 import { accountActions, accountActionTools } from './account-actions.mjs';
 import { shutdownLogins } from './login.mjs';
 import { boardHtml } from './ui.mjs';
@@ -72,6 +73,9 @@ function readManifest(...candidates) {
 
 const store = new Store();
 attachSummaryCache(store.dir); // Claude transcript summaries survive a restart: only new lines are read
+// Integrated Desktop sidebar: the ledger lives with the data, and the watcher inherits it.
+process.env.CANBAN_DESKTOP_GUESTS_DIR ||= path.join(store.dir, 'desktop-integrated');
+recoverGuests().then(r => r?.restored && process.stderr.write(`[canban] Desktop の統合を片付けました（${r.restored} 件）\n`), error => process.stderr.write(`[canban] Desktop の統合の片付け: ${error.message}\n`));
 const desktopBridge = await startDesktopBridge({ dataDir: store.dir }).catch(error => {
   process.stderr.write(`[canban] Codex連携: ${error.message}\n`);
   return null;
@@ -393,10 +397,21 @@ const TOOLS = [
       const owner = accountNote && useRoute === 'desktop' ? desktopAccountMismatch(session)?.session : null;
       const ownerPlan = owner ? await desktopProfilePlan(owner) : null;
       if (ownerPlan?.available) accountNote = null;
+      // Integrated sidebar: with Desktop stopped, the signed-in Desktop opens with every
+      // account's sessions (claude-desktop-guests.mjs) and this one is opened there.
+      let integrated = null;
+      if (owner && !ownerPlan?.available) {
+        const labels = state.settings.accounts.labels;
+        integrated = await openIntegrated({ sessionId: session.desktopSessionId, labelOf: a => accountLabel(`claude:${a}`, labels).replace(/@.*/, ''), open: () => openUrl(link.url) });
+        if (integrated.ok) accountNote = null;
+        else if (route === 'desktop') throw new Error(`${accountName(owner, labels)} の会話を Desktop で開けません。${integrated.reason}`);
+        else accountNote = `${accountNote}\n${integrated.reason}`;
+      }
       let terminalNote = null;
       if (useRoute === 'desktop' && accountNote && !route) { useRoute = 'terminal'; terminalNote = accountNote; }
       if (useRoute === 'desktop') {
-        if (selected) await withDesktopAccount(session.executionAccount, async () => {
+        if (integrated?.ok) accountNote = `全アカウントの会話をまとめて Desktop で開きました（ほかのアカウントの会話 ${integrated.placed} 件に 🔗 を付けています）。Desktop を ⌘Q で終了すると、それぞれのアカウントへ戻します。`;
+        else if (selected) await withDesktopAccount(session.executionAccount, async () => {
           await claudeExecutionSession(source, session.home, session.executionAccount);
           await openUrl(link.url);
         });

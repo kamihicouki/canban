@@ -50,6 +50,8 @@ Claude のセッションごとの実行先は共有SQLiteのカード属性 `cl
 
 macOS の Desktop はCLIとは別のログインを使う。このMacの Desktop は素の構成（ピュア構成）にする。保存先は `~/Library/Application Support/Claude` の実ディレクトリ1つだけで、アカウントごとの会話はその中の `claude-code-sessions/<accountId>/<orgId>/` に実ファイルとして置く。ログインは同時に1つで、別アカウントを使うときは Desktop でログインし直す。`Claude-Profiles`・`Claude-*` のプロフィール、保存先のリンク、アカウント間の共有リンクは使わない。Claude Profiles.app も使わない。移行と戻し方は [claude-desktop-pure-layout-plan.md](claude-desktop-pure-layout-plan.md) と `scripts/desktop-pure-migrate.mjs` を参照。
 
+ほかのアカウントの会話は、Desktop を終了した状態で Canban から開くと、ログイン中の Desktop にまとめて表示する（統合サイドバー、`server/claude-desktop-guests.mjs`）。ほかのアカウントの記録を `🔗 <アカウント> · ` を付けたゲストとしてログイン中のアカウントのフォルダへ複製し、ユーザーの ⌘Q の後に元の記録へ進行を書き戻してゲストを消す。台帳と会話記録の退避（APFS clone）は `~/.canban/desktop-integrated/` に置く。仕組みと実機検証は [claude-desktop-integrated-sidebar-research.md](claude-desktop-integrated-sidebar-research.md) を参照。
+
 Canban は Desktop のプロフィールやリンクを切り替えない（0.24.2〜0.27 の切替は廃止）。Desktop で開くのはログイン中のアカウントの会話だけで、それ以外は理由を返し、CLI での実行かログインの切り替えを案内する。起動中の Desktop は、ログイン中の保存先を開いていることを確認できた場合だけ使う。ボードは保存先内の全アカウントの会話を表示する。
 
 0.24.4以降、実行アカウント一覧はアプリバー・サイドバーと同じアカウントID単位にまとめ、CLI設定フォルダーは各アカウントの「接続設定を指定」に残す。保存済みhome IDは受動的な表示や同じアカウントの再選択で変更しない。

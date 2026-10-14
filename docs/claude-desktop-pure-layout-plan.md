@@ -98,3 +98,9 @@ Desktop を停止し、新しい `Claude` を退避する。バックアップ�
 - `verify`：問題なし。参考として、移行前から作業フォルダが存在しない会話が 7 件ある（リモートの `/home/ubuntu/...` と、削除済みの worktree）。
 - Desktop を起動すると、main.log に `Loaded 46 persisted sessions from …/Claude/claude-code-sessions/cb1e…/9e88… (3 archived deferred, …; hint absent)` が記録された。46 + 3 = 49 で全件が読み込まれている。`hint absent` は、退避した `archived-sessions.idx` を Desktop が作り直す状態。起動直後のエラーはない。
 - 残っている確認：画面での見た目、scratch の会話を開いたときの表示、50e8 でログインし直したときの 5 件の表示、Canban のボードでの重複なし表示。旧フォルダ（`retired/`）と clone の削除は、これらの確認が済んでから行う。
+
+## 2. Canban の作り直し（2026-10-14、0.29.0）
+
+- 統合サイドバーを `server/claude-desktop-guests.mjs` として実装した。仕組みは [claude-desktop-integrated-sidebar-research.md](claude-desktop-integrated-sidebar-research.md) の「実装」を参照。
+- 実データでの計画表示（読むだけ）：ログインは cb1e、ゲストになるのは 50e8 の 4 件（アーカイブ済みの Line Harness を除く）。
+- 残っている確認：Desktop を終了した状態で、Canban から 50e8 の会話を開く初回の統合起動。
