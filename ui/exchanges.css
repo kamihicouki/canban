@@ -1,0 +1,36 @@
+/* Existing layer-4 popover; card density follows the existing lifetime model. */
+.exchange-pill { display: inline-flex; align-items: center; gap: 3px; flex: none; padding: 1px 4px; border-radius: 4px; color: var(--card-muted); background: var(--btn-subtle); font-size: 11px; white-space: nowrap; }
+.exchange-pill:hover, .exchange-pill:focus-visible { background: var(--btn-subtle-hover); color: var(--accent); }
+.exchange-pill.is-compact { padding: 0 2px; }
+.exchange-pill > span:first-child { display: inline-flex; flex: none; }
+.exchange-count { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ffoot:has(> .exchange-pill) { gap: 4px; }
+.ffoot > .exchange-pill { flex: none; }
+.ffoot:has(> .exchange-pill) > .dir-pill { min-width: 0; }
+.ffoot:has(> .exchange-pill) > .fbranch { min-width: 0; }
+.exchange-popover { display: flex; flex-direction: column; overflow: hidden; max-width: calc(100vw - 16px); color: var(--list-fg); }
+.exchange-popover > h3 { padding-right: 64px; flex: none; }
+.exchange-popover > .close { display: inline-flex; align-items: center; gap: 4px; width: auto; padding: 0 4px; }
+.exchange-body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.exchange-modes { display: flex; gap: 3px; padding: 3px; border-radius: 6px; background: var(--btn-subtle); flex: none; }
+.exchange-modes button { flex: 1; min-height: 32px; border-radius: 4px; font-weight: 600; color: var(--list-fg); }
+.exchange-modes button[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-fg); }
+.exchange-summary { padding: 10px 0; font-size: 12px; color: var(--list-muted); flex: none; }
+.exchange-history { min-height: 0; max-height: 60vh; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.exchange-event { padding: 10px 0; border-top: 1px solid var(--input-border); }
+.exchange-event-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+.exchange-event time { color: var(--list-muted); font-variant-numeric: tabular-nums; }
+.exchange-direction { white-space: nowrap; color: var(--list-fg); }
+.exchange-direction.is-sent { color: var(--accent); }
+.exchange-peer { color: var(--list-fg); font-size: 14px; font-weight: 600; text-align: left; overflow-wrap: anywhere; }
+.exchange-peer:hover:not(:disabled) { color: var(--accent); text-decoration: underline; }
+.exchange-peer:disabled { opacity: 1; cursor: default; }
+.exchange-kind { display: inline-block; color: var(--list-muted); font-size: 11px; }
+.exchange-text { margin: 4px 0 0; color: var(--list-fg); font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.exchange-group { border-top: 1px solid var(--input-border); padding: 10px 0; }
+.exchange-group > summary { cursor: pointer; font-size: 14px; }
+.exchange-group > summary > * { margin-right: 5px; }
+.exchange-group-events { margin-top: 5px; }
+.exchange-agents { margin-bottom: 8px; padding: 8px 0; font-size: 13px; border-top: 1px solid var(--input-border); }
+.exchange-agents > summary { cursor: pointer; }
+.exchange-agent { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 6px 0; }

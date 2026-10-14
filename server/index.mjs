@@ -21,6 +21,7 @@ import { desktopLink, resumeCommand, newSessionLink, newSessionCommand } from '.
 import { LOCAL_HOST } from './sources/util.mjs';
 import { openUrl, openExternal, runInTerminal, installedTerminals, setRunner, TERMINAL_LABELS } from './launcher.mjs';
 import { LiveHub } from './live.mjs';
+import { sessionExchanges } from './board.mjs';
 import { createWatch } from './watch.mjs';
 import { Presence, appLabel } from './presence.mjs';
 import { codexHome } from './sources/codex.mjs';
@@ -242,6 +243,18 @@ const TOOLS = [
         text: limited.map((r) => `${r.cardId} [${r.list}] (${r.agent}/${r.directory ? `📂${r.directory}` : r.project ?? '-'}) ${r.title}`).join('\n') || '該当なし',
         structured: { results: limited, total: rows.length, lists: board.lists.map((l) => ({ id: l.id, title: l.title })) },
       };
+    },
+  },
+  {
+    name: 'canban_exchanges',
+    title: 'セッション間のやり取り',
+    description: '取得済みのCodexセッション間メッセージと、確認できたMulti Agentの起動関係を読み取る。既読化・送信・カードの移動は行わない。',
+    inputSchema: { type: 'object', properties: { cardId: { type: 'string' } }, required: ['cardId'], additionalProperties: false },
+    annotations: { readOnlyHint: true },
+    _meta: appOnly,
+    handler: async ({ cardId }) => {
+      const result = await sessionExchanges(store, cardId);
+      return { text: `やり取り: ${result.events.length} 件`, structured: result };
     },
   },
   {

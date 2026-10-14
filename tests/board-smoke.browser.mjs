@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { makeFixtures } from './helpers.mjs';
 
 const chromeBin = process.env.CANBAN_BROWSER_EXECUTABLE || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -27,6 +28,34 @@ for (const k of ['live', 'fresh', 'active', 'dormant']) await step('phase ' + k,
 await step('period 7', () => [...document.querySelectorAll('.rb-period button')].find((b) => b.textContent === '7日').click(), 1200);
 await step('period all', () => [...document.querySelectorAll('.rb-period button')].find((b) => b.textContent === '全期間').click(), 1200);
 await step('fold', () => document.querySelector('.fold-head')?.click());
+  await step('exchanges open', async () => {
+    const button = document.querySelector('[data-card-id="codex:t1"] .exchange-pill');
+    const count = button.querySelector('.exchange-count');
+    if (!count || count.clientWidth < count.scrollWidth) throw new Error('card exchange count clipped');
+    button.click();
+    await w(500);
+    if (!document.querySelector('.exchange-history .exchange-event')) throw new Error('message history missing');
+    if (!document.querySelector('.exchange-popover .close .keycap')) throw new Error('Esc key hint missing');
+    if (!document.querySelector('.exchange-history').textContent.includes('サブエージェント')) throw new Error('agent provenance missing');
+  });
+  await step('exchanges counterpart view', () => {
+    document.querySelector('[data-exchange-mode="peer"]').click();
+    const groups = document.querySelectorAll('.exchange-group');
+    if (groups.length !== 2) throw new Error('counterpart grouping lost a peer');
+    if (document.querySelectorAll('.exchange-event').length !== 3) throw new Error('repeat message lost');
+    groups[0].querySelector('summary').click();
+  });
+  await step('exchanges chronology', () => {
+    document.querySelector('[data-exchange-mode="timeline"]').click();
+    if (document.querySelectorAll('.exchange-event').length !== 3) throw new Error('switch lost history');
+  });
+  await step('exchanges esc', () => { key('Escape'); if (document.querySelector('.exchange-popover')) throw new Error('popup stayed open'); });
+  await step('exchanges keyboard', async () => {
+    document.querySelector('[data-card-id="codex:t1"]').focus();
+    key('M', { shiftKey: true }); await w(500);
+    if (!document.querySelector('.exchange-popover')) throw new Error('Shift+M did not open popup');
+    key('Escape');
+  });
 await step('lanes', () => [...document.querySelectorAll('.side-sec-lanes button')].find((b) => b.textContent === 'AI Apps').click(), 1000);
 await step('lanes off', () => [...document.querySelectorAll('.side-sec-lanes button')].find((b) => b.textContent === 'なし').click(), 1000);
 await step('theme', () => document.querySelector('[data-look]').click());
@@ -47,8 +76,19 @@ await step('usage off', () => key('u'));
 return { errs, sessionOpened: !!document.querySelector('.th-conv') || true };
 `;
 
-test('the board, the ribbon, the time axis and the card layers run without page errors', { skip: !fs.existsSync(chromeBin) && 'no Chrome' }, async (t) => {
+test('the board, the ribbon, the time axis and the card layers run without page errors', { timeout: 120000, skip: !fs.existsSync(chromeBin) && 'no Chrome' }, async (t) => {
   const fx = makeFixtures();
+  const edgeDb = new DatabaseSync(path.join(fx.codexHome, 'state_5.sqlite'));
+  edgeDb.exec("CREATE TABLE thread_spawn_edges (parent_thread_id TEXT, child_thread_id TEXT); INSERT INTO thread_spawn_edges VALUES ('t1','t2')");
+  edgeDb.prepare("UPDATE threads SET title='リリースの確認', name='リリースの確認', updated_at_ms=? WHERE id='t1'").run(Date.now() - 120000);
+  edgeDb.exec("UPDATE threads SET title='検証', name='検証' WHERE id='t2'");
+  edgeDb.close();
+  for (const [source, id, minute] of [['peer-x', 'x1', 40], ['t2', 's1', 45], ['peer-x', 'x2', 48]]) {
+    const envelope = `<codex_delegation><source_thread_id>${source}</source_thread_id><input>メッセージ ${id}</input></codex_delegation>`;
+    const item = id === 'x2' ? { type: 'FunctionCallOutput', id, namespace: 'codex_app', name: 'send_message_to_thread', output: envelope }
+      : { type: 'UserMessage', id, content: [{ type: 'text', text: envelope }] };
+    fs.appendFileSync(fx.rollout, JSON.stringify({ timestamp: `2026-10-14T01:${minute}:00Z`, type: 'event_msg', payload: { type: 'item_completed', item } }) + '\n');
+  }
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-smoke-'));
   const port = 4700 + Math.floor(Math.random() * 200);
   const host = spawn(process.execPath, ['tests/dev-host.mjs', String(port)], { cwd: root, stdio: 'ignore',
@@ -83,8 +123,36 @@ test('the board, the ribbon, the time axis and the card layers run without page 
     await sleep(250);
   }
   const r = await cdp('Runtime.evaluate', { expression: `(async () => { ${WALK} })()`, awaitPromise: true, returnByValue: true });
-  ws.close();
   assert.equal(r.result?.exceptionDetails, undefined, JSON.stringify(r.result?.exceptionDetails));
   assert.deepEqual(r.result.result.value.errs, []);
   assert.deepEqual(pageErrors.filter((e) => !/ResizeObserver/.test(e)), []);
+  if (process.env.CANBAN_SMOKE_SHOTS) {
+    const dir = path.resolve(process.env.CANBAN_SMOKE_SHOTS);
+    fs.mkdirSync(dir, { recursive: true });
+    for (const layout of ['board', 'timeline']) for (const theme of ['light', 'dark']) for (const mode of ['timeline', 'peer']) {
+      const capture = await cdp('Runtime.evaluate', { expression: `(async()=>{
+        document.querySelector('.exchange-popover .close')?.click();
+        document.querySelector('.pane-close')?.click();
+        await new Promise(r=>setTimeout(r,200));
+        if(!document.querySelector('#paneLayer').hidden)throw new Error('sheet still overlays the board');
+        if (!!document.querySelector('.inbox') !== ${layout === 'timeline'}) document.dispatchEvent(new KeyboardEvent('keydown',{key:'i',bubbles:true}));
+        await new Promise(r=>setTimeout(r,400));
+        if(!!document.querySelector('.inbox') !== ${layout === 'timeline'})throw new Error('wrong board view');
+        document.documentElement.dataset.theme=${JSON.stringify(theme)};
+        for(const b of document.querySelectorAll('.fold-head[aria-expanded="false"]')) b.click();
+        const button=document.querySelector('[data-card-id="codex:t1"] .exchange-pill');
+        const card=button?.closest('.card'),time=card?.querySelector('.ffoot .ftime');
+        if(time&&time.getBoundingClientRect().right>card.getBoundingClientRect().right)throw new Error('card time clipped by exchange badge');
+        if(!button)throw new Error('exchange button missing in ${layout}');button.click();
+        for(let i=0;i<40&&!document.querySelector('.exchange-event');i++)await new Promise(r=>setTimeout(r,100));
+        if(!document.querySelector('.exchange-event'))throw new Error('history not loaded');
+        document.querySelector('[data-exchange-mode="${mode}"]').click();
+        return true;
+      })()`, awaitPromise: true, returnByValue: true });
+      assert.equal(capture.result.exceptionDetails, undefined, JSON.stringify(capture.result.exceptionDetails));
+      const shot = await cdp('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(path.join(dir, `${layout}-${theme}-${mode}.png`), Buffer.from(shot.result.data, 'base64'));
+    }
+  }
+  ws.close();
 });

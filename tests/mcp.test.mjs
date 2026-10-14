@@ -105,6 +105,21 @@ test('ui resource is served as an MCP App', async () => {
   assert.match(result.contents[0].text, /ui\/initialize/);
 });
 
+test('exchange popover is app-only and reads without marking seen or modifying either store or source logs', async () => {
+  const listed = (await rpc('tools/list')).result.tools.find(t => t.name === 'canban_exchanges');
+  assert.equal(listed.annotations.readOnlyHint, true);
+  assert.deepEqual(listed._meta.ui.visibility, ['app']);
+  const { Store } = await import('../server/store.mjs');
+  const store = new Store(dataDir);
+  const before = await store.load();
+  const sourceBefore = fx.snapshot();
+  const result = await call('canban_exchanges', { cardId: 'codex:t1' });
+  assert.equal(result.isError, undefined);
+  assert.equal(result.structuredContent.cardId, 'codex:t1');
+  assert.deepEqual(await store.load(), before);
+  assert.deepEqual(fx.snapshot(), sourceBefore);
+});
+
 test('list and card operations persist only to the kanban store', async () => {
   const board = (await call('canban_get_board', { days: 0 })).structuredContent;
   assert.equal(board.lists[0].id, 'inbox');

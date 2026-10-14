@@ -29,6 +29,7 @@ import { PrService } from './git.mjs';
 import { SearchIndex } from './search.mjs';
 import { resolveDirectory } from './store.mjs';
 import { perf } from './perf.mjs';
+import { exchangeIndex } from './exchanges.mjs';
 
 const LOCAL_TTL_MS = 4000;
 let localCache = null;
@@ -348,6 +349,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
   let state = (await store.load());
   const { sessions: sourceSessions, errors, hosts, app } = await allSessions(state, { force });
   const sessions = sessionCardStates(sourceSessions, state);
+  await exchangeIndex.sync(sessions);
   if (await store.syncSessionCategories(sessions)) state = await store.load();
   if ((await store.resolvePending(matchPending(state, sessions))).length) state = (await store.load());
   if ((await runRules(store, state, sessions)).length) state = (await store.load());
@@ -435,6 +437,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       codexSection: s.codexSection || null,
       autoMoved: card?.movedBy ? { ruleId: card.movedBy.ruleId, at: card.movedBy.at } : null,
       subagents: kids.length ? { total: kids.length, running: kids.filter((k) => k.status === 'running' || k.status === 'waiting').length } : null,
+      exchanges: s.agent === 'codex' ? exchangeIndex.summary(s.id) : null,
       repo: s.repo || null,
       pr: prView(s.pr),
       snippet: hits?.get(s.id) || null,
@@ -611,6 +614,15 @@ export async function findSession(store, cardId) {
 
 export function sessionDetail(...args) {
   return perf.timed('sessionDetail', () => sessionDetailImpl(...args));
+}
+
+// Dedicated read path: opening a message popover must not mark cards seen or run board rules.
+export async function sessionExchanges(store, cardId) {
+  const state = await store.load();
+  const { sessions } = await allSessions(state);
+  if (!sessions.some(s => s.id === cardId && s.agent === 'codex')) throw new Error('Codexのセッションが見つかりません');
+  await exchangeIndex.sync(sessions);
+  return { ...exchangeIndex.view(cardId), summary: exchangeIndex.summary(cardId) };
 }
 
 async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {

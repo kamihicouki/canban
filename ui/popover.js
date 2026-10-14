@@ -47,6 +47,7 @@ function popover(anchor, title, body, { width, stack = false } = {}) {
   setTimeout(() => {
     const off = (e) => {
       if (!p.isConnected) return document.removeEventListener('pointerdown', off, true);
+      if (anchor?.contains?.(e.target)) return;
       const inside = e.target.closest?.('.popover');
       if (inside === p || (inside && [...document.querySelectorAll('.popover')].indexOf(inside) > [...document.querySelectorAll('.popover')].indexOf(p))) return;
       closePopover(p);

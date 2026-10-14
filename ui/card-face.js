@@ -76,7 +76,7 @@ function renderCard(card, list) {
   el.append(h('div', { class: 'frow' }, faceGlyph(card.status, card.statusKnown), h('div', { class: 'ftitle', text: card.title }), compact ? dotPill(card) : faceFlags(card),
     compact ? h('i', { class: `fagent fagent-${task ? 'task' : card.agent}`, title: task ? T.taskCard : card.agent === 'codex' ? 'Codex' : 'Claude' }) : null,
     compact ? h('span', { class: 'ftime', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }) : null));
-  if (compact) return finishFace(el, card, list);
+  if (compact) { const pill = exchangePill(card, true); if (pill) el.querySelector('.frow').append(pill); return finishFace(el, card, list); }
   const now = task ? faceTaskNow(card) : faceNow(card);
   if (now && !(rich && !task && !(card.status === 'running' || card.status === 'waiting') && card.last)) el.append(now);
   if (rich) {
@@ -91,6 +91,7 @@ function renderCard(card, list) {
   }
   const foot = h('div', { class: 'ffoot' }, faceWho(task ? 'task' : card.agent), dotPill(card), dirPill(card.directory || { name: 'カテゴリ無し' }));
   if (!task) {
+    const exchanges = exchangePill(card); if (exchanges) foot.append(exchanges);
     const branch = card.git?.branch || card.branch;
     if (branch) foot.append(h('span', { class: 'fbranch ellipsis', title: gitTitleOr(card), text: branch }));
     const stat = faceStat(card);
