@@ -76,7 +76,7 @@ const store = new Store();
 attachSummaryCache(store.dir); // Claude transcript summaries survive a restart: only new lines are read
 // Integrated Desktop sidebar: the ledger lives with the data, and the watcher inherits it.
 process.env.CANBAN_DESKTOP_GUESTS_DIR ||= path.join(store.dir, 'desktop-integrated');
-recoverGuests().then(r => r?.restored && process.stderr.write(`[canban] Desktop の統合を片付けました（${r.restored} 件）\n`), error => process.stderr.write(`[canban] Desktop の統合の片付け: ${error.message}\n`));
+recoverGuests().then(r => (r?.restored || r?.tidied) && process.stderr.write(`[canban] Desktop の統合を片付けました（書き戻し ${r.restored || 0} 件・台帳にない複製 ${r.tidied || 0} 件）\n`), error => process.stderr.write(`[canban] Desktop の統合の片付け: ${error.message}\n`));
 const desktopBridge = await startDesktopBridge({ dataDir: store.dir }).catch(error => {
   process.stderr.write(`[canban] Codex連携: ${error.message}\n`);
   return null;

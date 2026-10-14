@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { configureAccounts, resetAccountsForTest } from '../server/accounts.mjs';
 import { listClaudeSessions } from '../server/sources/claude.mjs';
-import { planGuests, placeGuests, restoreGuests, openIntegrated, recoverGuests, readLedger, setGuestRunningCheck, guestPaths } from '../server/claude-desktop-guests.mjs';
+import { planGuests, placeGuests, restoreGuests, openIntegrated, recoverGuests, readLedger, setGuestRunningCheck, guestPaths, tidyOrphanGuests, watchAndRestore } from '../server/claude-desktop-guests.mjs';
 import { planGuestGroups } from '../server/claude-desktop-groups.mjs';
 
 // Pure layout: one Desktop folder, signed in to "host"; "other" is the second account.
@@ -190,4 +190,38 @@ test('place and restore never run at the same time', async () => {
   await restoreGuests();
   assert.equal(await readLedger(), null);
   assert.equal(await exists(path.join(hostDir, `${ids.open}.json`)), false);
+});
+
+test('a guest copy no ledger tracks is tidied: newer progress goes back, the copy moves out', async () => {
+  // Desktop wrote these at quit after an early restore (seen on 2026-10-15).
+  const newer = path.join(hostDir, `${ids.open}.json`);
+  await write(newer, { ...record(ids.open, 'a'), title: '🔗 other · 会話 a', lastActivityAt: 5000, completedTurns: 3, remoteMcpServersConfig: [{ name: 'host-mcp' }] });
+  const same = path.join(otherDir, `${ids.mine}.json`);
+  await write(same, { ...record(ids.mine, 'd'), title: '🔗 host · 会話 d' });
+  // Not guests: a 🔗 title without an original elsewhere, and a plain session.
+  const lone = 'local_aaaaaaaa-0000-4000-8000-000000000009';
+  await write(path.join(hostDir, `${lone}.json`), record(lone, 'e', { title: '🔗 自分で付けた · 題' }));
+  running = true;
+  assert.deepEqual(await tidyOrphanGuests(), []);
+  running = false;
+  const tidied = await tidyOrphanGuests();
+  assert.deepEqual(tidied.map(t => [t.sessionId, t.wroteBack]).sort(), [[ids.mine, false], [ids.open, true]].sort());
+  const origin = await read(path.join(otherDir, `${ids.open}.json`));
+  assert.equal(origin.title, '会話 a');
+  assert.equal(origin.completedTurns, 3);
+  assert.deepEqual(origin.remoteMcpServersConfig, [{ name: 'mcp-of-a' }]);
+  assert.equal((await read(path.join(hostDir, `${ids.mine}.json`))).title, '会話 d', 'an older copy changes nothing');
+  assert.equal(await exists(newer), false);
+  assert.equal(await exists(same), false);
+  assert.equal(await exists(path.join(hostDir, `${lone}.json`)), true);
+  assert.equal((await fs.readdir(path.join(root, 'state', 'orphans'))).length, 4);
+});
+
+test('the watcher restores only after Desktop reads stopped three times in a row', async () => {
+  await placeGuests({ labelOf: () => 'other' });
+  const readings = [true, false, true, false, false, false];
+  setGuestRunningCheck(async () => readings.length ? readings.shift() : false);
+  const result = await watchAndRestore({ intervalMs: 1, startMs: 0 });
+  assert.equal(result.restored, 1);
+  assert.equal(readings.length, 0, 'the single stopped reading between two running ones did not restore');
 });

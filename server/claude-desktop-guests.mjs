@@ -49,9 +49,17 @@ const listDirs = async dir => (await fs.readdir(dir, { withFileTypes: true }).ca
 const clone = (from, to) => { try { execFileSync('/bin/cp', ['-cRp', from, to]); } catch { execFileSync('/bin/cp', ['-Rp', from, to]); } };
 
 // Desktop's main process, from the process list (no lsof needed). A failed check counts
-// as running, so nothing is written while the state is unknown.
-let runningCheck = () => new Promise(resolve => execFile('/bin/ps', ['-axo', 'command='], { timeout: 5000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) =>
+// as running, so nothing is written while the state is unknown. Desktop's single-instance
+// lock (SingletonLock → "<host>-<pid>") with a live pid also counts as running.
+const psRunning = () => new Promise(resolve => execFile('/bin/ps', ['-axo', 'command='], { timeout: 5000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) =>
   resolve(!!error || stdout.split('\n').some(line => /\/Claude\.app\/Contents\/MacOS\/Claude(\s|$)/.test(line)))));
+async function singletonRunning(app) {
+  const target = await fs.readlink(path.join(app, 'SingletonLock')).catch(() => null);
+  const pid = Number(/-(\d+)$/.exec(target || '')?.[1]);
+  if (!pid) return false;
+  try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; }
+}
+let runningCheck = async () => await psRunning() || await singletonRunning(guestPaths().app);
 export function setGuestRunningCheck(check) { const previous = runningCheck; runningCheck = check; return previous; }
 export const desktopRunning = () => runningCheck();
 
@@ -164,6 +172,7 @@ async function placeGuestsLocked({ paths = guestPaths(), labelOf } = {}) {
     const restored = await restoreGuestsLocked({ paths });
     if (await exists(paths.ledger)) throw Object.assign(new Error(`前回のゲストを片付けられません。${restored.problems.join('、')}`), { code: 'desktop_guests_left' });
   }
+  await tidyOrphansLocked(paths);
   const plan = await planGuests({ paths, labelOf });
   if (!plan.ok) throw Object.assign(new Error(plan.reason), { code: 'desktop_unavailable' });
   await fs.mkdir(path.join(paths.state, 'backup'), { recursive: true, mode: 0o700 });
@@ -211,6 +220,50 @@ async function placeGroups(paths, ledger, guests) {
   }
 }
 
+// A guest that no ledger tracks (e.g. Desktop rewrote it at quit after an early restore):
+// a "🔗 … · " record whose file name also exists in another account's folder. Its
+// progress goes back to that original when newer, and the copy moves to the state folder.
+const GUEST_TITLE = /^🔗 [^·]{1,80} · /;
+async function tidyOrphansLocked(paths, tracked = new Set()) {
+  if (await desktopRunning()) return [];
+  const folders = [];
+  for (const account of await listDirs(paths.sessions)) for (const org of await listDirs(path.join(paths.sessions, account))) folders.push({ account, dir: path.join(paths.sessions, account, org) });
+  const tidied = [];
+  for (const { account, dir } of folders) {
+    for (const f of await fs.readdir(dir).catch(() => [])) {
+      if (!f.endsWith('.json') || !ID.test(f.slice(0, -5))) continue;
+      const file = path.join(dir, f);
+      if (tracked.has(file)) continue;
+      const guest = await readJson(file).catch(() => null);
+      if (!guest || typeof guest.title !== 'string' || !GUEST_TITLE.test(guest.title)) continue;
+      const origins = [];
+      for (const other of folders) if (other.account !== account && await exists(path.join(other.dir, f))) origins.push(path.join(other.dir, f));
+      if (origins.length !== 1) continue;
+      const origin = await readJson(origins[0]).catch(() => null);
+      if (!origin || origin.cliSessionId !== guest.cliSessionId) continue;
+      const away = path.join(paths.state, 'orphans', `${Date.now()}-${f}`);
+      await fs.mkdir(path.dirname(away), { recursive: true, mode: 0o700 });
+      await fs.copyFile(origins[0], `${away}.origin`);
+      let wroteBack = false;
+      if (Number(guest.lastActivityAt || 0) > Number(origin.lastActivityAt || 0)) {
+        const merged = { ...guest, title: guest.title.replace(GUEST_TITLE, '') };
+        for (const k of ACCOUNT_KEYS) k in origin ? merged[k] = origin[k] : delete merged[k];
+        await writeJsonAtomic(origins[0], merged);
+        wroteBack = true;
+      }
+      await fs.rename(file, away);
+      tidied.push({ sessionId: f.slice(0, -5), wroteBack, origin: origins[0] });
+    }
+  }
+  if (tidied.length) await fs.appendFile(path.join(paths.state, 'restore.log'), `${new Date().toISOString()} 台帳にない複製を片付けました: ${tidied.map(t => `${t.sessionId}${t.wroteBack ? '（進行を書き戻し）' : ''}`).join(', ')}\n`).catch(() => {});
+  return tidied;
+}
+export const tidyOrphanGuests = (options = {}) => withLock(options.paths || guestPaths(), async () => {
+  const paths = options.paths || guestPaths();
+  const ledger = await readLedger(paths);
+  return tidyOrphansLocked(paths, new Set((ledger?.entries || []).map(e => e.guestPath)));
+});
+
 // Writes each guest back to its original and removes it. Desktop must be stopped.
 export const restoreGuests = (options = {}) => withLock(options.paths || guestPaths(), () => restoreGuestsLocked(options));
 async function restoreGuestsLocked({ paths = guestPaths() } = {}) {
@@ -251,7 +304,11 @@ async function restoreGuestsLocked({ paths = guestPaths() } = {}) {
   }
   const left = ledger.entries.filter(e => !e.done);
   if (left.length) await writeJsonAtomic(paths.ledger, { ...ledger, entries: left });
-  else await fs.unlink(paths.ledger).catch(() => {});
+  else {
+    await fs.unlink(paths.ledger).catch(() => {});
+    const tidied = await tidyOrphansLocked(paths).catch(error => { problems.push(`台帳にない複製: ${error.message}`); return []; });
+    if (tidied.length) notes.push(`台帳にない複製 ${tidied.length} 件を片付けました`);
+  }
   if (notes.length || problems.length) await fs.appendFile(path.join(paths.state, 'restore.log'), `${new Date().toISOString()} ${[...notes, ...problems].join('\n  ')}\n`).catch(() => {});
   return { restored, problems, notes };
 }
@@ -281,9 +338,11 @@ export async function watchAndRestore({ paths = guestPaths(), intervalMs = 3000,
     const running = await desktopRunning();
     if (running) seen = true;
     else if (seen || Date.now() - begin > startMs) {
-      // Desktop writes its records on quit; let that finish.
-      await new Promise(r => setTimeout(r, intervalMs));
-      if (!await desktopRunning()) return restoreGuests({ paths });
+      // Desktop writes its records on quit; let that finish. Two more stopped readings
+      // in a row are required, so one wrong reading never restores under a running app.
+      let stopped = true;
+      for (let i = 0; i < 2 && stopped; i++) { await new Promise(r => setTimeout(r, intervalMs)); stopped = !await desktopRunning(); }
+      if (stopped) return restoreGuests({ paths });
     }
     await new Promise(r => setTimeout(r, intervalMs));
   }
@@ -317,7 +376,10 @@ export async function openIntegrated({ sessionId, labelOf, open, paths = guestPa
 
 // At server start: tidy guests left by a watcher that did not finish.
 export async function recoverGuests({ paths = guestPaths(), watch = spawnGuestWatcher } = {}) {
-  if (!await exists(paths.ledger)) return null;
+  if (!await exists(paths.ledger)) {
+    const tidied = await tidyOrphanGuests({ paths });
+    return tidied.length ? { restored: 0, tidied: tidied.length } : null;
+  }
   if (await desktopRunning()) { watch(); return { watching: true }; }
   return restoreGuests({ paths });
 }
@@ -325,8 +387,8 @@ export async function recoverGuests({ paths = guestPaths(), watch = spawnGuestWa
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const command = process.argv[2];
   const paths = guestPaths();
-  const run = { watch: () => watchAndRestore({ paths }), restore: () => restoreGuests({ paths }), plan: () => planGuests({ paths }), status: () => readLedger(paths) }[command];
-  if (!run) { console.error('使い方: watch | restore | plan | status'); process.exit(2); }
+  const run = { watch: () => watchAndRestore({ paths }), restore: () => restoreGuests({ paths }), plan: () => planGuests({ paths }), status: () => readLedger(paths), tidy: () => tidyOrphanGuests({ paths }) }[command];
+  if (!run) { console.error('使い方: watch | restore | plan | status | tidy'); process.exit(2); }
   // One watcher at a time.
   const lock = path.join(paths.state, 'watch.pid');
   if (command === 'watch') {
