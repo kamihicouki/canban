@@ -19,11 +19,11 @@
 .th-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .th-conv { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; overscroll-behavior: contain; }
 .th-conv > .feed-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0; }
-.th-conv > .feed-wrap > .feed { flex: 1; max-height: none; min-height: 0; background: none; border-radius: 0; padding: 18px max(20px, calc((100% - 720px) / 2)) 8px; gap: 16px; font-size: 14px; }
-.th-conv > .feed-wrap > .feed-foot { padding: 4px max(20px, calc((100% - 720px) / 2)) 6px; }
+.th-conv > .feed-wrap > .feed { flex: 1; max-height: none; min-height: 0; background: none; border-radius: 0; padding: 24px max(24px, calc((100% - var(--reading-width)) / 2)) 16px; gap: 24px; font-size: var(--reading-size); }
+.th-conv > .feed-wrap > .feed-foot { padding: 4px max(24px, calc((100% - var(--reading-width)) / 2)) 6px; }
 .th-conv > .feed-wrap > .feed-new { bottom: 40px; }
-.th-conv > :not(.feed-wrap) { padding: 14px max(20px, calc((100% - 720px) / 2)); }
-.th-dock { flex: none; padding: 6px max(16px, calc((100% - 720px) / 2)) 12px; max-height: 55%; overflow: auto; }
+.th-conv > :not(.feed-wrap) { padding: 16px max(24px, calc((100% - var(--reading-width)) / 2)); }
+.th-dock { flex: none; padding: 8px max(24px, calc((100% - var(--reading-width)) / 2)) 16px; max-height: 55%; overflow: auto; }
 .th-dock .send-section { margin: 0; }
 .th-side { width: 340px; flex: none; border-left: 1px solid var(--btn-subtle); display: flex; flex-direction: column; min-height: 0; background: var(--card-bg); }
 .th-side[hidden] { display: none; }
@@ -40,7 +40,7 @@
 .send-box.cx { background: var(--input-bg); border: 1px solid var(--btn-subtle-hover); border-radius: 18px; padding: 12px 12px 6px 16px; box-shadow: 0 4px 18px color-mix(in srgb, var(--card-fg) 8%, transparent); }
 .send-box.cx:focus-within { border-color: var(--accent); }
 .send-box.cx .prompt-composer { display: flex; flex-direction: column; gap: 6px; }
-.send-box.cx textarea { width: 100%; border: 0; outline: 0; resize: none; background: none; min-height: 28px; max-height: 180px; font-size: 14px; line-height: 1.6; padding: 0; box-shadow: none; }
+.send-box.cx textarea { width: 100%; border: 0; outline: 0; resize: none; background: none; min-height: 28px; max-height: 180px; font-size: var(--reading-size); line-height: 1.6; padding: 0; box-shadow: none; }
 .send-box.cx .prompt-assets { order: -1; }
 .prompt-toolbar.chips { display: flex; align-items: center; gap: 4px; margin: 0 0 0 -6px; flex-wrap: wrap; }
 .cx-ico { height: 28px; min-width: 28px; padding: 0 7px; border-radius: 8px; display: inline-grid; place-items: center; color: var(--card-muted); font-size: 14px; font-weight: 600; flex: none; }
@@ -56,9 +56,9 @@
 .cx-reqs { margin-bottom: 8px; display: grid; gap: 6px; }
 .cx-hist { margin-top: 8px; font-size: 12.5px; } .cx-hist summary { cursor: pointer; color: var(--card-muted); padding: 2px 6px; }
 /* ---------- folded conversation ---------- */
-.fi-asst { background: none; padding: 0 2px; max-width: 100%; border-radius: 0; }
+.fi-asst { background: none; padding: 0 2px; max-width: 100%; border-radius: 0; color: var(--card-fg); line-height: var(--reading-leading); }
 .fi-asst .fi-who { display: none; }
-.fi-user { border-radius: 16px 16px 4px 16px; padding: 10px 14px; max-width: 80%; }
+.fi-user { border-radius: 16px 16px 4px 16px; padding: 10px 14px; max-width: 85%; line-height: var(--reading-leading); }
 .fi-user .fi-who { display: none; }
 .fi-note { padding: 0 2px; color: var(--card-muted); font-size: 12.5px; }
 .tg { font-size: 13px; line-height: 1.5; color: var(--card-muted); padding: 0 2px; }
@@ -114,10 +114,10 @@
 
 /* ---------- the thread layout of a task card ---------- */
 .th-conv.th-task { gap: 4px; }
-.th-conv.th-task > .th-sec { padding: 14px max(20px, calc((100% - 720px) / 2)) 4px; }
+.th-conv.th-task > .th-sec { padding: 16px max(24px, calc((100% - var(--reading-width)) / 2)) 4px; }
 .th-sec-t { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 12px; font-weight: 700; letter-spacing: .03em; color: var(--card-muted); }
 .th-sec-t .icon-btn { margin-left: auto; }
-.th-task .note { width: 100%; min-height: 140px; resize: vertical; font-size: 14.5px; line-height: 1.7; }
+.th-task .note { width: 100%; min-height: 140px; resize: vertical; font-size: var(--reading-size); line-height: var(--reading-leading); }
 .th-task .task-related-row { padding: 8px 10px; border-radius: 10px; background: var(--btn-subtle); margin-bottom: 6px; }
 .th-dock > .th-sec-t { margin: 6px 0; }
 .th-dock .start-grid { display: grid; grid-template-columns: 120px 1fr; gap: 6px; margin-bottom: 6px; }

@@ -62,7 +62,7 @@ test('dot visibility, cloud restrictions and board/time-axis screenshots in Chro
     await page.screenshot({ path: path.join(screenshots, `board-${theme}.png`) });
     await page.keyboard.press('i'); await page.locator('.irow[data-card-id="codex:dot-created"] .dot-pill').waitFor();
     await page.locator(`.irow[data-card-id="${task.cardId}"]`).click();
-    await page.locator('.inbox-main .flink-row .glyph[aria-label="状態未取得"]').waitFor();
+    await page.locator('#paneLayer.docked .glyph[aria-label="状態未取得"]').first().waitFor();
     await page.screenshot({ path: path.join(screenshots, `timeline-${theme}.png`) });
     await page.keyboard.press('i'); await page.locator('.card.face[data-card-id="codex:dot-created"]').waitFor();
   }
@@ -103,8 +103,9 @@ test('dot visibility, cloud restrictions and board/time-axis screenshots in Chro
   });
   await page.locator('#sideBtn').focus(); await page.keyboard.press('i');
   await page.locator('.irow[data-card-id="claude:c2"]').click();
-  await page.getByText('指示の送信は設定でオフになっています。', { exact: true }).waitFor();
-  assert.doesNotMatch(await page.locator('.inbox-main').innerText(), /\bnull\b/);
+  // The 時間軸 docks the card itself: the same input as the overlay, switched off.
+  await page.locator('#paneLayer.docked').getByText('指示の送信は設定でオフになっています（⚙ 設定）。', { exact: true }).waitFor();
+  assert.doesNotMatch(await page.locator('#paneLayer.docked .pane').innerText(), /\bnull\b/);
   await page.locator('#sideBtn').focus(); await page.keyboard.press('i');
   await page.locator('.side-sec-filters button').filter({ hasText: /^dotだけ$/ }).click();
   await page.locator('.filter-chip').filter({ hasText: 'dotだけ' }).waitFor();

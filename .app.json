@@ -1,0 +1,9 @@
+{
+  "apps": {
+    "meetings": {
+      "id": "connector_openai_chatgpt_meetings",
+      "required": false,
+      "category": "Meeting Records"
+    }
+  }
+}

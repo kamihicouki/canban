@@ -29,7 +29,7 @@ window.openai.callTool = (name, args) => { calls.push(name); return callTool(nam
 document.querySelector('[data-look]').click();
 check(document.querySelectorAll('[data-layout-choice]').length === 5, '5 layout choices must be selectable');
 key('Escape');
-const snapshotUi = () => Object.fromEntries(['filters','themePref','layout','boardView','sidebar','workspacePage','paneGlobal','cardWidths','cardHeights','collapsedLanes'].map(k => [k, localStorage.getItem('sk:'+k)]));
+const snapshotUi = () => Object.fromEntries(['filters','themePref','layout','boardView','sidebar','workspacePage','paneGlobal','cardWidths','cardHeights','collapsedLanes','keyGuide'].map(k => [k, localStorage.getItem('sk:'+k)]));
 for (const id of ['trello', 'classic', 'rail', 'omni', 'hud']) {
   const initialUi = snapshotUi();
   key('k', { metaKey: true });
@@ -137,7 +137,7 @@ test('five selectable layouts retain board and timeline cards', { skip: !fs.exis
         const shot = await cdp('Page.captureScreenshot', { format: 'png' });
         fs.writeFileSync(path.join(output, `${layout}-${view}-${theme}.png`), Buffer.from(shot.result.data, 'base64'));
         assert.equal(await run(`document.documentElement.scrollWidth <= 1280 && document.querySelector('.topbar').getBoundingClientRect().height < 65`), true, `${layout}/${view}/${theme} viewport and app bar`);
-        if (layout === 'omni') assert.equal(await run(`document.querySelector('.layout-dock').getBoundingClientRect().bottom < document.querySelector('.board-shortcuts').getBoundingClientRect().top`), true, 'dock leaves keyboard hints visible');
+        if (layout === 'omni') assert.equal(await run(`(() => { const d = document.querySelector('.layout-dock').getBoundingClientRect(), g = document.querySelector('.key-guide').getBoundingClientRect(); return d.bottom <= g.top || g.bottom <= d.top || d.right <= g.left || g.right <= d.left; })()`), true, 'dock leaves keyboard hints visible');
         if (view === 'timeline') await run(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'i',bubbles:true}))`);
       }
       // The only reachable entry opens management once and Esc closes it.

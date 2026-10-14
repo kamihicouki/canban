@@ -48,9 +48,13 @@ Canbanから追加するClaudeアカウントは `<Canban保存先>/accounts/cla
 
 Claude のセッションごとの実行先は共有SQLiteのカード属性 `claudeExecution` にCLI home IDとアカウントIDだけを保存する。Chrome・Codex・Claudeからの再開と送信はこの選択を使い、認証情報は保存しない。キューは追加時の実行先を保持する。標準の `~/.claude` を選ぶ場合は `CLAUDE_CONFIG_DIR` を外し、通常の `~/.claude.json` と標準Keychain項目を使う。明示的な設定フォルダーでは従来どおり同変数を指定する。0.24.3以降は実行前に公式 CLI の `auth status --json` を同じ認証環境で読み、未ログイン・メールや組織の不一致を拒否する。
 
-macOS の Desktop はCLIとは別のログインを使う。0.24.2以降、ログイン済みの `Claude-Profiles/*` / `Claude-*` と通常の `Claude` 保存先リンクがある場合、そのリンクだけをアプリ停止中に原子的に切り替える。フォルダー・認証・履歴は移動・統合しない。通常の Desktop 起動はこのリンクを参照するため選択が残る。切替はDesktop全体へ適用され、別のカードでの選択や外部プロフィール切替は後の選択が優先する。保存先が通常のディレクトリ、対象プロフィールがない、複数ある場合はCLIの選択だけを保存して理由を返す。Desktop の会話を開く操作は、不一致・未確認を拒否する。
+macOS の Desktop はCLIとは別のログインを使う。このMacの Desktop は素の構成（ピュア構成）にする。保存先は `~/Library/Application Support/Claude` の実ディレクトリ1つだけで、アカウントごとの会話はその中の `claude-code-sessions/<accountId>/<orgId>/` に実ファイルとして置く。ログインは同時に1つで、別アカウントを使うときは Desktop でログインし直す。`Claude-Profiles`・`Claude-*` のプロフィール、保存先のリンク、アカウント間の共有リンクは使わない。Claude Profiles.app も使わない。移行と戻し方は [claude-desktop-pure-layout-plan.md](claude-desktop-pure-layout-plan.md) と `scripts/desktop-pure-migrate.mjs` を参照。
 
-通常保存先が既存の `Claude-Profiles/<名前>` にリンクしている場合、0.24.3以降は同じ構成内の対象アカウントに一致するプロフィールを優先する。構成内の候補が一意でなければ切り替えない。構成外の旧 `Claude-*` は移動・削除しない。候補には対応Desktopプロフィールを表示し、Canban追加の判定は `.canban-account-profile` のID一致で行う。0.24.4以降、実行アカウント一覧はアプリバー・サイドバーと同じアカウントID単位にまとめ、CLI設定フォルダーは各アカウントの「接続設定を指定」に残す。保存済みhome IDは受動的な表示や同じアカウントの再選択で変更しない。
+ほかのアカウントの会話は、Desktop を終了した状態で Canban から開くと、ログイン中の Desktop にまとめて表示する（統合サイドバー、`server/claude-desktop-guests.mjs`）。ほかのアカウントの記録を `🔗 <アカウント> · ` を付けたゲストとしてログイン中のアカウントのフォルダへ複製し、ユーザーの ⌘Q の後に元の記録へ進行を書き戻してゲストを消す。台帳と会話記録の退避（APFS clone）は `~/.canban/desktop-integrated/` に置く。仕組みと実機検証は [claude-desktop-integrated-sidebar-research.md](claude-desktop-integrated-sidebar-research.md) を参照。
+
+Canban は Desktop のプロフィールやリンクを切り替えない（0.24.2〜0.27 の切替は廃止）。Desktop で開くのはログイン中のアカウントの会話だけで、それ以外は理由を返し、CLI での実行かログインの切り替えを案内する。起動中の Desktop は、ログイン中の保存先を開いていることを確認できた場合だけ使う。ボードは保存先内の全アカウントの会話を表示する。
+
+0.24.4以降、実行アカウント一覧はアプリバー・サイドバーと同じアカウントID単位にまとめ、CLI設定フォルダーは各アカウントの「接続設定を指定」に残す。保存済みhome IDは受動的な表示や同じアカウントの再選択で変更しない。
 
 ## ローカルmainとChrome更新
 
