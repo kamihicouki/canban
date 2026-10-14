@@ -1,23 +1,23 @@
 # セッション間のやり取り — 実装検証
 
-## main統合版（0.29.3）
+## main統合版（0.29.5）
 
-2026-10-15、ユーザーのmain取り込み・拡張再読み込みの依頼により、ローカルmain 0.29.2（統合サイドバーのグループ割当修正を含む）と統合した。時間軸の右側は最新mainのカードそのものを維持し、共通のキー案内へShift+Mを追加した。時間軸の行と右側のカードでは、それぞれフォーカス中のセッションを対象にする。
+2026-10-15、ユーザーのmain取り込み・拡張再読み込みの依頼により、ローカルmain 0.29.4（統合サイドバーのグループ割当と、会話の読む位置の保持を含む）と統合した。時間軸の右側は最新mainのカードそのものを維持し、共通のキー案内へShift+Mを追加した。時間軸の行と右側のカードでは、それぞれフォーカス中のセッションを対象にする。
 
-- `npm test`: 468件成功、失敗0件。
+- `npm test`: 470件成功、失敗0件。
 - 実Chromeの`board-smoke.browser.mjs`: 1件成功、失敗0件。時間軸でShift+Mを使い、Escでポップオーバーだけ閉じて右側カードが残ることも確認した。
-- `npm run build:chrome`: 成功。ソースのpackage・manifest・pluginは0.29.3。
+- `npm run build:chrome`: 成功。ソースのpackage・manifest・pluginは0.29.5。
 - Chrome起動待ちで止まった初回は受け入れず、再実行の成功を確認した。
 - 独立レビューのキーボード所見2件を修正した。開いた履歴へフォーカスを移し、Escを最上位のポップオーバーで消費する。時間の照らしを維持する回帰テストと、実Chromeでのフォーカス確認も成功した。
-- 旧時間軸プレビューのテストは、現行のドッキングしたカードの会話・読む位置を保つ検証へ移した。
+- 最新mainのカードの会話・読む位置を保つ検証を維持した。
 - mainでのローカル配布・登録先・再読み込み後の読み戻しは、通常repoの`.local/verification/session-exchanges-main/`に保存する。初期実装版の検証記録は以下に保持する。
 
 | 表示 | 時系列 | 相手別 |
 |---|---|---|
-| ボード・ライト | [画像](main-0.29.3/board-light-timeline.png) | [画像](main-0.29.3/board-light-peer.png) |
-| ボード・ダーク | [画像](main-0.29.3/board-dark-timeline.png) | [画像](main-0.29.3/board-dark-peer.png) |
-| 時間軸・ライト | [画像](main-0.29.3/timeline-light-timeline.png) | [画像](main-0.29.3/timeline-light-peer.png) |
-| 時間軸・ダーク | [画像](main-0.29.3/timeline-dark-timeline.png) | [画像](main-0.29.3/timeline-dark-peer.png) |
+| ボード・ライト | [画像](main-0.29.5/board-light-timeline.png) | [画像](main-0.29.5/board-light-peer.png) |
+| ボード・ダーク | [画像](main-0.29.5/board-dark-timeline.png) | [画像](main-0.29.5/board-dark-peer.png) |
+| 時間軸・ライト | [画像](main-0.29.5/timeline-light-timeline.png) | [画像](main-0.29.5/timeline-light-peer.png) |
+| 時間軸・ダーク | [画像](main-0.29.5/timeline-dark-timeline.png) | [画像](main-0.29.5/timeline-dark-peer.png) |
 
 ## 初期実装版（0.27.13）
 

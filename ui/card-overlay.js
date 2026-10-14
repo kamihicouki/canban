@@ -70,7 +70,14 @@ function setPaneMode(mode) {
 }
 
 // ---- showing and hiding ----
+function restorePaneReading(p) {
+  const reading = p.reading, feed = $('.feed', p.el);
+  if (reading && feed) feed.scrollTop = reading.following ? feed.scrollHeight : reading.top;
+  delete p.reading;
+}
 function detachPane(p) {
+  const feed = $('.feed', p.el);
+  if (feed) p.reading = { top: feed.scrollTop, following: atFeedEnd(feed) };
   const i = panes.indexOf(p);
   if (i >= 0) panes.splice(i, 1);
   clearInterval(p.el._reqTimer);
@@ -105,7 +112,7 @@ function showCards(ids, { dock } = {}) {
   paneRow.replaceChildren(...panes.map((p) => p.el), cardBoardEnd);
   paneLayer.hidden = false;
   applyCardWidths(); paneMetrics();
-  for (const p of panes) { applyPaneAttrs(p); paintPaneButtons(p); if (p.kind !== 'view') cardSizeObserver.observe(p.el); }
+  for (const p of panes) { applyPaneAttrs(p); paintPaneButtons(p); restorePaneReading(p); if (p.kind !== 'view') cardSizeObserver.observe(p.el); }
   paintPaneBar();
   if (!restoringPanes && !paneDocked()) store.set('openCard', ids[0]);
   if (timelineOn() && cardKind(ids[0]) !== 'view') markInboxSel(ids[0]);
@@ -466,11 +473,21 @@ function paintViewers(p) {
 
 function renderPaneKeepingDrafts(p, d) {
   const el = p.el;
+  const previousFeed = $('.feed', el);
+  const reading = previousFeed && { top: previousFeed.scrollTop, following: atFeedEnd(previousFeed) };
+  const restoreReading = () => {
+    const feed = live.feeds.get(p.id);
+    if (reading && feed) {
+      if (reading.following) scrollFeedToEnd(feed);
+      else feed.list.scrollTop = reading.top;
+    }
+  };
   if (el.querySelector('.req-row textarea')) {
     // Keep the request editor while rebuilding a reset conversation cursor.
     p.d = d;
     const conversation = $('.th-conv', el);
     if (conversation && d.feed) conversation.replaceChildren(renderFeed(d, p));
+    restoreReading();
     return;
   }
   const drafts = [...el.querySelectorAll('input,textarea,select')].filter(input => {
@@ -482,6 +499,7 @@ function renderPaneKeepingDrafts(p, d) {
   const promptValue = drafts.find(draft => draft.label === '送るプロンプト');
   if (promptDraft && promptValue) promptDraft.text = promptValue.value;
   renderPane(p, d);
+  restoreReading();
   for (const draft of drafts) {
     if (!draft.label) continue;
     const input = [...el.querySelectorAll('input,textarea,select')].find(input => input.getAttribute('aria-label') === draft.label);
