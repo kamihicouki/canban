@@ -29,70 +29,54 @@ afterEach(async () => {
   resetAccountsForTest(); await fs.rm(root, { recursive: true, force: true });
 });
 
-test('normal startup reads the chosen Desktop account after switching and rediscovery; data is untouched', async () => {
+test('Desktop is used only for the signed-in account; profiles and links are never switched', async () => {
   const before = await Promise.all([first, second].flatMap(dir => ['config.json', 'history'].map(file => fs.readFile(path.join(dir, file)))));
-  assert.equal((await desktopProfilePlan('claude:second', options)).change, true);
-  const result = await withDesktopAccount('claude:second', async desktop => desktop, options);
+  const same = await desktopProfilePlan('claude:first', options);
+  assert.equal(same.available, true);
+  assert.equal(same.change, false);
+  const result = await withDesktopAccount('claude:first', async desktop => desktop, options);
   assert.equal(result.maintained, true);
-  assert.equal(JSON.parse(await fs.readFile(path.join(app, 'config.json'))).lastKnownAccountUuid, 'second');
-  assert.equal((await desktopProfilePlan('claude:second', options)).change, false);
+  const other = await desktopProfilePlan('claude:second', options);
+  assert.equal(other.available, false);
+  assert.match(other.reason, /ログインを切り替える/);
+  await assert.rejects(withDesktopAccount('claude:second', async () => {}, options), error => error.code === 'desktop_unavailable');
+  assert.equal(await fs.realpath(app), await fs.realpath(first));
   assert.deepEqual(await Promise.all([first, second].flatMap(dir => ['config.json', 'history'].map(file => fs.readFile(path.join(dir, file))))), before);
   assert.doesNotMatch(JSON.stringify(result), /SECRET/);
 });
 
-test('running Desktop, overlapping switches, and callback failure protect the existing profile', async () => {
+test('a running Desktop must be confirmed to have the signed-in folder open', async () => {
   setDesktopProcessCheck(async () => true);
-  await assert.rejects(withDesktopAccount('claude:second', async () => {}, options), /Desktop を終了/);
-  assert.equal(await fs.realpath(app), await fs.realpath(first));
-  setDesktopProcessCheck(async () => ({ running: false, profileDir: null }));
-  await withDesktopAccount('claude:second', async () => {
-    await assert.rejects(withDesktopAccount('claude:first', async () => {}, options), /切替が進行中/);
-  }, options);
-  await assert.rejects(withDesktopAccount('claude:first', async () => { throw new Error('commit failed'); }, options), /commit failed/);
-  assert.equal(await fs.realpath(app), await fs.realpath(second));
-  assert.equal((await fs.readdir(root)).some(name => name.includes('.lock') || name.includes('.canban-')), false);
+  await assert.rejects(withDesktopAccount('claude:first', async () => {}, options), error => error.code === 'desktop_running');
+  setDesktopProcessCheck(async () => ({ running: true, profileDir: await fs.realpath(first) }));
+  assert.equal(await withDesktopAccount('claude:first', async () => 'opened', options), 'opened');
 });
 
-test('unknown account and a regular data directory are never replaced or migrated', async () => {
-  assert.equal((await desktopProfilePlan('claude:unknown', options)).available, false);
-  await assert.rejects(withDesktopAccount('claude:unknown', async () => {}, options), /プロフィールがありません/);
+test('the pure layout (one real folder) works the same and is never replaced', async () => {
   await fs.unlink(app); await fs.mkdir(app);
-  await fs.writeFile(path.join(app, 'config.json'), JSON.stringify({ lastKnownAccountUuid: 'first' }));
-  await assert.rejects(withDesktopAccount('claude:second', async () => {}, options), /リンクになっていません/);
+  await fs.writeFile(path.join(app, 'config.json'), JSON.stringify({ lastKnownAccountUuid: 'second' }));
+  assert.equal((await desktopProfilePlan('claude:second', options)).available, true);
+  await assert.rejects(withDesktopAccount('claude:first', async () => {}, options), /ログインを切り替える/);
   assert.equal((await fs.lstat(app)).isDirectory(), true);
+  assert.equal((await desktopProfilePlan('claude:unknown', options)).available, false);
 });
 
-test('a legacy duplicate does not prevent selecting the current switcher family', async () => {
-  const legacy = path.join(root, 'Claude-second');
-  await fs.mkdir(legacy);
-  await fs.writeFile(path.join(legacy, 'config.json'), JSON.stringify({ lastKnownAccountUuid: 'second' }));
-  const plan = await desktopProfilePlan('claude:second', options);
-  assert.equal(plan.available, true);
-  assert.equal(plan.dir, await fs.realpath(second));
-  assert.equal(plan.profile, 'second');
-  // Two matching profiles in the active family remain ambiguous.
-  const duplicate = path.join(root, 'Claude-Profiles', 'second-copy');
-  await fs.mkdir(duplicate);
-  await fs.writeFile(path.join(duplicate, 'config.json'), JSON.stringify({ lastKnownAccountUuid: 'second' }));
-  assert.equal((await desktopProfilePlan('claude:second', options)).available, false);
-});
-
-test('continue requires matching metadata reachable from the selected account; CLI imports require the real transcript', async () => {
+test('continue requires matching metadata reachable from the signed-in account; CLI imports require the real transcript', async () => {
   const session = { agent: 'claude', nativeId: id, desktopSessionId: 'local_kept', cwd: root };
   const cliHome = path.join(root, 'cli'), projects = path.join(cliHome, 'projects', 'worktree');
   await fs.mkdir(projects, { recursive: true });
   session.sourcePath = path.join(projects, `${id}.jsonl`);
   await fs.writeFile(session.sourcePath, 'existing conversation');
-  const metadataDir = path.join(second, 'claude-code-sessions', 'second', 'org');
+  const metadataDir = path.join(first, 'claude-code-sessions', 'first', 'org');
   await fs.mkdir(metadataDir, { recursive: true });
   const metadata = path.join(metadataDir, 'local_kept.json');
   await fs.writeFile(metadata, JSON.stringify({ sessionId: 'local_kept', cliSessionId: id }));
-  assert.equal((await desktopExecutionLink(session, 'claude:second', { ...options, cliHome })).url, 'claude://code/continue?session=local_kept');
+  assert.equal((await desktopExecutionLink(session, 'claude:first', { ...options, cliHome })).url, 'claude://code/continue?session=local_kept');
   await fs.writeFile(metadata, JSON.stringify({ sessionId: 'local_kept', cliSessionId: 'other-session' }));
-  assert.equal((await desktopExecutionLink(session, 'claude:second', { ...options, cliHome })).url, `claude://resume?session=${id}`);
-  assert.equal((await desktopExecutionLink(session, 'claude:second', { ...options, cliHome })).url, `claude://resume?session=${id}`);
+  assert.equal((await desktopExecutionLink(session, 'claude:first', { ...options, cliHome })).url, `claude://resume?session=${id}`);
+  assert.equal((await desktopExecutionLink(session, 'claude:first', { ...options, cliHome })).url, `claude://resume?session=${id}`);
   await fs.writeFile(metadata, JSON.stringify({ sessionId: 'local_kept', cliSessionId: id }));
   session.sourcePath = path.join(root, 'unreachable.jsonl');
   await fs.writeFile(session.sourcePath, 'different conversation');
-  assert.equal(await desktopExecutionLink(session, 'claude:second', { ...options, cliHome }), null);
+  assert.equal(await desktopExecutionLink(session, 'claude:first', { ...options, cliHome }), null);
 });
