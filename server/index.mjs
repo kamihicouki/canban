@@ -384,7 +384,12 @@ const TOOLS = [
       await store.markSeen({ cardId });
       const prefs = state.settings.launch;
       let useRoute = isCloudSession(session) ? 'desktop' : selected && !route ? 'terminal' : route || prefs.route;
-      const link = selected ? await desktopExecutionLink(source, session.executionAccount) : desktopLink(session);
+      // Another account's session, run as the account signed in to Desktop: open the
+      // original through the integrated sidebar. Desktop's import (claude://resume)
+      // would make a second, unlinked record in the signed-in account instead.
+      const mismatch = selected && session.desktopSessionId && !session.archived ? desktopAccountMismatch(source) : null;
+      const crossDesktop = !!mismatch && mismatch.active === session.executionAccount;
+      const link = selected && !crossDesktop ? await desktopExecutionLink(source, session.executionAccount) : desktopLink(session);
       if (selected && useRoute === 'desktop' && !link) throw new Error('Desktop からこの会話を取り込めません。同じ会話をターミナルで再開してください');
       if (useRoute === 'desktop' && !link) {
         if (route === 'desktop') throw new Error('このセッションはデスクトップアプリでは開けません。ターミナルで再開してください。');
@@ -400,7 +405,11 @@ const TOOLS = [
       // Integrated sidebar: with Desktop stopped, the signed-in Desktop opens with every
       // account's sessions (claude-desktop-guests.mjs) and this one is opened there.
       let integrated = null;
-      if (owner && !ownerPlan?.available) {
+      if (crossDesktop && useRoute === 'desktop') {
+        const labels = state.settings.accounts.labels;
+        integrated = await openIntegrated({ sessionId: session.desktopSessionId, labelOf: a => accountLabel(`claude:${a}`, labels).replace(/@.*/, ''), open: () => openUrl(link.url) });
+        if (!integrated.ok) throw new Error(`${accountName(mismatch.session, labels)} の会話を Desktop で開けません。${integrated.reason}`);
+      } else if (owner && !ownerPlan?.available) {
         const labels = state.settings.accounts.labels;
         integrated = await openIntegrated({ sessionId: session.desktopSessionId, labelOf: a => accountLabel(`claude:${a}`, labels).replace(/@.*/, ''), open: () => openUrl(link.url) });
         if (integrated.ok) accountNote = null;
