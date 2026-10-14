@@ -14,6 +14,7 @@ import crypto from 'node:crypto';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { claudeDesktopSessionsDir, defaultClaudeHome } from './accounts.mjs';
+import { desktopConfigPath, readDesktopConfig, planGuestGroups, assignGuestGroups } from './claude-desktop-groups.mjs';
 
 // Values that belong to the account the session was created in.
 const ACCOUNT_KEYS = ['remoteMcpServersConfig', 'enabledMcpTools', 'chromePermissionMode', 'chromeAllowedDomains', 'chromeTabGroupId', 'bridgeSessionIds', 'remoteControlAutoEligible', 'steeredByRemoteClient'];
@@ -47,9 +48,10 @@ const listDirs = async dir => (await fs.readdir(dir, { withFileTypes: true }).ca
 // APFS clone: no extra space until either copy changes (falls back to a copy elsewhere).
 const clone = (from, to) => { try { execFileSync('/bin/cp', ['-cRp', from, to]); } catch { execFileSync('/bin/cp', ['-Rp', from, to]); } };
 
-// Desktop's main process, from the process list (no lsof needed).
+// Desktop's main process, from the process list (no lsof needed). A failed check counts
+// as running, so nothing is written while the state is unknown.
 let runningCheck = () => new Promise(resolve => execFile('/bin/ps', ['-axo', 'command='], { timeout: 5000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) =>
-  resolve(!error && stdout.split('\n').some(line => /\/Claude\.app\/Contents\/MacOS\/Claude(\s|$)/.test(line)))));
+  resolve(!!error || stdout.split('\n').some(line => /\/Claude\.app\/Contents\/MacOS\/Claude(\s|$)/.test(line)))));
 export function setGuestRunningCheck(check) { const previous = runningCheck; runningCheck = check; return previous; }
 export const desktopRunning = () => runningCheck();
 
@@ -82,8 +84,42 @@ async function transcripts(projects) {
   return byId;
 }
 
+// null: no integration. A ledger that exists but cannot be read is an error, not "none".
 export async function readLedger(paths = guestPaths()) {
-  return readJson(paths.ledger).catch(() => null);
+  try { return await readJson(paths.ledger); }
+  catch (error) { if (error.code === 'ENOENT') return null; throw new Error(`台帳を読めません: ${error.message}`); }
+}
+
+// Place, restore and recovery run one at a time across the server and the watcher.
+// The lock appears with its owner already written (link of a finished file), and a dead
+// owner's lock is taken over by rename, so a fresh lock is never removed by mistake.
+async function withLock(paths, fn) {
+  await fs.mkdir(paths.state, { recursive: true, mode: 0o700 });
+  const lock = path.join(paths.state, 'lock');
+  const mine = `${lock}.${process.pid}.${crypto.randomUUID()}`;
+  await fs.writeFile(mine, String(process.pid), { mode: 0o600 });
+  try {
+    for (let attempt = 0; ; attempt++) {
+      try { await fs.link(mine, lock); break; }
+      catch (error) { if (error.code !== 'EEXIST') throw error; }
+      const owner = Number(await fs.readFile(lock, 'utf8').catch(() => 0));
+      if (!owner) continue; // released meanwhile
+      let alive = true;
+      try { process.kill(owner, 0); } catch (error) { alive = error.code === 'EPERM'; }
+      if (!alive) {
+        const stale = `${lock}.stale-${crypto.randomUUID()}`;
+        if (await fs.rename(lock, stale).then(() => true, () => false)) {
+          // Someone else's new lock was taken by the rename: give it back.
+          if (Number(await fs.readFile(stale, 'utf8').catch(() => 0)) !== owner) await fs.link(stale, lock).catch(() => {});
+          await fs.unlink(stale).catch(() => {});
+        }
+        continue;
+      }
+      if (attempt > 100) throw Object.assign(new Error('ほかの処理が Desktop の統合を操作中です'), { code: 'desktop_guests_busy' });
+      await new Promise(r => setTimeout(r, 100));
+    }
+  } finally { await fs.unlink(mine).catch(() => {}); }
+  try { return await fn(); } finally { await fs.unlink(lock).catch(() => {}); }
 }
 
 // What an integrated launch would place. Read-only.
@@ -113,7 +149,7 @@ export async function planGuests({ paths = guestPaths(), labelOf = a => a.slice(
         if (!transcript) { skipped.push({ sessionId, title: record.title, account, reason: transcript === null ? '会話記録が複数ある' : '会話記録がない' }); continue; }
         const guestPath = path.join(into, f);
         if (await exists(guestPath)) { skipped.push({ sessionId, title: record.title, account, reason: '同じ ID の記録が既にある' }); continue; }
-        guests.push({ sessionId, cliSessionId: record.cliSessionId, title: record.title, account, org, originPath, guestPath, transcript, prefix: `🔗 ${labelOf(account)} · ` });
+        guests.push({ sessionId, cliSessionId: record.cliSessionId, title: record.title, cwd: record.cwd, account, org, originPath, guestPath, transcript, prefix: `🔗 ${labelOf(account)} · ` });
       }
     }
   }
@@ -121,10 +157,11 @@ export async function planGuests({ paths = guestPaths(), labelOf = a => a.slice(
 }
 
 // Places the guests. Desktop must be stopped; a previous integration must be restored.
-export async function placeGuests({ paths = guestPaths(), labelOf } = {}) {
+export const placeGuests = (options = {}) => withLock(options.paths || guestPaths(), () => placeGuestsLocked(options));
+async function placeGuestsLocked({ paths = guestPaths(), labelOf } = {}) {
   if (await desktopRunning()) throw Object.assign(new Error('Desktop が起動しています。終了してから開いてください'), { code: 'desktop_running' });
   if (await exists(paths.ledger)) {
-    const restored = await restoreGuests({ paths });
+    const restored = await restoreGuestsLocked({ paths });
     if (await exists(paths.ledger)) throw Object.assign(new Error(`前回のゲストを片付けられません。${restored.problems.join('、')}`), { code: 'desktop_guests_left' });
   }
   const plan = await planGuests({ paths, labelOf });
@@ -146,12 +183,37 @@ export async function placeGuests({ paths = guestPaths(), labelOf } = {}) {
     await writeJsonAtomic(paths.ledger, ledger);
     await writeJsonAtomic(g.guestPath, { ...record, title: g.prefix + (record.title || '') });
   }
-  if (!ledger.entries.length) await fs.unlink(paths.ledger).catch(() => {});
-  return { ...plan, placed: ledger.entries.length };
+  if (!ledger.entries.length) { await fs.unlink(paths.ledger).catch(() => {}); return { ...plan, placed: 0 }; }
+  const groups = await placeGroups(paths, ledger, plan.guests);
+  return { ...plan, placed: ledger.entries.length, grouped: groups.length };
+}
+
+// Puts guests in the host's same-named groups. The assignment stays after the restore:
+// Desktop's own cache (dframe-store) would bring a removed one back, a leftover shows
+// nothing without the session, is never uploaded, and puts the guest in the same group
+// next time. The ledger only records what was added to the config.
+async function placeGroups(paths, ledger, guests) {
+  const file = desktopConfigPath(paths.app);
+  const scope = `${ledger.host}/${path.basename(ledger.into)}`;
+  try {
+    const config = await readDesktopConfig(file);
+    if (!config) return [];
+    const plan = planGuestGroups(config.data, scope, guests).filter(p => p.groupId);
+    if (!plan.length) return [];
+    await assignGuestGroups(file, scope, plan, config.sha);
+    // A record of what was added, written only once it is in the config.
+    ledger.groups = { file, scope, placed: plan.map(({ sessionId, groupId, name, via }) => ({ sessionId, groupId, name, via })) };
+    await writeJsonAtomic(paths.ledger, ledger);
+    return plan;
+  } catch (error) {
+    await fs.appendFile(path.join(paths.state, 'restore.log'), `${new Date().toISOString()} グループに入れられませんでした: ${error.message}\n`).catch(() => {});
+    return [];
+  }
 }
 
 // Writes each guest back to its original and removes it. Desktop must be stopped.
-export async function restoreGuests({ paths = guestPaths() } = {}) {
+export const restoreGuests = (options = {}) => withLock(options.paths || guestPaths(), () => restoreGuestsLocked(options));
+async function restoreGuestsLocked({ paths = guestPaths() } = {}) {
   const ledger = await readLedger(paths);
   if (!ledger) return { restored: 0, problems: [], notes: [] };
   if (await desktopRunning()) return { restored: 0, problems: ['Desktop が起動しています'], notes: [], running: true };
