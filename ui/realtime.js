@@ -4,8 +4,14 @@ const TOOL_ICONS = { ok: '✓', error: '✗' };
 const fmtClock = (at) => (at ? new Date(at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '');
 
 function feedItem(it, f) {
-  if (it.k === 'user') return h('div', { class: 'fi fi-user', title: fmtDate(Date.parse(it.at)) }, h('div', { class: 'fi-who', text: 'あなた' }), h('div', { text: it.text }));
-  if (it.k === 'assistant') return h('div', { class: 'fi fi-asst' }, h('div', { class: 'fi-who', text: f.pane.d?.session?.agent === 'claude' ? 'Claude' : 'Codex' }), h('span', { class: 'raw', text: it.text }), h('div', { class: 'md', html: mdHtml(it.text) }));
+  if (it.k === 'user' || it.k === 'assistant') {
+    const stamp = Date.parse(it.at);
+    const who = h('div', { class: 'fi-who' }, it.k === 'user' ? 'あなた' : f.pane.d?.session?.agent === 'claude' ? 'Claude' : 'Codex',
+      Number.isFinite(stamp) ? h('time', { datetime: new Date(stamp).toISOString(), title: fmtDate(stamp), text: fmtClock(it.at) }) : null);
+    return it.k === 'user'
+      ? h('div', { class: 'fi fi-user' }, who, h('div', { class: 'fi-content', text: it.text }))
+      : h('div', { class: 'fi fi-asst' }, who, h('div', { class: 'fi-content' }, h('span', { class: 'raw', text: it.text }), h('div', { class: 'md', html: mdHtml(it.text) })));
+  }
   if (it.k === 'commentary') return h('div', { class: 'fi fi-note', text: it.text });
   if (it.k === 'thinking') {
     if (!it.text) return null;

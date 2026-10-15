@@ -181,12 +181,12 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
     !s.host ? h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'changes', title: '作業フォルダの変更を右に開く・閉じる（f）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'f', onclick: () => toggleThreadSide(p, 'changes') }, h('span', { html: picon('diff', 14) }), '変更', h('span', { class: 'th-diffstat' }), ...keycap('f')) : null,
     h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'details', title: '属性・メモ・再開などを右に開く・閉じる（d）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'd', onclick: () => toggleThreadSide(p, 'details') }, h('span', { html: picon('panel', 14) }), '詳細', ...keycap('d')),
     h('span', { class: 'ph-btns card-actions' }));
-  const title = h('div', { class: 'th-title' }, secs.status.nodes[0], secs.title.nodes[0]);
+  const title = h('div', { class: 'th-title' }, secs.title.nodes[0]);
   const main = h('div', { class: 'th-main' },
     h('div', { class: 'th-conv', 'data-sec': 'conv' }, ...secs.conv.nodes),
     // Slack material sits beside the input it feeds (「依頼文に追加」), not in the details panel.
     h('div', { class: 'th-dock', 'data-sec': 'send' }, secs.slack ? h('details', { class: 'th-attach', 'data-sec': 'slack' }, h('summary', {}, h('span', { html: picon('message', 13) }), `Slack資料（${card.slackRefs.length}）`), ...secs.slack.nodes) : null, ...secs.send.nodes));
-  el.replaceChildren(...[head, threadStrip(p, d), title].filter(Boolean), h('div', { class: 'th-meta' }, ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('session'));
+  el.replaceChildren(...[head, threadStrip(p, d), title].filter(Boolean), h('div', { class: 'th-meta' }, secs.status.nodes[0], ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('session'));
   paintThreadStat(p, git);
   paintThreadSide(p);
 }
@@ -214,7 +214,7 @@ function renderTaskThreadPane(p, card, secs) {
   const head = h('div', { class: 'th-head' }, secs.breadcrumb.nodes[0], h('span', { class: 'grow' }),
     h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'details', title: '属性・メモ・削除を右に開く・閉じる（d）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'd', onclick: () => toggleThreadSide(p, 'details') }, h('span', { html: picon('panel', 14) }), '詳細', ...keycap('d')),
     h('span', { class: 'ph-btns card-actions' }));
-  const title = h('div', { class: 'th-title' }, secs.status.nodes[0], secs.title.nodes[0]);
+  const title = h('div', { class: 'th-title' }, secs.title.nodes[0]);
   const main = h('div', { class: 'th-main' },
     h('div', { class: 'th-conv th-task' },
       taskSection('conv', '説明', null, secs.conv.nodes),
@@ -222,7 +222,7 @@ function renderTaskThreadPane(p, card, secs) {
       loopComponent(card, { compact: true }),
       taskSection('related', secs.related.title, secs.related.extra, secs.related.nodes)),
     h('div', { class: 'th-dock', 'data-sec': 'send' }, h('div', { class: 'th-sec-t' }, secs.send.title, secs.send.extra || null), ...secs.send.nodes));
-  p.el.replaceChildren(head, title, h('div', { class: 'th-meta' }, ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('task'));
+  p.el.replaceChildren(head, title, h('div', { class: 'th-meta' }, secs.status.nodes[0], ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('task'));
   paintThreadSide(p);
 }
 

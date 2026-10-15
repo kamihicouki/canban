@@ -46,7 +46,9 @@ function renderInbox(b) {
   }
   if (!first) list.append(h('div', { class: 'muted inbox-more', text: '表示するカードがありません' }));
   const main = h('section', { class: 'inbox-main', 'aria-label': '選んだカード' }, h('div', { class: 'inbox-empty', text: first ? 'カードを選ぶと、ここで読んで返信できます' : '' }));
-  return h('div', { class: 'inbox' }, h('aside', { class: 'inbox-side' }, list), main);
+  const count = groups.reduce((n, [, xs, more]) => n + xs.length + Math.max(0, more || 0), 0);
+  const heading = h('div', { class: 'inbox-heading' }, h('h2', { text: 'カード' }), h('span', { text: `${count}件` }));
+  return h('div', { class: 'inbox' }, h('aside', { class: 'inbox-side', 'aria-label': 'カード一覧' }, heading, list), main);
 }
 // After every drawing of the board: the docked card follows the 時間軸 — docked on its right while it is shown,
 // gone with it when the board comes back. A card opened large stays large.
