@@ -203,7 +203,7 @@ function renderTaskThreadPane(p, card, secs) {
   p.detailNodes = order.filter(([id]) => secs[id]).map(([id, open]) => detailSection(id, secs[id].title ?? secTitle(id), secs[id].nodes, { open, extra: secs[id].extra }));
   const labels = card.labels.map((id) => state.board.labels.find((l) => l.id === id)).filter(Boolean);
   const chips = [
-    faceWho('task'), dirPill(card.directory || { name: 'カテゴリ無し' }),
+    dirPill(card.directory || { name: 'カテゴリ無し' }),
     ...labels.map((l) => h('span', { class: 'th-label', title: 'ラベル' }, h('i', { style: { background: colorVar(l.color) } }), l.name)),
     card.priority ? h('span', { class: `pill prio-${card.priority}`, text: { high: '優先度 高', medium: '優先度 中', low: '優先度 低' }[card.priority] }) : null,
     card.due ? h('span', { class: `pill${Date.parse(card.due) < Date.now() - DAY_MS ? ' due-over' : ''}`, text: `期限 ${new Date(card.due).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}` }) : null,
