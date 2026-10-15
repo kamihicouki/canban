@@ -40,12 +40,14 @@
 
 /* Docked on the 時間軸: the layer is the right side of the timeline (placed by paneMetrics), no scrim, the card fills it. */
 .pane-layer.docked { inset: auto; z-index: 30; background: none; }
-.pane-layer.docked .pane-bar { margin: 0; padding: 0 2px 6px; min-height: 0; color: var(--on-board); }
-.pane-layer.docked .pane-bar .hbtn, .pane-layer.docked .pane-bar .seg button:not([aria-pressed="true"]) { color: var(--on-board); }
+.pane-layer.docked .pane-bar { margin: 0; padding: 8px 16px 0; min-height: 0; color: var(--card-muted); background: var(--card-bg); border-radius: 12px 12px 0 0; }
+.pane-layer.docked .pane-bar .hbtn, .pane-layer.docked .pane-bar .seg button:not([aria-pressed="true"]) { color: var(--card-muted); }
+.pane-layer.docked .pane-bar .seg { background: var(--btn-subtle); }
+.pane-layer.docked .pane-bar .seg button[aria-pressed="true"] { background: var(--card-bg); color: var(--card-fg); }
 .pane-layer.docked .card-board-viewport { inset: 0; }
 .pane-layer.docked .pane-stage { padding: 0; }
 .pane-layer.docked .pane-row { gap: 12px; width: 100%; max-height: none; }
-.pane-layer.docked .pane { flex: 1 1 0; width: auto; min-width: min(100%, 420px); height: 100%; box-shadow: var(--card-shadow); }
+.pane-layer.docked .pane { flex: 1 1 0; width: auto; min-width: min(100%, 420px); height: 100%; border-top-left-radius: 0; border-top-right-radius: 0; box-shadow: var(--card-shadow); }
 .pane-layer.docked .pane:focus-within { box-shadow: var(--card-shadow), 0 0 0 2px var(--focus); }
 .pane-layer.docked :is(.pane-width, .pane-height, .pane-corner) { display: none; } /* the 時間軸 sizes a docked card */
 .pane-layer.docked :is(.pane-close, .pb-title) { display: none; } /* docked, the card goes with the 時間軸; Enter opens it large */
