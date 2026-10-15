@@ -37,6 +37,7 @@ import { uploadImage, promptImages, listSkills, withSkills, withImagePaths, remo
 import { resolveSession, inspect, timingProblem } from './dispatch.mjs';
 import { claudeExecutionSession, savedClaudeExecutionSession } from './claude-handoff.mjs';
 import { startAccount } from './start-account.mjs';
+import { launchOnce } from './launcher.mjs';
 import { desktopProfilePlan, withDesktopAccount, saveClaudeExecutionAccount, desktopExecutionLink } from './claude-desktop-profile.mjs';
 import { SlackService, slackTools } from './slack.mjs';
 import { listChanges, fileDiff } from './changes.mjs';
@@ -630,13 +631,13 @@ const TOOLS = [
   },
   {
     name: 'canban_start_session',
-    title: 'タスクカードからセッションを開始',
-    description:
-      'タスクカードから Codex / Claude Code の新しいセッションを開始し、開始したセッションを自動でカードに紐付ける。route=desktop はデスクトップアプリ、terminal はターミナル。',
+    title: '新しいセッションを開始',
+    description: 'Codex / Claude Code の新規画面をデスクトップで開くか、ターミナルで開始する。taskId は任意で、省略するとタスクカードを作らない。デスクトップでの送信・実行開始はアプリで確認する。',
     inputSchema: {
       type: 'object',
       properties: {
         taskId: { type: 'string' },
+        clientRequestId: { type: 'string', minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_-]+$', description: '同じ開始リクエストの再試行に同じIDを使うと二重起動を防ぐ' },
         agent: { type: 'string', enum: ['codex', 'claude'] },
         hostId: { type: 'string', description: "'local' またはリモート接続の hostId" },
         cwd: { type: 'string', description: '作業フォルダ（そのマシン上の絶対パス）' },
@@ -646,16 +647,16 @@ const TOOLS = [
         route: { type: 'string', enum: ['desktop', 'terminal'] },
         terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
         target: { type: 'string', enum: ['new-window', 'new-tab', 'split', 'current'] },
-        account: { type: ['string', 'null'], description: "開始するアカウント（canban_get_usage の key。例 'claude:<uuid>'）。省略・null はいまのログイン。Claude Desktop はそのアカウントのプロフィールへ切り替えて開く" },
+        account: { type: ['string', 'null'], description: "開始するアカウント（canban_get_usage の key。例 'claude:<uuid>'）。省略・null はいまのログイン。Desktop は現在ログインしているアカウントでのみ開ける" },
       },
-      required: ['taskId', 'agent'],
+      required: ['agent'],
       additionalProperties: false,
     },
     _meta: appAndModel,
-    handler: async ({ taskId, agent, hostId = 'local', cwd = '', prompt, imageIds = [], skills = [], route, terminal, target, account = null }) => {
+    handler: async ({ taskId, agent, hostId = 'local', cwd = '', prompt, imageIds = [], skills = [], route, terminal, target, account = null, clientRequestId }) => {
       const state = (await store.load());
       const task = state.cards[taskId];
-      if (task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
+      if (taskId !== undefined && task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
       let host = LOCAL_HOST;
       let remoteEnabled = true;
       if (hostId && hostId !== 'local') {
@@ -664,31 +665,39 @@ const TOOLS = [
         host = { id: h.id, alias: h.alias, label: h.label, local: false, sshPort: h.sshPort };
         remoteEnabled = h.enabled;
       }
-      const rawPrompt = String(prompt ?? [task.title, task.description, task.note].filter(Boolean).join('\n\n'));
+      const rawPrompt = String(prompt ?? [task?.title, task?.description, task?.note].filter(Boolean).join('\n\n'));
       if (rawPrompt.length > 20000) throw new Error('依頼文は20000文字までです');
-      const skillPrompt = withSkills(rawPrompt, skills);
-      const localImages = promptImages(store.dir, imageIds);
-      const images = host.local === false ? await remoteImages(store.dir, localImages, host, pool) : localImages;
-      const text = withImagePaths(skillPrompt, images);
+      if (cwd && (!cwd.startsWith('/') || cwd.includes('\0') || cwd.length > 4096)) throw new Error('作業フォルダは絶対パスで指定してください');
       const prefs = state.settings.launch;
       const useRoute = route || prefs.route;
-      let detail;
-      const labels = state.settings.accounts.labels;
-      const as = await startAccount({ agent, account, host, route: useRoute, labels });
-      if (useRoute === 'desktop') {
-        const link = newSessionLink(agent, { host, cwd, prompt: text });
-        await as.open(() => openUrl(link.url));
-        detail = { route: 'desktop', url: link.url, account: as.account };
-      } else {
-        const term = terminal || prefs.terminal;
-        if (!installedTerminals().some((t) => t.id === term)) throw new Error(`${TERMINAL_LABELS[term] || term} が見つかりません。設定でターミナルを選んでください。`);
-        const command = newSessionCommand(agent, { host, cwd, prompt: agent === 'codex' ? skillPrompt : text, images, prefix: as.prefix });
-        detail = { route: 'terminal', command, ...(await runInTerminal({ terminal: term, target: target || prefs.target, command })) };
-      }
-      await store.updateTask({ cardId: taskId, target: { agent, hostId: host.local === false ? host.id : 'local', cwd, account: as.account } });
-      await store.addPending({ taskId, pending: { agent, hostId: host.local === false ? host.id : 'local', cwd, prompt: text.slice(0, 200), startedAt: Date.now() } });
-      const note = remoteEnabled ? null : `${host.label} の読み取りがオフのため自動では紐付きません。「マシン」でオンにしてください。`;
-      return { text: `${as.account ? accountName(as.account, labels) : agent === 'codex' ? 'Codex' : 'Claude'} でセッションを開始しました`, structured: { ...detail, note } };
+      if (useRoute === 'desktop') newSessionLink(agent, { host, cwd, prompt: rawPrompt });
+      if (useRoute === 'terminal' && !cwd) throw new Error('ターミナルで開始する作業フォルダを選んでください');
+      const detail = await launchOnce(store.dir, clientRequestId, { taskId: taskId || null, agent, hostId, cwd, prompt: rawPrompt, imageIds, skills, route: useRoute, terminal: terminal || prefs.terminal, target: target || prefs.target, account }, async () => {
+        const skillPrompt = withSkills(rawPrompt, skills);
+        const localImages = promptImages(store.dir, imageIds);
+        const images = host.local === false ? await remoteImages(store.dir, localImages, host, pool) : localImages;
+        const text = withImagePaths(skillPrompt, images);
+        let detail;
+        const labels = state.settings.accounts.labels;
+        const as = await startAccount({ agent, account, host, route: useRoute, labels });
+        if (useRoute === 'desktop') {
+          const link = newSessionLink(agent, { host, cwd, prompt: text });
+          await as.open(() => openUrl(link.url));
+          detail = { route: 'desktop', url: link.url, account: as.account };
+        } else {
+          const term = terminal || prefs.terminal;
+          if (!installedTerminals().some((t) => t.id === term)) throw new Error(`${TERMINAL_LABELS[term] || term} が見つかりません。設定でターミナルを選んでください。`);
+          const command = newSessionCommand(agent, { host, cwd, prompt: agent === 'codex' ? skillPrompt : text, images, prefix: as.prefix });
+          detail = { route: 'terminal', command, ...(await runInTerminal({ terminal: term, target: target || prefs.target, command })) };
+        }
+        if (taskId) {
+          await store.updateTask({ cardId: taskId, target: { agent, hostId: host.local === false ? host.id : 'local', cwd, account: as.account } });
+          await store.addPending({ taskId, pending: { agent, hostId: host.local === false ? host.id : 'local', cwd, prompt: text.slice(0, 200), startedAt: Date.now() } });
+        }
+        const note = !remoteEnabled ? `${host.label} の読み取りがオフです。「マシン」でオンにするとセッションを表示できます。` : useRoute === 'desktop' ? '新規画面を開きました。依頼の送信と実行状況はアプリで確認してください。' : null;
+        return { ...detail, note };
+      });
+      return { text: detail.note || (detail.route === 'desktop' ? 'デスクトップの新規画面を開きました' : 'ターミナルに開始を依頼しました'), structured: detail };
     },
   },
   {

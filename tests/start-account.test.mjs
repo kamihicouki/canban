@@ -59,5 +59,5 @@ test('accounts are named with their AI App, and the CLI prefix goes before the b
   assert.equal(accountName('codex:abcdef123456'), 'Codex · abcdef12');
   assert.equal(accountName('claude:x', { 'claude:x': 'me@example.com' }), 'Claude · me@example.com');
   assert.equal(accountName(null), 'アカウント不明');
-  assert.equal(newSessionCommand('codex', { cwd: '/w', prompt: 'x', prefix: 'env CODEX_HOME=/h ' }), 'cd /w 2>/dev/null; env CODEX_HOME=/h codex x');
+  assert.equal(newSessionCommand('codex', { cwd: '/w', prompt: 'x', prefix: 'env CODEX_HOME=/h ' }), 'cd /w && env CODEX_HOME=/h codex x');
 });

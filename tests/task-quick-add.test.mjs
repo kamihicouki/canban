@@ -9,8 +9,31 @@ import { matchesTask, normalizeFilters } from '../server/board.mjs';
 import { effectiveTaskContext } from '../server/task-context.mjs';
 import { boardHtml } from '../server/ui.mjs';
 
-const model = new vm.Script(fs.readFileSync(new URL('../ui/task-quick-add-model.js', import.meta.url), 'utf8') + '\n({taskCreationDefaults, taskLaneCreation, saveQuickTaskDraft})').runInNewContext();
+const model = new vm.Script(fs.readFileSync(new URL('../ui/task-quick-add-model.js', import.meta.url), 'utf8') + '\n({taskCreationDefaults, taskLaneCreation, saveQuickTaskDraft, sessionCreationDefaults, saveQuickSessionDraft})').runInNewContext();
 const plain = value => JSON.parse(JSON.stringify(value));
+
+test('direct creation inherits the chosen agent and host but never guesses a work folder', () => {
+  const draft = model.sessionCreationDefaults({ settings: { launch: { route: 'terminal', terminal: 'iterm', target: 'new-tab' } } }, { agent: 'claude', host: 'box', account: 'codex:other', folder: 'app' });
+  assert.deepEqual(plain(draft), { agent: 'claude', route: 'terminal', terminal: 'iterm', target: 'new-tab', hostId: 'box', cwd: '', prompt: '', account: null });
+});
+
+test('a lost direct-start response rechecks the original request and never creates a task', async () => {
+  const draft = { ...plain(model.sessionCreationDefaults({}, {})), prompt: '確認する', cwd: '/work' };
+  const seen = [];
+  const io = { newRequestId: () => 'session-request', refresh: async () => {}, callTool: async (name, args) => {
+    seen.push({ name, args }); throw new Error('応答の切断');
+  } };
+  await assert.rejects(model.saveQuickSessionDraft(draft, io), /応答の切断/);
+  draft.prompt = '編集中の別の依頼';
+  io.callTool = async (name, args) => { seen.push({ name, args }); return { state: 'opened', route: 'desktop', note: 'アプリで送信してください' }; };
+  const saved = await model.saveQuickSessionDraft(draft, io);
+  assert.equal(saved.result.state, 'opened');
+  assert.equal(draft.prompt, '編集中の別の依頼');
+  assert.deepEqual(plain(seen), [
+    { name: 'canban_start_session', args: { agent: 'codex', route: 'desktop', terminal: 'terminal', target: 'new-window', hostId: 'local', cwd: '/work', prompt: '確認する', account: null, clientRequestId: 'session-request' } },
+    { name: 'canban_start_session', args: { agent: 'codex', route: 'desktop', terminal: 'terminal', target: 'new-window', hostId: 'local', cwd: '/work', prompt: '確認する', account: null, clientRequestId: 'session-request' } },
+  ]);
+});
 
 test('real lane construction keeps stable attribute IDs even when display names collide', () => {
   const source = boardHtml();

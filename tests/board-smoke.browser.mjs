@@ -22,6 +22,47 @@ const w = (t = 400) => new Promise((r) => setTimeout(r, t));
 const key = (k, o = {}) => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, ...o }));
 const errs = [];
 const step = async (name, fn, t = 500) => { try { await fn(); } catch (e) { errs.push(name + ': ' + e.message); } await w(t); };
+await step('create task or direct session', async () => {
+  const tasks = async () => {
+    const packet = await fetch('/rpc', { method: 'POST', body: JSON.stringify({ name: 'canban_get_board', arguments: { days: 0 } }) }).then(r => r.json());
+    return packet.result.structuredContent.lists.flatMap(l => l.cards).filter(c => c.kind === 'task').length;
+  };
+  const fill = (selector, value) => { const el = document.querySelector(selector); if (!el) throw new Error('missing ' + selector); el.value = value; el.dispatchEvent(new Event('input', { bubbles: true })); };
+  const before = await tasks();
+  document.querySelector('#quickTaskBtn').click();
+  try {
+    const dialog = document.querySelector('.task-quick-dialog');
+    if (!dialog.querySelector('[data-create-mode="session"]')) throw new Error('direct session choice missing');
+    if (!dialog.querySelector('textarea').getBoundingClientRect().height) throw new Error('task description hidden');
+    fill('.task-title', '作成UIの確認');
+    document.querySelector('[data-create-mode="session"]').click();
+    if (document.querySelectorAll('.session-destination input').length !== 4) throw new Error('agent destinations missing');
+    fill('.session-prompt', 'README の構成を確認してください');
+    fill('.session-cwd', '/r/web');
+    for (const destination of ['claude-desktop', 'codex-terminal', 'claude-terminal', 'codex-desktop']) {
+      document.querySelector('input[value="' + destination + '"]').click();
+      if (!document.activeElement.matches('input[name="session-destination"]:checked')) throw new Error('destination change lost keyboard focus');
+      if (!document.querySelector('.session-prompt').value.includes('README')) throw new Error('destination change lost request');
+    }
+    document.querySelector('.session-prompt').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, isComposing: true, bubbles: true }));
+    if (!document.querySelector('.task-quick-feedback').hidden) throw new Error('IME Enter started a session');
+    document.querySelector('[data-create-mode="task"]').click();
+    if (document.querySelector('.task-title').value !== '作成UIの確認') throw new Error('task draft lost');
+    document.querySelector('[data-create-mode="session"]').click();
+    if (!document.querySelector('.session-prompt').value.includes('README')) throw new Error('session draft lost');
+    document.querySelector('.session-prompt').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
+    for (let i = 0; i < 40 && !document.querySelector('.session-new-request:not([hidden])'); i++) await w(100);
+    if (!document.querySelector('.task-quick-feedback').textContent.includes('新規画面')) throw new Error('desktop opening result missing: ' + document.querySelector('.task-quick-feedback').textContent);
+    if (await tasks() !== before) throw new Error('direct start created a task');
+    document.querySelector('.task-quick-head button').click();
+    document.querySelector('#quickTaskBtn').click();
+    if (!document.querySelector('.session-prompt').value.includes('README')) throw new Error('closed session draft lost');
+    document.querySelector('[data-create-mode="task"]').click();
+    document.querySelector('.task-quick-actions .btn-primary').click();
+    for (let i = 0; i < 40 && await tasks() === before; i++) await w(100);
+    if (await tasks() !== before + 1) throw new Error('task creation failed');
+  } finally { document.querySelector('.task-quick-dialog')?.close(); }
+}, 300);
 await step('today', () => document.querySelector('.rb-day.is-today').click());
 await step('esc', () => key('Escape'));
 for (const k of ['live', 'fresh', 'active', 'dormant']) await step('phase ' + k, () => document.querySelector('.rb-phase.life-' + k).click(), 150);
@@ -193,6 +234,33 @@ test('the board, the ribbon, the time axis and the card layers run without page 
       assert.equal(capture.result.exceptionDetails, undefined, JSON.stringify(capture.result.exceptionDetails));
       const shot = await cdp('Page.captureScreenshot', { format: 'png' });
       fs.writeFileSync(path.join(dir, `${layout}-${theme}-${mode}.png`), Buffer.from(shot.result.data, 'base64'));
+    }
+  }
+  if (process.env.CANBAN_CREATION_SHOTS) {
+    const dir = path.resolve(process.env.CANBAN_CREATION_SHOTS);
+    fs.mkdirSync(dir, { recursive: true });
+    for (const view of ['board', 'timeline']) for (const theme of ['light', 'dark']) for (const mode of ['task', 'session']) {
+      const capture = await cdp('Runtime.evaluate', { expression: `(async()=>{
+        document.querySelector('.task-quick-dialog')?.close();
+        document.querySelector('.exchange-popover .close')?.click();
+        if(!document.querySelector('#paneLayer').hidden && !document.querySelector('#paneLayer').classList.contains('docked')) document.querySelector('.pane-close')?.click();
+        if (!!document.querySelector('.inbox') !== ${view === 'timeline'}) document.dispatchEvent(new KeyboardEvent('keydown',{key:'i',bubbles:true}));
+        await new Promise(r=>setTimeout(r,400));
+        document.documentElement.dataset.theme=${JSON.stringify(theme)};
+        document.querySelector('#quickTaskBtn').click();
+        document.querySelector('[data-create-mode="${mode}"]').click();
+        document.querySelector('.session-new-request:not([hidden])')?.click();
+        for (const [selector,value] of ${JSON.stringify(mode === 'task' ? [['.task-title','リリース前の確認'],['.task-description','変更内容を確認して、公開前のチェック項目をまとめる。']] : [['.session-prompt','READMEの構成を確認して、改善点をまとめてください。'],['.session-cwd','/work/canban']])}) {
+          const el=document.querySelector(selector); el.value=value; el.dispatchEvent(new Event('input',{bubbles:true}));
+        }
+        const dialog=document.querySelector('.task-quick-dialog'); dialog.scrollTop=0;
+        const rect=dialog.getBoundingClientRect(), action=dialog.querySelector('.btn-primary').getBoundingClientRect();
+        if(rect.top<(document.querySelector('.topbar')?.getBoundingClientRect().bottom || 40)-1 || rect.bottom>innerHeight || action.bottom>rect.bottom || dialog.scrollWidth>dialog.clientWidth+1) throw new Error('creation controls overflow at 1280x800: '+JSON.stringify({rect:rect.toJSON(),action:action.toJSON(),scrollWidth:dialog.scrollWidth,clientWidth:dialog.clientWidth}));
+        if(!!document.querySelector('.inbox') !== ${view === 'timeline'}) throw new Error('wrong screenshot view');
+      })()`, awaitPromise:true, returnByValue:true });
+      const shot=await cdp('Page.captureScreenshot',{format:'png'});
+      fs.writeFileSync(path.join(dir,`${view}-${theme}-${mode}.png`),Buffer.from(shot.result.data,'base64'));
+      assert.equal(capture.result.exceptionDetails, undefined, JSON.stringify(capture.result.exceptionDetails));
     }
   }
   ws.close();

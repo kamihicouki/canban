@@ -1,4 +1,26 @@
 // Pure defaults shared by every task creation entry point. No viewport/hover inference.
+function sessionCreationDefaults(board, context) {
+  const prefs = board.settings?.launch || {};
+  const agent = ['codex', 'claude'].includes(context.agent) ? context.agent : context.account?.split(':')[0] === 'claude' ? 'claude' : 'codex';
+  return { agent, route: prefs.route || 'desktop', terminal: prefs.terminal || 'terminal', target: prefs.target || 'new-window',
+    hostId: context.host || 'local', cwd: '', prompt: '', account: context.account?.startsWith(`${agent}:`) ? context.account : null };
+}
+
+async function saveQuickSessionDraft(draft, { callTool, refresh, newRequestId }) {
+  if (draft.submitting || !draft.prompt.trim()) return null;
+  draft.startRequest ||= { agent: draft.agent, route: draft.route, terminal: draft.terminal, target: draft.target,
+    hostId: draft.hostId, cwd: draft.cwd.trim(), prompt: draft.prompt.trim(), account: draft.account,
+    clientRequestId: newRequestId() };
+  draft.submitting = true;
+  try {
+    const result = await callTool('canban_start_session', { ...draft.startRequest });
+    draft.startResult = result;
+    let refreshError = null;
+    try { await refresh(); } catch (error) { refreshError = error.message; }
+    return { result, refreshError };
+  } finally { draft.submitting = false; }
+}
+
 function taskCreationDefaults(board, filters, { listId, lane, soloLane } = {}, edits = {}) {
   const context = {};
   for (const key of ['project', 'folder', 'section', 'agent', 'host', 'account']) {
