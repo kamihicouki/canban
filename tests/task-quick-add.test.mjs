@@ -213,6 +213,10 @@ test('desktop starts use the app lists: a Claude environment, a Codex project an
   assert.equal(typed.projectId, '__folder', 'a typed folder is kept');
   assert.equal(m.sessionStartRequest(typed).cwd, '/typed');
   assert.ok(m.sessionUsesFolder({ ...base, agent: 'claude' }), 'without the lists the folder field stays');
+  const attached = m.sessionStartRequest({ ...typed, attachments: { imageIds: ['img-1'], skills: [{ name: 'demo', path: '/s/demo/SKILL.md' }] } });
+  assert.deepEqual(plain(attached.imageIds), ['img-1'], 'composer images ride along with the start request');
+  assert.equal(attached.skills[0].name, 'demo');
+  assert.equal(m.sessionStartRequest(typed).imageIds, undefined);
 });
 
 test('desktop creation waits visibly for targets without losing the request', async () => {

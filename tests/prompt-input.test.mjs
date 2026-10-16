@@ -146,7 +146,7 @@ function composerHarness() {
   let calls = [], sends = 0;
   const bridge = { async callTool(name, args) { calls.push({ name, args }); return { result: name === 'canban_prompt_skills' ? { skills: [{ name: 'demo', path: '/skills/demo/SKILL.md', description: 'demo skill' }] } : { id: 'image-id', offset: args.offset + Buffer.from(args.data, 'base64').length, complete: true } }; } };
   class Reader { readAsDataURL(blob) { blob.arrayBuffer().then(b => { this.result = `data:image/png;base64,${Buffer.from(b).toString('base64')}`; this.onload(); }); } }
-  const context = vm.createContext({ h: (tag, attrs, ...children) => new Element(tag, attrs, children), bridge, URL: { createObjectURL: () => 'blob:preview', revokeObjectURL() {} }, FileReader: Reader });
+  const context = vm.createContext({ h: (tag, attrs, ...children) => new Element(tag, attrs, children), picon: () => '', bridge, URL: { createObjectURL: () => 'blob:preview', revokeObjectURL() {} }, FileReader: Reader });
   vm.runInContext(fs.readFileSync(new URL('../ui/prompt-composer.js', import.meta.url), 'utf8') + '\nglobalThis.create = promptComposer;', context);
   const input = new Element('textarea'); const target = { agent: 'codex', cwd: '/repo' };
   const composer = context.create(input, { key: 'test', context: () => target, submit: () => { sends++; } });
@@ -202,4 +202,20 @@ test('large pasted images are uploaded in bounded chunks and removed without lea
   h.nodes().find(e => e['aria-label'] === 'large.png を削除').onclick();
   assert.equal(h.composer.hasContent(), false);
   assert.equal(h.composer.root.dataset.unsavedForm, 'false');
+});
+
+test('composer draws one Codex-style box with caller controls in its bottom row', () => {
+  const h = composerHarness();
+  const send = new h.Element('button', { class: 'send-round' }), chip = new h.Element('span', { class: 'perm-chip' });
+  const note = new h.Element('div', { class: 'cx-busy' }), where = new h.Element('select'), key = new h.Element('span', { class: 'kh' });
+  const input = new h.Element('textarea');
+  const c = h.context.create(input, { key: 'layout', context: () => h.target, placeholder: '依頼', leading: [chip], actions: [send], inside: [note], place: [where], keys: [key] });
+  const box = c.root.children[0];
+  assert.equal(box.class, 'cx-box'); assert.equal(input.placeholder, '依頼');
+  assert.ok(box.children.includes(input) && box.children.includes(note));
+  const row = c.toolbar.children;
+  assert.equal(row[0]['aria-label'], '画像を添付'); assert.equal(row[1]['aria-label'], 'スキルを選ぶ');
+  assert.equal(row[2], chip); assert.equal(row.at(-1), send);
+  assert.equal(c.root.children[1].class, 'cx-place'); assert.equal(c.root.children[1].children[0], where);
+  assert.equal(c.root.children[2].class, 'cx-keys');
 });

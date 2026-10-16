@@ -66,6 +66,7 @@ const taskQuickAdd = {
       h('span', { text: edit ? '保存' : session ? this.sessionActionLabel() : 'タスクを作成' }), keycap('⌘/Ctrl', 'Enter'));
     this.newRequestButton = session ? h('button', { type: 'button', class: 'btn session-new-request', hidden: !this.sessionDraft.startRequest, text: '新しい依頼', onclick: () => {
       const previous = this.sessionDraft;
+      if (previous.startResult?.state === 'opened') this.composer?.clear();
       this.sessionDraft = { ...previous, prompt: previous.startResult?.state === 'opened' ? '' : previous.prompt };
       delete this.sessionDraft.startRequest; delete this.sessionDraft.startResult;
       this.mount();
@@ -148,6 +149,9 @@ const taskQuickAdd = {
     const prompt = h('textarea', { class: 'note session-prompt', rows: 4, maxlength: 20000, required: true, 'aria-label': '依頼内容',
       placeholder: '何をしてほしいですか？', oninput: e => { draft.prompt = e.target.value; } });
     prompt.value = draft.prompt;
+    // Same composer as session cards: images and $skills ride along with the start request. The form's ⌘Enter submits.
+    const composer = this.composer = promptComposer(prompt, { key: 'quick-start', context: () => ({ agent: draft.agent, hostId: draft.hostId, cwd: draft.cwd.trim() }),
+      keys: [keyHint(['⌘', 'Enter'], '開始'), keyHint(['$'], 'スキル')] });
     const select = (label, value, choices, change) => {
       const el = h('select', { class: 'text-input', 'aria-label': label, onchange: e => change(e.target.value) }, choices.map(([v, text]) => h('option', { value: v, text })));
       if (!choices.some(([v]) => v === value)) el.append(h('option', { value, text: `${value}（選び直してください）` }));
@@ -186,7 +190,7 @@ const taskQuickAdd = {
       : targets?.failed && desktop ? 'アプリの一覧を読み込めませんでした。フォルダを指定して開けます。'
       : desktop ? '新規画面に依頼を渡します。送信はアプリで行ってください。' : '選んだフォルダでCLIを起動し、依頼を開始します。';
     return h('div', { class: 'session-fields' }, destinations, ...place, folder ? field(`作業フォルダ${desktop ? '（任意）' : ''}`, cwd) : null, folder ? folders : null,
-      field('依頼内容', prompt), h('p', { class: `creation-route-note${remoteCodex ? ' error' : ''}`, text: note }),
+      h('div', { class: 'creation-field' }, h('span', { class: 'creation-label', text: '依頼内容' }), composer.root), h('p', { class: `creation-route-note${remoteCodex ? ' error' : ''}`, text: note }),
       h('details', { class: 'creation-details', open: remoteCodex || draft.environmentOpen, ontoggle: e => { draft.environmentOpen = e.target.open; } }, h('summary', { text: `実行環境 · ${cloud ? 'クラウド' : hostLabel(sessionHostId(draft, targets))} · ${draft.account ? accountName(draft.account) : 'いまのログイン'}` }), environment));
   },
   paintSessionState() {
@@ -198,6 +202,7 @@ const taskQuickAdd = {
       el.disabled = !!draft.submitting || (locked && !text);
       if (text) el.readOnly = locked;
     });
+    this.form.querySelectorAll('.session-fields .cx-box button').forEach(el => { el.disabled = !!draft.submitting || locked; });
     this.primary.disabled = loading || !!draft.submitting || draft.startResult?.state === 'opened';
     this.primary.querySelector('span').textContent = loading ? '環境を読み込み中…' : draft.startResult?.state === 'opened' ? (draft.startResult.route === 'cloud' ? '送信しました' : '開きました') : this.sessionActionLabel();
     if (this.newRequestButton) this.newRequestButton.hidden = !locked;
@@ -212,7 +217,9 @@ const taskQuickAdd = {
   async submitSession() {
     const draft = this.sessionDraft;
     if (draft.submitting || draft.startResult?.state === 'opened') return;
-    if (!draft.prompt.trim()) return this.title.focus();
+    const promptInput = this.form.querySelector('.session-prompt');
+    if (promptInput && !draft.startRequest) draft.prompt = promptInput.value; // skill picks edit the text without an input event
+    if (!draft.prompt.trim()) return promptInput?.focus();
     if (!draft.startRequest && draft.route === 'desktop' && !this.targets) {
       this.feedback.hidden = false; this.feedback.classList.remove('error'); this.feedback.textContent = '環境を読み込み中です。取得後に開始できます。';
       return;
@@ -226,6 +233,9 @@ const taskQuickAdd = {
       return this.form.querySelector('.session-cwd').focus();
     }
     if (!draft.startRequest && draft.agent === 'codex' && draft.route === 'desktop' && !sessionRunsInCloud(draft) && sessionHostId(draft, this.targets) !== 'local') return;
+    if (!draft.startRequest) {
+      try { draft.attachments = this.composer.payload(); } catch (error) { this.feedback.hidden = false; this.feedback.classList.add('error'); this.feedback.textContent = error.message; return; }
+    }
     this.busy(true);
     this.feedback.hidden = false; this.feedback.classList.remove('error'); this.feedback.textContent = sessionRunsInCloud(draft) ? 'Codex Cloud に送信しています…' : 'アプリを開いています…';
     live.ownActAt = Date.now();
