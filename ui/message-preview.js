@@ -28,6 +28,55 @@ const promptPreviewModel = (() => {
   return { parse };
 })();
 
+// The options an agent ends its turn with (「A（推奨）: … / B: … どちらにしますか」), as answers to put in the input.
+// Only the last list counts, and only when a question follows it, so step lists and summaries are left alone.
+const choiceModel = (() => {
+  const ITEM = /^\s*(?:[-*]|(\d{1,2})[.)])\s+(.*)$/;
+  // **A（推奨）**: … / A) … / (A) … / 案A: … — a letter label first, then its text.
+  const LETTER = /^(?:\*\*)?\s*(?:案\s*)?[(（]?([A-H])[)）]?(?=[\s（(*:：.)）]|$)\s*([（(][^）)]*[）)])?\s*(?:\*\*)?\s*[:：.)]?\s*(.*)$/;
+  const ASKS = /[？?]|どちら|どれ|どの|選んで|選択|教えて/;
+  const YES_NO = /(よい|いい|良い|しますか|進めますか|かまいませんか|構いませんか|okですか)[^。？?]*[？?]\s*$/i;
+  const OPEN = /どちら|どれ|どの|何|なに|どこ|いつ|どう|誰|なぜ/;
+  const plain = (s) => s.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1').trim();
+  const short = (s, n = 48) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+  function parse(text) {
+    const lines = String(text || '').replace(/```[\s\S]*?```/g, '').split('\n');
+    let block = null, tail = [];
+    for (const line of lines) {
+      const m = ITEM.exec(line);
+      if (m) {
+        if (!block || tail.some((l) => l.trim())) { block = []; tail = []; }
+        block.push({ n: m[1], body: m[2] });
+      } else if (block && /^\s{2,}\S/.test(line) && !tail.some((l) => l.trim())) block.at(-1).body += ` ${line.trim()}`; // a wrapped item
+      else tail.push(line);
+    }
+    const after = tail.join('\n').trim();
+    if (block && block.length >= 2 && block.length <= 8 && ASKS.test(after)) {
+      const letters = block.map((it) => LETTER.exec(it.body));
+      if (letters.every(Boolean) && new Set(letters.map((m) => m[1])).size === block.length) {
+        return letters.map((m) => {
+          const note = m[2] || '', rest = plain(m[3] || '');
+          return { key: m[1], title: short(rest.split(/[。:：]/)[0] || rest), recommended: /推奨|おすすめ|recommend/i.test(note + rest), reply: `${m[1]}でお願いします。` };
+        });
+      }
+      if (block.every((it) => it.n)) {
+        return block.map((it) => {
+          const title = short(plain(it.body).split(/[。:：]/)[0]);
+          return { key: it.n, title, recommended: /推奨|おすすめ|recommend/i.test(it.body), reply: `${it.n}（${title}）でお願いします。` };
+        });
+      }
+    }
+    // A plain yes / no question at the very end.
+    const last = String(text || '').trim().split('\n').filter((l) => l.trim()).at(-1) || '';
+    if (YES_NO.test(last) && !OPEN.test(last)) {
+      return [{ key: '1', title: 'はい、進めてください', recommended: false, reply: 'はい、進めてください。' },
+        { key: '2', title: 'いいえ、やめてください', recommended: false, reply: 'いいえ、やめてください。' }];
+    }
+    return [];
+  }
+  return { parse };
+})();
+
 function userMessageView(text) {
   const { body, blocks } = promptPreviewModel.parse(text);
   return h('div', { class: 'md' },

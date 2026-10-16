@@ -44,6 +44,7 @@ function renderFeed(d, p) {
   live.feeds.set(f.cardId, f);
   paintFeedFoot(f);
   if (p.exchangeData) queueMicrotask(() => { if (panes.includes(p)) paintExchangeTimeline(p); });
+  queueMicrotask(() => paintChoices(f)); // the input is built after the conversation
   kickLive();
   return h('div', { class: 'feed-wrap' }, list, newBtn, foot);
 }
@@ -111,6 +112,7 @@ function applyFeed(f, feed) {
       }
     }
   }
+  if (added || feed.status) paintChoices(f);
   if (added && f.pane.exchangeData) { paintExchangeTimeline(f.pane); scheduleExchangeRefresh(f.pane); }
   if (added) { if (stick) scrollFeedToEnd(f); else f.newBtn.hidden = false; }
 }

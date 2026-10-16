@@ -24,6 +24,32 @@ function replaceDispatch(old, d) {
   // If sending has been disabled, retain the draft next to the reason.
   else if (draft) keepDisabledPrompt(next, draft);
   old.replaceWith(next);
+  paintChoices(live.feeds.get(d.session.id));
+}
+
+// The options the agent ended its turn with become answers: one press puts the reply in the input (⌘Enter sends).
+// Not while it works, and not for the app's own question / plan prompts, which only the app can answer.
+function paintChoices(f) {
+  const box = f?.pane.el.querySelector('.send-section .cx-choices');
+  if (!box) return;
+  const choices = f.status === 'running' || f.signals?.wait ? [] : choiceModel.parse(f.pane.lastText);
+  f.pane.choices = choices;
+  box.hidden = !choices.length;
+  box.replaceChildren(...(choices.length ? [h('span', { class: 'cx-choices-label', text: '答える' }),
+    ...choices.map((c, i) => h('button', { type: 'button', class: `cx-choice${c.recommended ? ' rec' : ''}`, title: `入力欄に「${c.reply}」を入れる${i < 9 ? `（Alt+${i + 1}）` : ''}`, onclick: () => fillChoice(f.pane, c) },
+      h('b', { text: c.key }), h('span', { class: 'cx-choice-t', text: c.title }), c.recommended ? h('span', { class: 'cx-rec', text: '推奨' }) : null,
+      i < 9 ? keycap(`Alt+${i + 1}`) : null))] : []));
+}
+function fillChoice(p, choice) {
+  const input = p?.el.querySelector('[data-sec="send"] textarea:not([readonly]):not([disabled])');
+  if (!input || !choice) return;
+  // Replace an empty input or our own earlier pick; otherwise add the answer under what was typed.
+  input.value = !input.value.trim() || input.value === input.dataset.choiceFill ? choice.reply : `${input.value.trimEnd()}\n${choice.reply}`;
+  input.dataset.choiceFill = input.value;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.focus({ preventScroll: true });
+  input.setSelectionRange(input.value.length, input.value.length);
+  input.closest('.send-section')?.scrollIntoView({ block: 'nearest' });
 }
 function renderDispatch(d) {
   const s = d.session;
@@ -87,6 +113,7 @@ function renderDispatch(d) {
     D.paused ? h('div', { class: 'paused-bar' }, h('span', { class: 'grow', text: `⏸ キュー一時停止: ${D.paused.reason}` }),
       h('button', { class: 'link-btn', text: '再開', onclick: () => act('canban_resume_queue', { cardId: s.id }, { okMsg: 'キューを再開しました' }).then(() => openCard(s.id)) })) : null,
     D.active.length || D.queue.length ? h('div', { class: 'cx-reqs' }, ...D.active.map((r) => requestRow(s, r)), ...D.queue.map((r, i) => requestRow(s, r, { index: i, queue: D.queue }))) : null,
+    h('div', { class: 'cx-choices', role: 'group', 'aria-label': '選択肢で答える', hidden: true }),
     h('div', { class: 'send-box' }, composer.root),
     D.history.length ? h('details', { class: 'cx-hist' }, h('summary', { text: `依頼の履歴（${D.history.length}）` }),
       ...D.history.map((r) => requestRow(s, r, { review: () => { try { composer.restore(r); toast('実行状況を確認し、内容を確認してから送信してください。'); } catch (e) { toast(e.message, true); } } }))) : null,
