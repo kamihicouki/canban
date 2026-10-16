@@ -1,7 +1,5 @@
 .prompt-composer { min-width: 0; border-radius: 6px; }
 .prompt-composer.drag-image { outline: 2px dashed var(--accent, #0079bf); outline-offset: 4px; }
-.prompt-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
-.prompt-hint { font-size: 11px; }
 .prompt-assets { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
 .prompt-assets:empty, .prompt-notice:empty { display: none; }
 .prompt-image { display: grid; width: 122px; grid-template-columns: minmax(0, 1fr) 24px; gap: 3px; padding: 5px; border: 1px solid var(--input-border); border-radius: 6px; font-size: 11px; }
@@ -17,3 +15,37 @@
 .prompt-skill-choice strong, .prompt-skill-choice span { display: block; overflow-wrap: anywhere; }
 .prompt-skill-choice span { margin-top: 3px; font-size: 11px; }
 .prompt-notice { font-size: 12px; margin-top: 5px; overflow-wrap: anywhere; }
+/* The Codex-style box shared by session follow-ups, task starts and the create dialog. */
+.cx-box { display: flex; flex-direction: column; gap: 6px; background: var(--input-bg); border: 1px solid var(--btn-subtle-hover); border-radius: 16px; padding: 12px 10px 6px 16px; box-shadow: 0 2px 8px color-mix(in srgb, var(--card-fg) 4%, transparent); }
+.cx-box:focus-within { border-color: var(--accent); }
+.prompt-composer .cx-box > textarea, .prompt-composer .cx-box > textarea.note { width: 100%; min-height: 28px; max-height: 180px; border: 0; border-radius: 0; outline: 0; resize: none; background: none; font: inherit; font-size: var(--reading-size); line-height: 1.6; padding: 0 6px 0 0; box-shadow: none; color: inherit; field-sizing: content; }
+.cx-box > .prompt-assets { margin: 0; }
+.prompt-toolbar { display: flex; align-items: center; gap: 4px; margin: 0 0 0 -6px; min-width: 0; }
+.prompt-toolbar .grow { flex: 1; }
+.cx-ico { height: 28px; min-width: 28px; padding: 0 7px; border-radius: 8px; display: inline-grid; place-items: center; color: var(--card-muted); font-size: 14px; font-weight: 600; flex: none; }
+.cx-ico:hover:not(:disabled) { background: var(--btn-subtle-hover); color: var(--card-fg); }
+.cx-ico:disabled, .send-round:disabled { opacity: .5; cursor: default; }
+.prompt-toolbar .perm-chip { max-width: 240px; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; height: 28px; padding: 0 9px; border-radius: 8px; font-size: 12.5px; color: var(--card-muted); white-space: nowrap; margin: 0; background: none; }
+.prompt-toolbar .perm-chip.elevated { color: var(--tone-wait); background: var(--tone-wait-bg); }
+.prompt-toolbar .help-tip { flex: none; }
+.send-round { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--primary-fg); display: grid; place-items: center; flex: none; }
+:root:not([data-theme="dark"]) .send-round { color: #fff; }
+.cx-keys { display: flex; gap: 12px; padding: 6px 6px 0; font-size: 12px; color: var(--card-muted); flex-wrap: wrap; }
+/* Where it starts: small selects under the box, like Codex's project · environment · branch row. */
+.cx-place { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; }
+.prompt-composer .cx-place > :is(select, input, .picker-btn) { width: auto; max-width: 260px; min-width: 0; height: 28px; padding: 0 8px; border: 0; border-radius: 8px; background: none; color: var(--card-muted); font-size: 12.5px; }
+.prompt-composer .cx-place > input { flex: 1 1 200px; max-width: none; }
+.prompt-composer .cx-place > :is(select, input, .picker-btn):hover:not(:disabled) { background: var(--btn-subtle-hover); color: var(--card-fg); }
+.prompt-composer .cx-place > .picker-btn { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prompt-composer .cx-place .picker-description { display: none; } /* the description stays in the button's title and the picker */
+/* The agent's options as answers, just above the input. */
+.cx-choices { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 8px; }
+.cx-choices[hidden] { display: none; }
+.cx-choices-label { font-size: 12px; font-weight: 700; color: var(--card-muted); margin-right: 2px; }
+.cx-choice { display: inline-flex; align-items: center; gap: 7px; min-width: 0; max-width: 100%; height: 32px; padding: 0 8px 0 6px; border: 1px solid var(--btn-subtle-hover); border-radius: 10px; background: var(--input-bg); color: var(--card-fg); font-size: 13px; cursor: pointer; }
+.cx-choice:hover, .cx-choice:focus-visible { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--input-bg)); }
+.cx-choice > b { display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 4px; border-radius: 6px; background: var(--btn-subtle); font-size: 12px; }
+.cx-choice.rec > b { background: var(--accent); color: var(--card-bg); }
+.cx-choice-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-rec { flex: none; font-size: 11px; font-weight: 700; color: var(--accent); }
+.cx-choice .keycap { flex: none; opacity: .7; }

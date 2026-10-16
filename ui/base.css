@@ -21,10 +21,11 @@
   --list-fg: #172b4d;
   --list-muted: #44546f;
   --card-bg: #fff;
+  --term-bg: #f7f8f9; --term-fg: #172b4d; --term-cursor: #0c66e4; --term-sel: #cce0ff;
   --chat-human-bg: #e9f2ff; --chat-agent-bg: #f1f2f4;
   --card-fg: #24272b;
   --card-muted: #59616c;
-  --reading-size: 1rem; --reading-leading: 1.75; --reading-width: 42rem;
+  --reading-size: 1rem; --reading-leading: 1.75; --reading-width: 60rem;
   --card-shadow: 0 1px 1px #091e4240, 0 0 1px #091e424f;
   --card-hover: #f7f8f9;
   --input-bg: #fff;
@@ -72,6 +73,7 @@
   --list-fg: #b6c2cf;
   --list-muted: #8c9bab;
   --card-bg: #22272b;
+  --term-bg: #161a1d; --term-fg: #dee4ea; --term-cursor: #579dff; --term-sel: #09326c;
   --chat-human-bg: #09326c; --chat-agent-bg: #282e33;
   --card-fg: #e3e6eb;
   --card-muted: #a9b2bd;

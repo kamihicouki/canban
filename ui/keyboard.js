@@ -11,6 +11,13 @@ document.addEventListener('keydown', e => {
     const picker = claudeAccountPicker(focusedPane());
     if (picker) { e.preventDefault(); picker.click(); }
   }
+  // Alt+1〜9: the agent's options into the input, also while typing there (⌥ digits would only type symbols).
+  const digit = /^Digit([1-9])$/.exec(e.code);
+  if (digit && e.altKey && !e.metaKey && !e.ctrlKey && !e.isComposing && !paneLayer.hidden && !document.querySelector('.popover')
+    && (!typingIn(e.target) || e.target.closest('[data-sec="send"]'))) {
+    const p = focusedPane()?.choices?.length ? focusedPane() : panes.find(x => x.choices?.length), choice = p?.choices?.[Number(digit[1]) - 1];
+    if (choice) { e.preventDefault(); fillChoice(p, choice); }
+  }
 });
 function focusedListId() {
   const a = document.activeElement;
@@ -74,6 +81,7 @@ function refreshShortcutHints() {
   const inCard = overlayOpen() || inDockedPane(input);
   let entries;
   if (upper) entries = [];
+  else if (inCard && input.closest('.term-host')) entries = [['Shift+Esc', 'カードのキーへ戻る'], [`${modKey}K`, 'コマンド']];
   else if (inCard && typing) entries = [
     ...(input.closest('[data-sec="send"]') && input.closest('.prompt-composer') ? [[`${modKey}Enter`, input.closest('.pane').dataset.kind === 'task' ? 'セッション開始' : '送信']] : []),
     ['Esc', '入力を抜ける'], [`${modKey}K`, 'コマンド'],
@@ -86,7 +94,7 @@ function refreshShortcutHints() {
       ['⇧←', '左のリストへ', !adjacentPaneList(focusedPane(), -1)], ['⇧→', '右のリストへ', !adjacentPaneList(focusedPane(), 1)],
       ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
       ...(focusedPane()?.kind === 'session' ? [['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
-      ...(panePromptInput() ? [['i', '指示欄']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ['f', '変更']] : []), ['r', '更新'], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys,
+      ...(panePromptInput() ? [['i', '指示欄']] : []), ...(panes.some(x => x.choices?.length) ? [['Alt+1〜9', '選択肢で答える']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ['f', '変更'], ...(terminalAvailable(focusedPane()) ? [['t', 'ターミナル'], ...(cardTerms.get(focusedPane().id)?.closed ? [['Shift+R', '開き直す']] : cardTerms.get(focusedPane().id)?.id ? [['Shift+X', 'シェルを終了']] : [])] : [])] : []), ['r', '更新'], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys,
       ...(exchangeTrail ? [['Shift+1 / 2 / 3', '関連カードのビュー'], ['Esc / Shift+Esc', '訪問を戻る / 進む'], ['Shift+Home', '起点へ']] : docked ? [['Enter', '大きく開く'], ['Esc', '一覧へ戻る']] : [['Esc', timelineOn() ? '時間軸へ戻す' : '閉じる']])];
   }
   else if (typing) entries = input.id === 'q' ? [['↓ / Enter', 'カードへ'], ['Esc', '検索をクリア']] : [['⌘K / Ctrl+K', 'コマンド']];
@@ -126,7 +134,7 @@ const SHORTCUTS = [
     ['Alt+a', 'Claude の実行アカウントを選ぶ（このマシンのセッション）/ タスク: 開始するアカウントを選ぶ'],
     ['Shift+← / →', '左右の隣のリストへ移動（端で停止、入力中・配置調整中は無効）'],
     ['j / k', '表示リストの次 / 前のカードを開く（端で停止）'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'],
-    ['z', 'エージェントのセッションをアーカイブ / 復元'], ['Delete', 'セッションと会話履歴を削除（確認あり）'], ['i', '指示の入力欄へ'], ['$', '入力欄: スキルを選ぶ（⌘Kからも選択）'], ['d / f', 'スレッド表示: 詳細パネル / 変更を開閉'], ['⌥Enter', '入力欄: キューに追加（⌘Enter は送信）'], ['o', '再開'], ['l g m', 'ラベル / ' + T.category + ' / リスト移動'], ['c', '作成ダイアログを開く'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
+    ['z', 'エージェントのセッションをアーカイブ / 復元'], ['Delete', 'セッションと会話履歴を削除（確認あり）'], ['i', '指示の入力欄へ'], ['Alt+1〜9', 'エージェントの選択肢を入力欄へ（送信は ⌘Enter）'], ['$', '入力欄: スキルを選ぶ（⌘Kからも選択）'], ['d / f / t', 'スレッド表示: 詳細パネル / 変更 / ターミナルを開閉'], ['Shift+Esc', 'ターミナル: カードのキーへ戻る（Esc はシェルへ送る）'], ['Shift+R / Shift+X', 'カード: 終了したターミナルを開き直す / シェルを終了'], ['⌥Enter', '入力欄: キューに追加（⌘Enter は送信）'], ['o', '再開'], ['l g m', 'ラベル / ' + T.category + ' / リスト移動'], ['c', '作成ダイアログを開く'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
   ]],
   ['作成ダイアログ', [['⌘Enter / Ctrl+Enter', 'タスクを作成 / アプリを開く'], ['Enter', 'タイトル欄: タスクを作成'], ['Esc', '下書きを残して閉じる']]],
   ['カードのサイズ', [['右端・下端 + 矢印', 'カードの幅と高さを調整（同じ種類のカードで共通）'], ['右端・下端 + Home', '既定のサイズへ戻す']]],
@@ -192,6 +200,11 @@ function commandPalette() {
         return { label: `カードを${step < 0 ? '左' : '右'}のリスト「${target.title}」へ移動`, run: () => movePaneAdjacent(p, step), hint: `Shift+${step < 0 ? '←' : '→'}` };
       }),
       ...(sessionPane ? [
+        ...(terminalAvailable(sessionPane) ? [
+          { label: 'カードのターミナルを開閉', run: () => toggleThreadSide(sessionPane, 'terminal'), hint: 't' },
+          ...(cardTerms.get(sessionPane.id)?.closed ? [{ label: 'ターミナルを開き直す', run: () => restartTerminal(sessionPane), hint: 'Shift+R' }] : cardTerms.get(sessionPane.id)?.id ? [{ label: 'ターミナルのシェルを終了', run: () => endTerminal(sessionPane), hint: 'Shift+X' }] : []),
+        ] : []),
+        ...(sessionPane.choices || []).map((c, i) => ({ label: `答える: ${c.key} ${c.title}`, run: () => fillChoice(sessionPane, c), hint: i < 9 ? `Alt+${i + 1}` : '' })),
         { label: sessionPane.d?.card.archived ? 'セッションカードをアーカイブから戻す' : 'セッションをアーカイブ', run: () => paneKeyButton(sessionPane, 'z')?.click(), hint: 'z' },
         ...(sessionPane.d?.launch?.claudeAccounts?.length ? [{ label: 'Claude の実行アカウントを選ぶ', run: () => claudeAccountPicker(sessionPane)?.click(), hint: 'Alt+a' }] : []),
         { label: 'セッションと会話履歴を削除…', run: () => confirmSessionCardDelete(sessionPane), hint: 'Delete' },

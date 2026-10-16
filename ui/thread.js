@@ -126,8 +126,13 @@ function editSummary(f) {
 }
 
 // ---- the thread layout ----
-const SIDE_TABS = [['changes', '変更', 'diff', 'f'], ['details', '詳細', 'panel', 'd']];
-function sideTabOf(p) { return p.sideTab === undefined ? store.get('threadSide', null) : p.sideTab; }
+const SIDE_TABS = [['changes', '変更', 'diff', 'f'], ['terminal', 'ターミナル', 'terminal', 't'], ['details', '詳細', 'panel', 'd']];
+// The terminal is only for this machine's sessions; a remembered terminal tab shows nothing elsewhere.
+function sideTabOf(p) {
+  const tab = p.sideTab === undefined ? store.get('threadSide', null) : p.sideTab;
+  return tab === 'terminal' && !terminalAvailable(p) ? null : tab;
+}
+const terminalAvailable = (p) => p?.kind === 'session' && !!p.d?.session && !p.d.session.host;
 function openThreadSide(p, tab) {
   p.sideTab = tab || null;
   store.set('threadSide', p.sideTab);
@@ -144,6 +149,7 @@ function paintThreadSide(p) {
   for (const [id] of SIDE_TABS) { $$(`[data-side-tab="${id}"]`, p.el).forEach((b) => b.setAttribute('aria-pressed', String(shown === id))); }
   const body = $('.th-side-b', side);
   if (shown === 'changes') { body.replaceChildren(renderChangesPanel(p)); }
+  else if (shown === 'terminal') { body.replaceChildren(terminalPanel(p)); }
   else if (shown === 'details') { body.replaceChildren(...(p.detailNodes || [])); }
   else body.replaceChildren();
   refreshShortcutHints();
@@ -182,6 +188,7 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
   ].filter(Boolean);
   const head = h('div', { class: 'th-head' }, secs.breadcrumb.nodes[0], h('span', { class: 'grow' }),
     !s.host ? h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'changes', title: '作業フォルダの変更を右に開く・閉じる（f）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'f', onclick: () => toggleThreadSide(p, 'changes') }, h('span', { html: picon('diff', 14) }), '変更', h('span', { class: 'th-diffstat' }), ...keycap('f')) : null,
+    !s.host ? h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'terminal', title: 'プロジェクトのルートで開くターミナルを右に開く・閉じる（t）', 'aria-pressed': 'false', 'aria-keyshortcuts': 't', onclick: () => toggleThreadSide(p, 'terminal') }, h('span', { html: picon('terminal', 14) }), 'ターミナル', ...keycap('t')) : null,
     h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'details', title: '属性・メモ・再開などを右に開く・閉じる（d）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'd', onclick: () => toggleThreadSide(p, 'details') }, h('span', { html: picon('panel', 14) }), '詳細', ...keycap('d')),
     h('span', { class: 'ph-btns card-actions' }));
   const title = h('div', { class: 'th-title' }, secs.title.nodes[0]);

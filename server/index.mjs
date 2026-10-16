@@ -44,6 +44,7 @@ import { launchOnce } from './launcher.mjs';
 import { desktopProfilePlan, withDesktopAccount, saveClaudeExecutionAccount, desktopExecutionLink } from './claude-desktop-profile.mjs';
 import { SlackService, slackTools } from './slack.mjs';
 import { listChanges, fileDiff } from './changes.mjs';
+import { Terminals, projectRoot } from './terminal.mjs';
 import { attachSummaryCache } from './summary-cache.mjs';
 import { loopArtifact } from './loop-artifact.mjs';
 
@@ -56,6 +57,7 @@ const UI_MIME = 'text/html;profile=mcp-app';
 // Native Messaging stamps it at the trusted Chrome bridge; MCP Apps receive it in their resource.
 const uiToken = process.env.CANBAN_UI_TOKEN || randomBytes(32).toString('hex');
 delete process.env.CANBAN_UI_TOKEN; // No launcher, terminal, or supervised agent inherits UI authority.
+const terminals = new Terminals();
 const requireLoopUi = a => {
   if (a.uiToken !== uiToken) throw new Error('この操作はボードUIから確認してください');
   const { uiToken: omitted, ...args } = a;
@@ -193,6 +195,20 @@ const TOOLS = [
     if (file) return { available: true, diff: await fileDiff(session.cwd, file) };
     return listChanges(session.cwd);
   }),
+  // The card's terminal (server/terminal.mjs). Only the board UI holds the token, so a model cannot type into it.
+  appTool('canban_terminal_open', 'カードのターミナルを開く', { cardId: { type: 'string' }, cols: { type: 'number' }, rows: { type: 'number' }, uiToken: { type: 'string' } }, ['cardId', 'uiToken'], async (a) => {
+    const { cardId, cols, rows } = requireLoopUi(a);
+    const { session, host } = await findSession(store, cardId);
+    if (isCloudSession(session)) throw new Error(CLOUD_OPERATION_REASON);
+    if (host) throw new Error('リモートのセッションではまだターミナルを開けません');
+    const cwd = await projectRoot(session.cwd);
+    if (!cwd) throw new Error('このセッションの作業フォルダが見つかりません');
+    return terminals.open({ key: cardId, cwd, cols, rows });
+  }),
+  appTool('canban_terminal_read', 'カードのターミナルの出力を待つ', { id: { type: 'string' }, since: { type: 'number' }, timeoutMs: { type: 'number' }, uiToken: { type: 'string' } }, ['id', 'uiToken'], (a) => terminals.read(requireLoopUi(a))),
+  appTool('canban_terminal_write', 'カードのターミナルに入力する', { id: { type: 'string' }, data: { type: 'string' }, uiToken: { type: 'string' } }, ['id', 'data', 'uiToken'], (a) => terminals.write(requireLoopUi(a))),
+  appTool('canban_terminal_resize', 'カードのターミナルの大きさを変える', { id: { type: 'string' }, cols: { type: 'number' }, rows: { type: 'number' }, uiToken: { type: 'string' } }, ['id', 'cols', 'rows', 'uiToken'], (a) => terminals.resize(requireLoopUi(a))),
+  appTool('canban_terminal_close', 'カードのターミナルを閉じる', { id: { type: 'string' }, uiToken: { type: 'string' } }, ['id', 'uiToken'], (a) => terminals.close(requireLoopUi(a))),
   {
     name: 'open_canban',
     title: 'Canban',
@@ -1035,6 +1051,7 @@ rl.on('line', (line) => {
 });
 rl.on('close', async () => {
   slack.stop();
+  terminals.closeAll();
   await Promise.allSettled([...pending]);
   await shutdownLogins();
   await desktopBridge?.close();
@@ -1043,6 +1060,7 @@ rl.on('close', async () => {
 });
 for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, async () => {
   slack.stop();
+  terminals.closeAll();
   await shutdownLogins();
   await desktopBridge?.close();
   process.exit(0);

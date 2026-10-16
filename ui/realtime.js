@@ -9,7 +9,7 @@ function feedItem(it, f) {
     const who = h('div', { class: 'fi-who' }, it.k === 'user' ? 'あなた' : f.pane.d?.session?.agent === 'claude' ? 'Claude' : 'Codex',
       Number.isFinite(stamp) ? h('time', { datetime: new Date(stamp).toISOString(), title: fmtDate(stamp), text: fmtClock(it.at) }) : null);
     return it.k === 'user'
-      ? h('div', { class: 'fi fi-user' }, who, h('div', { class: 'fi-content', text: exchangeModel.messageText(it.text) }))
+      ? h('div', { class: 'fi fi-user' }, who, h('div', { class: 'fi-content' }, h('span', { class: 'raw', text: exchangeModel.messageText(it.text) }), userMessageView(exchangeModel.messageText(it.text))))
       : h('div', { class: 'fi fi-asst' }, who, h('div', { class: 'fi-content' }, h('span', { class: 'raw', text: it.text }), h('div', { class: 'md', html: mdHtml(it.text) })));
   }
   if (it.k === 'commentary') return h('div', { class: 'fi fi-note', text: it.text });
@@ -44,6 +44,7 @@ function renderFeed(d, p) {
   live.feeds.set(f.cardId, f);
   paintFeedFoot(f);
   if (p.exchangeData) queueMicrotask(() => { if (panes.includes(p)) paintExchangeTimeline(p); });
+  queueMicrotask(() => paintChoices(f)); // the input is built after the conversation
   kickLive();
   return h('div', { class: 'feed-wrap' }, list, newBtn, foot);
 }
@@ -111,6 +112,7 @@ function applyFeed(f, feed) {
       }
     }
   }
+  if (added || feed.status) paintChoices(f);
   if (added && f.pane.exchangeData) { paintExchangeTimeline(f.pane); scheduleExchangeRefresh(f.pane); }
   if (added) { if (stick) scrollFeedToEnd(f); else f.newBtn.hidden = false; }
 }

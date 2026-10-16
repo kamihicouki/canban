@@ -116,7 +116,7 @@ await step('row', () => document.querySelector('.irow[data-card-id="codex:t1"]')
 await step('conversation labels and draft', async () => {
   const pane = document.querySelector('.pane[data-kind="session"]');
   if (!pane) throw new Error('selected session did not open');
-  const original = pane.querySelector('.fi-user .fi-content');
+  const original = pane.querySelector('.fi-user .fi-content .raw');
   if (original?.textContent !== 'ログインを直して') throw new Error('original prompt changed: ' + JSON.stringify(original?.textContent));
   const stamp = pane.querySelector('.fi-user time');
   if (stamp?.getAttribute('datetime') !== '2026-09-20T00:00:01.000Z') throw new Error('message timestamp changed');

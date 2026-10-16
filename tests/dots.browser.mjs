@@ -86,9 +86,9 @@ test('dot visibility, cloud restrictions and board/time-axis screenshots in Chro
   assert.equal(opened.structuredContent.route, 'desktop'); assert.equal(opened.structuredContent.url, 'codex://threads/dot-created?hostId=durable');
   await page.keyboard.press('Escape'); await page.locator('#paneLayer').waitFor({ state: 'hidden' });
   await page.locator(`.card.face[data-card-id="${task.cardId}"]`).click();
-  await page.locator('.pane .start-grid').waitFor();
-  assert.match(await page.locator('.pane .start-grid').innerText(), /このマシン/);
-  await page.locator('.pane .start-grid button').click();
+  await page.locator('.pane .cx-place').waitFor();
+  assert.match(await page.locator('.pane .cx-place').innerText(), /このマシン/);
+  await page.locator('.pane .cx-place button').click();
   assert.doesNotMatch(await page.locator('.popover').innerText(), /Codex Cloud/);
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape'); await page.locator('#paneLayer').waitFor({ state: 'hidden' });

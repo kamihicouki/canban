@@ -35,7 +35,7 @@ function forward(message) {
     return;
   }
   pending.set(JSON.stringify(message.id), message.id);
-  if (['canban_review_loop', 'canban_send_loop'].includes(message.params?.name)) message = { ...message, params: { ...message.params, arguments: { ...message.params.arguments, uiToken } } };
+  if (['canban_review_loop', 'canban_send_loop'].includes(message.params?.name) || String(message.params?.name || '').startsWith('canban_terminal_')) message = { ...message, params: { ...message.params, arguments: { ...message.params.arguments, uiToken } } };
   child.stdin.write(`${JSON.stringify(message)}\n`);
 }
 
