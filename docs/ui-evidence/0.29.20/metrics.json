@@ -16,11 +16,11 @@
     "samples": [
       {
         "view": "board",
-        "cardOpenToAnswersMs": 224.1
+        "cardOpenToAnswersMs": 287.5
       },
       {
         "view": "timeline",
-        "cardOpenToAnswersMs": 32.6
+        "cardOpenToAnswersMs": 36.1
       }
     ]
   },
@@ -41,11 +41,11 @@
     "samples": [
       {
         "view": "board",
-        "cardOpenToAnswersMs": 213.5
+        "cardOpenToAnswersMs": 216.2
       },
       {
         "view": "timeline",
-        "cardOpenToAnswersMs": 38.8
+        "cardOpenToAnswersMs": 36.5
       }
     ]
   },
@@ -53,5 +53,6 @@
     "before": 1,
     "after": 1
   },
-  "timingLimit": "one sample per board/timeline view; no speed superiority claim"
+  "timingLimit": "one sample per board/timeline view; no speed superiority claim",
+  "dispatchGuard": "canban_dispatch and send operations intercepted and blocked in fixture browser; before/after rerun passed"
 }

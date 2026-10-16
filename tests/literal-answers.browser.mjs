@@ -32,7 +32,12 @@ test('yes/no picks preserve the question meaning, draft and reading position', {
   t.after(() => browser.close());
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } }), errors = [], writes = [], samples = [];
   page.on('pageerror', e => errors.push(e.message));
-  page.on('request', r => { if (r.url().endsWith('/rpc') && r.method() === 'POST') { const name = r.postDataJSON()?.name; if (/^canban_(send_prompt|start_session|create_task|approve)/.test(name)) writes.push(name); } });
+  await page.route('**/rpc', async route => {
+    const request = route.request(), name = request.method() === 'POST' ? request.postDataJSON()?.name : '';
+    if (/^canban_(dispatch|send_prompt|start_session|create_task|approve)/.test(name)) {
+      writes.push(name); await route.fulfill({ json: { result: { isError: true, content: [{ type: 'text', text: '試験では送信しません' }] } } });
+    } else await route.continue();
+  });
   await page.goto(`http://localhost:${port}/direct`);
   const yes = process.env.CANBAN_EXPECT_YES_REPLY || 'はい。', no = process.env.CANBAN_EXPECT_NO_REPLY || 'いいえ。';
   const shots = process.env.CANBAN_ANSWER_SHOTS; if (shots) fs.mkdirSync(shots, { recursive: true });
