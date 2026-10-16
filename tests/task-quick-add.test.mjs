@@ -214,3 +214,44 @@ test('desktop starts use the app lists: a Claude environment, a Codex project an
   assert.equal(m.sessionStartRequest(typed).cwd, '/typed');
   assert.ok(m.sessionUsesFolder({ ...base, agent: 'claude' }), 'without the lists the folder field stays');
 });
+
+test('desktop creation waits visibly for targets without losing the request', async () => {
+  let resolveTargets;
+  const pending = new Promise(resolve => { resolveTargets = resolve; });
+  const calls = [];
+  let failTargets = false;
+  const dialog = new vm.Script(fs.readFileSync(new URL('../ui/task-quick-add.js', import.meta.url), 'utf8') + '\n taskQuickAdd').runInNewContext({
+    bridge: { callTool: name => { calls.push(name); return failTargets ? Promise.reject(new Error('取得失敗')) : pending; } },
+    sessionRunsInCloud: () => false,
+  });
+  const label = { textContent: '' };
+  dialog.sessionDraft = { agent: 'codex', route: 'desktop', prompt: '保持する未送信の依頼' };
+  dialog.form = { querySelectorAll: () => [] };
+  dialog.primary = { disabled: false, querySelector: () => label };
+  dialog.feedback = { hidden: true, classList: { remove() {} }, textContent: '' };
+  const loading = dialog.loadTargets();
+  dialog.paintSessionState();
+  assert.equal(dialog.primary.disabled, true);
+  assert.match(label.textContent, /読み込み中/);
+  dialog.sessionDraft.route = 'terminal';
+  dialog.paintSessionState();
+  assert.equal(dialog.primary.disabled, false, 'CLI starts do not need desktop targets');
+  dialog.sessionDraft.route = 'desktop';
+  dialog.paintSessionState();
+  await dialog.submitSession();
+  assert.equal(dialog.feedback.hidden, false);
+  assert.match(dialog.feedback.textContent, /読み込み中/);
+  assert.deepEqual(calls, ['canban_launch_targets'], 'an early shortcut must not start a session');
+  resolveTargets({ claude: { environments: [] }, codex: { projects: [], cloudEnvironments: [] } });
+  await loading;
+  dialog.paintSessionState();
+  assert.equal(dialog.primary.disabled, false);
+  assert.equal(label.textContent, 'Codexを開く');
+  assert.equal(dialog.sessionDraft.prompt, '保持する未送信の依頼');
+  failTargets = true;
+  await dialog.loadTargets();
+  assert.equal(dialog.targets.failed, true);
+  dialog.paintSessionState();
+  assert.equal(dialog.primary.disabled, false, 'a failed lookup keeps the existing manual-folder fallback');
+  assert.equal(dialog.sessionDraft.prompt, '保持する未送信の依頼');
+});
