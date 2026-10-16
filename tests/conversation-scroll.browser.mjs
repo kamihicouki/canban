@@ -17,49 +17,58 @@ test('conversation scrolling stays inside the feed across layouts and live updat
   const css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
   const source = html.match(/<script>([\s\S]*?)<\/script>/)[1];
   const helpers = source.slice(source.indexOf('function h('), source.indexOf('const colorVar ='));
+  // The folded conversation (feedPush, tool groups, edit summary) lives in thread.js, the feed itself in realtime.js.
+  const folded = source.slice(source.indexOf('const TOOL_KINDS = ['), source.indexOf('// ---- the thread layout ----'));
   const feed = source.slice(source.indexOf('const TOOL_ICONS ='), source.indexOf('// ---- the long poll ----'));
+  assert.ok(helpers && folded && feed, 'the feed code must still be found in board.html');
 
+  // The session card is the thread layout (renderThreadPane): the conversation fills .th-conv above the input dock.
   for (const layout of [
-    { width: 1400, col: 'main', height: 64 },
-    { width: 1400, col: 'main', height: 180 },
-    { width: 1400, col: 'main', height: 460 },
-    { width: 1400, col: 'side', height: 460 },
-    { width: 390, col: 'main', height: 180, stack: true },
-  ]) await t.test(`${layout.width}px / ${layout.col} / ${layout.height}px`, async () => {
+    { width: 1400, height: 320 },
+    { width: 1400, height: 560 },
+    { width: 1400, height: 800 },
+    { width: 1400, height: 800, side: true },
+    { width: 390, height: 560, stack: true },
+  ]) await t.test(`${layout.width}px / ${layout.height}px${layout.side ? ' / 詳細パネル' : ''}`, async () => {
     const page = await browser.newPage({ viewport: { width: layout.width, height: 900 } });
     try {
       await page.setContent(`<style>${css}</style>
-        <div class="pane-layer${layout.stack ? ' stack' : ''}" style="left:0">
-          <div class="pane-stage scrolls"><div class="pane-canvas">
-            <article class="pane" data-size="L" style="left:12px;top:12px;width:860px;height:800px">
-              <div class="pane-h">会話スクロール検証</div><div class="pane-b">
-                <div class="pcol" data-col="main"></div><div class="column-split"></div>
-                <div class="pcol" data-col="side"></div>
+        <div class="pane-layer${layout.stack ? ' stack' : ''}">
+          <div class="pane-stage"><div class="pane-row">
+            <article class="pane" data-kind="session" style="height:${layout.height}px">
+              <div class="th-head">会話スクロール検証</div>
+              <div class="th-title"><h2>架空のセッション</h2></div>
+              <div class="th-body">
+                <div class="th-main">
+                  <div class="th-conv" data-sec="conv"></div>
+                  <div class="th-dock" data-sec="send"><textarea rows="3">入力欄</textarea></div>
+                </div>
+                <aside class="th-side"${layout.side ? '' : ' hidden'}><div class="th-side-b" style="height:1600px">詳細</div></aside>
               </div>
             </article>
           </div></div>
         </div>`);
       await page.addScriptTag({ content: String.raw`${helpers}
-        const live = { feeds: new Map() }, STATUS_LABELS = { idle: '完了' }, WAIT_TEXT = {};
-        const $ = (s, el = document) => el.querySelector(s);
-        const kickLive = () => {}, updateNoteLine = () => {}, refreshDispatch = () => {};
+        const live = { feeds: new Map() }, panes = [], STATUS_LABELS = { idle: '完了' }, WAIT_TEXT = {};
+        const $ = (s, el = document) => el.querySelector(s), $$ = (s, el = document) => [...el.querySelectorAll(s)];
+        const picon = () => '', exchangeModel = { messageText: text => text, delivery: () => null };
+        const kickLive = () => {}, refreshDispatch = () => {}, openCard = () => {}, paintThreadStat = () => {};
+        const paintExchangeTimeline = () => {}, scheduleExchangeRefresh = () => {}, renderSignals = () => document.createElement('div');
         const activityText = value => value || '', fmtDate = () => '', mdHtml = text => text;
+        ${folded}
         ${feed}
-        const pane = { el: document.querySelector('.pane') };
-        const column = document.querySelector('.pcol[data-col="${layout.col}"]');
-        const section = h('section', { class: 'psec', 'data-sec': 'conv',
-          style: { '--section-height': '${layout.height}px' } },
-          h('div', { class: 'psec-h', text: '会話' }), h('div', { class: 'psec-b' }));
-        column.append(section, h('div', { style: { height: '900px' }, text: '次のセクション' }));
-        const items = Array.from({ length: 80 }, (_, i) => ({ k: 'commentary', text: '会話 ' + i }));
-        items[0] = { k: 'tool', id: 'tool:1', state: 'ok', name: 'exec', summary: '架空の実行結果',
-          out: Array.from({ length: 50 }, (_, i) => '結果 ' + i).join('\n') };
-        section.querySelector('.psec-b').append(renderFeed({ session: { id: 'fixture', status: 'idle' },
+        const pane = { id: 'fixture', el: document.querySelector('.pane') };
+        const items = Array.from({ length: 80 }, (_, i) => i % 2
+          ? { k: 'assistant', text: '架空の返答 ' + i, at: '2026-10-16T00:00:00Z' }
+          : { k: 'user', text: '架空の依頼 ' + i, at: '2026-10-16T00:00:00Z' });
+        items.splice(1, 0, { k: 'tool', id: 'tool:1', state: 'ok', name: 'Bash', summary: '架空の実行結果',
+          out: Array.from({ length: 50 }, (_, i) => '結果 ' + i).join('\n') });
+        document.querySelector('.th-conv').append(renderFeed({ session: { id: 'fixture', status: 'idle' },
           feed: { items, offset: 1, size: 1 } }, pane));
         window.fixture = live.feeds.get('fixture');
       ` });
       const metrics = () => page.evaluate(() => {
-        const f = window.fixture, body = f.list.closest('.psec-b'), column = f.list.closest('.pcol');
+        const f = window.fixture, body = f.list.closest('.th-conv'), column = f.list.closest('.th-body');
         return { top: f.list.scrollTop, max: f.list.scrollHeight - f.list.clientHeight,
           bodyTop: body.scrollTop, bodyHeight: body.clientHeight, bodyContent: body.scrollHeight,
           columnTop: column.scrollTop, stageTop: document.querySelector('.pane-stage').scrollTop };
@@ -81,8 +90,8 @@ test('conversation scrolling stays inside the feed across layouts and live updat
         await page.evaluate(end => { const el = window.fixture.list; el.scrollTop = end === 'top' ? 0 : el.scrollHeight; }, end);
         await wheel(end === 'top' ? -200 : 200);
         const m = await metrics();
-        assert.equal(m.bodyTop, 0, 'wheel must not move the section');
-        assert.equal(m.columnTop, initial.columnTop, 'wheel must not move the card column');
+        assert.equal(m.bodyTop, 0, 'wheel must not move the conversation area');
+        assert.equal(m.columnTop, initial.columnTop, 'wheel must not move the card body');
         assert.equal(m.stageTop, initial.stageTop, 'wheel must not move the dashboard');
       }
 
@@ -99,7 +108,8 @@ test('conversation scrolling stays inside the feed across layouts and live updat
       await page.evaluate(() => {
         const list = window.fixture.list;
         list.scrollTop = 0;
-        list.querySelector('details').open = true;
+        list.querySelector('.tg-head').click();
+        list.querySelector('.fi-tool').open = true;
         list.scrollTop = list.querySelector('pre').getBoundingClientRect().top - list.getBoundingClientRect().top;
       });
       const beforeTool = (await metrics()).top;
