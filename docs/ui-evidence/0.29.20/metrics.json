@@ -1,0 +1,57 @@
+{
+  "before": {
+    "viewport": [
+      1280,
+      800
+    ],
+    "messages": 43,
+    "question": "今回は公開を見送ってよいですか？",
+    "yes": "はい、進めてください。",
+    "no": "いいえ、やめてください。",
+    "rawPreserved": true,
+    "draftPreserved": true,
+    "readingPositionPreserved": true,
+    "submitted": [],
+    "errors": [],
+    "samples": [
+      {
+        "view": "board",
+        "cardOpenToAnswersMs": 224.1
+      },
+      {
+        "view": "timeline",
+        "cardOpenToAnswersMs": 32.6
+      }
+    ]
+  },
+  "after": {
+    "viewport": [
+      1280,
+      800
+    ],
+    "messages": 43,
+    "question": "今回は公開を見送ってよいですか？",
+    "yes": "はい。",
+    "no": "いいえ。",
+    "rawPreserved": true,
+    "draftPreserved": true,
+    "readingPositionPreserved": true,
+    "submitted": [],
+    "errors": [],
+    "samples": [
+      {
+        "view": "board",
+        "cardOpenToAnswersMs": 213.5
+      },
+      {
+        "view": "timeline",
+        "cardOpenToAnswersMs": 38.8
+      }
+    ]
+  },
+  "directAnswerActions": {
+    "before": 1,
+    "after": 1
+  },
+  "timingLimit": "one sample per board/timeline view; no speed superiority claim"
+}
