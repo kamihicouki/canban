@@ -374,6 +374,20 @@ export async function openIntegrated({ sessionId, labelOf, open, paths = guestPa
   return { ok: true, placed: placed.placed, host: placed.host };
 }
 
+// Any other launch of Desktop from Canban (a new session): with Desktop stopped, every
+// account's sessions are placed first. A running Desktop, or one that cannot be merged,
+// opens as is; the reason is returned so the caller can say why nothing was merged.
+export async function launchIntegrated({ labelOf, open, paths = guestPaths(), watch = spawnGuestWatcher }) {
+  if (await desktopRunning()) { await open(); return { ok: false, code: 'desktop_running', placed: 0 }; }
+  let placed;
+  try { placed = await placeGuests({ paths, labelOf }); }
+  catch (error) { await open(); return { ok: false, code: error.code || 'desktop_unavailable', reason: error.message, placed: 0 }; }
+  if (placed.placed) watch();
+  try { await open(); }
+  catch (error) { if (placed.placed) await restoreGuests({ paths }); throw error; }
+  return { ok: true, placed: placed.placed, host: placed.host };
+}
+
 // At server start: tidy guests left by a watcher that did not finish.
 export async function recoverGuests({ paths = guestPaths(), watch = spawnGuestWatcher } = {}) {
   if (!await exists(paths.ledger)) {

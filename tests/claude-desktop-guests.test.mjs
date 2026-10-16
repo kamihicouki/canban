@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { configureAccounts, resetAccountsForTest } from '../server/accounts.mjs';
 import { listClaudeSessions } from '../server/sources/claude.mjs';
-import { planGuests, placeGuests, restoreGuests, openIntegrated, recoverGuests, readLedger, setGuestRunningCheck, guestPaths, tidyOrphanGuests, watchAndRestore } from '../server/claude-desktop-guests.mjs';
+import { planGuests, placeGuests, restoreGuests, openIntegrated, launchIntegrated, recoverGuests, readLedger, setGuestRunningCheck, guestPaths, tidyOrphanGuests, watchAndRestore } from '../server/claude-desktop-guests.mjs';
 import { planGuestGroups } from '../server/claude-desktop-groups.mjs';
 
 // Pure layout: one Desktop folder, signed in to "host"; "other" is the second account.
@@ -130,6 +130,31 @@ test('opening integrates only while Desktop is stopped, and never a quit-interru
   assert.equal((await recoverGuests({ watch })).restored, 1);
   assert.equal(await exists(path.join(hostDir, `${ids.open}.json`)), false);
   assert.equal(guestPaths().state, path.join(root, 'state'));
+});
+
+test('a new session launched from Canban merges every account while Desktop is stopped, else opens as is', async () => {
+  const opened = [];
+  let watched = 0;
+  const open = async () => opened.push('open');
+  const watch = () => watched++;
+  running = true;
+  const busy = await launchIntegrated({ labelOf: () => 'other', open, watch });
+  assert.equal(busy.code, 'desktop_running');
+  assert.equal(await readLedger(), null);
+  running = false;
+  const ok = await launchIntegrated({ labelOf: () => 'other', open, watch });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.placed, 1);
+  assert.equal(watched, 1);
+  assert.deepEqual(opened, ['open', 'open']);
+  assert.match((await read(path.join(hostDir, `${ids.open}.json`))).title, /^🔗 other · /);
+  assert.equal((await restoreGuests()).restored, 1);
+  // Desktop not signed in: nothing merged, Desktop still opens.
+  await write(path.join(app, 'config.json'), {});
+  const unavailable = await launchIntegrated({ labelOf: () => 'other', open, watch });
+  assert.equal(unavailable.ok, false);
+  assert.equal(opened.length, 3);
+  assert.equal(await readLedger(), null);
 });
 
 // Desktop's manual groups (claude_desktop_config.json), keyed by "<account>/<org>".

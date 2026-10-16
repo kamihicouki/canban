@@ -28,7 +28,7 @@ import { codexHome } from './sources/codex.mjs';
 import { claudeHome, claudeDesktopSessionsDir } from './sources/claude.mjs';
 import { accountTools, accountFilterProp, accountDesktopNote, extraWatchRoots } from './accounts-mcp.mjs';
 import { accountName, accountLabel, desktopAccountMismatch } from './accounts.mjs';
-import { openIntegrated, recoverGuests } from './claude-desktop-guests.mjs';
+import { openIntegrated, launchIntegrated, recoverGuests } from './claude-desktop-guests.mjs';
 import { accountActions, accountActionTools } from './account-actions.mjs';
 import { shutdownLogins } from './login.mjs';
 import { boardHtml } from './ui.mjs';
@@ -682,8 +682,13 @@ const TOOLS = [
         const as = await startAccount({ agent, account, host, route: useRoute, labels });
         if (useRoute === 'desktop') {
           const link = newSessionLink(agent, { host, cwd, prompt: text });
-          await as.open(() => openUrl(link.url));
-          detail = { route: 'desktop', url: link.url, account: as.account };
+          // Claude Desktop launched from Canban shows every account's sessions (integrated sidebar).
+          let integrated = null;
+          await as.open(async () => {
+            if (agent !== 'claude' || host.local === false) return openUrl(link.url);
+            integrated = await launchIntegrated({ labelOf: a => accountLabel(`claude:${a}`, labels).replace(/@.*/, ''), open: () => openUrl(link.url) });
+          });
+          detail = { route: 'desktop', url: link.url, account: as.account, integrated: integrated && { ok: integrated.ok, placed: integrated.placed, reason: integrated.reason } };
         } else {
           const term = terminal || prefs.terminal;
           if (!installedTerminals().some((t) => t.id === term)) throw new Error(`${TERMINAL_LABELS[term] || term} が見つかりません。設定でターミナルを選んでください。`);
@@ -694,7 +699,7 @@ const TOOLS = [
           await store.updateTask({ cardId: taskId, target: { agent, hostId: host.local === false ? host.id : 'local', cwd, account: as.account } });
           await store.addPending({ taskId, pending: { agent, hostId: host.local === false ? host.id : 'local', cwd, prompt: text.slice(0, 200), startedAt: Date.now() } });
         }
-        const note = !remoteEnabled ? `${host.label} の読み取りがオフです。「マシン」でオンにするとセッションを表示できます。` : useRoute === 'desktop' ? '新規画面を開きました。依頼の送信と実行状況はアプリで確認してください。' : null;
+        const note = !remoteEnabled ? `${host.label} の読み取りがオフです。「マシン」でオンにするとセッションを表示できます。` : useRoute === 'desktop' ? `新規画面を開きました。依頼の送信と実行状況はアプリで確認してください。${detail.integrated?.placed ? `ほかのアカウントの会話 ${detail.integrated.placed} 件も 🔗 付きでサイドバーにまとめています（⌘Q で終了すると元へ戻します）。` : detail.integrated?.reason ? `（全アカウントの会話はまとめていません：${detail.integrated.reason}）` : ''}` : null;
         return { ...detail, note };
       });
       return { text: detail.note || (detail.route === 'desktop' ? 'デスクトップの新規画面を開きました' : 'ターミナルに開始を依頼しました'), structured: detail };
