@@ -75,3 +75,43 @@ test('Esc outside popup content closes only the top popup and consumes the event
   assert.equal(prevented, true);
   assert.equal(stopped, true);
 });
+
+test('hover waits, cancels on exit, and lets the pointer cross into the popup', () => {
+  const ui = fs.readFileSync(new URL('../ui/exchanges.js', import.meta.url), 'utf8');
+  let next = 0; const timers = new Map(); const calls = [];
+  const create = new vm.Script(ui + '\ncreateExchangeHover').runInNewContext({ document: { addEventListener() {} } });
+  const hover = create({ open: (...args) => calls.push(['open', ...args]), close: () => calls.push(['close']),
+    later: (fn, delay) => { timers.set(++next, { fn, delay }); return next; }, cancel: id => timers.delete(id) });
+  const anchor = { isConnected: true }, card = { id: 'a' };
+  hover.enter(anchor, card);
+  assert.equal(calls.length, 0);
+  assert.equal([...timers.values()][0].delay, 420);
+  hover.leave();
+  assert.equal([...timers.values()].some(t => t.delay === 420), false);
+  hover.enter(anchor, card);
+  const show = [...timers.values()].find(t => t.delay === 420); timers.clear(); show.fn();
+  assert.equal(calls[0][0], 'open');
+  hover.leave(); assert.equal([...timers.values()][0].delay, 220);
+  hover.cancel(); assert.equal(timers.size, 0);
+});
+
+test('hover never opens a detached card after a board refresh', () => {
+  const ui = fs.readFileSync(new URL('../ui/exchanges.js', import.meta.url), 'utf8');
+  const create = new vm.Script(ui + '\ncreateExchangeHover').runInNewContext({ document: { addEventListener() {} } });
+  let run, opened = false;
+  create({ open: () => { opened = true; }, close() {}, later: fn => { run = fn; return 1; }, cancel() {} })
+    .enter({ isConnected: false }, { id: 'a' });
+  run(); assert.equal(opened, false);
+});
+test('only a complete delivery envelope is formatted as a received request', () => {
+  const delivery = '<codex_delegation><source_thread_id>source-a</source_thread_id><input>確認してください\n\n条件を残します</input></codex_delegation>';
+  assert.equal(model.messageText(delivery), '確認してください\n\n条件を残します');
+  for (const text of ['引用: '+delivery, '```xml\n'+delivery+'\n```', delivery+'\n追加文', '<codex_delegation><input>不完全</input></codex_delegation>']) assert.equal(model.messageText(text), text);
+});
+test('a verified delivery is merged only with its matching received exchange', () => {
+  const text='<codex_delegation><source_thread_id>a</source_thread_id><input>結果です</input></codex_delegation>';
+  const event={direction:'received',at:'2026-10-16T10:00:00Z',text:'結果です',peer:{id:'codex:a'}};
+  assert.equal(model.matchesDelivery(text,event.at,event),true);
+  for(const change of [{direction:'sent'},{at:'2026-10-16T10:01:00Z'},{text:'別の本文'},{peer:{id:'codex:b'}}]) assert.equal(model.matchesDelivery(text,event.at,{...event,...change}),false);
+  assert.equal(model.matchesDelivery('引用: '+text,event.at,event),false);
+});

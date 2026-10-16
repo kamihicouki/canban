@@ -74,7 +74,7 @@ await step('fold', () => document.querySelector('.fold-head')?.click());
     const count = button.querySelector('.exchange-count');
     if (!count || count.clientWidth < count.scrollWidth) throw new Error('card exchange count clipped');
     button.click();
-    await w(500);
+    for (let i = 0; i < 40 && !document.querySelector('.exchange-history .exchange-event'); i++) await w(100);
     if (!document.querySelector('.exchange-history .exchange-event')) throw new Error('message history missing');
     if (!document.querySelector('.exchange-popover .close .keycap')) throw new Error('Esc key hint missing');
     if (!document.querySelector('.exchange-history').textContent.includes('サブエージェント')) throw new Error('agent provenance missing');
@@ -83,12 +83,12 @@ await step('fold', () => document.querySelector('.fold-head')?.click());
     document.querySelector('[data-exchange-mode="peer"]').click();
     const groups = document.querySelectorAll('.exchange-group');
     if (groups.length !== 2) throw new Error('counterpart grouping lost a peer');
-    if (document.querySelectorAll('.exchange-event').length !== 3) throw new Error('repeat message lost');
+    if (document.querySelectorAll('.exchange-event').length !== 4) throw new Error('repeat message lost');
     groups[0].querySelector('summary').click();
   });
   await step('exchanges chronology', () => {
     document.querySelector('[data-exchange-mode="timeline"]').click();
-    if (document.querySelectorAll('.exchange-event').length !== 3) throw new Error('switch lost history');
+    if (document.querySelectorAll('.exchange-event').length !== 4) throw new Error('switch lost history');
   });
   await step('exchanges esc', () => { key('Escape'); if (document.querySelector('.exchange-popover')) throw new Error('popup stayed open'); });
   await step('exchanges keyboard', async () => {
@@ -148,6 +148,64 @@ await step('timeline exchanges keyboard', async () => {
 });
 await step('board', () => key('i'), 800);
 await step('session', () => document.querySelector('.card.face:not(.task)').click(), 3000);
+await step('relationship card views, cycles, history and drafts', async () => {
+  const rootCard = document.querySelector('.card[data-card-id="codex:t1"]');
+  rootCard.click();
+  for(let i=0;i<40&&!document.querySelector('.pane[data-card-id="codex:t1"] .exchange-touchpoint');i++) await w(100);
+  const root = document.querySelector('.pane[data-card-id="codex:t1"]');
+  if(!root.querySelector('.th-meta .exchange-pill')) throw new Error('detail message entry missing');
+  if([...root.querySelectorAll('.fi-user .fi-content')].some(el=>el.textContent.includes('<codex_delegation>'))) throw new Error('delivery metadata leaked into conversation');
+  if([...root.querySelectorAll('.fi-user .fi-content')].some(el=>el.textContent==='メッセージ s1')) throw new Error('delivery repeated outside the contact');
+  const input = root.querySelector('.send-box textarea');
+  input.value = '循環しても残る下書き'; input.dispatchEvent(new Event('input', {bubbles:true}));
+  root.querySelector('.feed').scrollTop = 0;
+  const received = [...root.querySelectorAll('.exchange-touchpoint')].find(el => el.textContent.includes('メッセージ s1'))?.querySelector('button');
+  if (!received || received.disabled) throw new Error('available incoming touchpoint missing');
+  received.click();
+  for(let i=0;i<40&&!document.querySelector('.pane[data-card-id="codex:t2"] .exchange-touchpoint');i++) await w(100);
+  const first = [...document.querySelectorAll('.pane-row > .pane')].map(el=>el.dataset.cardId);
+  if (first.join() !== 'codex:t2,codex:t1') throw new Error('incoming peer did not open left: '+first);
+  for (const view of ['spread', 'center', 'stack']) {
+    const button = document.querySelector('[data-exchange-view="'+view+'"]:is(button)');
+    button.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true})); button.click();
+    if(document.querySelector('#paneLayer').hidden) throw new Error('view control closed the layer');
+    if(document.querySelector('#paneLayer').dataset.exchangeView!==view) throw new Error('view did not change');
+  }
+  const peek = document.querySelector('.exchange-stack-peek');
+  if (peek) {
+    peek.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true})); peek.click(); await w(100);
+    if(document.querySelector('#paneLayer').hidden) throw new Error('stack peek closed the layer');
+    document.querySelector('[aria-label="前に見ていたカードへ戻る"]').click(); await w(100);
+  }
+  for(let i=0;i<8;i++) {
+    const active = document.querySelector('.pane[data-trail-active="true"]');
+    const next = active.querySelector('.exchange-touchpoint-peer:not(:disabled)');
+    if(!next) throw new Error('cycle touchpoint unavailable');
+    const sent = next.closest('.exchange-touchpoint').classList.contains('is-sent');
+    const sourceId = active.dataset.cardId;
+    next.click(); await w(100);
+    const shown = [...document.querySelectorAll('.pane-row > .pane')].map(el=>el.dataset.cardId);
+    const peerId = document.querySelector('.pane[data-trail-active="true"]').dataset.cardId;
+    if ((shown.indexOf(peerId) > shown.indexOf(sourceId)) !== sent) throw new Error('event direction did not match side');
+  }
+  if(document.querySelectorAll('.exchange-trail-path button').length!==10) throw new Error('cycle added unexpected visits');
+  if(document.querySelectorAll('.pane-row > .pane').length!==2) throw new Error('revisit duplicated feed DOM');
+  if(root.querySelector('.send-box textarea').value!=='循環しても残る下書き') throw new Error('cycle lost draft');
+  const before = document.querySelector('.exchange-trail-path [aria-current="step"]').dataset.exchangeVisit;
+  document.querySelector('.pane[data-trail-active="true"]').focus(); key('Escape'); await w(100);
+  if(document.querySelector('.exchange-trail-path [aria-current="step"]').dataset.exchangeVisit===before) throw new Error('Esc did not return one visit');
+  document.querySelector('[aria-label="次に見ていたカードへ進む"]').click(); await w(100);
+  if(document.querySelector('.exchange-trail-path [aria-current="step"]').dataset.exchangeVisit!==before) throw new Error('forward did not restore visit');
+  document.querySelector('.exchange-trail-path button[data-exchange-visit="v0"]').click(); await w(100);
+  if(root.querySelector('.send-box textarea').value!=='循環しても残る下書き') throw new Error('origin lost draft');
+  if(root.querySelector('.feed').scrollTop !== 0) throw new Error('origin lost reading position');
+  const mode = root.dataset.mode;
+  key('2',{shiftKey:true,code:'Digit2'});
+  if(root.dataset.mode!==mode || document.querySelector('#paneLayer').dataset.exchangeView!=='center') throw new Error('view shortcut also changed conversation mode');
+  input.value=''; input.dispatchEvent(new Event('input',{bubbles:true}));
+  root.querySelector('.pane-close').click();
+  rootCard.click(); await w(500);
+});
 await step('details', () => key('d'));
 await step('changes', () => key('f'), 1200);
 await step('esc', () => key('Escape'), 600);
@@ -163,7 +221,9 @@ test('the board, the ribbon, the time axis and the card layers run without page 
   const edgeDb = new DatabaseSync(path.join(fx.codexHome, 'state_5.sqlite'));
   edgeDb.exec("CREATE TABLE thread_spawn_edges (parent_thread_id TEXT, child_thread_id TEXT); INSERT INTO thread_spawn_edges VALUES ('t1','t2')");
   edgeDb.prepare("UPDATE threads SET title='リリースの確認', name='リリースの確認', updated_at_ms=? WHERE id='t1'").run(Date.now() - 120000);
-  edgeDb.exec("UPDATE threads SET title='検証', name='検証' WHERE id='t2'");
+  const peerRollout = path.join(fx.codexHome, 'sessions', 'rollout-peer.jsonl');
+  fs.writeFileSync(peerRollout, JSON.stringify({ timestamp: '2026-10-14T01:44:00Z', type: 'event_msg', payload: { type: 'item_completed', item: { type: 'UserMessage', id: 'peer-request', content: [{type:'text',text:'<codex_delegation><source_thread_id>t1</source_thread_id><input>レビューしてください</input></codex_delegation>'}] } } })+'\n');
+  edgeDb.prepare("UPDATE threads SET title='検証', name='検証', rollout_path=? WHERE id='t2'").run(peerRollout);
   edgeDb.close();
   for (const [source, id, minute] of [['peer-x', 'x1', 40], ['t2', 's1', 45], ['peer-x', 'x2', 48]]) {
     const envelope = `<codex_delegation><source_thread_id>${source}</source_thread_id><input>メッセージ ${id}</input></codex_delegation>`;
@@ -207,6 +267,14 @@ test('the board, the ribbon, the time axis and the card layers run without page 
   const r = await cdp('Runtime.evaluate', { expression: `(async () => { ${WALK} })()`, awaitPromise: true, returnByValue: true });
   assert.equal(r.result?.exceptionDetails, undefined, JSON.stringify(r.result?.exceptionDetails));
   assert.deepEqual(r.result.result.value.errs, []);
+  const openLive = await cdp('Runtime.evaluate', { expression: `(async()=>{document.querySelector('.card[data-card-id="codex:t1"]').click();for(let i=0;i<40&&!document.querySelector('.pane[data-card-id="codex:t1"] .exchange-touchpoint');i++)await new Promise(r=>setTimeout(r,100));return !!document.querySelector('.pane[data-card-id="codex:t1"] .exchange-touchpoint')})()`, awaitPromise:true, returnByValue:true });
+  assert.equal(openLive.result?.result?.value,true,'open existing card before live receipt');
+  fs.appendFileSync(fx.rollout, JSON.stringify({timestamp:new Date().toISOString(),type:'event_msg',payload:{type:'item_completed',item:{type:'UserMessage',id:'live-receipt',content:[{type:'text',text:'<codex_delegation><source_thread_id>t2</source_thread_id><input>開いたまま届いた結果</input></codex_delegation>'}]}}})+'\n');
+  const liveReceipt = await cdp('Runtime.evaluate', { expression: `(async()=>{for(let i=0;i<100;i++){if([...document.querySelectorAll('.pane[data-card-id="codex:t1"] .exchange-touchpoint')].some(el=>el.textContent.includes('開いたまま届いた結果')))return true;await new Promise(r=>setTimeout(r,100));}return false;})()`, awaitPromise:true, returnByValue:true });
+  assert.equal(liveReceipt.result?.result?.value,true,'live receipt adds a contact without reopening');
+  const closeLive = await cdp('Runtime.evaluate', {expression:`document.querySelector('.pane-close')?.click()`,returnByValue:true});
+  assert.equal(closeLive.result?.exceptionDetails,undefined);
+
   assert.deepEqual(pageErrors.filter((e) => !/ResizeObserver/.test(e)), []);
   if (process.env.CANBAN_SMOKE_SHOTS) {
     const dir = path.resolve(process.env.CANBAN_SMOKE_SHOTS);

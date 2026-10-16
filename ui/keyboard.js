@@ -87,7 +87,7 @@ function refreshShortcutHints() {
       ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
       ...(focusedPane()?.kind === 'session' ? [['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
       ...(panePromptInput() ? [['i', '指示欄']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ['f', '変更']] : []), ['r', '更新'], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys,
-      ...(docked ? [['Enter', '大きく開く'], ['Esc', '一覧へ戻る']] : [['Esc', timelineOn() ? '時間軸へ戻す' : '閉じる']])];
+      ...(exchangeTrail ? [['Shift+1 / 2 / 3', '関連カードのビュー'], ['Esc / Shift+Esc', '訪問を戻る / 進む'], ['Shift+Home', '起点へ']] : docked ? [['Enter', '大きく開く'], ['Esc', '一覧へ戻る']] : [['Esc', timelineOn() ? '時間軸へ戻す' : '閉じる']])];
   }
   else if (typing) entries = input.id === 'q' ? [['↓ / Enter', 'カードへ'], ['Esc', '検索をクリア']] : [['⌘K / Ctrl+K', 'コマンド']];
   else if (workspace.utilityPage()) entries = [...globalKeys, ['Esc', 'パネルを閉じる']];
@@ -115,6 +115,9 @@ const SHORTCUTS = [
   ['Slack', [['v', 'Slackタイムラインの表示 / 非表示（ボード）'], ['c / l / t', 'メッセージ上: タスク作成 / カードへ追加 / 返信'], ['Alt+s', 'カード内: Slack資料の追加ボタンへ'], ['Esc', 'タイムライン内: 非表示']]],
   ['カードを選択中', [
     ['Shift+M', 'セッション間のやり取り（時系列 / 相手別）'],
+    ['Shift+1 / 2 / 3', '関連カードの横展開 / 中央3枚 / 重ねる（やり取りを辿るとき）'],
+    ['Esc / Shift+Esc', '前 / 次の訪問（やり取りを辿るとき）'],
+    ['Shift+Home', 'やり取りの起点へ戻る'],
     ['Enter', '詳細を開く'], ['Space / r', 'その場で読んで返信（r は入力欄へ）'], ['l', 'ラベル'], ['g', `${T.category}`], ['m', 'リストへ移動'],
     ['← →', '隣のリストへ移動'], ['↑ ↓ / Home End', 'リスト内で移動'], ['⌥ + 矢印', 'フォーカスだけ移動'],
     ['o', '再開（既定）'], ['d / t', 'デスクトップ / ターミナルで再開'], ['w n s e', 'ターミナル: 新規ウィンドウ / 新規タブ / 分割 / 既存'],
@@ -146,6 +149,12 @@ function commandPalette() {
     { label: openViewKind() === 'usage' ? 'Agent Usage を閉じる' : 'Agent Usage を開く', run: () => toggleView('usage'), hint: 'u' },
     { label: openViewKind() === 'orbit' ? '軌道を閉じる' : '軌道を開く', run: () => toggleView('orbit'), hint: 'Shift+O' },
     { label: 'タスクの改善ループにフォーカス', run: focusTaskLoop, hint: 'Shift+L' },
+    ...(exchangeTrail ? [
+      ...EXCHANGE_TRAIL_VIEWS.map(([view, label], i) => ({ label: `関連カードを${label}`, run: () => setExchangeTrailView(view), hint: `Shift+${i + 1}` })),
+      { label: '前の訪問へ戻る', run: () => moveExchangeVisit(-1), hint: 'Esc' },
+      { label: '次の訪問へ進む', run: () => moveExchangeVisit(1), hint: 'Shift+Esc' },
+      { label: 'やり取りの起点へ戻る', run: () => focusExchangeVisit(exchangeTrail.root), hint: 'Shift+Home' },
+    ] : []),
     ...(exchangeCard ? [{ label: 'セッション間のやり取り', run: () => openSelectedExchanges(exchangeCard), hint: 'Shift+M' }] : []),
     ...(paneLayer.hidden || panes[0]?.kind !== 'view' ? [
       { label: paneLayer.hidden ? '次のカードにフォーカス' : '次のカードを開く', run: () => stepDisplayedCard(1), hint: 'j' },

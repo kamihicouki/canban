@@ -9,7 +9,7 @@ paneLayer.append(paneBar, cardBoard);
 function layoutCardBoard() {
   if (paneLayer.hidden) return;
   const docked = paneDocked();
-  const geometry = docked ? { left: 0, right: 0, width: cardBoard.clientWidth } : cardBoardGeometry(cardBoard.clientWidth, keyGuideReserve());
+  const geometry = exchangeTrail && !docked ? { left: 12, right: 12, width: Math.max(1, cardBoard.clientWidth - 24) } : docked ? { left: 0, right: 0, width: cardBoard.clientWidth } : cardBoardGeometry(cardBoard.clientWidth, keyGuideReserve());
   paneLayer.style.setProperty('--gutter-left', `${geometry.left}px`);
   paneLayer.style.setProperty('--gutter-right', `${geometry.right}px`);
   paneLayer.style.setProperty('--card-board-width', `${geometry.width}px`);

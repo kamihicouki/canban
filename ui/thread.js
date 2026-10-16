@@ -44,6 +44,8 @@ function feedPush(f, it) {
   if (it.k === 'user') f.turnStart = Date.parse(it.at) || Date.now();
   const el = feedItem(it, f);
   if (!el) return null;
+  if (it.at) el.dataset.feedAt = it.at;
+  if (it.k === 'user' && exchangeModel.delivery(it.text)) el.exchangeDelivery = it.text;
   if (it.k === 'tool' || it.k === 'thinking') {
     let g = f.list.lastElementChild;
     if (g?.classList.contains('fi-edits')) g = g.previousElementSibling;
@@ -67,7 +69,7 @@ function endTurn(f, it) {
   // Above the last reply of the turn, like the agent apps; with no reply, at the end.
   let anchor = null;
   for (let el = f.list.lastElementChild; el; el = el.previousElementSibling) {
-    if (el.classList.contains('fi-user')) break;
+    if (el.classList.contains('fi-user') || el.classList.contains('exchange-touchpoint')) break;
     if (el.classList.contains('fi-asst')) anchor = el;
     if (el.classList.contains('work-div')) { anchor = null; break; }
   }
@@ -167,6 +169,7 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
   const sig = s.signals, git = d.git;
   const chips = [
     dotPill(s),
+    exchangePill({ ...s, kind: 'session', exchanges: p.exchangeData?.summary || (findCard(s.id)?.link || findCard(s.id)?.card)?.exchanges || { sent: 0, received: 0, total: 0 } }),
     dirPill(card.directory || { name: 'カテゴリ無し' }),
     git ? gitPill(git, s.branch) : s.branch ? h('span', { class: 'ellipsis', title: s.branch, text: `⎇ ${s.branch}` }) : null,
     d.pr ? prPill(d.pr) : null,

@@ -19,6 +19,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => ap
 function sharedUiSnapshot() {
   return {
     slackVisible: slackUi.visible, filters: { ...state.filters }, themePref: state.themePref, layout: state.layoutSaved, boardView: state.view, sidebar: state.sideOpen, workspacePage: workspace.page,
+    exchangeTrailView: typeof exchangeTrailView === 'string' ? exchangeTrailView : 'center',
     paneGlobal: { ...paneGlobal }, cardWidths: { ...cardWidths }, cardHeights: { ...cardHeights }, collapsedLanes: [...collapsedLanes], keyGuide: { ...keyGuidePlace },
   };
 }
@@ -43,6 +44,7 @@ function adoptSharedUi(record) {
     }
     if (value.boardView === 'board' || value.boardView === 'timeline') state.view = value.boardView;
     if (value.paneGlobal && typeof value.paneGlobal === 'object') Object.assign(paneGlobal, { mode: oneOf(value.paneGlobal.mode, PANE_MODES, PANE_DEF.mode) });
+    if (['spread', 'center', 'stack'].includes(value.exchangeTrailView)) { exchangeTrailView = value.exchangeTrailView; paintExchangeTrail(); }
     if (value.cardWidths) Object.assign(cardWidths, normalizeCardWidths(value.cardWidths));
     if (value.cardHeights) Object.assign(cardHeights, normalizeCardHeights(value.cardHeights));
     if (Object.hasOwn(value, 'keyGuide')) keyGuidePlace = normalizeKeyGuide(value.keyGuide);

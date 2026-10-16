@@ -11,5 +11,14 @@ const exchangeModel = (() => {
     return [...byPeer.values()];
   }
   const relation = value => ({ subagent: 'サブエージェント', parent: '親セッション', collaborator: '同じ実行のエージェント' }[value] || '別セッション');
-  return { chronological, groups, relation };
+  function delivery(text) {
+    const match = /^<codex_delegation>\s*<source_thread_id>([^<>]+)<\/source_thread_id>\s*<input>([\s\S]*?)<\/input>\s*<\/codex_delegation>$/.exec(String(text || '').trim());
+    return match ? { source: match[1], text: match[2] } : null;
+  }
+  const messageText = text => delivery(text)?.text ?? text;
+  function matchesDelivery(text, at, event) {
+    const parsed = delivery(text), stamp = Date.parse(at);
+    return !!parsed && Number.isFinite(stamp) && event.direction === 'received' && event.peer.id === `codex:${parsed.source}` && event.text === parsed.text && Date.parse(event.at) === stamp;
+  }
+  return { chronological, groups, relation, delivery, messageText, matchesDelivery };
 })();

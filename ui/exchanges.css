@@ -34,3 +34,5 @@
 .exchange-agents { margin-bottom: 8px; padding: 8px 0; font-size: 13px; border-top: 1px solid var(--input-border); }
 .exchange-agents > summary { cursor: pointer; }
 .exchange-agent { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 6px 0; }
+.exchange-pin { width:100%;padding:8px 10px;margin-bottom:8px;border:1px solid var(--input-border);border-radius:6px;background:var(--btn-subtle);color:var(--accent);font:inherit;text-align:left;cursor:pointer; }
+.exchange-pin:hover { background:var(--btn-subtle-hover); }

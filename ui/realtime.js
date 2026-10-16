@@ -9,7 +9,7 @@ function feedItem(it, f) {
     const who = h('div', { class: 'fi-who' }, it.k === 'user' ? 'あなた' : f.pane.d?.session?.agent === 'claude' ? 'Claude' : 'Codex',
       Number.isFinite(stamp) ? h('time', { datetime: new Date(stamp).toISOString(), title: fmtDate(stamp), text: fmtClock(it.at) }) : null);
     return it.k === 'user'
-      ? h('div', { class: 'fi fi-user' }, who, h('div', { class: 'fi-content', text: it.text }))
+      ? h('div', { class: 'fi fi-user' }, who, h('div', { class: 'fi-content', text: exchangeModel.messageText(it.text) }))
       : h('div', { class: 'fi fi-asst' }, who, h('div', { class: 'fi-content' }, h('span', { class: 'raw', text: it.text }), h('div', { class: 'md', html: mdHtml(it.text) })));
   }
   if (it.k === 'commentary') return h('div', { class: 'fi fi-note', text: it.text });
@@ -43,6 +43,7 @@ function renderFeed(d, p) {
   if (!d.feed.items.length) list.append(h('div', { class: 'muted', text: 'まだやりとりはありません' }));
   live.feeds.set(f.cardId, f);
   paintFeedFoot(f);
+  if (p.exchangeData) queueMicrotask(() => { if (panes.includes(p)) paintExchangeTimeline(p); });
   kickLive();
   return h('div', { class: 'feed-wrap' }, list, newBtn, foot);
 }
@@ -110,6 +111,7 @@ function applyFeed(f, feed) {
       }
     }
   }
+  if (added && f.pane.exchangeData) { paintExchangeTimeline(f.pane); scheduleExchangeRefresh(f.pane); }
   if (added) { if (stick) scrollFeedToEnd(f); else f.newBtn.hidden = false; }
 }
 
@@ -207,7 +209,7 @@ function applyLive(r, args) {
   if (r.seq != null) live.seq = live.seq == null ? r.seq : Math.max(live.seq, r.seq);
   if (r.patches?.length) applyPatches(r.patches);
   applyAccountLimits(r.accountLimits);
-  if (r.reload) scheduleLoad();
+  if (r.reload) { scheduleLoad(); for (const p of panes) scheduleExchangeRefresh(p); }
   if (r.requests) { for (const f of live.feeds.values()) refreshDispatch(f); scheduleLoad(); }
   for (const [id, feed] of Object.entries(r.feeds || {})) {
     const f = live.feeds.get(id);

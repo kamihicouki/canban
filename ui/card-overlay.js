@@ -1,7 +1,7 @@
 // Part of board.html: included into its script by server/ui.mjs and shares its scope.
 // Only a press that starts and ends on the backdrop closes the card, and not the same press that just closed a popover.
 let backdropDown = false;
-const onBackdrop = (e) => !paneDocked() && !e.target.closest('.pane, .pane-bar, .popover');
+const onBackdrop = (e) => !paneDocked() && !e.target.closest('.pane, .pane-bar, .exchange-trail-bar, .exchange-stack-peek, .popover');
 paneLayer.addEventListener('pointerdown', e => { backdropDown = onBackdrop(e) && Date.now() - popoverClosedAt > 300; });
 paneLayer.addEventListener('click', e => { if (backdropDown && onBackdrop(e)) closeCards(); backdropDown = false; });
 document.body.append(paneLayer);
@@ -81,6 +81,7 @@ function detachPane(p) {
   const i = panes.indexOf(p);
   if (i >= 0) panes.splice(i, 1);
   clearInterval(p.el._reqTimer);
+  clearTimeout(p.exchangeRefreshTimer); p.exchangeRefreshTimer = null;
   live.feeds.delete(p.id);
   cardSizeObserver.unobserve(p.el);
   p.el.remove();
@@ -103,6 +104,7 @@ function newPane(id) {
 // `dock` docks the layer on the 時間軸 (true) or floats it over the board (false); left out, it stays as it is.
 function showCards(ids, { dock } = {}) {
   closePopover();
+  if (!paintingExchangeTrail && exchangeTrail) endExchangeTrail();
   const wasHidden = paneLayer.hidden;
   if (wasHidden || dock !== undefined) paneLayer.classList.toggle('docked', !!dock && !!$('#board .inbox-main'));
   if (wasHidden && !paneDocked()) cardReturn = document.activeElement?.closest?.('.card') || document.activeElement;
@@ -125,6 +127,7 @@ function closeCards({ dock = true } = {}) {
   if (paneLayer.hidden) return;
   if (dock && overlayOpen() && timelineOn() && panes[0] && panes[0].kind !== 'view' && $('#board .inbox-main')) return dockCards();
   const docked = paneDocked();
+  endExchangeTrail();
   closePopover();
   for (const p of [...panes]) detachPane(p);
   paneLayer.hidden = true;
@@ -140,6 +143,12 @@ function closeCards({ dock = true } = {}) {
 function setCardsDocked(dock) {
   if (paneLayer.hidden || paneDocked() === dock) return;
   closePopover();
+  if (dock && exchangeTrail) {
+    const id = exchangeTrail.visits[exchangeTrail.active].sessionId;
+    endExchangeTrail();
+    showCards([id], { dock: true });
+    return;
+  }
   paneLayer.classList.toggle('docked', dock);
   paneMetrics(); paintPaneBar(); workspace.syncShell();
   store.set('openCard', dock ? null : panes[0]?.id ?? null);
@@ -276,6 +285,8 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
   if (typingIn(e.target)) { e.target.blur(); return; } // the first Esc leaves the field, the next one closes the card
   if (paneDocked()) { $(`#board .irow[data-card-id="${CSS.escape(state.inbox.sel || '')}"]`)?.focus(); return; } // docked: back to the list
+  if (exchangeTrail && e.shiftKey) { moveExchangeVisit(1); return; }
+  if (moveExchangeVisit(-1)) return;
   closeCards();
 });
 
@@ -301,7 +312,7 @@ async function stepOpenCard(step) {
   await openCard(next);
   if (panes[0]?.id === next) panes[0].el.focus({ preventScroll: true });
 }
-const focusedPane = () => { const el = document.activeElement?.closest?.('.pane'); return panes.find((p) => p.el === el) || panes[0]; };
+const focusedPane = () => { const el = document.activeElement?.closest?.('.pane'); return panes.find((p) => p.el === el) || (exchangeTrail && panes.find(p => p.id === exchangeTrail.visits[exchangeTrail.active].sessionId)) || panes[0]; };
 function stepPane(step) {
   const i = panes.indexOf(focusedPane()), target = panes[i + step];
   if (target) revealPane(target.id);
@@ -330,7 +341,9 @@ document.addEventListener('keydown', e => {
   if (paneDocked() && !inDockedPane(e.target)) return; // docked, the keys go to the card only while the focus is in it
   const k = e.key, p = focusedPane();
   let run = null;
-  if (k === 'Enter' && paneDocked() && e.target === p?.el) run = expandCards;
+  if (exchangeTrail && e.shiftKey && (/^Digit[123]$/.test(e.code) || /^[123]$/.test(k))) run = () => setExchangeTrailView(EXCHANGE_TRAIL_VIEWS[Number(e.code?.slice(-1) || k) - 1][0]);
+  else if (exchangeTrail && e.shiftKey && k === 'Home') run = () => focusExchangeVisit(exchangeTrail.root);
+  else if (k === 'Enter' && paneDocked() && e.target === p?.el) run = expandCards;
   else
   if (e.shiftKey && (k === 'ArrowLeft' || k === 'ArrowRight') && p && p.kind !== 'view'
     && !e.target.closest?.('[role="separator"]')) {
@@ -364,6 +377,7 @@ function helpTip(text) {
 async function openCard(cardId, { restore = false, dock } = {}) {
   closePopover();
   if (workspace.utilityPage()) workspace.navigate('home', { reload: false });
+  if (exchangeTrail && !paintingExchangeTrail && !panes.some(p => p.id === cardId)) endExchangeTrail();
   const shown = !paneLayer.hidden && panes.find((p) => p.id === cardId);
   if (cardKind(cardId) === 'view') return openView(viewOf(cardId), { shown });
   dock ??= paneDocked();
@@ -391,6 +405,7 @@ async function loadSession(p, { restore = false } = {}) {
   }
   if (!panes.includes(p)) return;
   renderPaneKeepingDrafts(p, d);
+  await loadExchangeTimeline(p);
 }
 async function openTaskCard(cardId, { restore = false, shown = null, dock } = {}) {
   let found = findCard(cardId);
@@ -411,6 +426,10 @@ async function openTaskCard(cardId, { restore = false, shown = null, dock } = {}
 }
 // A session shown beside its task scrolls into view; any other card replaces what is on the layer.
 function revealPane(id) {
+  if (exchangeTrail) {
+    const visit = exchangeTrailModel.cards(exchangeTrail).find(v => v.sessionId === id);
+    if (visit) { focusExchangeVisit(visit.id); return; }
+  }
   const p = panes.find((x) => x.id === id);
   if (!p) return openCard(id);
   p.el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });

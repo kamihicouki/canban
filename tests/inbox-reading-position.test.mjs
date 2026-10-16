@@ -11,7 +11,7 @@ function fixture() {
   const workspace = { draftValues: new Map(), hasDrafts: () => false };
   const feed = (height = 1000) => ({ scrollTop: height, scrollHeight: height, clientHeight: 200 });
   const context = { live, panes, paneCache, workspace, PANE_CACHE_MAX: 16,
-    promptDrafts: new Map(), clearInterval() {}, cardSizeObserver: { unobserve() {} },
+    promptDrafts: new Map(), clearInterval() {}, clearTimeout() {}, cardSizeObserver: { unobserve() {} },
     atFeedEnd: el => el.scrollHeight - el.scrollTop - el.clientHeight < 48,
     scrollFeedToEnd: f => { f.list.scrollTop = f.list.scrollHeight; },
     $: (selector, el) => selector === '.feed' ? el.feed : selector === '.th-conv' ? { replaceChildren(list) { el.feed = list; } } : null,
