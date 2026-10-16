@@ -192,13 +192,14 @@ const taskQuickAdd = {
   paintSessionState() {
     const draft = this.sessionDraft;
     const locked = !!draft.startRequest;
+    const loading = !locked && draft.route === 'desktop' && !this.targets;
     this.form.querySelectorAll('.session-fields input,.session-fields textarea,.session-fields select').forEach(el => {
       const text = el.tagName === 'TEXTAREA' || el.type === 'text';
       el.disabled = !!draft.submitting || (locked && !text);
       if (text) el.readOnly = locked;
     });
-    this.primary.disabled = !!draft.submitting || draft.startResult?.state === 'opened';
-    this.primary.querySelector('span').textContent = draft.startResult?.state === 'opened' ? (draft.startResult.route === 'cloud' ? '送信しました' : '開きました') : this.sessionActionLabel();
+    this.primary.disabled = loading || !!draft.submitting || draft.startResult?.state === 'opened';
+    this.primary.querySelector('span').textContent = loading ? '環境を読み込み中…' : draft.startResult?.state === 'opened' ? (draft.startResult.route === 'cloud' ? '送信しました' : '開きました') : this.sessionActionLabel();
     if (this.newRequestButton) this.newRequestButton.hidden = !locked;
   },
   showSessionFeedback(result, refreshError) {
@@ -212,7 +213,10 @@ const taskQuickAdd = {
     const draft = this.sessionDraft;
     if (draft.submitting || draft.startResult?.state === 'opened') return;
     if (!draft.prompt.trim()) return this.title.focus();
-    if (!draft.startRequest && draft.route === 'desktop' && !this.targets) return;
+    if (!draft.startRequest && draft.route === 'desktop' && !this.targets) {
+      this.feedback.hidden = false; this.feedback.classList.remove('error'); this.feedback.textContent = '環境を読み込み中です。取得後に開始できます。';
+      return;
+    }
     if (!draft.startRequest && sessionRunsInCloud(draft) && !draft.cloudEnvironment) {
       this.feedback.hidden = false; this.feedback.classList.add('error'); this.feedback.textContent = 'クラウドの環境を選んでください。';
       return this.form.querySelector('select[aria-label="クラウドの環境"]')?.focus();
