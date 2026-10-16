@@ -19,7 +19,7 @@ function cardBoardGeometry(width, reserve = {}) {
   return { left, right, width: w - left - right };
 }
 // The key guide: one panel on every screen, docked at a corner of the stage or as a strip along its foot.
-// Where it sits is shared UI state ('keyGuide'); folded, it is only its title and takes no room.
+// Where it sits is shared UI state ('keyGuide'); it floats over the stage and takes no room.
 const KEY_GUIDE_DOCKS = ['tr', 'br', 'bottom', 'bl']; // clockwise: the arrows on its title walk this ring
 const KEY_GUIDE_DEF = { dock: 'bottom', min: false };
 const KEY_GUIDE_WIDTH = 200, KEY_GUIDE_ROOM = 216;

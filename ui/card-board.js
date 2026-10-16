@@ -1,4 +1,4 @@
-// The card board: the cards in the middle, room for the key guide (key-guide.js) on the side it is docked.
+// The card board: the cards in the middle. The key guide (key-guide.js) floats over it and takes no room.
 // The margins follow the window. Docked on the 時間軸, the board is the right side of the timeline instead.
 const cardBoard = h('div', { class: 'card-board', 'aria-label': 'カードボード' });
 const paneViewport = h('div', { class: 'card-board-viewport' });

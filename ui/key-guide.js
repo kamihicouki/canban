@@ -1,7 +1,7 @@
 // Part of board.html: included into its script by server/ui.mjs and shares its scope.
 // The key guide: one panel for the board, the 時間軸 and an open card. Only what it lists changes with the focus
 // (refreshShortcutHints in keyboard.js). It docks at a corner of the stage or as a strip along its foot: drag its
-// title there, or use the arrow keys on it; – folds it to its title. The board and the card board make room for it.
+// title there, or use the arrow keys on it; – folds it to its title. It floats over the board and takes no room.
 let keyGuidePlace = normalizeKeyGuide(store.get('keyGuide', null));
 const keyGuideKeys = h('div', { class: 'kg-keys shortcut-hints', 'aria-label': 'この画面のキー' });
 const keyGuideFold = h('button', { class: 'kg-fold', type: 'button' });
@@ -18,13 +18,9 @@ function setKeyGuidePlace(next) {
   store.set('keyGuide', keyGuidePlace);
   placeKeyGuide();
 }
-// The room the guide takes on the card board (cardBoardGeometry): its column on the left or right, none folded.
-function keyGuideReserve() {
-  const { dock, min } = keyGuidePlace;
-  if (keyGuide.hidden || min || dock === 'bottom') return { left: 0, right: 0 };
-  if (dock === 'bl') return { left: Math.round(stageRect().left) + KEY_GUIDE_ROOM, right: 0 };
-  return { left: 0, right: KEY_GUIDE_ROOM };
-}
+// The guide floats over the stage like a hover: it takes no room, so showing, hiding, folding or moving it
+// never shifts a card (cardBoardGeometry keeps only its own margins).
+const keyGuideReserve = () => ({ left: 0, right: 0 });
 const stageRect = () => ($('.stage')?.getBoundingClientRect() || { left: 0, top: 0, right: innerWidth, bottom: innerHeight, width: innerWidth, height: innerHeight });
 function placeKeyGuide() {
   const r = stageRect(), { dock, min } = keyGuidePlace, gap = 8;
@@ -43,10 +39,6 @@ function placeKeyGuide() {
   else s.bottom = `${Math.round(innerHeight - r.bottom + gap)}px`;
   if (dock === 'bottom') { s.left = `${Math.round(r.left + r.width / 2)}px`; s.transform = 'translateX(-50%)'; s.maxWidth = `${Math.max(120, r.width - gap * 2)}px`; }
   else s.maxWidth = '';
-  // The board gives way to the guide instead of lying under it.
-  const room = keyGuide.hidden || min ? null : dock === 'bottom' ? ['bottom', keyGuide.offsetHeight + gap * 2] : [dock === 'bl' ? 'left' : 'right', KEY_GUIDE_ROOM];
-  for (const side of ['left', 'right', 'bottom']) document.body.style.setProperty(`--kg-room-${side}`, room?.[0] === side ? `${Math.round(room[1])}px` : '0px');
-  layoutCardBoard();
 }
 keyGuideFold.addEventListener('click', (e) => { e.stopPropagation(); setKeyGuidePlace({ min: !keyGuidePlace.min }); });
 keyGuideHead.addEventListener('keydown', (e) => {

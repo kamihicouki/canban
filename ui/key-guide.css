@@ -1,7 +1,5 @@
 /* The key guide (key-guide.js): one panel for the board, the 時間軸 and an open card, docked where the user put it.
-   The stage and the card board make room for it (--kg-room-*), so it never lies over a card. */
-.stage { padding: 0 var(--kg-room-right, 0px) var(--kg-room-bottom, 0px) var(--kg-room-left, 0px); }
-.pane-layer:not(.docked) .card-board { margin-bottom: var(--kg-room-bottom, 0px); }
+   It floats over the stage like a hover and takes no room, so showing or hiding it never moves a card. */
 .key-guide { position: fixed; z-index: 850; width: 200px; display: flex; flex-direction: column; border-radius: 10px; overflow: hidden;
   background: color-mix(in srgb, var(--modal-bg) 94%, transparent); color: var(--list-fg); box-shadow: var(--lift-shadow); backdrop-filter: blur(6px); }
 .key-guide[hidden] { display: none; }
