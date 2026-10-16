@@ -2,6 +2,7 @@
 // Requires Playwright and its Chromium. CANBAN_PLAYWRIGHT_PACKAGE may point to an
 // existing package.json; CANBAN_BROWSER_EXECUTABLE may select an installed Chrome.
 // Uses assembled UI styles and feed functions with fictional data, without a host.
+import fs from 'node:fs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -16,6 +17,7 @@ test('conversation scrolling stays inside the feed across layouts and live updat
   const html = boardHtml();
   const css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
   const source = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const previews = fs.readFileSync(new URL('../ui/message-preview.js', import.meta.url), 'utf8');
   const helpers = source.slice(source.indexOf('function h('), source.indexOf('const colorVar ='));
   // The folded conversation (feedPush, tool groups, edit summary) lives in thread.js, the feed itself in realtime.js.
   const folded = source.slice(source.indexOf('const TOOL_KINDS = ['), source.indexOf('// ---- the thread layout ----'));
@@ -52,9 +54,10 @@ test('conversation scrolling stays inside the feed across layouts and live updat
         const live = { feeds: new Map() }, panes = [], STATUS_LABELS = { idle: '完了' }, WAIT_TEXT = {};
         const $ = (s, el = document) => el.querySelector(s), $$ = (s, el = document) => [...el.querySelectorAll(s)];
         const picon = () => '', exchangeModel = { messageText: text => text, delivery: () => null };
-        const kickLive = () => {}, refreshDispatch = () => {}, openCard = () => {}, paintThreadStat = () => {};
+        const paintChoices = () => {}, kickLive = () => {}, refreshDispatch = () => {}, openCard = () => {}, paintThreadStat = () => {};
         const paintExchangeTimeline = () => {}, scheduleExchangeRefresh = () => {}, renderSignals = () => document.createElement('div');
         const activityText = value => value || '', fmtDate = () => '', mdHtml = text => text;
+        ${previews}
         ${folded}
         ${feed}
         const pane = { id: 'fixture', el: document.querySelector('.pane') };

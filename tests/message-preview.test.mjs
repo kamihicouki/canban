@@ -47,3 +47,22 @@ test('unknown machine tags get a readable label, typed HTML and slash commands s
   assert.deepEqual(JSON.parse(JSON.stringify(blocks)), [{ tag: 'some_new_context', label: 'some new context', detail: '', text: 'x' }]);
   assert.deepEqual(JSON.parse(JSON.stringify(promptPreviewModel.parse('ふつうの依頼'))), { body: 'ふつうの依頼', blocks: [] });
 });
+
+test('changing an answer keeps the text typed before the first selection', () => {
+  const source = fs.readFileSync(new URL('../ui/requests.js', import.meta.url), 'utf8');
+  const fn = source.slice(source.indexOf('function fillChoice('), source.indexOf('function renderDispatch('));
+  const input = { value: '先に書いた下書き', dataset: {}, dispatchEvent() {}, focus() {}, setSelectionRange() {}, closest: () => null };
+  const fill = vm.runInNewContext(fn + '\nfillChoice', { Event: class {} });
+  const pane = { el: { querySelector: () => input } };
+  fill(pane, { reply: 'Aでお願いします。' });
+  assert.equal(input.value, '先に書いた下書き\nAでお願いします。');
+  fill(pane, { reply: 'Bでお願いします。' });
+  assert.equal(input.value, '先に書いた下書き\nBでお願いします。');
+  input.value += '\n追加の手入力';
+  fill(pane, { reply: 'Cでお願いします。' });
+  assert.equal(input.value, '先に書いた下書き\nBでお願いします。\n追加の手入力\nCでお願いします。');
+  input.value = '';
+  fill(pane, { reply: 'Aでお願いします。' });
+  fill(pane, { reply: 'Bでお願いします。' });
+  assert.equal(input.value, 'Bでお願いします。');
+});

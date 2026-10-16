@@ -25,7 +25,7 @@ function terminalPanel(p) {
     cardTerms.set(cardId, t);
     // Shift+Esc leaves the terminal for the card's keys; every other key, Esc included, goes to the shell.
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type === 'keydown' && e.key === 'Escape' && e.shiftKey) { e.preventDefault(); term.blur(); p.el.focus({ preventScroll: true }); return false; }
+      if (e.type === 'keydown' && e.key === 'Escape' && e.shiftKey) { e.preventDefault(); term.blur(); t.pane.el.focus({ preventScroll: true }); return false; }
       return true;
     });
     term.onData((data) => { if (t.id && !t.closed) t.writes = t.writes.then(() => termCall('canban_terminal_write', { id: t.id, data })).catch(() => {}); });
@@ -36,10 +36,13 @@ function terminalPanel(p) {
     });
     new ResizeObserver(() => { if (t.host.isConnected && t.host.clientWidth) { try { t.fit.fit(); } catch {} } }).observe(host);
   }
+  t.pane = p;
   const status = h('span', { class: 'term-cwd ellipsis', title: t.cwd, text: t.cwd || '起動中…' });
-  const restart = h('button', { class: 'btn', type: 'button', text: '開き直す', hidden: !t.closed, onclick: () => restartTerminal(p) });
-  const end = h('button', { class: 'btn', type: 'button', text: '終了', hidden: t.closed || !t.id, title: 'シェルを終了してターミナルを閉じる',
-    onclick: async () => { if (t.id) await termCall('canban_terminal_close', { id: t.id }).catch(() => {}); markTerminalClosed(t, '終了しました'); } });
+  const restart = h('button', { class: 'btn', type: 'button', text: '開き直す', title: 'ターミナルを開き直す（Shift+R）', hidden: !t.closed, onclick: () => restartTerminal(p) });
+  const end = h('button', { class: 'btn', type: 'button', text: '終了', hidden: t.closed || !t.id, title: 'シェルを終了してターミナルを閉じる（Shift+X）',
+    onclick: () => endTerminal(p) });
+  restart.append(...keycap('Shift+R'));
+  end.append(...keycap('Shift+X'));
   t.paint = () => { status.textContent = t.error || t.cwd || '起動中…'; status.title = t.cwd; restart.hidden = !t.closed; end.hidden = t.closed || !t.id; };
   const head = h('div', { class: 'term-head' }, h('span', { html: picon('terminal', 13) }), status, h('span', { class: 'grow' }), restart, end, ...keycap(TERM_KEYS.leave));
   const box = h('div', { class: 'term-panel' }, head, t.host);
@@ -66,6 +69,13 @@ async function startTerminal(p, t) {
   } catch (e) {
     markTerminalClosed(t, e.message);
   }
+}
+
+async function endTerminal(p) {
+  const t = cardTerms.get(p.id);
+  if (!t || t.closed) return;
+  if (t.id) await termCall('canban_terminal_close', { id: t.id }).catch(() => {});
+  markTerminalClosed(t, '終了しました');
 }
 
 function restartTerminal(p) {

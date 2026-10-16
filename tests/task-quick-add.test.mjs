@@ -230,7 +230,7 @@ test('desktop creation waits visibly for targets without losing the request', as
   });
   const label = { textContent: '' };
   dialog.sessionDraft = { agent: 'codex', route: 'desktop', prompt: '保持する未送信の依頼' };
-  dialog.form = { querySelectorAll: () => [] };
+  dialog.form = { querySelectorAll: () => [], querySelector: () => ({ value: dialog.sessionDraft.prompt }) };
   dialog.primary = { disabled: false, querySelector: () => label };
   dialog.feedback = { hidden: true, classList: { remove() {} }, textContent: '' };
   const loading = dialog.loadTargets();

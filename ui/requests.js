@@ -44,7 +44,9 @@ function fillChoice(p, choice) {
   const input = p?.el.querySelector('[data-sec="send"] textarea:not([readonly]):not([disabled])');
   if (!input || !choice) return;
   // Replace an empty input or our own earlier pick; otherwise add the answer under what was typed.
-  input.value = !input.value.trim() || input.value === input.dataset.choiceFill ? choice.reply : `${input.value.trimEnd()}\n${choice.reply}`;
+  const base = input.value === input.dataset.choiceFill ? (input.dataset.choiceBase || '') : input.value.trimEnd();
+  input.dataset.choiceBase = base;
+  input.value = base.trim() ? `${base}\n${choice.reply}` : choice.reply;
   input.dataset.choiceFill = input.value;
   input.dispatchEvent(new Event('input', { bubbles: true }));
   input.focus({ preventScroll: true });
