@@ -11,14 +11,17 @@ function mdHtml(src) {
   let list = null, code = null, table = null;
   const cells = (line) => line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
   const flush = () => {
-    if (list) { out.push(`<${list.tag}>${list.items.join('')}</${list.tag}>`); list = null; }
+    if (list) {
+      const start = list.tag === 'ol' && list.start !== 1 ? ` start="${list.start}"` : '';
+      out.push(`<${list.tag}${start}>${list.items.join('')}</${list.tag}>`); list = null;
+    }
     if (table) {
       const [head, ...rows] = table;
       out.push(`<div class="md-table"><table><thead><tr>${head.map((c) => `<th>${mdInline(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${mdInline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
       table = null;
     }
   };
-  const item = (tag, html) => { if (list?.tag !== tag) { flush(); list = { tag, items: [] }; } list.items.push(`<li>${html}</li>`); };
+  const item = (tag, html, start = 1) => { if (list?.tag !== tag) { flush(); list = { tag, start, items: [] }; } list.items.push(`<li>${html}</li>`); };
   for (const line of String(src).split('\n')) {
     if (/^\s*```/.test(line)) { if (code) { out.push(`<pre><code>${escH(code.join('\n'))}</code></pre>`); code = null; } else { flush(); code = []; } continue; }
     if (code) { code.push(line); continue; }
@@ -29,8 +32,8 @@ function mdHtml(src) {
     }
     const li = line.match(/^\s*[-*] (.*)$/);
     if (li) { item('ul', mdInline(li[1])); continue; }
-    const ol = line.match(/^\s*\d+[.)] (.*)$/);
-    if (ol) { item('ol', mdInline(ol[1])); continue; }
+    const ol = line.match(/^\s*(\d+)[.)] (.*)$/);
+    if (ol) { item('ol', mdInline(ol[2]), Number(ol[1])); continue; }
     if (list && !line.trim()) continue; // a blank line between items keeps one list
     flush();
     const hd = line.match(/^#{1,6}\s+(.*)$/);
