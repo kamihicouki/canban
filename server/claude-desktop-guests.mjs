@@ -104,6 +104,12 @@ export async function readLedger(paths = guestPaths()) {
 async function withLock(paths, fn) {
   await fs.mkdir(paths.state, { recursive: true, mode: 0o700 });
   const lock = path.join(paths.state, 'lock');
+  // A process killed while waiting leaves its "lock.<pid>.<uuid>" behind: remove those of dead pids.
+  for (const f of await fs.readdir(paths.state).catch(() => [])) {
+    const pid = Number(/^lock\.(\d+)\./.exec(f)?.[1]);
+    if (!pid || pid === process.pid) continue;
+    try { process.kill(pid, 0); } catch (error) { if (error.code === 'ESRCH') await fs.unlink(path.join(paths.state, f)).catch(() => {}); }
+  }
   const mine = `${lock}.${process.pid}.${crypto.randomUUID()}`;
   await fs.writeFile(mine, String(process.pid), { mode: 0o600 });
   try {
@@ -353,39 +359,6 @@ export function spawnGuestWatcher({ env = process.env } = {}) {
   const child = spawn(process.execPath, [fileURLToPath(import.meta.url), 'watch'], { detached: true, stdio: 'ignore', env });
   child.unref();
   return child.pid;
-}
-
-// Opens a session of another account in the signed-in Desktop: places every account's
-// sessions as guests, then opens it (which launches Desktop). Desktop must be stopped.
-export async function openIntegrated({ sessionId, labelOf, open, paths = guestPaths(), watch = spawnGuestWatcher }) {
-  if (await desktopRunning()) return { ok: false, code: 'desktop_running', reason: 'Desktop を終了してから開くと、全アカウントの会話をまとめた Desktop で開けます。' };
-  const plan = await planGuests({ paths, labelOf });
-  if (!plan.ok) return { ok: false, code: 'desktop_unavailable', reason: plan.reason };
-  if (!plan.guests.some(g => g.sessionId === sessionId)) {
-    const skip = plan.skipped.find(s => s.sessionId === sessionId);
-    return { ok: false, code: 'not_guest', reason: skip?.reason === '作業途中で終了された会話'
-      ? 'この会話は作業の途中で終了されています。ほかのアカウントで続きが走らないよう、元のアカウント（ターミナル）で再開してください。'
-      : `この会話は Desktop にまとめて表示できません（${skip?.reason || '対象外'}）。` };
-  }
-  const placed = await placeGuests({ paths, labelOf });
-  watch();
-  try { await open(); }
-  catch (error) { await restoreGuests({ paths }); throw error; }
-  return { ok: true, placed: placed.placed, host: placed.host };
-}
-
-// Any other launch of Desktop from Canban (a new session): with Desktop stopped, every
-// account's sessions are placed first. A running Desktop, or one that cannot be merged,
-// opens as is; the reason is returned so the caller can say why nothing was merged.
-export async function launchIntegrated({ labelOf, open, paths = guestPaths(), watch = spawnGuestWatcher }) {
-  if (await desktopRunning()) { await open(); return { ok: false, code: 'desktop_running', placed: 0 }; }
-  let placed;
-  try { placed = await placeGuests({ paths, labelOf }); }
-  catch (error) { await open(); return { ok: false, code: error.code || 'desktop_unavailable', reason: error.message, placed: 0 }; }
-  if (placed.placed) watch();
-  try { await open(); }
-  catch (error) { if (placed.placed) await restoreGuests({ paths }); throw error; }
-  return { ok: true, placed: placed.placed, host: placed.host };
 }
 
 // At server start: tidy guests left by a watcher that did not finish.

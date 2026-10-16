@@ -19,7 +19,7 @@ import { RULE_TRIGGERS } from './store.mjs';
 import { computeStats } from './stats.mjs';
 import { desktopLink, resumeCommand, newSessionLink, newSessionCommand } from './agents.mjs';
 import { LOCAL_HOST } from './sources/util.mjs';
-import { openUrl, openExternal, runInTerminal, installedTerminals, setRunner, TERMINAL_LABELS } from './launcher.mjs';
+import { openExternal, runInTerminal, installedTerminals, setRunner, TERMINAL_LABELS } from './launcher.mjs';
 import { LiveHub } from './live.mjs';
 import { sessionExchanges } from './board.mjs';
 import { createWatch } from './watch.mjs';
@@ -28,7 +28,8 @@ import { codexHome } from './sources/codex.mjs';
 import { claudeHome, claudeDesktopSessionsDir } from './sources/claude.mjs';
 import { accountTools, accountFilterProp, accountDesktopNote, extraWatchRoots } from './accounts-mcp.mjs';
 import { accountName, accountLabel, desktopAccountMismatch } from './accounts.mjs';
-import { openIntegrated, launchIntegrated, recoverGuests } from './claude-desktop-guests.mjs';
+import { recoverGuests, setGuestRunningCheck } from './claude-desktop-guests.mjs';
+import { openDesktopApp, integratedNote } from './claude-desktop-open.mjs';
 import { accountActions, accountActionTools } from './account-actions.mjs';
 import { shutdownLogins } from './login.mjs';
 import { boardHtml } from './ui.mjs';
@@ -77,7 +78,6 @@ const store = new Store();
 attachSummaryCache(store.dir); // Claude transcript summaries survive a restart: only new lines are read
 // Integrated Desktop sidebar: the ledger lives with the data, and the watcher inherits it.
 process.env.CANBAN_DESKTOP_GUESTS_DIR ||= path.join(store.dir, 'desktop-integrated');
-recoverGuests().then(r => (r?.restored || r?.tidied) && process.stderr.write(`[canban] Desktop の統合を片付けました（書き戻し ${r.restored || 0} 件・台帳にない複製 ${r.tidied || 0} 件）\n`), error => process.stderr.write(`[canban] Desktop の統合の片付け: ${error.message}\n`));
 const desktopBridge = await startDesktopBridge({ dataDir: store.dir }).catch(error => {
   process.stderr.write(`[canban] Codex連携: ${error.message}\n`);
   return null;
@@ -93,10 +93,16 @@ let client = null; // clientInfo from initialize: which host started this server
 const log = (...a) => process.stderr.write(`[canban] ${a.join(' ')}\n`);
 
 // CANBAN_LAUNCH_DRYRUN=1 logs launches instead of opening apps (development / demos).
+// It never touches the real integrated-sidebar state or reads the real Desktop process:
+// Desktop counts as running, so no guests are placed.
 if (process.env.CANBAN_LAUNCH_DRYRUN === '1') {
+  process.env.CANBAN_DESKTOP_GUESTS_DIR ||= path.join(store.dir, 'desktop-integrated');
+  setGuestRunningCheck(async () => true);
   setRunner(async (file, args) => log('dry-run:', file, ...args));
   setSpawner(dryRunSpawner(log));
 }
+// After the dry-run setup, so a dry run never tidies the real integrated-sidebar state.
+recoverGuests().then(r => (r?.restored || r?.tidied) && process.stderr.write(`[canban] Desktop の統合を片付けました（書き戻し ${r.restored || 0} 件・台帳にない複製 ${r.tidied || 0} 件）\n`), error => process.stderr.write(`[canban] Desktop の統合の片付け: ${error.message}\n`));
 
 // ---- tool definitions ----------------------------------------------------
 const appOnly = { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true, 'openai/visibility': 'private' };
@@ -416,37 +422,37 @@ const TOOLS = [
       const owner = accountNote && useRoute === 'desktop' ? desktopAccountMismatch(session)?.session : null;
       const ownerPlan = owner ? await desktopProfilePlan(owner) : null;
       if (ownerPlan?.available) accountNote = null;
-      // Integrated sidebar: with Desktop stopped, the signed-in Desktop opens with every
-      // account's sessions (claude-desktop-guests.mjs) and this one is opened there.
+      // Every Desktop open goes through openDesktopApp (claude-desktop-open.mjs): with
+      // Desktop stopped, the signed-in Desktop starts with every account's sessions.
+      const labels = state.settings.accounts.labels;
+      const labelOf = a => accountLabel(`claude:${a}`, labels).replace(/@.*/, '');
       let integrated = null;
       if (crossDesktop && useRoute === 'desktop') {
-        const labels = state.settings.accounts.labels;
-        integrated = await openIntegrated({ sessionId: session.desktopSessionId, labelOf: a => accountLabel(`claude:${a}`, labels).replace(/@.*/, ''), open: () => openUrl(link.url) });
-        if (!integrated.ok) throw new Error(`${accountName(mismatch.session, labels)} の会話を Desktop で開けません。${integrated.reason}`);
-      } else if (owner && !ownerPlan?.available) {
-        const labels = state.settings.accounts.labels;
-        integrated = await openIntegrated({ sessionId: session.desktopSessionId, labelOf: a => accountLabel(`claude:${a}`, labels).replace(/@.*/, ''), open: () => openUrl(link.url) });
-        if (integrated.ok) accountNote = null;
+        integrated = await openDesktopApp(link.url, { guestSessionId: session.desktopSessionId, labelOf });
+        if (!integrated.opened) throw new Error(`${accountName(mismatch.session, labels)} の会話を Desktop で開けません。${integrated.reason}`);
+      } else if (owner && !ownerPlan?.available && useRoute === 'desktop') {
+        integrated = await openDesktopApp(link.url, { guestSessionId: session.desktopSessionId, labelOf });
+        if (integrated.opened) accountNote = null;
         else if (route === 'desktop') throw new Error(`${accountName(owner, labels)} の会話を Desktop で開けません。${integrated.reason}`);
         else accountNote = `${accountNote}\n${integrated.reason}`;
       }
       let terminalNote = null;
       if (useRoute === 'desktop' && accountNote && !route) { useRoute = 'terminal'; terminalNote = accountNote; }
-      if (useRoute === 'desktop') {
-        if (integrated?.ok) accountNote = `全アカウントの会話をまとめて Desktop で開きました（ほかのアカウントの会話 ${integrated.placed} 件に 🔗 を付けています）。Desktop を ⌘Q で終了すると、それぞれのアカウントへ戻します。`;
-        else if (selected) await withDesktopAccount(session.executionAccount, async () => {
+      if (useRoute === 'desktop' && !integrated?.opened) {
+        if (selected) await withDesktopAccount(session.executionAccount, async () => {
           await claudeExecutionSession(source, session.home, session.executionAccount);
-          await openUrl(link.url);
+          integrated = await openDesktopApp(link.url, { labelOf });
         });
         else if (ownerPlan?.available) {
-          try { await withDesktopAccount(owner, () => openUrl(link.url)); }
+          try { await withDesktopAccount(owner, async () => { integrated = await openDesktopApp(link.url, { labelOf }); }); }
           catch (error) {
-            if (route || !['desktop_running', 'desktop_busy', 'desktop_unavailable'].includes(error.code)) throw new Error(`${accountName(owner, state.settings.accounts.labels)} の Desktop で開けません。${error.message}`);
+            if (route || !['desktop_running', 'desktop_busy', 'desktop_unavailable'].includes(error.code)) throw new Error(`${accountName(owner, labels)} の Desktop で開けません。${error.message}`);
             useRoute = 'terminal';
-            terminalNote = `${accountName(owner, state.settings.accounts.labels)} の Desktop へ切り替えられないため、ターミナルで再開しました。${error.message}`;
+            terminalNote = `${accountName(owner, labels)} の Desktop へ切り替えられないため、ターミナルで再開しました。${error.message}`;
           }
-        } else await openUrl(link.url);
+        } else integrated = await openDesktopApp(link.url, { labelOf });
       }
+      if (useRoute === 'desktop') accountNote = integratedNote(integrated) || accountNote;
       if (useRoute === 'desktop') {
         const note = accountNote || link.note || null;
         return { text: `${link.label}: ${link.url}${accountNote ? `\n${note}` : ''}`, structured: { route: 'desktop', url: link.url, exact: link.exact, note, executionAccount: session.executionAccount || null } };
@@ -682,12 +688,8 @@ const TOOLS = [
         const as = await startAccount({ agent, account, host, route: useRoute, labels });
         if (useRoute === 'desktop') {
           const link = newSessionLink(agent, { host, cwd, prompt: text });
-          // Claude Desktop launched from Canban shows every account's sessions (integrated sidebar).
           let integrated = null;
-          await as.open(async () => {
-            if (agent !== 'claude' || host.local === false) return openUrl(link.url);
-            integrated = await launchIntegrated({ labelOf: a => accountLabel(`claude:${a}`, labels).replace(/@.*/, ''), open: () => openUrl(link.url) });
-          });
+          await as.open(async () => { integrated = await openDesktopApp(link.url, { labelOf: a => accountLabel(`claude:${a}`, labels).replace(/@.*/, '') }); });
           detail = { route: 'desktop', url: link.url, account: as.account, integrated: integrated && { ok: integrated.ok, placed: integrated.placed, reason: integrated.reason } };
         } else {
           const term = terminal || prefs.terminal;
@@ -699,7 +701,7 @@ const TOOLS = [
           await store.updateTask({ cardId: taskId, target: { agent, hostId: host.local === false ? host.id : 'local', cwd, account: as.account } });
           await store.addPending({ taskId, pending: { agent, hostId: host.local === false ? host.id : 'local', cwd, prompt: text.slice(0, 200), startedAt: Date.now() } });
         }
-        const note = !remoteEnabled ? `${host.label} の読み取りがオフです。「マシン」でオンにするとセッションを表示できます。` : useRoute === 'desktop' ? `新規画面を開きました。依頼の送信と実行状況はアプリで確認してください。${detail.integrated?.placed ? `ほかのアカウントの会話 ${detail.integrated.placed} 件も 🔗 付きでサイドバーにまとめています（⌘Q で終了すると元へ戻します）。` : detail.integrated?.reason ? `（全アカウントの会話はまとめていません：${detail.integrated.reason}）` : ''}` : null;
+        const note = !remoteEnabled ? `${host.label} の読み取りがオフです。「マシン」でオンにするとセッションを表示できます。` : useRoute === 'desktop' ? ['新規画面を開きました。依頼の送信と実行状況はアプリで確認してください。', integratedNote({ ...detail.integrated, opened: true })].filter(Boolean).join('') : null;
         return { ...detail, note };
       });
       return { text: detail.note || (detail.route === 'desktop' ? 'デスクトップの新規画面を開きました' : 'ターミナルに開始を依頼しました'), structured: detail };

@@ -25,7 +25,15 @@ export function setRunner(fn) {
   return prev;
 }
 
+// Claude Desktop links go only through openClaudeDesktop (claude-desktop-open.mjs),
+// which merges every account's sessions into the sidebar before Desktop starts.
 export async function openUrl(url) {
+  if (/^claude:/i.test(String(url))) throw new Error('Claude Desktop は openClaudeDesktop（claude-desktop-open.mjs）から開きます');
+  return openAppUrl(url);
+}
+
+// Internal: only claude-desktop-open.mjs may import this (checked by a test).
+export async function openAppUrl(url) {
   let u;
   try {
     u = new URL(url);

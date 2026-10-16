@@ -5,8 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { configureAccounts, resetAccountsForTest } from '../server/accounts.mjs';
 import { listClaudeSessions } from '../server/sources/claude.mjs';
-import { planGuests, placeGuests, restoreGuests, openIntegrated, launchIntegrated, recoverGuests, readLedger, setGuestRunningCheck, guestPaths, tidyOrphanGuests, watchAndRestore } from '../server/claude-desktop-guests.mjs';
+import { planGuests, placeGuests, restoreGuests, recoverGuests, readLedger, setGuestRunningCheck, guestPaths, tidyOrphanGuests, watchAndRestore } from '../server/claude-desktop-guests.mjs';
 import { planGuestGroups } from '../server/claude-desktop-groups.mjs';
+import { openClaudeDesktop } from '../server/claude-desktop-open.mjs';
 
 // Pure layout: one Desktop folder, signed in to "host"; "other" is the second account.
 const HOST = 'host-account', OTHER = 'other-account';
@@ -114,14 +115,14 @@ test('opening integrates only while Desktop is stopped, and never a quit-interru
   const open = async () => opened.push('open');
   const watch = () => watched++;
   running = true;
-  const busy = await openIntegrated({ sessionId: ids.open, labelOf: () => 'other', open, watch });
+  const busy = await openClaudeDesktop({ url: 'claude://code/continue?session=x', guestSessionId: ids.open, labelOf: () => 'other', open, watch });
   assert.equal(busy.code, 'desktop_running');
   running = false;
-  const interrupted = await openIntegrated({ sessionId: ids.busy, labelOf: () => 'other', open, watch });
+  const interrupted = await openClaudeDesktop({ url: 'claude://code/continue?session=x', guestSessionId: ids.busy, labelOf: () => 'other', open, watch });
   assert.equal(interrupted.code, 'not_guest');
   assert.match(interrupted.reason, /作業の途中/);
   assert.equal(await readLedger(), null);
-  const ok = await openIntegrated({ sessionId: ids.open, labelOf: () => 'other', open, watch });
+  const ok = await openClaudeDesktop({ url: 'claude://code/continue?session=x', guestSessionId: ids.open, labelOf: () => 'other', open, watch });
   assert.equal(ok.ok, true);
   assert.deepEqual(opened, ['open']);
   assert.equal(watched, 1);
@@ -138,11 +139,11 @@ test('a new session launched from Canban merges every account while Desktop is s
   const open = async () => opened.push('open');
   const watch = () => watched++;
   running = true;
-  const busy = await launchIntegrated({ labelOf: () => 'other', open, watch });
+  const busy = await openClaudeDesktop({ url: 'claude://code/new', labelOf: () => 'other', open, watch });
   assert.equal(busy.code, 'desktop_running');
   assert.equal(await readLedger(), null);
   running = false;
-  const ok = await launchIntegrated({ labelOf: () => 'other', open, watch });
+  const ok = await openClaudeDesktop({ url: 'claude://code/new', labelOf: () => 'other', open, watch });
   assert.equal(ok.ok, true);
   assert.equal(ok.placed, 1);
   assert.equal(watched, 1);
@@ -151,7 +152,7 @@ test('a new session launched from Canban merges every account while Desktop is s
   assert.equal((await restoreGuests()).restored, 1);
   // Desktop not signed in: nothing merged, Desktop still opens.
   await write(path.join(app, 'config.json'), {});
-  const unavailable = await launchIntegrated({ labelOf: () => 'other', open, watch });
+  const unavailable = await openClaudeDesktop({ url: 'claude://code/new', labelOf: () => 'other', open, watch });
   assert.equal(unavailable.ok, false);
   assert.equal(opened.length, 3);
   assert.equal(await readLedger(), null);
