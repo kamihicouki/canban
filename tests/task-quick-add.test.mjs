@@ -191,3 +191,26 @@ test('invalid attributes never leave partially created tasks', async () => {
   assert.equal(task.directoryId, '__none');
   assert.deepEqual(task.context, { section: null, project: null });
 });
+
+test('desktop starts use the app lists: a Claude environment, a Codex project and cloud', () => {
+  const m = new vm.Script(fs.readFileSync(new URL('../ui/task-quick-add-model.js', import.meta.url), 'utf8') + '\n({applySessionTargetDefaults, sessionStartRequest, sessionHostId, sessionUsesFolder})').runInNewContext();
+  const targets = { claude: { environments: [{ id: 'env-a', name: 'canban', kind: 'local', cwd: '/r/canban' }, { id: 'env-b', name: 'ff', kind: 'ssh', cwd: '/home/u/ff', sshHost: 'box' }] },
+    codex: { projects: [{ id: 'p-local', name: 'canban', hostId: 'local', root: '/r/canban' }, { id: 'p-remote', name: 'ff', hostId: 'remote-ssh-discovered:box', root: '/home/u/ff' }],
+      cloudEnvironments: [{ id: 'asenvcfg_1', name: 'ff' }, { id: 'asenvcfg_2', name: 'Canban' }] } };
+  const base = { route: 'desktop', terminal: 'terminal', target: 'new-window', hostId: 'local', cwd: '', prompt: ' 直して ', account: null };
+  const claude = m.applySessionTargetDefaults({ ...base, agent: 'claude' }, targets);
+  assert.equal(claude.environmentId, 'env-a');
+  assert.deepEqual(plain(m.sessionStartRequest(claude)), { agent: 'claude', route: 'desktop', terminal: 'terminal', target: 'new-window', cwd: '', prompt: '直して', account: null, environmentId: 'env-a' });
+  claude.environmentId = 'env-b';
+  assert.equal(m.sessionHostId(claude, targets), 'box');
+  const codex = m.applySessionTargetDefaults({ ...base, agent: 'codex' }, targets);
+  assert.equal(codex.projectId, 'p-local');
+  assert.equal(m.sessionStartRequest(codex).projectId, 'p-local');
+  codex.runOn = 'cloud'; m.applySessionTargetDefaults(codex, targets);
+  assert.equal(codex.cloudEnvironment, 'asenvcfg_2', 'the cloud environment named like the project');
+  assert.deepEqual(plain(m.sessionStartRequest(codex)), { agent: 'codex', route: 'desktop', terminal: 'terminal', target: 'new-window', cwd: '', prompt: '直して', account: null, projectId: 'p-local', runOn: 'cloud', cloudEnvironment: 'asenvcfg_2' });
+  const typed = m.applySessionTargetDefaults({ ...base, agent: 'codex', cwd: '/typed' }, targets);
+  assert.equal(typed.projectId, '__folder', 'a typed folder is kept');
+  assert.equal(m.sessionStartRequest(typed).cwd, '/typed');
+  assert.ok(m.sessionUsesFolder({ ...base, agent: 'claude' }), 'without the lists the folder field stays');
+});

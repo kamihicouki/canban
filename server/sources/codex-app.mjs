@@ -8,7 +8,7 @@ import { codexHome, findStateDb } from './codex.mjs';
 import { perf } from '../perf.mjs';
 import { parseDotCache } from './codex-dots.mjs';
 
-const EMPTY = Object.freeze({ projects: new Map(), assignments: new Map(), followUps: new Map(), pinned: new Set(), remoteConnections: [], dots: new Map(), dotSessions: [] });
+const EMPTY = Object.freeze({ projects: new Map(), assignments: new Map(), followUps: new Map(), pinned: new Set(), remoteConnections: [], dots: new Map(), dotSessions: [], projectOrder: [], cloudEnvironments: [] });
 const cache = new Map(); // file -> { sig, value }
 export const codexAppCounters = { parses: 0, hits: 0 };
 
@@ -76,7 +76,23 @@ export function parseAppState(raw, extraProjects = []) {
   const pinned = new Set((Array.isArray(raw?.['pinned-thread-ids']) ? raw['pinned-thread-ids'] : []).filter((x) => typeof x === 'string'));
   const remoteConnections = Array.isArray(raw?.['codex-managed-remote-connections']) ? raw['codex-managed-remote-connections'] : [];
   const dotCache = parseDotCache(raw);
-  return { projects, assignments, followUps, pinned, remoteConnections, dots: dotCache.dots, dotSessions: dotCache.sessions };
+  return { projects, assignments, followUps, pinned, remoteConnections, dots: dotCache.dots, dotSessions: dotCache.sessions,
+    projectOrder: projectOrder(raw, projects), cloudEnvironments: cloudEnvironments(raw) };
+}
+
+// The order of the app's project picker: the selected project, pinned ones, then the app's own order.
+function projectOrder(raw, projects) {
+  const ids = (v) => (Array.isArray(v) ? v : []).filter((id) => typeof id === 'string');
+  const selected = str(raw?.['selected-project']?.projectId);
+  return [...new Set([selected, ...ids(raw?.['pinned-project-ids']), ...ids(raw?.['project-order']), ...projects.keys()])].filter((id) => id && projects.has(id));
+}
+
+// Codex Cloud environments as the app last fetched them ("実行場所: クラウド").
+function cloudEnvironments(raw) {
+  const caches = [raw?.['environment-catalog-cache-v2'], raw?.['environment-catalog-cache-v1']];
+  const data = caches.find((c) => Array.isArray(c?.data))?.data || [];
+  return data.map((e) => ({ id: str(e?.id), name: str(e?.name) || str(e?.label) })).filter((e) => e.id && e.name)
+    .map((e) => ({ id: e.id.includes('~') ? e.id.slice(e.id.lastIndexOf('~') + 1) : e.id, name: e.name.slice(0, 120) }));
 }
 
 // Put the app's view on Codex sessions. `project` becomes the Codex project when the

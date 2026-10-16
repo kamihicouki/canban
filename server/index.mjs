@@ -28,7 +28,7 @@ import { codexHome } from './sources/codex.mjs';
 import { claudeHome, claudeDesktopSessionsDir } from './sources/claude.mjs';
 import { accountTools, accountFilterProp, accountDesktopNote, extraWatchRoots } from './accounts-mcp.mjs';
 import { accountName, accountLabel, desktopAccountMismatch } from './accounts.mjs';
-import { recoverGuests, setGuestRunningCheck } from './claude-desktop-guests.mjs';
+import { recoverGuests, setGuestRunningCheck, guestPaths } from './claude-desktop-guests.mjs';
 import { openDesktopApp, integratedNote } from './claude-desktop-open.mjs';
 import { accountActions, accountActionTools } from './account-actions.mjs';
 import { shutdownLogins } from './login.mjs';
@@ -38,6 +38,8 @@ import { uploadImage, promptImages, listSkills, withSkills, withImagePaths, remo
 import { resolveSession, inspect, timingProblem } from './dispatch.mjs';
 import { claudeExecutionSession, savedClaudeExecutionSession } from './claude-handoff.mjs';
 import { startAccount } from './start-account.mjs';
+import { claudeEnvironments, codexLaunchTargets } from './sources/launch-targets.mjs';
+import { startCodexCloud, setCloudRunner } from './codex-cloud.mjs';
 import { launchOnce } from './launcher.mjs';
 import { desktopProfilePlan, withDesktopAccount, saveClaudeExecutionAccount, desktopExecutionLink } from './claude-desktop-profile.mjs';
 import { SlackService, slackTools } from './slack.mjs';
@@ -100,6 +102,7 @@ if (process.env.CANBAN_LAUNCH_DRYRUN === '1') {
   setGuestRunningCheck(async () => true);
   setRunner(async (file, args) => log('dry-run:', file, ...args));
   setSpawner(dryRunSpawner(log));
+  setCloudRunner(async (command) => { log('dry-run:', command); return 'https://chatgpt.com/codex/tasks/task_e_dryrun\n'; });
 }
 // After the dry-run setup, so a dry run never tidies the real integrated-sidebar state.
 recoverGuests().then(r => (r?.restored || r?.tidied) && process.stderr.write(`[canban] Desktop の統合を片付けました（書き戻し ${r.restored || 0} 件・台帳にない複製 ${r.tidied || 0} 件）\n`), error => process.stderr.write(`[canban] Desktop の統合の片付け: ${error.message}\n`));
@@ -636,6 +639,22 @@ const TOOLS = [
     },
   },
   {
+    name: 'canban_launch_targets',
+    title: '開始先の一覧',
+    description: '新しいセッションの開始先を、各デスクトップアプリと同じデータで返す。Claude は Desktop の「環境」（ログイン中のアカウント）、Codex はアプリの「プロジェクト」と「実行場所: クラウド」の環境。',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true },
+    _meta: appAndModel,
+    handler: async () => {
+      const [claude, codex] = await Promise.all([claudeEnvironments(guestPaths().app), codexLaunchTargets()]);
+      return {
+        text: [`Claude の環境: ${claude.environments.map((e) => e.name).join('、') || 'なし'}`, `Codex のプロジェクト: ${codex.projects.map((p) => p.name).join('、') || 'なし'}`,
+          `Codex Cloud の環境: ${codex.cloudEnvironments.map((e) => e.name).join('、') || 'なし'}`].join('\n'),
+        structured: { claude, codex },
+      };
+    },
+  },
+  {
     name: 'canban_start_session',
     title: '新しいセッションを開始',
     description: 'Codex / Claude Code の新規画面をデスクトップで開くか、ターミナルで開始する。taskId は任意で、省略するとタスクカードを作らない。デスクトップでの送信・実行開始はアプリで確認する。',
@@ -654,18 +673,46 @@ const TOOLS = [
         terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
         target: { type: 'string', enum: ['new-window', 'new-tab', 'split', 'current'] },
         account: { type: ['string', 'null'], description: "開始するアカウント（canban_get_usage の key。例 'claude:<uuid>'）。省略・null はいまのログイン。Desktop は現在ログインしているアカウントでのみ開ける" },
+        environmentId: { type: 'string', maxLength: 128, description: 'Claude Desktop の環境（canban_launch_targets の claude.environments[].id）。その環境のフォルダ・SSH 接続で開く。hostId / cwd より優先' },
+        projectId: { type: 'string', maxLength: 200, description: 'Codex のプロジェクト（canban_launch_targets の codex.projects[].id）。そのプロジェクトのマシン・フォルダで開く。hostId / cwd より優先' },
+        runOn: { type: 'string', enum: ['local', 'cloud'], description: "Codex の実行場所。'cloud' は Codex Cloud にタスクを送信して開始する（新規画面は開かない）" },
+        cloudEnvironment: { type: 'string', maxLength: 200, description: "runOn 'cloud' の環境（canban_launch_targets の codex.cloudEnvironments[].id）" },
       },
       required: ['agent'],
       additionalProperties: false,
     },
     _meta: appAndModel,
-    handler: async ({ taskId, agent, hostId = 'local', cwd = '', prompt, imageIds = [], skills = [], route, terminal, target, account = null, clientRequestId }) => {
+    handler: async ({ taskId, agent, hostId = 'local', cwd = '', prompt, imageIds = [], skills = [], route, terminal, target, account = null, clientRequestId, environmentId, projectId, runOn = 'local', cloudEnvironment }) => {
       const state = (await store.load());
       const task = state.cards[taskId];
       if (taskId !== undefined && task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
       let host = LOCAL_HOST;
       let remoteEnabled = true;
-      if (hostId && hostId !== 'local') {
+      let codexProject = null;
+      const cloud = agent === 'codex' && runOn === 'cloud';
+      if (runOn === 'cloud' && agent !== 'codex') throw new Error('クラウドで開始できるのは Codex だけです');
+      if (environmentId) {
+        if (agent !== 'claude') throw new Error('環境を選べるのは Claude だけです');
+        const env = (await claudeEnvironments(guestPaths().app)).environments.find((e) => e.id === environmentId);
+        if (!env) throw new Error('Claude Desktop の環境が見つかりません。Desktop で環境を確認してください');
+        cwd = env.cwd;
+        hostId = 'local';
+        if (env.kind === 'ssh') {
+          // Desktop's own SSH connection; Canban reads it as a host only when Codex has the same alias.
+          const known = (await hostsWithState(state)).find((x) => x.alias === env.sshHost);
+          host = { id: known?.id || env.sshHost, alias: env.sshHost, label: known?.label || env.sshLabel, local: false, sshPort: env.sshPort ?? known?.sshPort ?? null };
+          hostId = host.id;
+          remoteEnabled = known ? known.enabled : true;
+        }
+      }
+      if (projectId) {
+        if (agent !== 'codex') throw new Error('プロジェクトを選べるのは Codex だけです');
+        codexProject = (await codexLaunchTargets()).projects.find((p) => p.id === projectId);
+        if (!codexProject) throw new Error('Codex のプロジェクトが見つかりません。Codex でプロジェクトを確認してください');
+        cwd = codexProject.root;
+        hostId = codexProject.hostId;
+      }
+      if (!environmentId && hostId && hostId !== 'local') {
         const h = (await hostsWithState(state)).find((x) => x.id === hostId);
         if (!h) throw new Error('Codex に登録されていない接続です');
         host = { id: h.id, alias: h.alias, label: h.label, local: false, sshPort: h.sshPort };
@@ -675,19 +722,27 @@ const TOOLS = [
       if (rawPrompt.length > 20000) throw new Error('依頼文は20000文字までです');
       if (cwd && (!cwd.startsWith('/') || cwd.includes('\0') || cwd.length > 4096)) throw new Error('作業フォルダは絶対パスで指定してください');
       const prefs = state.settings.launch;
-      const useRoute = route || prefs.route;
-      if (useRoute === 'desktop') newSessionLink(agent, { host, cwd, prompt: rawPrompt });
+      const useRoute = cloud ? 'cloud' : route || prefs.route;
+      const desktopProjectId = useRoute === 'desktop' && host.local !== false ? codexProject?.id : null;
+      if (useRoute === 'desktop') newSessionLink(agent, { host, cwd, prompt: rawPrompt, projectId: desktopProjectId });
       if (useRoute === 'terminal' && !cwd) throw new Error('ターミナルで開始する作業フォルダを選んでください');
-      const detail = await launchOnce(store.dir, clientRequestId, { taskId: taskId || null, agent, hostId, cwd, prompt: rawPrompt, imageIds, skills, route: useRoute, terminal: terminal || prefs.terminal, target: target || prefs.target, account }, async () => {
+      if (cloud) {
+        if (!cloudEnvironment) throw new Error('Codex Cloud の環境を選んでください');
+        if (!rawPrompt.trim()) throw new Error('クラウドで開始するには依頼内容が必要です');
+        if (imageIds.length) throw new Error('クラウドで開始するときは画像を添付できません');
+      }
+      const detail = await launchOnce(store.dir, clientRequestId, { taskId: taskId || null, agent, hostId, cwd, prompt: rawPrompt, imageIds, skills, route: useRoute, terminal: terminal || prefs.terminal, target: target || prefs.target, account, environmentId: environmentId || null, projectId: projectId || null, cloudEnvironment: cloud ? cloudEnvironment : null }, async () => {
         const skillPrompt = withSkills(rawPrompt, skills);
         const localImages = promptImages(store.dir, imageIds);
         const images = host.local === false ? await remoteImages(store.dir, localImages, host, pool) : localImages;
         const text = withImagePaths(skillPrompt, images);
         let detail;
         const labels = state.settings.accounts.labels;
-        const as = await startAccount({ agent, account, host, route: useRoute, labels });
-        if (useRoute === 'desktop') {
-          const link = newSessionLink(agent, { host, cwd, prompt: text });
+        const as = await startAccount({ agent, account, host: cloud ? LOCAL_HOST : host, route: cloud ? 'terminal' : useRoute, labels });
+        if (cloud) {
+          detail = await startCodexCloud({ environment: cloudEnvironment, prompt: skillPrompt, prefix: as.prefix, cwd: host.local !== false && cwd ? cwd : null });
+        } else if (useRoute === 'desktop') {
+          const link = newSessionLink(agent, { host, cwd, prompt: text, projectId: desktopProjectId });
           let integrated = null;
           await as.open(async () => { integrated = await openDesktopApp(link.url, { labelOf: a => accountLabel(`claude:${a}`, labels).replace(/@.*/, '') }); });
           detail = { route: 'desktop', url: link.url, account: as.account, integrated: integrated && { ok: integrated.ok, placed: integrated.placed || 0, code: integrated.code || null, reason: integrated.reason || null } };
@@ -701,10 +756,10 @@ const TOOLS = [
           await store.updateTask({ cardId: taskId, target: { agent, hostId: host.local === false ? host.id : 'local', cwd, account: as.account } });
           await store.addPending({ taskId, pending: { agent, hostId: host.local === false ? host.id : 'local', cwd, prompt: text.slice(0, 200), startedAt: Date.now() } });
         }
-        const note = !remoteEnabled ? `${host.label} の読み取りがオフです。「マシン」でオンにするとセッションを表示できます。` : useRoute === 'desktop' ? ['新規画面を開きました。依頼の送信と実行状況はアプリで確認してください。', integratedNote({ ...detail.integrated, opened: true })].filter(Boolean).join('') : null;
+        const note = cloud ? `Codex Cloud にタスクを送信しました。実行状況は Codex の「クラウド」で確認してください。${detail.url ? `（${detail.url}）` : ''}` : !remoteEnabled ? `${host.label} の読み取りがオフです。「マシン」でオンにするとセッションを表示できます。` : useRoute === 'desktop' ? ['新規画面を開きました。依頼の送信と実行状況はアプリで確認してください。', integratedNote({ ...detail.integrated, opened: true })].filter(Boolean).join('') : null;
         return { ...detail, note };
       });
-      return { text: detail.note || (detail.route === 'desktop' ? 'デスクトップの新規画面を開きました' : 'ターミナルに開始を依頼しました'), structured: detail };
+      return { text: detail.note || (detail.route === 'desktop' ? 'デスクトップの新規画面を開きました' : detail.route === 'cloud' ? 'Codex Cloud にタスクを送信しました' : 'ターミナルに開始を依頼しました'), structured: detail };
     },
   },
   {
