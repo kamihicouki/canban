@@ -46,7 +46,6 @@ function renderDispatch(d) {
   const ta = h('textarea', { placeholder: 'このセッションに送るプロンプト（⌘/Ctrl + Enter で今すぐ送信）', 'aria-label': '送るプロンプト' });
   const ack = p?.elevated ? h('input', { type: 'checkbox', 'aria-label': '制限なしで実行されることを確認しました' }) : null;
   const busy = s.status === 'running' || s.status === 'waiting' || !!s.codexFollowUps;
-  const composer = promptComposer(ta, { key: `dispatch:${s.id}`, context: () => ({ cardId: s.id }), submit: () => send(busy ? 'queue' : 'now'), chips: true });
   const sendButtons = [];
   const send = async (when) => {
     const prompt = ta.value.trim();
@@ -77,17 +76,18 @@ function renderDispatch(d) {
   ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.altKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send('queue'); } });
   const appNote = s.agent === 'codex' || s.desktopSessionId || s.entrypoint === 'claude-desktop'
     ? helpTip(`${s.agent === 'codex' ? 'Codex' : 'Claude'} アプリでこのセッションを開いている場合は、閉じてから送ってください（アプリ側の表示と履歴がずれることがあります）。`) : null;
-  composer.toolbar.append(permChip, h('span', { class: 'grow' }), appNote, ...sendButtons);
+  const composer = promptComposer(ta, { key: `dispatch:${s.id}`, context: () => ({ cardId: s.id }), submit: () => send(busy ? 'queue' : 'now'),
+    leading: [permChip], actions: [appNote, ...sendButtons],
+    inside: [ack ? h('label', { class: 'send-note row', style: { gap: '6px' } }, ack, 'このセッションはサンドボックス／確認なしで動いています。そのまま実行されることを確認しました') : null,
+      busy ? h('div', { class: 'muted cx-busy', text: s.codexFollowUps
+        ? `Codex アプリのキューにフォローアップが ${s.codexFollowUps} 件あります。二重に送らないよう、アプリ側で送るか消すまで Canban からは送りません。`
+        : `セッションが${s.status === 'running' ? '実行中' : '入力待ち'}です。送ると順番待ちに入ります。` }) : null],
+    keys: [keyHint(['⌘', 'Enter'], busy ? 'キューへ' : '送信'), keyHint(['⌥', 'Enter'], 'キューへ'), keyHint(['$'], 'スキル')] });
   box.append(...[
     D.paused ? h('div', { class: 'paused-bar' }, h('span', { class: 'grow', text: `⏸ キュー一時停止: ${D.paused.reason}` }),
       h('button', { class: 'link-btn', text: '再開', onclick: () => act('canban_resume_queue', { cardId: s.id }, { okMsg: 'キューを再開しました' }).then(() => openCard(s.id)) })) : null,
     D.active.length || D.queue.length ? h('div', { class: 'cx-reqs' }, ...D.active.map((r) => requestRow(s, r)), ...D.queue.map((r, i) => requestRow(s, r, { index: i, queue: D.queue }))) : null,
-    h('div', { class: 'send-box cx' }, composer.root,
-      ack ? h('label', { class: 'send-note row', style: { gap: '6px' } }, ack, 'このセッションはサンドボックス／確認なしで動いています。そのまま実行されることを確認しました') : null,
-      busy ? h('div', { class: 'muted cx-busy', text: s.codexFollowUps
-        ? `Codex アプリのキューにフォローアップが ${s.codexFollowUps} 件あります。二重に送らないよう、アプリ側で送るか消すまで Canban からは送りません。`
-        : `セッションが${s.status === 'running' ? '実行中' : '入力待ち'}です。送ると順番待ちに入ります。` }) : null),
-    h('div', { class: 'cx-keys' }, keyHint(['⌘', 'Enter'], busy ? 'キューへ' : '送信'), keyHint(['⌥', 'Enter'], 'キューへ'), keyHint(['$'], 'スキル')),
+    h('div', { class: 'send-box' }, composer.root),
     D.history.length ? h('details', { class: 'cx-hist' }, h('summary', { text: `依頼の履歴（${D.history.length}）` }),
       ...D.history.map((r) => requestRow(s, r, { review: () => { try { composer.restore(r); toast('実行状況を確認し、内容を確認してから送信してください。'); } catch (e) { toast(e.message, true); } } }))) : null,
   ].filter(Boolean));

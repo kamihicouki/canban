@@ -44,6 +44,8 @@ function sessionHostId(draft, targets) {
 function sessionStartRequest(draft) {
   const request = { agent: draft.agent, route: draft.route, terminal: draft.terminal, target: draft.target,
     hostId: draft.hostId, cwd: draft.cwd.trim(), prompt: draft.prompt.trim(), account: draft.account };
+  if (draft.attachments?.imageIds?.length) request.imageIds = [...draft.attachments.imageIds];
+  if (draft.attachments?.skills?.length) request.skills = draft.attachments.skills.map(s => ({ ...s }));
   if (sessionUsesFolder(draft)) return request;
   delete request.hostId; request.cwd = '';
   if (draft.agent === 'claude') request.environmentId = draft.environmentId;
