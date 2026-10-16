@@ -10,9 +10,15 @@ import { loginBrowsers, openLoginBrowser } from './login-browsers.mjs';
 
 const ALLOWED_SCHEMES = new Set(['codex:', 'claude:']);
 
+// An app started by "open" inherits this process's environment (seen 2026-10-16: Claude
+// Desktop and every session in it got CANBAN_CLIENT=canban-chrome from the Chrome host).
+// Canban's own settings stay with Canban.
+export const appEnv = (env = process.env) => Object.fromEntries(Object.entries(env).filter(([k]) => !k.startsWith('CANBAN_')));
+
 let runner = (file, args, input) =>
   new Promise((resolve, reject) => {
-    const child = execFile(file, args, { timeout: 15000 }, (err, stdout, stderr) =>
+    const env = file === 'open' || file === 'xdg-open' ? appEnv() : process.env;
+    const child = execFile(file, args, { timeout: 15000, env }, (err, stdout, stderr) =>
       err ? reject(new Error((stderr || err.message).trim())) : resolve(stdout.trim()),
     );
     if (input != null) child.stdin.end(input);

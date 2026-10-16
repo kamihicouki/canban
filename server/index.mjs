@@ -96,7 +96,7 @@ const log = (...a) => process.stderr.write(`[canban] ${a.join(' ')}\n`);
 // It never touches the real integrated-sidebar state or reads the real Desktop process:
 // Desktop counts as running, so no guests are placed.
 if (process.env.CANBAN_LAUNCH_DRYRUN === '1') {
-  process.env.CANBAN_DESKTOP_GUESTS_DIR ||= path.join(store.dir, 'desktop-integrated');
+  process.env.CANBAN_DESKTOP_GUESTS_DIR = path.join(store.dir, 'desktop-integrated');
   setGuestRunningCheck(async () => true);
   setRunner(async (file, args) => log('dry-run:', file, ...args));
   setSpawner(dryRunSpawner(log));
@@ -455,7 +455,7 @@ const TOOLS = [
       if (useRoute === 'desktop') accountNote = integratedNote(integrated) || accountNote;
       if (useRoute === 'desktop') {
         const note = accountNote || link.note || null;
-        return { text: `${link.label}: ${link.url}${accountNote ? `\n${note}` : ''}`, structured: { route: 'desktop', url: link.url, exact: link.exact, note, executionAccount: session.executionAccount || null } };
+        return { text: `${link.label}: ${link.url}${accountNote ? `\n${note}` : ''}`, structured: { route: 'desktop', url: link.url, exact: link.exact, note, executionAccount: session.executionAccount || null, integrated: integrated && { ok: integrated.ok, placed: integrated.placed || 0, code: integrated.code || null } } };
       }
       const term = terminal || prefs.terminal;
       if (!installedTerminals().some((t) => t.id === term)) throw new Error(`${TERMINAL_LABELS[term] || term} が見つかりません。設定でターミナルを選んでください。`);
@@ -690,7 +690,7 @@ const TOOLS = [
           const link = newSessionLink(agent, { host, cwd, prompt: text });
           let integrated = null;
           await as.open(async () => { integrated = await openDesktopApp(link.url, { labelOf: a => accountLabel(`claude:${a}`, labels).replace(/@.*/, '') }); });
-          detail = { route: 'desktop', url: link.url, account: as.account, integrated: integrated && { ok: integrated.ok, placed: integrated.placed, reason: integrated.reason } };
+          detail = { route: 'desktop', url: link.url, account: as.account, integrated: integrated && { ok: integrated.ok, placed: integrated.placed || 0, code: integrated.code || null, reason: integrated.reason || null } };
         } else {
           const term = terminal || prefs.terminal;
           if (!installedTerminals().some((t) => t.id === term)) throw new Error(`${TERMINAL_LABELS[term] || term} が見つかりません。設定でターミナルを選んでください。`);

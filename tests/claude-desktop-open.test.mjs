@@ -41,3 +41,15 @@ test('no server, UI or extension code opens an app link outside the gateway', as
   }
   assert.deepEqual(offenders, []);
 });
+
+test('the note says whether accounts were merged, and why not while Desktop runs', async () => {
+  const { integratedNote } = await import('../server/claude-desktop-open.mjs');
+  assert.match(integratedNote({ ok: true, opened: true, placed: 3 }), /3 件/);
+  assert.match(integratedNote({ ok: false, opened: true, code: 'desktop_running' }), /起動中.*⌘Q/);
+  assert.equal(integratedNote({ ok: false, opened: true, placed: 0 }), null);
+});
+
+test('apps opened by Canban do not inherit Canban settings', async () => {
+  const { appEnv } = await import('../server/launcher.mjs');
+  assert.deepEqual(appEnv({ PATH: '/bin', CANBAN_CLIENT: 'canban-chrome', CANBAN_DATA_DIR: '/x', HOME: '/h' }), { PATH: '/bin', HOME: '/h' });
+});

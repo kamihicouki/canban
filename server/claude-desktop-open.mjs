@@ -53,6 +53,7 @@ export async function openDesktopApp(url, options = {}) {
 // The line shown after an open, so the user can tell whether accounts were merged.
 export function integratedNote(result) {
   if (result?.placed) return `全アカウントの会話をまとめて Desktop で開きました（ほかのアカウントの会話 ${result.placed} 件に 🔗 を付けています）。Desktop を ⌘Q で終了すると、それぞれのアカウントへ戻します。`;
+  if (result?.opened && result.code === 'desktop_running') return 'Desktop が起動中のため、ほかのアカウントの会話はまとめていません。Desktop を ⌘Q で終了してから Canban で開き直すと、全アカウントの会話をサイドバーにまとめます。';
   if (result?.opened && result.reason) return `全アカウントの会話はまとめていません（${result.reason}）。`;
   return null;
 }
