@@ -12,6 +12,7 @@ const taskQuickAdd = {
       catch (error) { toast(error.message, true); return; }
     }
     closePopover();
+    this.loadTargets();
     if (source.mode || source.listId || source.lane || source.slackMessage) this.mode = source.mode || 'task';
     const soloLane = state.lanes.find(l => l.key === state.soloLane);
     if (source.slackMessage) {
@@ -109,9 +110,23 @@ const taskQuickAdd = {
     if (focusSelector) dialog.querySelector(focusSelector)?.focus();
     else if (edit) form.querySelector('select')?.focus(); else this.title.focus();
   },
+  // The desktop apps' own lists (Claude の環境 / Codex のプロジェクト・クラウド環境), read fresh per open.
+  async loadTargets() {
+    const pending = this.targetsPending = bridge.callTool('canban_launch_targets', {}).catch(() => null);
+    const targets = await pending;
+    if (pending !== this.targetsPending) return;
+    this.targets = targets || { claude: { environments: [] }, codex: { projects: [], cloudEnvironments: [] }, failed: true };
+    if (this.dialog?.open && this.mode === 'session' && !this.draft?.editCardId && !this.sessionDraft?.startRequest && !this.sessionDraft?.submitting) {
+      const active = document.activeElement, prompt = active?.classList.contains('session-prompt');
+      const at = prompt ? [active.selectionStart, active.selectionEnd] : null;
+      this.mount(prompt ? '.session-prompt' : active?.getAttribute('aria-label') ? `[aria-label="${active.getAttribute('aria-label')}"]` : null);
+      if (at) this.form.querySelector('.session-prompt')?.setSelectionRange(...at);
+    }
+  },
   sessionActionLabel() {
     const draft = this.sessionDraft;
     if (draft.startRequest) return '開始結果を確認';
+    if (sessionRunsInCloud(draft)) return 'クラウドで開始';
     if (draft.route === 'terminal') return `${draft.agent === 'codex' ? 'Codex' : 'Claude Code'}を開始`;
     return `${draft.agent === 'codex' ? 'Codex' : 'Claude'}を開く`;
   },
@@ -125,6 +140,8 @@ const taskQuickAdd = {
           onchange: () => { draft.agent = agent; draft.route = route; if (!draft.account?.startsWith(`${agent}:`)) draft.account = null; this.mount('input[name="session-destination"]:checked'); } });
         return h('label', { class: 'session-choice' }, radio, h('span', {}, h('strong', { text: label }), h('span', { text: detail })));
       })));
+    const targets = this.targets;
+    applySessionTargetDefaults(draft, targets);
     const cwd = h('input', { class: 'text-input session-cwd', list: 'quick-start-folders', autocomplete: 'off', placeholder: '/Users/…/project',
       'aria-label': '作業フォルダ', value: draft.cwd, oninput: e => { draft.cwd = e.target.value; } });
     const folders = h('datalist', { id: 'quick-start-folders' }, (board.folders || []).filter(f => f.hostId === draft.hostId).map(f => h('option', { value: f.cwd, text: f.project || f.cwd })));
@@ -137,16 +154,40 @@ const taskQuickAdd = {
       el.value = value;
       return field(label, el);
     };
+    const hostLabel = id => id === 'local' ? 'このマシン' : board.hosts.find(x => x.id === id)?.label || id.replace(/^remote-ssh-discovered:/, '');
+    // Desktop routes start where the app would: Claude の「環境」, Codex の「プロジェクト」と「実行場所」.
+    const desktop = draft.route === 'desktop', loading = desktop && !targets;
+    const place = [];
+    if (desktop && draft.agent === 'claude') {
+      place.push(select('環境', loading ? '__loading' : draft.environmentId, [...(loading ? [['__loading', '読み込み中…']] : []),
+        ...(targets?.claude.environments || []).map(e => [e.id, `${e.name}${e.kind === 'ssh' ? ` · ${e.sshLabel}` : ''}`]), ['__folder', 'フォルダを指定']],
+        value => { draft.environmentId = value; this.mount('select[aria-label="環境"]'); }));
+    }
+    if (desktop && draft.agent === 'codex') {
+      place.push(h('div', { class: 'creation-environment session-codex-place' },
+        select('プロジェクト', loading ? '__loading' : draft.projectId, [...(loading ? [['__loading', '読み込み中…']] : []),
+          ...(targets?.codex.projects || []).map(p => [p.id, p.hostId === 'local' ? p.name : `${p.name} · ${hostLabel(p.hostId)}`]), ['__none', 'プロジェクトなしで作業'], ['__folder', 'フォルダを指定']],
+          value => { draft.projectId = value; draft.cloudEnvironment = null; applySessionTargetDefaults(draft, targets); this.mount('select[aria-label="プロジェクト"]'); }),
+        select('実行場所', draft.runOn, [['local', 'このコンピューター'], ['cloud', 'クラウド']], value => { draft.runOn = value; applySessionTargetDefaults(draft, targets); this.mount('select[aria-label="実行場所"]'); })));
+      if (draft.runOn === 'cloud') place.push(select('クラウドの環境', draft.cloudEnvironment || '', [...(draft.cloudEnvironment ? [] : [['', '環境を選んでください']]),
+        ...(targets?.codex.cloudEnvironments || []).map(e => [e.id, e.name])], value => { draft.cloudEnvironment = value || null; }));
+    }
+    const folder = sessionUsesFolder(draft);
     const environment = h('div', { class: 'creation-environment' },
-      select('マシン', draft.hostId, board.hosts.filter(host => !host.cloud).map(host => [host.local ? 'local' : host.id, host.local ? 'このマシン' : host.label]), value => { draft.hostId = value; draft.cwd = ''; if (value !== 'local') draft.account = null; this.mount('select[aria-label="マシン"]'); }),
+      folder ? select('マシン', draft.hostId, board.hosts.filter(host => !host.cloud).map(host => [host.local ? 'local' : host.id, host.local ? 'このマシン' : host.label]), value => { draft.hostId = value; draft.cwd = ''; if (value !== 'local') draft.account = null; this.mount('select[aria-label="マシン"]'); }) : null,
       select('アカウント', draft.account || '', [['', 'いまのログイン'], ...(draft.hostId === 'local' ? board.accounts?.accounts || [] : []).filter(a => a.key.startsWith(`${draft.agent}:`)).map(a => [a.key, accountName(a.key)])], value => { draft.account = value || null; }));
     if (draft.route === 'terminal') environment.append(
       select('ターミナル', draft.terminal, (board.terminals || []).map(t => [t.id, t.label]), value => { draft.terminal = value; this.mount('select[aria-label="ターミナル"]'); }),
       select('開く場所', draft.target, Object.entries(TARGET_LABELS).filter(([id]) => (board.terminals.find(t => t.id === draft.terminal)?.targets || ['new-window']).includes(id)), value => { draft.target = value; }));
-    const remoteCodex = draft.route === 'desktop' && draft.agent === 'codex' && draft.hostId !== 'local';
-    return h('div', { class: 'session-fields' }, destinations, field(`作業フォルダ${draft.route === 'desktop' ? '（任意）' : ''}`, cwd), folders,
-      field('依頼内容', prompt), h('p', { class: `creation-route-note${remoteCodex ? ' error' : ''}`, text: remoteCodex ? 'Codexの新規画面にはリモート接続先を渡せません。「Codex CLI」を選んでください。' : draft.route === 'desktop' ? '新規画面に依頼を渡します。送信はアプリで行ってください。' : '選んだフォルダでCLIを起動し、依頼を開始します。' }),
-      h('details', { class: 'creation-details', open: remoteCodex || draft.environmentOpen, ontoggle: e => { draft.environmentOpen = e.target.open; } }, h('summary', { text: `実行環境 · ${board.hosts.find(h => (h.local ? 'local' : h.id) === draft.hostId)?.label || draft.hostId} · ${draft.account ? accountName(draft.account) : 'いまのログイン'}` }), environment));
+    const remoteCodex = draft.route === 'desktop' && draft.agent === 'codex' && !sessionRunsInCloud(draft) && sessionHostId(draft, targets) !== 'local';
+    const cloud = sessionRunsInCloud(draft);
+    const note = remoteCodex ? 'Codexの新規画面にはリモート接続先を渡せません。「Codex CLI」を選ぶか、実行場所をクラウドにしてください。'
+      : cloud ? 'Codex Cloud にタスクを送信して開始します。新規画面は開きません。結果は Codex の「クラウド」で確認してください。'
+      : targets?.failed && desktop ? 'アプリの一覧を読み込めませんでした。フォルダを指定して開けます。'
+      : desktop ? '新規画面に依頼を渡します。送信はアプリで行ってください。' : '選んだフォルダでCLIを起動し、依頼を開始します。';
+    return h('div', { class: 'session-fields' }, destinations, ...place, folder ? field(`作業フォルダ${desktop ? '（任意）' : ''}`, cwd) : null, folder ? folders : null,
+      field('依頼内容', prompt), h('p', { class: `creation-route-note${remoteCodex ? ' error' : ''}`, text: note }),
+      h('details', { class: 'creation-details', open: remoteCodex || draft.environmentOpen, ontoggle: e => { draft.environmentOpen = e.target.open; } }, h('summary', { text: `実行環境 · ${cloud ? 'クラウド' : hostLabel(sessionHostId(draft, targets))} · ${draft.account ? accountName(draft.account) : 'いまのログイン'}` }), environment));
   },
   paintSessionState() {
     const draft = this.sessionDraft;
@@ -157,27 +198,32 @@ const taskQuickAdd = {
       if (text) el.readOnly = locked;
     });
     this.primary.disabled = !!draft.submitting || draft.startResult?.state === 'opened';
-    this.primary.querySelector('span').textContent = draft.startResult?.state === 'opened' ? '開きました' : this.sessionActionLabel();
+    this.primary.querySelector('span').textContent = draft.startResult?.state === 'opened' ? (draft.startResult.route === 'cloud' ? '送信しました' : '開きました') : this.sessionActionLabel();
     if (this.newRequestButton) this.newRequestButton.hidden = !locked;
   },
   showSessionFeedback(result, refreshError) {
     this.feedback.hidden = false;
     this.feedback.classList.toggle('error', result.state !== 'opened');
     this.feedback.textContent = [result.note || 'ターミナルを開きました。実行状況はターミナルで確認してください。',
-      result.state === 'opened' ? 'タスクカードは作成していません。セッションはアプリで作成された後にボードへ表示されます。' : '',
+      result.state === 'opened' ? `タスクカードは作成していません。${result.route === 'cloud' ? '' : 'セッションはアプリで作成された後にボードへ表示されます。'}` : '',
       refreshError ? '表示の更新に失敗しました。起動は繰り返していません。' : ''].filter(Boolean).join(' ');
   },
   async submitSession() {
     const draft = this.sessionDraft;
     if (draft.submitting || draft.startResult?.state === 'opened') return;
     if (!draft.prompt.trim()) return this.title.focus();
-    if (!draft.startRequest && ((draft.cwd && !draft.cwd.startsWith('/')) || (!draft.cwd.trim() && draft.route === 'terminal'))) {
+    if (!draft.startRequest && draft.route === 'desktop' && !this.targets) return;
+    if (!draft.startRequest && sessionRunsInCloud(draft) && !draft.cloudEnvironment) {
+      this.feedback.hidden = false; this.feedback.classList.add('error'); this.feedback.textContent = 'クラウドの環境を選んでください。';
+      return this.form.querySelector('select[aria-label="クラウドの環境"]')?.focus();
+    }
+    if (!draft.startRequest && sessionUsesFolder(draft) && ((draft.cwd && !draft.cwd.startsWith('/')) || (!draft.cwd.trim() && draft.route === 'terminal'))) {
       this.feedback.hidden = false; this.feedback.classList.add('error'); this.feedback.textContent = '作業フォルダを絶対パスで指定してください。';
       return this.form.querySelector('.session-cwd').focus();
     }
-    if (!draft.startRequest && draft.agent === 'codex' && draft.route === 'desktop' && draft.hostId !== 'local') return;
+    if (!draft.startRequest && draft.agent === 'codex' && draft.route === 'desktop' && !sessionRunsInCloud(draft) && sessionHostId(draft, this.targets) !== 'local') return;
     this.busy(true);
-    this.feedback.hidden = false; this.feedback.classList.remove('error'); this.feedback.textContent = 'アプリを開いています…';
+    this.feedback.hidden = false; this.feedback.classList.remove('error'); this.feedback.textContent = sessionRunsInCloud(draft) ? 'Codex Cloud に送信しています…' : 'アプリを開いています…';
     live.ownActAt = Date.now();
     try {
       const saved = await saveQuickSessionDraft(draft, { callTool: (name, args) => bridge.callTool(name, args), refresh: () => load({ throwOnError: true }), newRequestId: () => crypto.randomUUID() });
