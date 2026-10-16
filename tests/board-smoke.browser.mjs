@@ -50,8 +50,10 @@ await step('create task or direct session', async () => {
     if (document.querySelector('.task-title').value !== '作成UIの確認') throw new Error('task draft lost');
     document.querySelector('[data-create-mode="session"]').click();
     if (!document.querySelector('.session-prompt').value.includes('README')) throw new Error('session draft lost');
+    for (let i = 0; i < 40 && document.querySelector('.task-quick-actions .btn-primary').disabled; i++) await w(100);
+    if (document.querySelector('.task-quick-actions .btn-primary').disabled) throw new Error('desktop targets not ready');
     document.querySelector('.session-prompt').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
-    for (let i = 0; i < 40 && !document.querySelector('.session-new-request:not([hidden])'); i++) await w(100);
+    for (let i = 0; i < 40 && !document.querySelector('.task-quick-feedback').textContent.includes('新規画面'); i++) await w(100);
     if (!document.querySelector('.task-quick-feedback').textContent.includes('新規画面')) throw new Error('desktop opening result missing: ' + document.querySelector('.task-quick-feedback').textContent);
     if (await tasks() !== before) throw new Error('direct start created a task');
     document.querySelector('.task-quick-head button').click();
