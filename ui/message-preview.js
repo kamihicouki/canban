@@ -69,8 +69,8 @@ const choiceModel = (() => {
     // A plain yes / no question at the very end.
     const last = String(text || '').trim().split('\n').filter((l) => l.trim()).at(-1) || '';
     if (YES_NO.test(last) && !OPEN.test(last)) {
-      return [{ key: '1', title: 'はい、進めてください', recommended: false, reply: 'はい、進めてください。' },
-        { key: '2', title: 'いいえ、やめてください', recommended: false, reply: 'いいえ、やめてください。' }];
+      return [{ key: '1', title: 'はい', recommended: false, reply: 'はい。' },
+        { key: '2', title: 'いいえ', recommended: false, reply: 'いいえ。' }];
     }
     return [];
   }

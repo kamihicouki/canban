@@ -27,7 +27,7 @@ test('numbered options count only when a question follows; steps and summaries d
 });
 
 test('a closing yes / no question offers yes and no; open questions offer nothing', () => {
-  assert.deepEqual(plain(choiceModel.parse('設定は確認しました。\nこのまま本番に反映してよいですか？')).map((c) => c.title), ['はい、進めてください', 'いいえ、やめてください']);
+  assert.deepEqual(plain(choiceModel.parse('設定は確認しました。\nこのまま本番に反映してよいですか？')).map((c) => c.title), ['はい', 'いいえ']);
   assert.deepEqual(plain(choiceModel.parse('どちらの環境に反映してよいですか？')), []);
   assert.deepEqual(plain(choiceModel.parse('今どこまで進んでいるか教えてください。')), []);
 });
@@ -65,4 +65,14 @@ test('changing an answer keeps the text typed before the first selection', () =>
   fill(pane, { reply: 'Aでお願いします。' });
   fill(pane, { reply: 'Bでお願いします。' });
   assert.equal(input.value, 'Bでお願いします。');
+});
+
+
+test('yes/no answers do not add an action that reverses a negative question', () => {
+  for (const question of ['今回は公開を見送ってよいですか？', 'このまま本番に反映してよいですか？', '作業を中止してよいですか？']) {
+    const choices = plain(choiceModel.parse(question));
+    assert.deepEqual(choices.map(c => c.reply), ['はい。', 'いいえ。'], question);
+    assert.deepEqual(choices.map(c => c.key), ['1', '2']);
+    assert.deepEqual(choices.map(c => c.title), ['はい', 'いいえ']);
+  }
 });
