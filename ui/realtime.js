@@ -38,8 +38,9 @@ function renderFeed(d, p) {
   list.append(editSummary(f).el);
   for (const it of d.feed.items) feedPush(f, it);
   f.edits?.paint();
-  const lastSaid = [...d.feed.items].reverse().find((it) => it.k === 'assistant');
-  p.lastText = lastSaid ? lastSaid.text : d.session.preview || '';
+  // A user message consumes the earlier question; tool/turn records do not.
+  const lastSaid = [...d.feed.items].reverse().find((it) => it.k === 'assistant' || it.k === 'user');
+  p.lastText = lastSaid?.k === 'assistant' ? lastSaid.text : '';
   if (!d.feed.items.length) list.append(h('div', { class: 'muted', text: 'まだやりとりはありません' }));
   live.feeds.set(f.cardId, f);
   paintFeedFoot(f);
@@ -85,6 +86,7 @@ function applyFeed(f, feed) {
       continue;
     }
     if (it.k === 'assistant') f.pane.lastText = it.text;
+    else if (it.k === 'user') f.pane.lastText = '';
     if (feedPush(f, it)) added++;
   }
   // Keep the DOM bounded on long runs.

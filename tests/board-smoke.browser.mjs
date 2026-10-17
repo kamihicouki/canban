@@ -173,6 +173,8 @@ await step('row', () => document.querySelector('.irow[data-card-id="codex:t1"]')
 await step('conversation labels and draft', async () => {
   const pane = document.querySelector('.pane[data-kind="session"]');
   if (!pane) throw new Error('selected session did not open');
+  // Card content is fetched asynchronously; wait for the message, not a fixed click delay.
+  for (let i = 0; i < 100 && !pane.querySelector('.fi-user .fi-content .raw'); i++) await w(100);
   const original = pane.querySelector('.fi-user .fi-content .raw');
   if (original?.textContent !== 'ログインを直して') throw new Error('original prompt changed: ' + JSON.stringify(original?.textContent));
   const stamp = pane.querySelector('.fi-user time');

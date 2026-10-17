@@ -206,7 +206,6 @@ function commandPalette() {
           { label: 'カードのターミナルを開閉', run: () => toggleThreadSide(sessionPane, 'terminal'), hint: 't' },
           ...(cardTerms.get(sessionPane.id)?.closed ? [{ label: 'ターミナルを開き直す', run: () => restartTerminal(sessionPane), hint: 'Shift+R' }] : cardTerms.get(sessionPane.id)?.id ? [{ label: 'ターミナルのシェルを終了', run: () => endTerminal(sessionPane), hint: 'Shift+X' }] : []),
         ] : []),
-        ...(sessionPane.choices || []).map((c, i) => ({ label: `答える: ${c.key} ${c.title}`, run: () => fillChoice(sessionPane, c), hint: i < 9 ? `Alt+${i + 1}` : '' })),
         { label: sessionPane.d?.card.archived ? 'セッションカードをアーカイブから戻す' : 'セッションをアーカイブ', run: () => paneKeyButton(sessionPane, 'z')?.click(), hint: 'z' },
         ...(sessionPane.d?.launch?.claudeAccounts?.length ? [{ label: 'Claude の実行アカウントを選ぶ', run: () => claudeAccountPicker(sessionPane)?.click(), hint: 'Alt+a' }] : []),
         { label: 'セッションと会話履歴を削除…', run: () => confirmSessionCardDelete(sessionPane), hint: 'Delete' },
@@ -230,6 +229,7 @@ function commandPalette() {
   const items = [];
   const add = (group, badge, label, fn, extra = {}) => { const value = `${items.length}`; run.set(value, fn); items.push({ value, label, group, badge, ...extra }); };
   actions.forEach((a) => add('操作', '操作', a.label, a.run, { hint: a.hint }));
+  const answerAt = items.length;
   (b.settings.views || []).forEach((v, i) => add('ビュー', 'ビュー', v.name, () => applyView(v), { hint: i < 9 ? i + 1 : '' }));
   state.lanes.forEach((l) => add('レーン', 'レーン', l.name, () => jumpToLane(l.key), { hint: l.count, color: l.color }));
   b.directories.forEach((d) => add(`${T.category}`, '📂', d.name, () => setScope({ directory: d.id }), { hint: d.count, color: d.color }));
@@ -240,10 +240,19 @@ function commandPalette() {
       openCard(c.id);
     }, { dot: c.status !== 'idle' ? c.status : null, hint: c.directory?.name || c.project || '', keywords: `${c.branch || ''} ${c.agent || ''}` });
   }
+  const currentItems = () => {
+    const answers = (sessionPane?.choices || []).map((choice, i) => ({ value: `answer:${i}`, label: `答える: ${choice.key} ${choice.title}`, group: '操作', badge: '操作', hint: i < 9 ? `Alt+${i + 1}` : '', choice }));
+    return [...items.slice(0, answerAt), ...answers, ...items.slice(answerAt)];
+  };
   const p = picker($('#q'), {
-    title: 'コマンド', items, width: 560, placeholder: `カード・ビュー・${T.category}・操作を検索…`, limit: 200,
-    onPick: (v) => run.get(v)?.(),
+    title: 'コマンド', items: currentItems, width: 560, placeholder: `カード・ビュー・${T.category}・操作を検索…`, limit: 200,
+    onPick: (v, item) => {
+      if (item.choice) {
+        if (sessionPane?.choices?.some(c => c.key === item.choice.key && c.title === item.choice.title && c.reply === item.choice.reply)) fillChoice(sessionPane, item.choice);
+      } else run.get(v)?.();
+    },
   });
+  p.refreshChoices = p.refreshItems;
   p.classList.add('palette');
 }
 document.addEventListener('keydown', (e) => {
