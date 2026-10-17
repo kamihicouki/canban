@@ -20,7 +20,7 @@ const rpc = (method, params) => new Promise(resolve => {
 });
 const call = async (name, args = {}) => (await rpc('tools/call', { name, arguments: args })).result;
 before(async () => {
-  child = spawn(process.execPath, ['server/index.mjs'], { cwd: root, stdio: ['pipe', 'pipe', 'inherit'], env: {
+  child = spawn(process.execPath, ['tests/fixtures/direct-session-server.mjs'], { cwd: root, stdio: ['pipe', 'pipe', 'inherit'], env: {
     ...process.env, HOME: dataDir, CANBAN_DATA_DIR: dataDir, CANBAN_CODEX_HOME: fx.codexHome,
     CANBAN_CLAUDE_HOME: fx.claudeHome, CANBAN_CLAUDE_DESKTOP_DIR: fx.desktopDir,
     CANBAN_LAUNCH_DRYRUN: '1', CANBAN_SSH: path.join(dataDir,'ssh-must-not-run'), CANBAN_SEARCH_INDEX: '0', CANBAN_BACKGROUND: '0',
@@ -132,8 +132,7 @@ test('a terminal start never runs the agent when changing to the requested folde
 
 // Receipt and dry-run are confined to this disposable fixture data root.
 test('verified remote capability opens an existing Codex thread without a terminal fallback', async () => {
-  const { desktopBuilds } = await import('../server/desktop-capabilities.mjs');
-  fs.writeFileSync(path.join(dataDir,'desktop-capabilities.json'), JSON.stringify({version:1,builds:await desktopBuilds(),codexRemote:{verified:true,modelTurns:0,draftVerified:true}}),{mode:0o600});
+  fs.writeFileSync(path.join(dataDir,'desktop-capabilities.json'), JSON.stringify({version:1,builds:{codex:'1:2:3:4'},codexRemote:{verified:true,modelTurns:0,draftVerified:true}}),{mode:0o600});
   const file=path.join(fx.codexHome,'.codex-global-state.json'), state=JSON.parse(fs.readFileSync(file,'utf8'));
   state['codex-managed-remote-connections']=[{hostId:'remote-ssh-discovered:box',alias:'box'}];
   fs.writeFileSync(file,JSON.stringify(state));
