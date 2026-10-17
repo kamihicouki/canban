@@ -25,6 +25,8 @@ export async function resolveSshTarget(input, { readConfig = file => fs.readFile
   if (explicitUser) values.user = explicitUser;
   if (input.port != null || input.sshPort != null) values.port = String(input.port ?? input.sshPort);
   const stack = new Set(); let count = 0, matched = true;
+  // User config Includes are always based at ~/.ssh, including nested files.
+  const includeBase = path.dirname(path.resolve(configFile));
   async function read(file) {
     file = path.resolve(file);
     if (stack.has(file) || ++count > 32) throw new Error('SSH Include が循環しています');
@@ -43,7 +45,7 @@ export async function resolveSshTarget(input, { readConfig = file => fs.readFile
         for (let include of words) {
           if (/[%$*?`\\]/.test(include)) throw new Error('SSH Include を確定できません');
           if (include.startsWith('~/')) include = path.join(os.homedir(),include.slice(2));
-          await read(path.isAbsolute(include) ? include : path.join(path.dirname(file),include));
+          await read(path.isAbsolute(include) ? include : path.join(includeBase,include));
         }
       } else if (matched && ['hostname','user','port'].includes(key)) {
         if (words.length !== 1 || /[%$`\\]/.test(words[0])) throw new Error('SSH 設定の値を確定できません');

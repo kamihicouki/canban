@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { withDesktopMutationLock } from './claude-desktop-lock.mjs';
 import { desktopAccountPaths, desktopError, inspectProfileDirectory, optionalStat, readDesktopIdentity, readDesktopJson, readDesktopRegistry, readDesktopProfileRoots, validDesktopAccount } from './claude-desktop-roots.mjs';
 import { moveProfileDirectory, recoverDesktopProfiles, switchDesktopProfiles, writeDesktopRecord } from './claude-desktop-journal.mjs';
+import { seedDesktopAccountHistory } from './claude-desktop-seed.mjs';
 
 async function ensureState(paths) {
   for (const dir of [path.dirname(paths.state), paths.state, paths.profiles]) {
@@ -55,7 +56,7 @@ export function createDesktopAccounts({ dataDir, appDir, identity = readDesktopI
           if (await identity(paths.appDir) !== pending.expectedAccount) return waitingLogin(pending);
           const profile = { id: pending.id, account: pending.expectedAccount, active: true, dir: paths.appDir };
           await lease.assertHeld();
-          await writeDesktopRecord(paths, 'registry.json', { version: 1, profiles: [...registry.profiles, profile] });
+          await writeDesktopRecord(paths, 'registry.json', { version: 1, profiles: [...registry.profiles, profile], candidates: registry.candidates || [] });
           return { state: 'prepared', account: profile.account, profileId: profile.id };
         }
         if (input.type === 'cancel' && !pending?.active) return { state: 'cancelled', account: pending?.expectedAccount || null };
@@ -82,15 +83,15 @@ export function createDesktopAccounts({ dataDir, appDir, identity = readDesktopI
         if (!/^[A-Za-z0-9_-]{1,128}$/.test(input.requestId || '')) throw desktopError('Desktop の要求IDが不正です');
         const current = registry.profiles.find(p => p.active);
         if (!current || await identity(paths.appDir) !== current.account) throw desktopError('現在の Desktop を登録してから接続してください');
-        pending = { id: pending?.id || randomUUID(), expectedAccount: input.account, previousId: current.id, requestId: input.requestId, active: false, initialized: pending?.initialized === true };
-        registry = { ...registry, pending };
+        const candidates = [...(registry.candidates || [])];
+        if (pending && pending.expectedAccount !== input.account) candidates.push(pending);
+        const candidate = pending?.expectedAccount === input.account ? pending : candidates.find(p => p.expectedAccount === input.account);
+        pending = { id: candidate?.id || randomUUID(), expectedAccount: input.account, previousId: current.id, requestId: input.requestId, active: false, initialized: candidate?.initialized === true };
+        registry = { ...registry, candidates: candidates.filter(p => p.id !== pending.id), pending };
         await lease.assertHeld(); await writeDesktopRecord(paths, 'registry.json', registry);
         const dir = path.join(paths.profiles, pending.id);
         if (!pending.initialized) {
-          if (await optionalStat(dir)) {
-            await inspectProfileDirectory(dir, { device: paths.device });
-            if ((await fs.readdir(dir)).length) throw desktopError('初回接続の保存先に想定外のファイルがあります');
-          } else await fs.mkdir(dir, { mode: 0o700 });
+          await seedDesktopAccountHistory(paths, registry, pending, { lease, runtime: runtimeState });
           pending.initialized = true;
           await lease.assertHeld(); await writeDesktopRecord(paths, 'registry.json', registry);
         } else await inspectProfileDirectory(dir, { device: paths.device });

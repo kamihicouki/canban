@@ -365,21 +365,24 @@ function desktopAccountsSection() {
       const { result: view } = await bridge.callTool('canban_desktop_accounts', {});
       if (!view?.profiles) throw new Error('接続状態が不明です');
       const active = view.profiles.find(p => p.active);
-      status.textContent = `${active ? `${accountName(active.account)} を使用中。` : 'Desktop は未登録です。'} 認証の状態はアプリで確認してください。CLI のログインは独立して維持します。`;
+      status.textContent = `${view.pending?.active ? `${accountName(view.pending.account)} の初回接続待ちです。` : active ? `${accountName(active.account)} を使用中。` : 'Desktop は未登録です。'} 認証の状態はアプリで確認してください。CLI のログインは独立して維持します。`;
       const action = async (type, account) => {
         try {
           const response = await bridge.callTool('canban_desktop_account_command', { type, account, requestId: crypto.randomUUID() });
           status.textContent = response.result?.reason || '接続を確認しました';
-          if (['prepared','cancelled'].includes(response.result?.state)) await refresh();
+          if (['prepared','cancelled','waiting-for-login'].includes(response.result?.state)) await refresh();
         } catch { status.textContent = '状態を確認できません。ログイン情報は保持しています。'; }
       };
       if (!view.accountSwitch) { status.textContent += ` ${view.reason || '実機での保持確認が必要です。'}`; return; }
       const buttons = h('div', { class: 'row' });
-      if (view.pending) buttons.append(h('button', { type: 'button', class: 'btn', text: 'Desktop の接続を確認', onclick: () => action('finish-login', view.pending.account) }), h('button', { type: 'button', class: 'btn', text: '初回接続を取り消す', onclick: () => action('cancel', view.pending.account) }));
+      if (view.pending?.active) buttons.append(h('button', { type: 'button', class: 'btn', text: 'Desktop の接続を確認', onclick: () => action('finish-login', view.pending.account) }), h('button', { type: 'button', class: 'btn', text: '初回接続を取り消す', onclick: () => action('cancel', view.pending.account) }));
       else {
-        const choices = (state.board.accounts.accounts || []).filter(a => a.agent === 'claude');
-        const select = h('select', { class: 'text-input', 'aria-label': 'Desktop に接続するアカウント' }, choices.map(a => h('option', { value: a.key, text: accountName(a.key) })));
-        buttons.append(select, h('button', { type: 'button', class: 'btn', text: active ? '別の Desktop を初回接続' : '現在の Desktop を登録', onclick: () => action(active ? 'begin-login' : 'enroll-current', select.value) }));
+        if (view.pending) buttons.append(h('button', { type: 'button', class: 'btn acct-desktop-resume', text: `${accountName(view.pending.account)} の初回接続を再開`, onclick: () => action('begin-login', view.pending.account) }));
+        const choices = (state.board.accounts.accounts || []).filter(a => a.agent === 'claude' && a.key !== view.pending?.account && (!active || !view.profiles.some(p => p.account === a.key)));
+        if (choices.length) {
+          const select = h('select', { class: 'text-input', 'aria-label': 'Desktop に接続するアカウント' }, choices.map(a => h('option', { value: a.key, text: accountName(a.key) })));
+          buttons.append(select, h('button', { type: 'button', class: 'btn', text: active ? '別の Desktop を初回接続' : '現在の Desktop を登録', onclick: () => action(active ? 'begin-login' : 'enroll-current', select.value) }));
+        }
       }
       section.querySelector('.acct-desktop-actions')?.remove(); buttons.classList.add('acct-desktop-actions'); section.append(buttons);
     } catch { status.textContent = 'Desktop の状態を確認できません。ログイン情報は保持しています。'; }

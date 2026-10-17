@@ -359,5 +359,33 @@ test('the board, the ribbon, the time axis and the card layers run without page 
       const shot=await cdp('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(dir,`${view}-${theme}-images.png`),Buffer.from(shot.result.data,'base64'));
     }
   }
+  if (process.env.CANBAN_DESKTOP_ACCOUNT_SHOTS) {
+    const dir = path.resolve(process.env.CANBAN_DESKTOP_ACCOUNT_SHOTS); fs.mkdirSync(dir, { recursive: true });
+    const fixture = await cdp('Runtime.evaluate', { expression: `{
+      const original = window.openai.callTool;
+      window.openai.callTool = (name,args) => name === 'canban_desktop_accounts'
+        ? Promise.resolve({result:{accountSwitch:true,profiles:[{account:'claude:account-a',active:true}],pending:{account:'claude:account-b',active:false}}})
+        : original(name,args);
+    }` });
+    assert.equal(fixture.result?.exceptionDetails, undefined);
+    for (const view of ['board','timeline']) for (const theme of ['light','dark']) {
+      const capture = await cdp('Runtime.evaluate', { expression: `(async()=>{
+        document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+        if(!!document.querySelector('.inbox') !== ${view === 'timeline'})document.dispatchEvent(new KeyboardEvent('keydown',{key:'i',bubbles:true}));
+        document.documentElement.dataset.theme=${JSON.stringify(theme)};
+        await new Promise(r=>setTimeout(r,300));
+        document.querySelector('#accountsBtn').click();
+        for(let i=0;i<40&&!document.querySelector('.acct-desktop-actions');i++)await new Promise(r=>setTimeout(r,100));
+        const resume=[...document.querySelectorAll('.acct-desktop-actions button')].find(b=>b.textContent.includes('初回接続を再開'));
+        if(!resume)throw new Error('cancelled Desktop connection cannot resume');
+        const rect=resume.getBoundingClientRect();if(rect.top<0||rect.bottom>innerHeight)throw new Error('Desktop reconnect action clipped');
+        const boundary=document.querySelector('.acct-desktop').getBoundingClientRect();
+        for(const control of document.querySelectorAll('.acct-desktop-actions button,.acct-desktop-actions select'))if(control.getBoundingClientRect().right>boundary.right+1)throw new Error('Desktop connection action overflows its section');
+      })()`, awaitPromise:true });
+      assert.equal(capture.result?.exceptionDetails, undefined, JSON.stringify(capture.result?.exceptionDetails));
+      const shot = await cdp('Page.captureScreenshot', { format:'png',captureBeyondViewport:false });
+      fs.writeFileSync(path.join(dir,`${view}-${theme}-accounts.png`),Buffer.from(shot.result.data,'base64'));
+    }
+  }
   ws.close();
 });

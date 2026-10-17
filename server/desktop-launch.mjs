@@ -46,7 +46,10 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, prepar
       let record = await read(f.record);
       if (record && record.fingerprint !== fingerprint) throw new Error('開始要求の内容を変更して再送できません');
       if (record && final.has(record.result.state)) return result(record);
-      if (record?.intent) { record.result = unknown(); await save(f.record, record); return result(record); }
+      if (record?.intent) {
+        record.result = record.intent === 'prepare-thread' && await read(f.cancel) ? { state: 'cancelled' } : unknown();
+        await save(f.record, record); return result(record);
+      }
       if (!record) record = { fingerprint, input: payload, permissions: {}, createdAt: now(), result: { state: 'prepared' } };
       if (uiAuthorized) {
         record.permissions.allowSwitch ||= allowDesktopSwitch === true;
@@ -67,9 +70,10 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, prepar
           record.intent = 'prepare-thread'; await save(f.record, record);
           try {
             record.thread = await prepareThread(payload, target);
-            if (record.thread?.state === 'uncertain' || record.thread?.state === 'failed') return set(record.thread);
-          } catch { return set(unknown()); }
+          } catch { record.thread = unknown(); }
           delete record.intent; await save(f.record, record);
+          if (await cancelled()) return set({ state: 'cancelled' });
+          if (record.thread?.state === 'uncertain' || record.thread?.state === 'failed') return set(record.thread);
         }
         if (await cancelled()) return set({ state: 'cancelled' });
         // Resolve again inside the account lease before issuing the external intent.
@@ -102,17 +106,17 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, prepar
   async function status(id) {
     const record = await read(files(id).record);
     if (!record) return null;
-    if (!final.has(record.result.state) && !record.intent && await read(files(id).cancel)) return { ...result(record), state: 'cancelled' };
+    if (!final.has(record.result.state) && record.intent !== 'open' && await read(files(id).cancel)) return { ...result(record), state: 'cancelled' };
     return result(record);
   }
   async function cancel(id, { uiAuthorized = false } = {}) {
     if (!uiAuthorized) throw new Error('この操作はボードUIから確認してください');
     const f = files(id), record = await read(f.record);
     if (!record) return null;
-    if (final.has(record.result.state) || record.intent) return result(record);
+    if (final.has(record.result.state) || record.intent === 'open') return result(record);
     await save(f.cancel, { at: now() });
     const current = await read(f.record);
-    if (current?.intent || final.has(current?.result?.state)) return result(current);
+    if (current?.intent === 'open' || final.has(current?.result?.state)) return result(current);
     return { ...result(record), state: 'cancelled', reason: '開始を取り消しました。CLI の処理と下書きは保持しています' };
   }
   async function recover() {

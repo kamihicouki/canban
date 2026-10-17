@@ -106,3 +106,25 @@ test('cancellation during the last target check prevents the subsequent open', a
   assert.equal((await a.cancel(input.clientRequestId,{uiAuthorized:true})).state,'cancelled');
   release();assert.equal((await pending).state,'cancelled');assert.equal(opens,0);
 });
+
+test('cancellation during thread preparation records its outcome and suppresses open', async t => {
+  for (const uncertain of [false, true]) {
+    let release, entered, opens = 0, prepares = 0;
+    const blocked = new Promise(r => { entered = r; });
+    const gate = new Promise(r => { release = r; });
+    const opts = await fixture(t, {
+      prepareThread: async () => { prepares++; entered(); await gate; if (uncertain) throw Error('response lost'); return { threadId: 'prepared-thread' }; },
+      open: async () => { opens++; return {}; },
+    });
+    const launches = createDesktopLaunches(opts), pending = launches.start(input);
+    await blocked;
+    const cancelled = await launches.cancel(input.clientRequestId, { uiAuthorized: true });
+    release();
+    assert.equal(cancelled.state, 'cancelled');
+    assert.equal((await pending).state, 'cancelled');
+    assert.equal((await createDesktopLaunches(opts).start(input)).state, 'cancelled');
+    assert.equal(opens, 0); assert.equal(prepares, 1);
+    const record = JSON.parse(await fs.readFile(path.join(opts.dataDir, 'desktop-launches', 'request-1.json')));
+    assert.equal(uncertain ? record.thread.state : record.thread.threadId, uncertain ? 'uncertain' : 'prepared-thread');
+  }
+});

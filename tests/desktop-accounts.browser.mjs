@@ -39,4 +39,32 @@ test('Desktop waiting and cancellation retain the composer draft with keyboard a
   assert.match(await page.locator('#feedback').textContent(), /状態を確認できません/);
   await page.evaluate(() => { ui.dialog={open:true}; ui.sessionDraft.startRequest={clientRequestId:'resuming'}; ui.showSessionFeedback({state:'waiting-for-quit'}); });
   await page.waitForFunction(() => ui.sessionDraft.startResult?.state === 'opened', null, {timeout:6000});
+
+  const accountsPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  await accountsPage.route('http://localhost/**', route => route.fulfill({contentType:'text/html',body:'<button id="accountsBtn">アカウント</button><main></main>'}));
+  await accountsPage.goto('http://localhost/accounts-fixture');
+  await accountsPage.addScriptTag({ content: `${helpers}
+    const $ = selector => document.querySelector(selector);
+    const state = {board:{accounts:{accounts:[{key:'claude:a',agent:'claude',label:'A'},{key:'claude:b',agent:'claude',label:'B'},{key:'claude:c',agent:'claude',label:'C'}]}}};
+    let pending = {account:'claude:b',active:true};
+    const bridge = {callTool:async(name,input)=>{
+      if(name==='canban_desktop_accounts')return {result:{accountSwitch:true,profiles:[{account:'claude:a',active:true}],pending}};
+      if(input.type==='cancel'){pending.active=false;return {result:{state:'cancelled'}};}
+      if(input.type==='begin-login'){pending={account:input.account,active:true};return {result:{state:'waiting-for-login'}};}
+      return {result:{state:'prepared'}};
+    }};
+    ${fs.readFileSync(new URL('../ui/accounts.js',import.meta.url),'utf8')}
+    document.querySelector('main').append(desktopAccountsSection());
+  ` });
+  await accountsPage.waitForFunction(() => document.querySelector('.acct-desktop [role="status"]') && !document.querySelector('.acct-desktop [role="status"]').textContent.includes('確認中'), null, {timeout:3000});
+  assert.equal(await accountsPage.getByRole('button', { name: '初回接続を取り消す', exact: true }).count(), 1, await accountsPage.locator('main').textContent());
+  await accountsPage.getByRole('button', { name: '初回接続を取り消す', exact: true }).click();
+  await accountsPage.waitForFunction(() => !document.querySelector('.acct-desktop-actions')?.textContent.includes('Desktop の接続を確認'), null, {timeout:3000});
+  const resume = accountsPage.getByRole('button', { name: /初回接続を再開/ });
+  assert.equal(await resume.count(), 1);
+  await resume.focus(); await accountsPage.keyboard.press('Enter');
+  await accountsPage.getByRole('button', { name: '初回接続を取り消す', exact: true }).click();
+  await accountsPage.getByLabel('Desktop に接続するアカウント').selectOption('claude:c');
+  await accountsPage.getByRole('button', { name: '別の Desktop を初回接続', exact: true }).click();
+  await accountsPage.waitForFunction(() => document.querySelector('.acct-desktop-actions')?.textContent.includes('Desktop の接続を確認'));
 });

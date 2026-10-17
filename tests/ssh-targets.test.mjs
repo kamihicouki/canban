@@ -31,6 +31,17 @@ test('static Includes honor first values and missing config is explicit', async 
   assert.deepEqual(result,{state:'resolved',hostname:'example',user:'First',port:22});
 });
 
+test('nested relative Includes stay relative to the user SSH directory', async () => {
+  const files = {
+    '/ssh/config': 'Include conf.d/entry',
+    '/ssh/conf.d/entry': 'Include targets',
+    '/ssh/targets': 'Host work\n HostName right.example\n User Alice',
+    '/ssh/conf.d/targets': 'Host work\n HostName wrong.example\n User Bob',
+  };
+  const result = await resolveSshTarget({ alias: 'work' }, { configFile: '/ssh/config', readConfig: async file => files[file] });
+  assert.deepEqual(result, { state: 'resolved', hostname: 'right.example', user: 'Alice', port: 22 });
+});
+
 test('environment IDs are scoped to the selected registered Desktop account', async t => {
   const fs = await import('node:fs/promises'), path = await import('node:path'), os = await import('node:os');
   const { claudeEnvironments } = await import('../server/sources/launch-targets.mjs');

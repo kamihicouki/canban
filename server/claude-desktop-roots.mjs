@@ -62,9 +62,15 @@ export function validateDesktopRegistry(paths, value) {
     if (p.dir !== expected) throw desktopError('Desktop の保存先が対応表と一致しません');
     ids.add(p.id); accounts.add(p.account); active += Number(p.active);
   }
+  const profileIds = new Set(ids), candidates = value.candidates || [];
+  if (!Array.isArray(candidates) || candidates.length + value.profiles.length + Number(!!value.pending) > 32) throw desktopError('Desktop の初回接続記録が多すぎます');
+  for (const p of candidates) {
+    if (!validId(p?.id) || ids.has(p.id) || !validDesktopAccount(p.expectedAccount) || accounts.has(p.expectedAccount) || !profileIds.has(p.previousId) || p.active !== false || !/^[A-Za-z0-9_-]{1,128}$/.test(p.requestId || '')) throw desktopError('Desktop の保存済み接続候補を確認できません');
+    ids.add(p.id); accounts.add(p.expectedAccount);
+  }
   if (value.pending != null) {
     const p = value.pending;
-    if (!validId(p.id) || ids.has(p.id) || !validDesktopAccount(p.expectedAccount) || !ids.has(p.previousId) || typeof p.active !== 'boolean' || !/^[A-Za-z0-9_-]{1,128}$/.test(p.requestId || '')) throw desktopError('Desktop の初回接続記録を確認できません');
+    if (!validId(p.id) || ids.has(p.id) || !validDesktopAccount(p.expectedAccount) || accounts.has(p.expectedAccount) || !profileIds.has(p.previousId) || typeof p.active !== 'boolean' || !/^[A-Za-z0-9_-]{1,128}$/.test(p.requestId || '')) throw desktopError('Desktop の初回接続記録を確認できません');
     active += Number(p.active);
   }
   if (active > 1) throw desktopError('有効な Desktop プロフィールを1つにしてください');

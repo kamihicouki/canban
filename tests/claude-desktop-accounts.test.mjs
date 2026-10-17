@@ -135,6 +135,65 @@ test('cancelling initial Desktop login restores A and retains the unconnected pr
   assert.equal(f.opened.at(-1).purpose, 'restore');
 });
 
+test('first connection carries the selected account history out of a mixed Desktop tree', async t => {
+  const f = await onboarding(t);
+  const sessions = path.join(f.appDir, 'claude-code-sessions');
+  const history = JSON.stringify({ sessionId: 'local_b', cliSessionId: 'b0000000-0000-4000-8000-000000000000', cwd: '/work/b', draft: 'B saved draft' });
+  for (const account of ['a', 'b']) await fs.mkdir(path.join(sessions, account, 'org'), { recursive: true });
+  await fs.writeFile(path.join(sessions, 'a', 'org', 'local_a.json'), 'A history');
+  await fs.writeFile(path.join(sessions, 'b', 'org', 'local_b.json'), history);
+  await f.service.command({ type: 'begin-login', account: 'claude:b', requestId: 'mixed-b' });
+  assert.equal(await fs.readFile(path.join(sessions, 'b', 'org', 'local_b.json'), 'utf8').catch(() => null), history);
+  await assert.rejects(fs.stat(path.join(sessions, 'a')), { code: 'ENOENT' });
+  await assert.rejects(fs.stat(path.join(f.appDir, 'config.json')), { code: 'ENOENT' });
+  await fs.writeFile(path.join(f.appDir, 'config.json'), JSON.stringify({ lastKnownAccountUuid: 'b' }));
+  await f.service.command({ type: 'finish-login', account: 'claude:b' });
+  await f.service.withAccount('claude:a', { requestId: 'mixed-back-a', allowSwitch: true }, () => {});
+  assert.equal(await fs.readFile(path.join(sessions, 'a', 'org', 'local_a.json'), 'utf8'), 'A history');
+  await f.service.withAccount('claude:b', { requestId: 'mixed-back-b', allowSwitch: true }, () => {});
+  assert.equal(await fs.readFile(path.join(sessions, 'b', 'org', 'local_b.json'), 'utf8'), history);
+});
+
+test('history seeding resumes a partial copy without overwriting an existing file', async t => {
+  const f = await onboarding(t), state = path.join(f.dataDir, 'desktop-accounts', 'claude');
+  const file = path.join(state, 'registry.json'), registry = JSON.parse(await fs.readFile(file));
+  const id = '10000000-0000-4000-8000-000000000000';
+  registry.pending = { id, expectedAccount: 'claude:b', previousId: registry.profiles[0].id, requestId: 'partial', active: false, initialized: false };
+  await fs.writeFile(file, JSON.stringify(registry));
+  for (const dir of [f.appDir, path.join(state, 'profiles', id)]) {
+    const folder = path.join(dir, 'claude-code-sessions', 'b', 'org');
+    await fs.mkdir(folder, { recursive: true });
+    await fs.writeFile(path.join(folder, 'local_one.json'), 'saved one');
+  }
+  await fs.writeFile(path.join(f.appDir, 'claude-code-sessions', 'b', 'org', 'local_two.json'), 'saved two');
+  await f.service.command({ type: 'begin-login', account: 'claude:b', requestId: 'resume-partial' });
+  assert.equal(await fs.readFile(path.join(f.appDir, 'claude-code-sessions', 'b', 'org', 'local_two.json'), 'utf8'), 'saved two');
+});
+
+test('history seeding refuses symlink trees before switching the active Desktop', async t => {
+  const f = await onboarding(t);
+  await fs.mkdir(path.join(f.appDir, 'claude-code-sessions'));
+  await fs.symlink(path.join(f.root, 'cli-b'), path.join(f.appDir, 'claude-code-sessions', 'b'));
+  await assert.rejects(f.service.command({ type: 'begin-login', account: 'claude:b', requestId: 'unsafe-history' }));
+  assert.equal((await f.service.view()).profiles.find(p => p.active).account, 'claude:a');
+  assert.equal(await fs.readFile(path.join(f.root, 'cli-b', 'auth'), 'utf8'), 'cli-b credential');
+});
+
+test('cancelled first connections resume their own candidate after choosing another account', async t => {
+  const f = await onboarding(t);
+  const b = await f.service.command({ type: 'begin-login', account: 'claude:b', requestId: 'candidate-b' });
+  await fs.writeFile(path.join(f.appDir, 'saved-draft'), 'B only');
+  await f.service.command({ type: 'cancel', requestId: 'cancel-candidate-b' });
+  const c = await f.service.command({ type: 'begin-login', account: 'claude:c', requestId: 'candidate-c' });
+  assert.notEqual(c.profileId, b.profileId);
+  assert.equal(await fs.readFile(path.join(f.appDir, 'saved-draft'), 'utf8').catch(() => null), null);
+  await fs.writeFile(path.join(f.appDir, 'saved-draft'), 'C only');
+  await f.service.command({ type: 'cancel', requestId: 'cancel-candidate-c' });
+  const again = await f.service.command({ type: 'begin-login', account: 'claude:b', requestId: 'resume-candidate-b' });
+  assert.equal(again.profileId, b.profileId);
+  assert.equal(await fs.readFile(path.join(f.appDir, 'saved-draft'), 'utf8'), 'B only');
+});
+
 test('a runtime status failure keeps login state and asks for a state recheck', async t => {
   const f = await onboarding(t, { runtime: async () => { throw Error('network unavailable'); } });
   const original = await fs.readFile(path.join(f.appDir, 'config.json'), 'utf8');
