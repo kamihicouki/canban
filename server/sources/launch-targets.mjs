@@ -8,6 +8,7 @@ import { exists, readJson } from './readonly.mjs';
 import { codexAppState } from './codex-app.mjs';
 import { codexHome } from './codex.mjs';
 import { storageScope } from '../source-model.mjs';
+import { readDesktopProfileRoots } from '../claude-desktop-roots.mjs';
 
 const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
 const SAFE_HOST = /^[A-Za-z0-9_.@-]{1,253}$/;
@@ -18,9 +19,18 @@ async function json(file) {
 }
 
 // appDir: Claude Desktop's data folder (~/Library/Application Support/Claude).
-export async function claudeEnvironments(appDir) {
+export async function claudeEnvironments(appDir, { expectedAccount, dataDir } = {}) {
+  if (expectedAccount && dataDir) {
+    const current = await json(path.join(appDir, 'config.json'));
+    if (`claude:${current?.lastKnownAccountUuid}` !== expectedAccount) {
+      const root = (await readDesktopProfileRoots({ dataDir, appDir })).find(p => p.account === expectedAccount);
+      if (!root) return { account: null, environments: [], reason: 'このアカウントの Desktop を初回接続してください' };
+      appDir = root.dir;
+    }
+  }
   const [config, presets, ssh] = await Promise.all(['config.json', 'ccd-session-presets.json', 'ssh_configs.json'].map((f) => json(path.join(appDir, f))));
   const account = str(config?.lastKnownAccountUuid);
+  if (expectedAccount && `claude:${account}` !== expectedAccount) return { account: account ? `claude:${account}` : null, environments: [], reason: '選択した Desktop アカウントの環境を読み直してください' };
   const list = account ? presets?.byAccount?.[account]?.presets : null;
   const sshHosts = new Map((Array.isArray(ssh?.configs) ? ssh.configs : []).map((c) => [str(c?.id), c]));
   const out = [];

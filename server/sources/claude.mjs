@@ -174,7 +174,8 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
     tokens: s.tokens || 0,
     desktopStatus: dm?.postTurnSummary?.status_category ?? dm?.statusCategory ?? null,
     // Claude desktop metadata is often not on disk: archived / title / status from it are then unknown.
-    desktopKnown: !!dm,
+    desktopKnown: !!dm && !dm._ambiguous,
+    desktopAmbiguous: dm?._ambiguous === true,
     desktopTitle: dm?.title ?? null,
     entrypoint: s.entrypoint || null,
     rawStatus: s.rawStatus ?? null,
@@ -228,6 +229,10 @@ async function loadDesktopMeta(dir = claudeDesktopSessionsDir()) {
       const owner = guest ? { owner: guest.account, org: guest.org } : folder;
       const prev = meta.get(j.cliSessionId);
       const groupConflict = !!prev && (prev._sourceScope !== sourceScope || prev._groupAccount !== folder.owner || prev._groupOrg !== folder.org) || !!prev?._groupConflict;
+      if (prev?._ambiguous || prev && prev._account !== owner.owner) {
+        meta.set(j.cliSessionId, { _ambiguous: true });
+        continue;
+      }
       const reach = [...new Set([...(prev?._reach || []), ...folder.reach, ...(guest ? [guest.account] : [])])];
       if (prev && Number(prev.lastActivityAt || 0) >= Number(j.lastActivityAt || 0)) {
         prev._reach = reach;

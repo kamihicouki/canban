@@ -227,7 +227,7 @@ test('desktop creation waits visibly for targets without losing the request', as
   let failTargets = false;
   const dialog = new vm.Script(fs.readFileSync(new URL('../ui/task-quick-add.js', import.meta.url), 'utf8') + '\n taskQuickAdd').runInNewContext({
     bridge: { callTool: name => { calls.push(name); return failTargets ? Promise.reject(new Error('取得失敗')) : pending; } },
-    sessionRunsInCloud: () => false,
+    sessionRunsInCloud: () => false, sessionHostId: () => 'local',
   });
   const label = { textContent: '' };
   dialog.sessionDraft = { agent: 'codex', route: 'desktop', prompt: '保持する未送信の依頼' };
@@ -259,4 +259,22 @@ test('desktop creation waits visibly for targets without losing the request', as
   dialog.paintSessionState();
   assert.equal(dialog.primary.disabled, false, 'a failed lookup keeps the existing manual-folder fallback');
   assert.equal(dialog.sessionDraft.prompt, '保持する未送信の依頼');
+});
+
+test('a waiting Desktop start keeps its original images and input when resumed', async () => {
+  const draft = { ...plain(model.sessionCreationDefaults({}, {})), prompt: '元の依頼', attachments: { imageIds: ['img-1'] } };
+  const seen = [];
+  const io = { newRequestId: () => 'waiting-id', refresh: async () => {}, callTool: async (name, args) => { seen.push(args); return { state: 'waiting-for-quit' }; } };
+  await model.saveQuickSessionDraft(draft, io);
+  draft.prompt = '次の入力'; draft.attachments.imageIds.push('img-2');
+  await model.saveQuickSessionDraft(draft, io);
+  assert.deepEqual(seen[1], seen[0]); assert.equal(draft.prompt, '次の入力');
+  assert.deepEqual(draft.attachments.imageIds, ['img-1','img-2']);
+});
+
+test('remote Desktop actions explain the unverified capability before a click', () => {
+  const dialog = new vm.Script(fs.readFileSync(new URL('../ui/task-quick-add.js',import.meta.url),'utf8')+'\n taskQuickAdd').runInNewContext({sessionRunsInCloud:()=>false,sessionHostId:()=> 'remote-ssh-discovered:box'});
+  const label={textContent:''};
+  Object.assign(dialog,{sessionDraft:{route:'desktop',agent:'codex'},targets:{desktopCapabilities:{codexRemote:false}},form:{querySelectorAll:()=>[]},primary:{disabled:false,querySelector:()=>label}});
+  dialog.paintSessionState();assert.equal(dialog.primary.disabled,true);assert.match(label.textContent,/実機確認/);
 });

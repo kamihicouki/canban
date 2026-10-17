@@ -7,13 +7,14 @@
 // is removed, so each account is separate again. Canban never quits Desktop itself
 // (Desktop vetoes an outside quit while a session runs); it waits for the user's ⌘Q.
 import fs from 'node:fs/promises';
+import { withDesktopMutationLock } from './claude-desktop-lock.mjs';
 import fsSync from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { claudeDesktopSessionsDir, defaultClaudeHome } from './accounts.mjs';
+import { claudeDesktopSessionsDir, defaultClaudeHome, desktopStorageDirectory } from './accounts.mjs';
 import { desktopConfigPath, readDesktopConfig, planGuestGroups, assignGuestGroups } from './claude-desktop-groups.mjs';
 
 // Values that belong to the account the session was created in.
@@ -28,6 +29,7 @@ export function guestPaths({ env = process.env } = {}) {
   const sessions = claudeDesktopSessionsDir();
   const state = env.CANBAN_DESKTOP_GUESTS_DIR || path.join(os.homedir(), '.canban', 'desktop-integrated');
   return {
+    dataDir: desktopStorageDirectory() || env.CANBAN_DATA_DIR || path.dirname(state),
     sessions,
     app: path.dirname(sessions),
     projects: path.join(defaultClaudeHome(), 'projects'),
@@ -102,6 +104,11 @@ export async function readLedger(paths = guestPaths()) {
 // The lock appears with its owner already written (link of a finished file), and a dead
 // owner's lock is taken over by rename, so a fresh lock is never removed by mistake.
 async function withLock(paths, fn) {
+  const dataDir = paths.dataDir || path.dirname(paths.state);
+  await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
+  return withDesktopMutationLock({ dataDir }, () => withGuestLock(paths, fn));
+}
+async function withGuestLock(paths, fn) {
   await fs.mkdir(paths.state, { recursive: true, mode: 0o700 });
   const lock = path.join(paths.state, 'lock');
   // A process killed while waiting leaves its "lock.<pid>.<uuid>" behind: remove those of dead pids.

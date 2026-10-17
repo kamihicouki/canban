@@ -1,5 +1,11 @@
 // Pure launch guard. Catalogs must be fetched afresh by the caller immediately before launch.
 import { sourceKey } from './source-model.mjs';
+export function launchEvidence(selection, requestId) {
+  return {
+    selection: { ...selection, requestId },
+    receipt: { version: 1, requestId, sessionId: null, status: 'unresolved', selectedRefs: selection.selectedRefs, appliedRefs: [], observedAt: null, reason: '元アプリの適用確認は未取得です' },
+  };
+}
 export async function prepareLaunchSelection(request, targets = {}) {
   const { agent, route = 'desktop', environmentId, projectId, sourceRef, cwd = '', runOn = 'local', cloudEnvironment } = request;
   const selectedRefs = [];

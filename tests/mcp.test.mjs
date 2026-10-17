@@ -351,3 +351,15 @@ test('unsupported native lifecycle never changes Claude history or Canban state'
   assert.deepEqual(after.card, detail.card);
   assert.deepEqual(fx.snapshot(), before);
 });
+
+test('Desktop status is read-only and cancellation requires the rendered UI capability', async () => {
+  const listed = (await rpc('tools/list')).result.tools;
+  assert.deepEqual(listed.find(t => t.name === 'canban_cancel_start_session')._meta.ui.visibility, ['app']);
+  assert.equal(listed.find(t => t.name === 'canban_get_start_session').annotations.readOnlyHint, true);
+  assert.equal((await call('canban_cancel_start_session', { clientRequestId: 'absent', uiToken: 'forged' })).isError, true);
+  assert.deepEqual(listed.find(t => t.name === 'canban_copy_prompt_images')._meta.ui.visibility, ['app']);
+  assert.equal((await call('canban_copy_prompt_images', { imageIds: [], uiToken: 'forged' })).isError, true);
+  assert.equal((await call('canban_read_prompt_image', { id: 'untrusted', uiToken: 'forged' })).isError, true);
+  assert.equal((await call('canban_start_session', { agent: 'claude', uiToken: 'forged', allowQuit: true })).isError, true);
+  assert.equal((await call('canban_get_start_session', { clientRequestId: 'absent' })).structuredContent.result, null);
+});

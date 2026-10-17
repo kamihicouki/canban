@@ -23,6 +23,7 @@ export async function listRemoteHosts({ home = codexHome() } = {}) {
       local: false,
       sshPort: Number.isInteger(c.sshPort) ? c.sshPort : null,
       sshArgs,
+      ...(c.hostname && c.hostname !== alias && SAFE_ALIAS.test(c.hostname) ? { hostname: c.hostname } : {}),
     });
   }
   return hosts;

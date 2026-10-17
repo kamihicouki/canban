@@ -115,6 +115,11 @@
 
 .acct-login-actions, .acct-pending .row { flex-wrap: wrap; }
 .acct-login-actions button { flex: 1 1 140px; }
+.acct-desktop-actions { flex-wrap: wrap; gap: 6px; }
+.acct-desktop-actions > * { min-width: 0; max-width: 100%; }
+.acct-desktop-actions .text-input { flex: 1 1 140px; }
+.acct-desktop-actions .btn { white-space: normal; overflow-wrap: anywhere; }
+.acct-desktop-actions .acct-desktop-resume { flex-basis: 100%; }
 
 /* Weekly usage and the elapsed-time target share the same 0–100% scale. */
 .acct-usage-grid.has-week { grid-template-columns: minmax(0, 1fr); gap: 8px; }
