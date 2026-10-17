@@ -97,3 +97,88 @@ test('Codex sections are read, and a move between sections is seen without an up
   assert.equal(codexListCounters.full, full, 'read as a delta, not a full reload');
   fs.rmSync(h, { recursive: true, force: true });
 });
+
+test('source metadata carries the actual app storage scope, assignment and all project roots', async () => {
+  const { sessionSourceView } = await import('../server/source-model.mjs');
+  const app = await codexAppState({ home });
+  const sessions = [{ id: 'codex:t1', nativeId: 't1', agent: 'codex', cwd: '/unrelated' }, { id: 'codex:tx', nativeId: 'tx', agent: 'codex', cwd: '/r/retro-web' }, { id: 'codex:other', nativeId: 'other', agent: 'codex', cwd: '/r/retro-web' }];
+  annotateCodexApp(sessions, app);
+  const source = sessionSourceView(sessions[0]);
+  assert.equal(source.attributes.codexProject.value.ref.scopeId, fs.realpathSync(home));
+  assert.equal(source.attributes.codexProject.value.ref.nativeId, 'local-a');
+  assert.deepEqual(sessions[0].sourceMetadata.codexProject.roots, ['/r/retro-web', '/r/retro-api']);
+  assert.equal(sessionSourceView(sessions[1]).attributes.codexProject.status, 'unavailable');
+  assert.equal(sessionSourceView(sessions[2]).attributes.codexProject.status, 'absent');
+  annotateCodexApp(sessions, parseAppState(base));
+  assert.equal(sessionSourceView(sessions[0]).attributes.codexProject.status, 'unknown', 'unscoped parser result is not a stable source');
+});
+
+test('a broken app snapshot keeps previous source facts explicitly stale', async () => {
+  const h = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-source-stale-'));
+  const file = path.join(h, '.codex-global-state.json');
+  try {
+    fs.writeFileSync(file, JSON.stringify(base));
+    const known = await codexAppState({ home: h });
+    fs.writeFileSync(file, '{ broken snapshot');
+    const stale = await codexAppState({ home: h });
+    assert.equal(stale.sourceObservation.status, 'stale');
+    assert.equal(stale.sourceObservation.observedAt, known.sourceObservation.observedAt);
+    const session = { agent: 'codex', nativeId: 't1' };
+    annotateCodexApp([session], stale);
+    assert.equal(session.sourceMetadata.codexProject.status, 'stale');
+  } finally { fs.rmSync(h, { recursive: true, force: true }); }
+});
+
+test('section observations identify the DB and do not borrow the app JSON observation time', () => {
+  const app = parseAppState(base, [], { scopeId: '/codex', status: 'known', observedAt: 9000 });
+  const s = { agent: 'codex', nativeId: 't1', codexSection: { id: 'sec', name: 'doing' } };
+  annotateCodexApp([s], app);
+  assert.equal(s.sourceMetadata.codexSection.source, 'codex-db');
+  assert.equal(s.sourceMetadata.codexSection.observedAt, null);
+});
+
+test('foreign storage and cloud threads cannot inherit local project facts', () => {
+  const app = parseAppState(base, [], { scopeId: '/default-codex', status: 'known', observedAt: 9000 });
+  const sessions = [
+    { agent: 'codex', nativeId: 't1', homeDir: '/other-codex' },
+    { agent: 'codex', nativeId: 'missing', homeDir: '/other-codex' },
+    { agent: 'codex', nativeId: 't1', sourceKind: 'codex-cloud' },
+    { agent: 'codex', nativeId: 'missing', sourceKind: 'codex-cloud' },
+    { agent: 'codex', nativeId: 't1', host: { local: false } },
+  ];
+  annotateCodexApp(sessions, app);
+  for (const session of sessions) {
+    assert.equal(session.sourceMetadata.codexProject.status, 'unknown');
+    assert.equal(session.sourceMetadata.codexProject.ref, undefined);
+  }
+});
+
+test('storage scope canonicalizes aliases without trimming native IDs', async () => {
+  const { storageScope, sourceKey } = await import('../server/source-model.mjs');
+  const h = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-storage-scope-'));
+  try {
+    fs.mkdirSync(path.join(h, 'real'));
+    fs.symlinkSync(path.join(h, 'real'), path.join(h, 'alias'));
+    const scope = storageScope(path.join(h, 'real'));
+    assert.equal(storageScope(path.join(h, 'alias') + '/'), scope);
+    assert.equal(storageScope('~/'), storageScope(os.homedir()));
+    const app = parseAppState(base, [], { scopeId: scope, status: 'known', observedAt: 9000 });
+    const s = { agent: 'codex', nativeId: 't1', homeDir: path.join(h, 'alias') + '/' };
+    annotateCodexApp([s], app);
+    assert.equal(s.sourceMetadata.codexProject.status, 'known');
+    assert.notEqual(sourceKey({ ...s.sourceMetadata.codexProject.ref, nativeId: ' p ' }), sourceKey({ ...s.sourceMetadata.codexProject.ref, nativeId: 'p' }));
+  } finally { fs.rmSync(h, { recursive: true, force: true }); }
+});
+
+test('app observations distinguish acquisition time from the file update time', async () => {
+  const h = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-acquired-time-'));
+  try {
+    const file = path.join(h, '.codex-global-state.json');
+    fs.writeFileSync(file, JSON.stringify(base));
+    fs.utimesSync(file, 1000, 1000);
+    const before = Date.now();
+    const app = await codexAppState({ home: h });
+    assert.ok(app.sourceObservation.observedAt >= before);
+    assert.equal(app.sourceObservation.sourceUpdatedAt, fs.statSync(file).mtimeMs);
+  } finally { fs.rmSync(h, { recursive: true, force: true }); }
+});

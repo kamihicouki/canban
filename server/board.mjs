@@ -1,5 +1,7 @@
 import { normalizeClaudeExecution } from './accounts.mjs';
 import { sessionActions } from './session-actions.mjs';
+import { capabilitiesFor, compactCapabilities } from './source-capabilities.mjs';
+import { sessionSourceView, compactSourceView } from './source-model.mjs';
 import { leaderFor } from './leader.mjs';
 // Combines read-only session listings (local + enabled remote hosts) with the
 // Canban store into a board snapshot.
@@ -400,6 +402,8 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       project: s.project,
       folder: s.folder,
       codexProject: s.codexProject || null,
+      sourceView: compactSourceView(sessionSourceView(s)),
+      capabilities: compactCapabilities(capabilitiesFor({ session: s })),
       directory: dirView(dir),
       cwd: s.cwd,
       branch: s.branch,
@@ -480,7 +484,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       account: context.account,
       codexSection: context.section ? { id: context.section, name: sections.get(context.section)?.name || context.section } : null,
       target: t.target || null,
-      links: links.map((x) => ({ id: x.id, agent: x.agent, account: x.account || null, title: x.title, status: x.status || 'idle', statusKnown: x.statusKnown !== false, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, updatedAt: x.updatedAt })),
+      links: links.map((x) => ({ id: x.id, sourceView: compactSourceView(sessionSourceView(x)), capabilities: compactCapabilities(capabilitiesFor({ session: x })), agent: x.agent, account: x.account || null, title: x.title, status: x.status || 'idle', statusKnown: x.statusKnown !== false, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, updatedAt: x.updatedAt })),
       linkedSessionIds: [...(t.links || [])],
       missingLinks: (t.links || []).length - allLinks.length,
       pending: (t.pending || []).map((p) => ({ agent: p.agent, startedAt: p.startedAt, expired: now - p.startedAt > PENDING_MS })),
@@ -667,7 +671,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   const claudeProfiles = await claudeResumeAccounts(s, labels);
   const claudeExecutionAccounts = groupClaudeResumeAccounts(claudeProfiles, accountsView(state.settings.accounts).accounts, s, card.claudeExecution);
   return {
-    session: { ...rest, actions: sessionActions(s), host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: s.account ? accountName(s.account, labels) : null },
+    session: { ...rest, sourceView: sessionSourceView(s), capabilities: capabilitiesFor({ session: s }), actions: sessionActions(s), host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: s.account ? accountName(s.account, labels) : null },
     card: {
       slackRefs: card.slackRefs || [],
       listId, labels: card.labels || [], note: card.note || '', priority: card.priority || null, due: card.due || null, archived: !!s.archived,
