@@ -34,7 +34,8 @@ import { accountActions, accountActionTools } from './account-actions.mjs';
 import { shutdownLogins } from './login.mjs';
 import { boardHtml } from './ui.mjs';
 import { taskContextSchema } from './task-context.mjs';
-import { sourceSelectionSchema } from './category-bindings.mjs';
+import { prepareLaunchSelection } from './launch-selection.mjs';
+import { sourceRefSchema, sourceSelectionSchema } from './category-bindings.mjs';
 import { uploadImage, promptImages, listSkills, withSkills, withImagePaths, remoteImages } from './prompt-input.mjs';
 import { resolveSession, inspect, timingProblem } from './dispatch.mjs';
 import { claudeExecutionSession, savedClaudeExecutionSession } from './claude-handoff.mjs';
@@ -692,7 +693,8 @@ const TOOLS = [
         terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
         target: { type: 'string', enum: ['new-window', 'new-tab', 'split', 'current'] },
         account: { type: ['string', 'null'], description: "開始するアカウント（canban_get_usage の key。例 'claude:<uuid>'）。省略・null はいまのログイン。Desktop は現在ログインしているアカウントでのみ開ける" },
-        environmentId: { type: 'string', maxLength: 128, description: 'Claude Desktop の環境（canban_launch_targets の claude.environments[].id）。その環境のフォルダ・SSH 接続で開く。hostId / cwd より優先' },
+        sourceRef: sourceRefSchema,
+        environmentId: { type: 'string', maxLength: 128, description: 'Claude環境のID。完全適用経路が未確認の場合は開始を拒否し、元アプリでの開始または明示folder指定を案内する' },
         projectId: { type: 'string', maxLength: 200, description: 'Codex のプロジェクト（canban_launch_targets の codex.projects[].id）。そのプロジェクトのマシン・フォルダで開く。hostId / cwd より優先' },
         runOn: { type: 'string', enum: ['local', 'cloud'], description: "Codex の実行場所。'cloud' は Codex Cloud にタスクを送信して開始する（新規画面は開かない）" },
         cloudEnvironment: { type: 'string', maxLength: 200, description: "runOn 'cloud' の環境（canban_launch_targets の codex.cloudEnvironments[].id）" },
@@ -701,7 +703,7 @@ const TOOLS = [
       additionalProperties: false,
     },
     _meta: appAndModel,
-    handler: async ({ taskId, agent, hostId = 'local', cwd = '', prompt, imageIds = [], skills = [], route, terminal, target, account = null, clientRequestId, environmentId, projectId, runOn = 'local', cloudEnvironment }) => {
+    handler: async ({ taskId, agent, hostId = 'local', cwd = '', prompt, imageIds = [], skills = [], route, terminal, target, account = null, clientRequestId, environmentId, projectId, sourceRef, runOn = 'local', cloudEnvironment }) => {
       const state = (await store.load());
       const task = state.cards[taskId];
       if (taskId !== undefined && task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
@@ -710,20 +712,9 @@ const TOOLS = [
       let codexProject = null;
       const cloud = agent === 'codex' && runOn === 'cloud';
       if (runOn === 'cloud' && agent !== 'codex') throw new Error('クラウドで開始できるのは Codex だけです');
-      if (environmentId) {
-        if (agent !== 'claude') throw new Error('環境を選べるのは Claude だけです');
-        const env = (await claudeEnvironments(guestPaths().app)).environments.find((e) => e.id === environmentId);
-        if (!env) throw new Error('Claude Desktop の環境が見つかりません。Desktop で環境を確認してください');
-        cwd = env.cwd;
-        hostId = 'local';
-        if (env.kind === 'ssh') {
-          // Desktop's own SSH connection; Canban reads it as a host only when Codex has the same alias.
-          const known = (await hostsWithState(state)).find((x) => x.alias === env.sshHost);
-          host = { id: known?.id || env.sshHost, alias: env.sshHost, label: known?.label || env.sshLabel, local: false, sshPort: env.sshPort ?? known?.sshPort ?? null };
-          hostId = host.id;
-          remoteEnabled = known ? known.enabled : true;
-        }
-      }
+      const selectionRequest = { agent, route: route || state.settings.launch.route, account, hostId, cwd, environmentId, projectId, sourceRef, runOn, cloudEnvironment };
+      const readTargets = async () => ({ codex: await codexLaunchTargets() });
+      const selection = await prepareLaunchSelection(selectionRequest, await readTargets());
       if (projectId) {
         if (agent !== 'codex') throw new Error('プロジェクトを選べるのは Codex だけです');
         codexProject = (await codexLaunchTargets()).projects.find((p) => p.id === projectId);
@@ -750,7 +741,12 @@ const TOOLS = [
         if (!rawPrompt.trim()) throw new Error('クラウドで開始するには依頼内容が必要です');
         if (imageIds.length) throw new Error('クラウドで開始するときは画像を添付できません');
       }
-      const detail = await launchOnce(store.dir, clientRequestId, { taskId: taskId || null, agent, hostId, cwd, prompt: rawPrompt, imageIds, skills, route: useRoute, terminal: terminal || prefs.terminal, target: target || prefs.target, account, environmentId: environmentId || null, projectId: projectId || null, cloudEnvironment: cloud ? cloudEnvironment : null }, async () => {
+      const detail = await launchOnce(store.dir, clientRequestId, { taskId: taskId || null, agent, hostId, cwd, prompt: rawPrompt, imageIds, skills, route: useRoute, terminal: terminal || prefs.terminal, target: target || prefs.target, account, sourceRef: sourceRef || null, environmentId: environmentId || null, projectId: projectId || null, cloudEnvironment: cloud ? cloudEnvironment : null }, async () => {
+        // Re-read source ownership immediately before side effects; names never identify a preset.
+        await prepareLaunchSelection({ ...selectionRequest, sourceRef: selection.selectedRefs[0] || sourceRef }, await readTargets());
+        const requestId = clientRequestId || randomBytes(16).toString('hex');
+        const receipt = { version: 1, requestId, sessionId: null, status: 'unresolved', selectedRefs: selection.selectedRefs, appliedRefs: [], observedAt: null, reason: '元アプリの適用確認は未取得です' };
+        if (taskId) await store.recordLaunch({ taskId, selection: { ...selection, requestId }, receipt });
         const skillPrompt = withSkills(rawPrompt, skills);
         const localImages = promptImages(store.dir, imageIds);
         const images = host.local === false ? await remoteImages(store.dir, localImages, host, pool) : localImages;
@@ -759,6 +755,8 @@ const TOOLS = [
         const labels = state.settings.accounts.labels;
         const as = await startAccount({ agent, account, host: cloud ? LOCAL_HOST : host, route: cloud ? 'terminal' : useRoute, labels });
         if (cloud) {
+          const active = await startAccount({ agent, account: null, host: LOCAL_HOST, route: 'desktop', labels });
+          if (account && active.account !== account) throw new Error('クラウド環境の所有アカウントを確認できません。現在のログインで環境を選び直してください');
           detail = await startCodexCloud({ environment: cloudEnvironment, prompt: skillPrompt, prefix: as.prefix, cwd: host.local !== false && cwd ? cwd : null });
         } else if (useRoute === 'desktop') {
           const link = newSessionLink(agent, { host, cwd, prompt: text, projectId: desktopProjectId });
@@ -776,7 +774,7 @@ const TOOLS = [
           await store.addPending({ taskId, pending: { agent, hostId: host.local === false ? host.id : 'local', cwd, prompt: text.slice(0, 200), startedAt: Date.now() } });
         }
         const note = cloud ? `Codex Cloud にタスクを送信しました。実行状況は Codex の「クラウド」で確認してください。${detail.url ? `（${detail.url}）` : ''}` : !remoteEnabled ? `${host.label} の読み取りがオフです。「マシン」でオンにするとセッションを表示できます。` : useRoute === 'desktop' ? ['新規画面を開きました。依頼の送信と実行状況はアプリで確認してください。', integratedNote({ ...detail.integrated, opened: true })].filter(Boolean).join('') : null;
-        return { ...detail, note };
+        return { ...detail, selection: { ...selection, requestId }, receipt, note };
       });
       return { text: detail.note || (detail.route === 'desktop' ? 'デスクトップの新規画面を開きました' : detail.route === 'cloud' ? 'Codex Cloud にタスクを送信しました' : 'ターミナルに開始を依頼しました'), structured: detail };
     },

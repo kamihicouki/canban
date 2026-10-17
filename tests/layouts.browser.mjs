@@ -42,6 +42,9 @@ for (const id of ['trello', 'classic', 'rail', 'omni', 'hud']) {
   check(Object.keys(initialUi).every(k => k === 'layout' || initialUi[k] === afterUi[k]), 'only layout preference changed: ' + id);
   check([...document.querySelectorAll('.card')].map(el => el.dataset.cardId).sort().join(',') === before, 'same card IDs: ' + id);
   if (id === 'hud') check(document.querySelector('.hud-tile'), 'HUD renders the running fixture');
+  key('p'); await w();
+  check([...document.querySelectorAll('.picker-row')].some(el => el.textContent.includes('Codexのプロジェクト: UI検証')), 'source picker uses observed source facets: ' + id);
+  key('Escape'); await w();
   const rect = document.querySelector('.stage').getBoundingClientRect();
   check(rect.width > 300 && rect.height > 300, 'board surface: ' + id);
   key('i'); await w();
@@ -81,6 +84,7 @@ return { errs };
 
 test('five selectable layouts retain board and timeline cards', { skip: !fs.existsSync(chromeBin) && 'no Chrome' }, async (t) => {
   const fx = makeLayoutFixtures();
+  fs.writeFileSync(path.join(fx.codexHome, '.codex-global-state.json'), JSON.stringify({ 'local-projects': { native: { name: 'UI検証', rootPaths: ['/r/web'] } }, 'thread-project-assignments': { t1: { projectId: 'native' } } }));
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-smoke-'));
   const port = 4700 + Math.floor(Math.random() * 200);
   const host = spawn(process.execPath, ['tests/dev-host.mjs', String(port)], { cwd: root, stdio: 'ignore',
@@ -116,12 +120,12 @@ test('five selectable layouts retain board and timeline cards', { skip: !fs.exis
   }
   await cdp('Runtime.evaluate', { expression: `document.querySelector('[data-look]').click()` });
   const shot = await cdp('Page.captureScreenshot', { format: 'png' });
-  fs.mkdirSync(path.join(root, 'docs/design/layout-restoration'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'docs/design/layout-restoration/after-picker-light.png'), Buffer.from(shot.result.data, 'base64'));
+  fs.mkdirSync(path.resolve(process.env.CANBAN_LAYOUT_SHOTS || path.join(root, 'docs/design/layout-restoration')), { recursive: true });
+  fs.writeFileSync(path.join(path.resolve(process.env.CANBAN_LAYOUT_SHOTS || path.join(root, 'docs/design/layout-restoration')), 'after-picker-light.png'), Buffer.from(shot.result.data, 'base64'));
   await cdp('Runtime.evaluate', { expression: `document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',bubbles:true}))` });
   const r = await cdp('Runtime.evaluate', { expression: `(async () => { ${WALK} })()`, awaitPromise: true, returnByValue: true });
   assert.equal(r.result?.exceptionDetails, undefined, JSON.stringify(r.result?.exceptionDetails));
-  const output = path.join(root, 'docs/design/layout-restoration');
+  const output = path.resolve(process.env.CANBAN_LAYOUT_SHOTS || path.join(root, 'docs/design/layout-restoration'));
   const run = async expression => {
     const result = await cdp('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
     assert.equal(result.result?.exceptionDetails, undefined, JSON.stringify(result.result?.exceptionDetails));

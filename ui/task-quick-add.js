@@ -35,7 +35,7 @@ const taskQuickAdd = {
     if (this.dialog?.open) return;
     this.creationDraft = this.draft;
     this.draft = { editCardId: card.id, card, listId: list.id, title: card.title, description: card.description || '',
-      directory: card.directoryId || null, labels: [...card.labels], context: { ...card.context } };
+      directory: card.directoryId || null, labels: [...card.labels], context: { ...card.context }, sourceContext: (card.sourceContext || []).map(x => ({ ...x, ref: { ...x.ref } })) };
     this.mount();
   },
   mount(focusSelector = null) {
@@ -135,7 +135,7 @@ const taskQuickAdd = {
     const draft = this.sessionDraft, board = state.board;
     const choices = [['codex', 'desktop', 'Codex', 'デスクトップ'], ['claude', 'desktop', 'Claude', 'デスクトップのCode'],
       ['codex', 'terminal', 'Codex CLI', 'ターミナル'], ['claude', 'terminal', 'Claude Code', 'ターミナル']];
-    const destinations = h('fieldset', { class: 'session-destination' }, h('legend', { class: 'creation-label', text: '開始先' }),
+    const destinations = h('fieldset', { class: 'session-destination' }, h('legend', { class: 'creation-label', text: 'AI App・開く方法' }),
       h('div', { class: 'session-destinations' }, choices.map(([agent, route, label, detail]) => {
         const radio = h('input', { type: 'radio', name: 'session-destination', value: `${agent}-${route}`, checked: draft.agent === agent && draft.route === route,
           onchange: () => { draft.agent = agent; draft.route = route; if (!draft.account?.startsWith(`${agent}:`)) draft.account = null; this.mount('input[name="session-destination"]:checked'); } });
@@ -143,6 +143,7 @@ const taskQuickAdd = {
       })));
     const targets = this.targets;
     applySessionTargetDefaults(draft, targets);
+    draft.sourceRef = targets?.codex?.projects?.find(p => p.id === draft.projectId)?.sourceRef || null;
     const cwd = h('input', { class: 'text-input session-cwd', list: 'quick-start-folders', autocomplete: 'off', placeholder: '/Users/…/project',
       'aria-label': '作業フォルダ', value: draft.cwd, oninput: e => { draft.cwd = e.target.value; } });
     const folders = h('datalist', { id: 'quick-start-folders' }, (board.folders || []).filter(f => f.hostId === draft.hostId).map(f => h('option', { value: f.cwd, text: f.project || f.cwd })));
@@ -163,16 +164,16 @@ const taskQuickAdd = {
     const desktop = draft.route === 'desktop', loading = desktop && !targets;
     const place = [];
     if (desktop && draft.agent === 'claude') {
-      place.push(select('環境', loading ? '__loading' : draft.environmentId, [...(loading ? [['__loading', '読み込み中…']] : []),
-        ...(targets?.claude.environments || []).map(e => [e.id, `${e.name}${e.kind === 'ssh' ? ` · ${e.sshLabel}` : ''}`]), ['__folder', 'フォルダを指定']],
-        value => { draft.environmentId = value; this.mount('select[aria-label="環境"]'); }));
+      place.push(select('開始設定（Claudeの環境）', loading ? '__loading' : draft.environmentId, [...(loading ? [['__loading', '読み込み中…']] : []),
+        ...(targets?.claude.environments || []).map(e => [e.id, `${e.name}${e.kind === 'ssh' ? ` · ${e.sshLabel}` : ''}`]), ['__folder', 'フォルダを指定して開始']],
+        value => { draft.environmentId = value; this.mount('select[aria-label="開始設定（Claudeの環境）"]'); }));
     }
     if (desktop && draft.agent === 'codex') {
       place.push(h('div', { class: 'creation-environment session-codex-place' },
-        select('プロジェクト', loading ? '__loading' : draft.projectId, [...(loading ? [['__loading', '読み込み中…']] : []),
-          ...(targets?.codex.projects || []).map(p => [p.id, p.hostId === 'local' ? p.name : `${p.name} · ${hostLabel(p.hostId)}`]), ['__none', 'プロジェクトなしで作業'], ['__folder', 'フォルダを指定']],
-          value => { draft.projectId = value; draft.cloudEnvironment = null; applySessionTargetDefaults(draft, targets); this.mount('select[aria-label="プロジェクト"]'); }),
-        select('実行場所', draft.runOn, [['local', 'このコンピューター'], ['cloud', 'クラウド']], value => { draft.runOn = value; applySessionTargetDefaults(draft, targets); this.mount('select[aria-label="実行場所"]'); })));
+        select('開始設定（Codexのプロジェクト）', loading ? '__loading' : draft.projectId, [...(loading ? [['__loading', '読み込み中…']] : []),
+          ...(targets?.codex.projects || []).map(p => [p.id, p.hostId === 'local' ? p.name : `${p.name} · ${hostLabel(p.hostId)}`]), ['__none', 'プロジェクトなしで作業'], ['__folder', 'フォルダを指定して開始']],
+          value => { draft.projectId = value; draft.cloudEnvironment = null; applySessionTargetDefaults(draft, targets); this.mount('select[aria-label="開始設定（Codexのプロジェクト）"]'); }),
+        select('実行先', draft.runOn, [['local', 'このコンピューター'], ['cloud', 'クラウド']], value => { draft.runOn = value; applySessionTargetDefaults(draft, targets); this.mount('select[aria-label="実行先"]'); })));
       if (draft.runOn === 'cloud') place.push(select('クラウドの環境', draft.cloudEnvironment || '', [...(draft.cloudEnvironment ? [] : [['', '環境を選んでください']]),
         ...(targets?.codex.cloudEnvironments || []).map(e => [e.id, e.name])], value => { draft.cloudEnvironment = value || null; }));
     }
@@ -182,15 +183,20 @@ const taskQuickAdd = {
       select('アカウント', draft.account || '', [['', 'いまのログイン'], ...(draft.hostId === 'local' ? board.accounts?.accounts || [] : []).filter(a => a.key.startsWith(`${draft.agent}:`)).map(a => [a.key, accountName(a.key)])], value => { draft.account = value || null; }));
     if (draft.route === 'terminal') environment.append(
       select('ターミナル', draft.terminal, (board.terminals || []).map(t => [t.id, t.label]), value => { draft.terminal = value; this.mount('select[aria-label="ターミナル"]'); }),
-      select('開く場所', draft.target, Object.entries(TARGET_LABELS).filter(([id]) => (board.terminals.find(t => t.id === draft.terminal)?.targets || ['new-window']).includes(id)), value => { draft.target = value; }));
+      select('ターミナルの表示先', draft.target, Object.entries(TARGET_LABELS).filter(([id]) => (board.terminals.find(t => t.id === draft.terminal)?.targets || ['new-window']).includes(id)), value => { draft.target = value; }));
     const remoteCodex = draft.route === 'desktop' && draft.agent === 'codex' && !sessionRunsInCloud(draft) && sessionHostId(draft, targets) !== 'local';
     const cloud = sessionRunsInCloud(draft);
-    const note = remoteCodex ? 'Codexの新規画面にはリモート接続先を渡せません。「Codex CLI」を選ぶか、実行場所をクラウドにしてください。'
+    const unsupportedEnvironment = desktop && draft.agent === 'claude' && !folder;
+    const note = unsupportedEnvironment ? '保存した環境の複数フォルダ・Worktree・設定の完全適用は未確認です。元アプリで環境を選んで開始してください。フォルダだけを使う場合は「フォルダを指定して開始」を選びます。' : remoteCodex ? 'Codexの新規画面にはリモート接続先を渡せません。「Codex CLI」を選ぶか、実行先をクラウドにしてください。'
       : cloud ? 'Codex Cloud にタスクを送信して開始します。新規画面は開きません。結果は Codex の「クラウド」で確認してください。'
       : targets?.failed && desktop ? 'アプリの一覧を読み込めませんでした。フォルダを指定して開けます。'
       : desktop ? '新規画面に依頼を渡します。送信はアプリで行ってください。' : '選んだフォルダでCLIを起動し、依頼を開始します。';
+    const chosenEnvironment = targets?.claude?.environments?.find(e => e.id === draft.environmentId);
+    const chosenProject = targets?.codex?.projects?.find(p => p.id === draft.projectId);
+    const execution = loading ? '未確認（開始設定を取得中）' : cloud ? 'Codex Cloud' : unsupportedEnvironment ? chosenEnvironment ? `${chosenEnvironment.kind === 'ssh' ? chosenEnvironment.sshLabel || chosenEnvironment.sshHost : 'このマシン'}（保存設定の指定・未適用）` : '未確認' : !folder && draft.projectId !== '__none' ? chosenProject ? hostLabel(chosenProject.hostId) : '未確認' : draft.hostId === 'local' || board.hosts.some(h => h.id === draft.hostId) ? hostLabel(sessionHostId(draft, targets)) : '未確認';
     return h('div', { class: 'session-fields' }, destinations, ...place, folder ? field(`作業フォルダ${desktop ? '（任意）' : ''}`, cwd) : null, folder ? folders : null,
-      h('div', { class: 'creation-field' }, h('span', { class: 'creation-label', text: '依頼内容' }), composer.root), h('p', { class: `creation-route-note${remoteCodex ? ' error' : ''}`, text: note }),
+      unsupportedEnvironment ? h('button', { type: 'button', class: 'link-btn', text: '元アプリで開始', onclick: () => bridge.openLink('claude://code/new') }) : null,
+      h('div', { class: 'creation-field' }, h('span', { class: 'creation-label', text: '依頼内容' }), composer.root), h('p', { class: `creation-route-note${remoteCodex ? ' error' : ''}`, text: `実行先（開始要求）: ${execution}。${note}` }),
       h('details', { class: 'creation-details', open: remoteCodex || draft.environmentOpen, ontoggle: e => { draft.environmentOpen = e.target.open; } }, h('summary', { text: `実行環境 · ${cloud ? 'クラウド' : hostLabel(sessionHostId(draft, targets))} · ${draft.account ? accountName(draft.account) : 'いまのログイン'}` }), environment));
   },
   paintSessionState() {
@@ -203,7 +209,7 @@ const taskQuickAdd = {
       if (text) el.readOnly = locked;
     });
     this.form.querySelectorAll('.session-fields .cx-box button').forEach(el => { el.disabled = !!draft.submitting || locked; });
-    this.primary.disabled = loading || !!draft.submitting || draft.startResult?.state === 'opened';
+    this.primary.disabled = (!locked && draft.agent === 'claude' && draft.route === 'desktop' && !sessionUsesFolder(draft)) || loading || !!draft.submitting || draft.startResult?.state === 'opened';
     this.primary.querySelector('span').textContent = loading ? '環境を読み込み中…' : draft.startResult?.state === 'opened' ? (draft.startResult.route === 'cloud' ? '送信しました' : '開きました') : this.sessionActionLabel();
     if (this.newRequestButton) this.newRequestButton.hidden = !locked;
   },
@@ -265,9 +271,17 @@ const taskQuickAdd = {
         if (next === '__auto') delete draft.context[key]; else draft.context[key] = next === '__none' ? null : next;
       });
     };
-    contextSelect('project', 'プロジェクト', (board.projects || []).map(p => [p.name, p.name]), 'プロジェクトなし');
-    contextSelect('folder', 'フォルダ', [...new Set((board.folders || []).map(f => f.name || f.cwd?.split('/').filter(Boolean).pop()).filter(Boolean))].map(name => [name, name]), 'フォルダなし');
-    contextSelect('section', 'セクション', (board.codexSections || []).map(s => [s.id, s.name]), 'セクションなし');
+    if (Object.hasOwn(draft.context, 'project')) contextSelect('project', '旧プロジェクト（保存済み）', [], 'なし');
+    const sourceChoices = new Map([...(board.sourceFacets || []).map(x => [x.key, x]), ...(draft.sourceContext || []).map(x => [sourceRefKey(x.ref), { key: sourceRefKey(x.ref), ref: x.ref }])]);
+    for (const facet of sourceChoices.values()) {
+      const input = h('input', { type: 'checkbox', checked: (draft.sourceContext || []).some(x => sourceRefKey(x.ref) === facet.key), onchange: () => {
+        draft.sourceContext = (draft.sourceContext || []).filter(x => sourceRefKey(x.ref) !== facet.key);
+        if (input.checked) draft.sourceContext.push({ ref: facet.ref });
+      } });
+      area.append(h('label', { class: 'side-check', title: sourceFacetTitle(facet) }, input, `開始予定 · ${sourceFacetLabel(facet, board.sourceFacets)}`));
+    }
+    contextSelect('folder', '作業フォルダ', [...new Set((board.folders || []).map(f => f.name || f.cwd?.split('/').filter(Boolean).pop()).filter(Boolean))].map(name => [name, name]), 'フォルダなし');
+    if (Object.hasOwn(draft.context, 'section')) contextSelect('section', '旧セクション（保存済み）', [], 'なし');
     contextSelect('agent', 'AI App', [['codex', 'Codex'], ['claude', 'Claude Code']], '指定なし');
     contextSelect('host', 'マシン', board.hosts.filter(host => !host.cloud).map(host => [host.local ? 'local' : host.id, host.local ? 'このマシン' : host.label]));
     contextSelect('account', 'アカウント', (board.accounts?.accounts || []).map(a => [a.key, accountName(a.key)]), 'アカウント不明');
@@ -301,9 +315,9 @@ const taskQuickAdd = {
     try {
       if (draft.editCardId) {
         draft.submitting = true;
-        const response = await bridge.callTool('canban_update_task', { cardId: draft.editCardId, context: draft.context, directory: draft.directory, labels: draft.labels });
+        const response = await bridge.callTool('canban_update_task', { cardId: draft.editCardId, context: draft.context, sourceContext: draft.sourceContext, directory: draft.directory, labels: draft.labels });
         const result = response.result || response;
-        Object.assign(draft.card, { context: result.context, directoryId: result.directoryId || null, labels: result.labels,
+        Object.assign(draft.card, { context: result.context, sourceContext: result.sourceContext || [], directoryId: result.directoryId || null, labels: result.labels,
           directory: state.board.directories.find(d => d.id === result.directoryId) || null });
         panes.find(p => p.id === draft.editCardId)?.el.querySelector('.task-context-summary')?.replaceWith(this.summary(draft.card));
         draft.submitting = false;
@@ -341,6 +355,7 @@ const taskQuickAdd = {
   },
   hiddenReasons(result) {
     const f = state.filters, card = this.projected(result), reasons = [];
+    if ((f.sourceFilters || []).some(f => !cardSourceRelations(card).some(r => sourceRefKey(r.ref) === sourceRefKey(f.ref) && (!f.relation || r.type === f.relation)))) reasons.push('元アプリ');
     if (f.status && f.status !== 'idle') reasons.push('実行状態');
     if (f.pinnedOnly) reasons.push('ピン留め');
     if (f.dotScope === 'only') reasons.push('dot');
@@ -361,7 +376,7 @@ const taskQuickAdd = {
     openCard(result.cardId);
   },
   summary(card) {
-    const names = { project: 'プロジェクト', folder: 'フォルダ', section: 'セクション', agent: 'AI App', host: 'マシン', account: 'アカウント' };
+    const names = { project: '旧プロジェクト', folder: '作業フォルダ', section: '旧セクション', agent: 'AI App', host: 'マシン', account: 'アカウント' };
     return h('div', { class: 'task-context-summary' }, Object.entries(card.context || {}).map(([key, value]) => {
       let text = value || 'なし';
       if (key === 'agent' && value) text = value === 'codex' ? 'Codex' : 'Claude Code';

@@ -70,17 +70,17 @@ test('desktop starts take the Claude environment and the Codex project / cloud f
   assert.deepEqual(targets.codex.cloudEnvironments, [{ id: 'asenvcfg_web', name: 'web' }]);
 
   const ssh = await call('canban_start_session', { agent: 'claude', route: 'desktop', environmentId: 'env-ssh', prompt: '確認', clientRequestId: 'env-ssh-1' });
-  assert.ok(!ssh.isError, ssh.content?.[0]?.text);
-  const sshUrl = new URL(ssh.structuredContent.url);
-  assert.deepEqual([sshUrl.searchParams.get('ssh_host'), sshUrl.searchParams.get('ssh_folder'), sshUrl.searchParams.get('folder')], ['box', '/srv/app', null]);
-  const local = new URL((await call('canban_start_session', { agent: 'claude', route: 'desktop', environmentId: 'env-old', cwd: '/ignored', prompt: '確認', clientRequestId: 'env-old-1' })).structuredContent.url);
-  assert.equal(local.searchParams.get('folder'), '/r/web');
-  assert.equal((await call('canban_start_session', { agent: 'claude', route: 'desktop', environmentId: 'env-x', prompt: '確認' })).isError, true, 'another account\'s environment is not offered');
+  assert.equal(ssh.isError, true);
+  assert.match(ssh.content[0].text, /完全適用/);
+  const local = await call('canban_start_session', { agent: 'claude', route: 'desktop', cwd: '/r/web', prompt: '確認', clientRequestId: 'folder-1' });
+  assert.equal(new URL(local.structuredContent.url).searchParams.get('folder'), '/r/web');
+  assert.deepEqual(local.structuredContent.selection.selectedRefs, []);
+  assert.equal(local.structuredContent.receipt.status, 'unresolved');
 
   const codex = new URL((await call('canban_start_session', { agent: 'codex', route: 'desktop', projectId: 'p-web', prompt: '確認', clientRequestId: 'p-web-1' })).structuredContent.url);
   assert.deepEqual([codex.searchParams.get('projectId'), codex.searchParams.get('path')], ['p-web', '/r/web']);
   assert.equal((await call('canban_start_session', { agent: 'codex', route: 'desktop', projectId: 'p-srv', prompt: '確認' })).isError, true, 'the Codex link opens only local projects');
-  const cloud = await call('canban_start_session', { agent: 'codex', route: 'desktop', projectId: 'p-web', runOn: 'cloud', cloudEnvironment: 'asenvcfg_web', prompt: '確認', clientRequestId: 'cloud-1' });
+  const cloud = await call('canban_start_session', { agent: 'codex', route: 'desktop', runOn: 'cloud', cloudEnvironment: 'asenvcfg_web', prompt: '確認', clientRequestId: 'cloud-1' });
   assert.ok(!cloud.isError, cloud.content?.[0]?.text);
   assert.equal(cloud.structuredContent.route, 'cloud');
   assert.match(cloud.structuredContent.command, /cloud exec --env asenvcfg_web -- /);

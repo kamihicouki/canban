@@ -32,6 +32,10 @@ export function effectiveTaskContext(task, links = []) {
     host: one ? one.host?.id || 'local' : !links.length ? task.target?.hostId || 'local' : null,
     account: one?.account || null,
   };
+  for (const key of ['agent', 'host', 'account']) if (links.length > 1) {
+    const values = links.map(link => key === 'host' ? link.host?.id || 'local' : link[key] || null);
+    if (values[0] && values.every(value => value === values[0])) fallback[key] = values[0];
+  }
   return Object.fromEntries(TASK_CONTEXT_KEYS.map(key => [key, Object.hasOwn(task.context || {}, key) ? task.context[key] : fallback[key]]));
 }
 

@@ -106,7 +106,11 @@ function matchesDirectory(f, dir) {
 
 
 function sessionCardStates(sessions, state) {
-  return sessions; // archive and deletion belong exclusively to the agent
+  const receipts = Object.values(state.cards).flatMap(card => card.launchReceipts || []);
+  return sessions.map(session => {
+    const launchReceipts = receipts.filter(receipt => receipt.sessionId === session.id && receipt.status === 'confirmed');
+    return { ...session, launchReceipts, sourceView: sessionSourceView(session, {}, launchReceipts) };
+  }); // archive and deletion belong exclusively to the agent
 }
 
 function matches(session, card, f, labelsById, hits, dir) {
@@ -115,7 +119,7 @@ function matches(session, card, f, labelsById, hits, dir) {
   if (f.agent && f.agent !== 'all' && session.agent !== f.agent) return false;
   if (f.host && (session.host?.id || 'local') !== f.host) return false;
   if (f.account && !matchesAccount(f.account, session)) return false;
-  if (!matchesSourceFilters(sessionSourceView(session).relations, f.sourceFilters)) return false;
+  if (!matchesSourceFilters((session.sourceView || sessionSourceView(session)).relations, f.sourceFilters)) return false;
   if (f.project && !legacyMatches(session, 'project', f.project)) return false;
   if (f.folder && !legacyMatches(session, 'folder', f.folder)) return false;
   if (f.section && (f.section === '__none' ? session.codexSection : session.codexSection?.id !== f.section)) return false;
@@ -409,7 +413,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       project: s.project,
       folder: s.folder,
       codexProject: s.codexProject || null,
-      sourceView: compactSourceView(sessionSourceView(s)),
+      sourceView: compactSourceView(s.sourceView || sessionSourceView(s)),
       capabilities: compactCapabilities(capabilitiesFor({ session: s })),
       directory: dirView(dir),
       cwd: s.cwd,
@@ -494,7 +498,9 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       account: context.account,
       codexSection: context.section ? { id: context.section, name: sections.get(context.section)?.name || context.section } : null,
       target: t.target || null,
-      links: links.map((x) => ({ id: x.id, sourceView: compactSourceView(sessionSourceView(x)), capabilities: compactCapabilities(capabilitiesFor({ session: x })), agent: x.agent, account: x.account || null, title: x.title, status: x.status || 'idle', statusKnown: x.statusKnown !== false, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, updatedAt: x.updatedAt })),
+      launchSelection: t.launchSelection || null,
+      launchReceipts: t.launchReceipts || [],
+      links: links.map((x) => ({ id: x.id, sourceView: compactSourceView(x.sourceView || sessionSourceView(x)), capabilities: compactCapabilities(capabilitiesFor({ session: x })), agent: x.agent, account: x.account || null, title: x.title, status: x.status || 'idle', statusKnown: x.statusKnown !== false, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, updatedAt: x.updatedAt })),
       linkedSessionIds: [...(t.links || [])],
       missingLinks: (t.links || []).length - allLinks.length,
       pending: (t.pending || []).map((p) => ({ agent: p.agent, startedAt: p.startedAt, expired: now - p.startedAt > PENDING_MS })),
@@ -624,7 +630,7 @@ function recentFolders(sessions, limit = 60) {
 export async function findSession(store, cardId) {
   let state = (await store.load());
   const { sessions, hosts } = await allSessions(state);
-  const s = sessions.find((x) => x.id === cardId);
+  const s = sessionCardStates(sessions, state).find((x) => x.id === cardId);
   if (!s) throw new Error('セッションが見つかりません');
   return { session: s, state, host: !isCloudSession(s) && s.host?.local === false ? hosts.find((h) => h.id === s.host.id) : null };
 }

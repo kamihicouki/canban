@@ -544,6 +544,17 @@ export class Store {
     });
   }
 
+  recordLaunch({ taskId, selection, receipt }) {
+    return this.mutate(s => {
+      const task = s.cards[taskId];
+      if (task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
+      task.launchSelection = selection;
+      task.launchReceipts = [...(task.launchReceipts || []).filter(r => r.requestId !== receipt.requestId), receipt].slice(-20);
+      task.sourceContext = selection.selectedRefs.map(ref => ({ ref }));
+      return { selection, receipt };
+    });
+  }
+
   addPending({ taskId, pending }) {
     return this.mutate((s) => {
       const task = s.cards[taskId];
@@ -771,7 +782,7 @@ export class Store {
         const removed = mapping.bindings.filter(b => b.categoryId === directoryId && !selected.some(x => same(x, b)));
         mapping.tombstones.push(...removed.map(({ ref, relation, legacySourceKey }) => ({ categoryId: directoryId, ref, relation, legacySourceKey })));
         for (const [id, saved] of Object.entries(mapping.legacyCards)) if (removed.some(b => b.legacySourceKey === saved.sourceKey && saved.categoryId === directoryId)) delete mapping.legacyCards[id];
-        mapping.bindings = [...mapping.bindings.filter(b => b.categoryId !== directoryId), ...selected.map(b => ({ categoryId: directoryId, ...b }))];
+        mapping.bindings = [...mapping.bindings.filter(b => b.categoryId !== directoryId), ...selected.map(b => ({ ...mapping.bindings.find(prior => prior.categoryId === directoryId && same(prior, b)), categoryId: directoryId, ...b }))];
         mapping.tombstones = mapping.tombstones.filter(b => !((!b.categoryId || b.categoryId === directoryId) && selected.some(x => same(x, b))));
       }
       return dir;

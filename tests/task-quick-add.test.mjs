@@ -45,7 +45,7 @@ test('real lane construction keeps stable attribute IDs even when display names 
   ];
   const board = { labels, lists: [{ id: 'inbox', cards }], projects: [{ name: 'p' }], directories: [{ id: 'd1', name: '同名' }, { id: 'd2', name: '同名' }, { id: 'empty', name: '空' }] };
   const context = vm.createContext({ state: { board }, T: { category: 'カテゴリ', taskCard: 'タスクカード' }, accountLaneKey: () => '同じ表示名', accountName: key => `Codex · ${key}` });
-  vm.runInContext(fs.readFileSync(new URL('../ui/task-quick-add-model.js', import.meta.url), 'utf8') + '\n' + code, context);
+  vm.runInContext(fs.readFileSync(new URL('../ui/source-facets.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../ui/task-quick-add-model.js', import.meta.url), 'utf8') + '\n' + code, context);
   for (const mode of ['directory', 'label', 'section', 'account']) {
     const lanes = context.buildLanes(board, mode).filter(l => l.count);
     assert.equal(lanes.length, 2, mode);
@@ -207,8 +207,9 @@ test('desktop starts use the app lists: a Claude environment, a Codex project an
   assert.equal(codex.projectId, 'p-local');
   assert.equal(m.sessionStartRequest(codex).projectId, 'p-local');
   codex.runOn = 'cloud'; m.applySessionTargetDefaults(codex, targets);
-  assert.equal(codex.cloudEnvironment, 'asenvcfg_2', 'the cloud environment named like the project');
-  assert.deepEqual(plain(m.sessionStartRequest(codex)), { agent: 'codex', route: 'desktop', terminal: 'terminal', target: 'new-window', cwd: '', prompt: '直して', account: null, projectId: 'p-local', runOn: 'cloud', cloudEnvironment: 'asenvcfg_2' });
+  assert.equal(codex.cloudEnvironment, null, 'cloud selection is explicit even when names match');
+  codex.cloudEnvironment = 'asenvcfg_2';
+  assert.deepEqual(plain(m.sessionStartRequest(codex)), { agent: 'codex', route: 'desktop', terminal: 'terminal', target: 'new-window', cwd: '', prompt: '直して', account: null, runOn: 'cloud', cloudEnvironment: 'asenvcfg_2' });
   const typed = m.applySessionTargetDefaults({ ...base, agent: 'codex', cwd: '/typed' }, targets);
   assert.equal(typed.projectId, '__folder', 'a typed folder is kept');
   assert.equal(m.sessionStartRequest(typed).cwd, '/typed');

@@ -110,7 +110,7 @@ document.addEventListener('click', refreshShortcutHints);
 const SHORTCUTS = [
   ['全体', [
     ['/', '検索にフォーカス（Esc でクリア、↓ / Enter で最初のカードへ）'], ['⌘K / Ctrl+K', `コマンドパレット（カード・ビュー・${T.category}・操作を検索して実行）`],
-    ['p', `${T.category}・プロジェクトで絞り込み`], ['b', 'サイドバーの開閉'], ['[ / ]', '前 / 次のスイムレーンへ'],
+    ['p', `${T.category}・元アプリで絞り込み`], ['b', 'サイドバーの開閉'], ['[ / ]', '前 / 次のスイムレーンへ'],
     ['c', '作成ダイアログを開く'], ['1〜9', '保存したビューに切り替え'], ['a', '分析を開く / 閉じる'], ['Shift+O', '軌道シートを開く / 閉じる'], ['Shift+L', 'タスクの改善ループへ'], ['r', '再読み込み'], ['?', 'この一覧'],
   ]],
   ['時間（寿命）', [
@@ -230,7 +230,7 @@ function commandPalette() {
   (b.settings.views || []).forEach((v, i) => add('ビュー', 'ビュー', v.name, () => applyView(v), { hint: i < 9 ? i + 1 : '' }));
   state.lanes.forEach((l) => add('レーン', 'レーン', l.name, () => jumpToLane(l.key), { hint: l.count, color: l.color }));
   b.directories.forEach((d) => add(`${T.category}`, '📂', d.name, () => setScope({ directory: d.id }), { hint: d.count, color: d.color }));
-  b.projects.forEach((p) => add('プロジェクト', '📁', p.name, () => setScope({ project: p.name }), { hint: p.count }));
+  (b.sourceFacets || []).forEach(f => add('元アプリ', '', sourceFacetLabel(f, b.sourceFacets), () => toggleSourceFilter(f.ref), { hint: `${f.count}カード`, keywords: sourceFacetTitle(f) }));
   b.labels.forEach((l) => add('ラベルで絞り込み', '🏷', l.name, () => setScope({ label: l.id }), { color: l.color }));
   for (const l of b.lists) for (const c of l.cards) {
     add('カード', l.title, c.title, () => {

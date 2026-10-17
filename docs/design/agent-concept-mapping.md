@@ -324,3 +324,24 @@ folder/unknown/複数scope、および旧 task context でその条件に一致�
 新規 sourceFilters や cardKind 等、旧版で表せないビューは旧版の一覧から保留し、`report.heldViews` に全記録を返す。
 この report は `.local/` の sidecar に保存して人が確認する。旧サーバーへ変換済み filters をそのまま渡すと、未知条件が落ち全件へ広がるため禁止。
 DB全体を古いバックアップへ巻き戻さない。実データへの適用・旧版切替は本Taskで行わない。
+
+## 実装上の判断と制約（Task3）
+
+- 保存環境の全設定を適用できる経路が未確認なら、Canbanから環境として開始しない。Claudeの環境は元アプリの開始入口を案内し、明示的にフォルダ指定へ切り替えると環境ref・複数フォルダ・branch/worktree・環境変数等を要求へ持ち越さない。設定の省略を完全適用と誤認させないためで、元の環境を使うには再選択が必要になる。
+- 新しい出典を名前だけで旧カテゴリへ追加しない。カテゴリ管理パネルの明示的な対応を使う。同名・別scopeの誤結合を防ぐためで、新しい出典の対応には手動設定が必要になる。
+- 新しい元アプリのレーン軸で複数の異なる出典を持つTaskは「複数」レーンへ1回だけ置く。詳細と個別フィルターでは集合を保持する。1カードの件数を守るためで、単一所属のレーンからは直接探せない。旧保存ビューのlegacy軸は保持する。
+- 読取時の分類・保存ビュー移行を行わない。別途、取得coverage・コピーdry run・差分確認・sidecarを伴う明示適用が必要になる。旧host＋完全path規則と確認済みnative refを維持する一方、unknown候補へ推測適用しない。
+- `directories.paths`はTask／出典なし呼出し専用。native sessionのcwd fallbackへ拡張しない。旧Claudeの同じhost＋完全cwdのsourceKeyは別規則として維持する。sessionを追加分類する場合は手動指定か出典bindingが必要になる。
+- `workingLocations.observedAt:null`は取得時刻不明と表示する。remoteの`ssh`は現AdapterがSSHで取得した範囲を表し、将来の手段不明remoteは`remote`で渡す。更新時刻を取得時刻へ流用しない。
+
+### UIと開始の公開Interface（Task3）
+
+`ui/source-facets.js`をbrowser境界にする。`decodeSourceBoard`でcompact sourceViewとcapabilitiesを展開し、未取得を既定のunknownへ復元する。詳細は完全Viewも同じformatterへ通す。native候補と件数は`board.sourceFacets`、作業フォルダ候補は表示カードの観測値・Taskの明示値から作り、開始カタログ全件を所属一覧に使わない。`sourceContext`は開始予定、`sourceRelations`はリンクからの観測として表示する。
+
+`canban_start_session`は既存引数を保持し、任意の`sourceRef`を追加する。選んだCodexプロジェクトのscoped refを渡した場合、開始直前に再取得した参照と一致しなければ開始を拒否する。保存カタログがstale／unknownの場合も拒否する。Cloud環境はIDの明示選択が必要で、プロジェクト名からの選択・プロジェクト設定の同時適用は行わない。別CLIアカウントへDesktopのCloudカタログを流用しない。
+
+開始要求は`LaunchSelection {version, requestId, mode, agent, route, selectedRefs, account, hostId, cwd, cloudEnvironment?}`、適用結果は`LaunchReceipt {version, requestId, sessionId, status, selectedRefs, appliedRefs, observedAt, reason}`として分ける。Taskの`launchSelection`と`launchReceipts`に保存し、再送は同じ`clientRequestId`の予約結果を返す。アプリを開いた／ターミナルへ依頼しただけの結果は`status:'unresolved'`、`sessionId:null`、`appliedRefs:[]`とする。
+
+cwd・依頼文・時刻でpendingがリンクしてもReceiptは変更しない。`confirmed`かつ正確なsession IDが一致するReceiptだけを読取モデルへ渡し、`appliedRefs`がある場合だけ`startedWith`を作る。今回、元アプリから完全適用を確認してconfirmed Receiptを生成する経路は追加しない。native deep linkのmodel適用は確認できず、model指定済み・適用済みとは表示しない。
+
+セッションの`completed`は最後の応答が終了した「応答済み」。自動化の内部キー`status:completed`は維持し、説明を「最後の応答が終了したら」にする。Taskカード上の集約状態もリンクしたセッションの状態であり、TaskやGoalの達成、ツールの実行完了とは別に扱う。

@@ -65,6 +65,20 @@ await step('create task or direct session', async () => {
     if (await tasks() !== before + 1) throw new Error('task creation failed');
   } finally { document.querySelector('.task-quick-dialog')?.close(); }
 }, 300);
+await step('unsupported environment keeps start controls visible', async () => {
+  document.querySelector('#quickTaskBtn').click();
+  document.querySelector('[data-create-mode="session"]').click();
+  document.querySelector('.session-new-request:not([hidden])')?.click();
+  document.querySelector('input[value="claude-desktop"]').click();
+  for(let i=0;i<30&&!document.querySelector('select[aria-label="開始設定（Claudeの環境）"] option[value="fixture-env"]');i++) await w(100);
+  const select=document.querySelector('select[aria-label="開始設定（Claudeの環境）"]'); select.value='fixture-env'; select.dispatchEvent(new Event('change',{bubbles:true}));
+  const dialog=document.querySelector('.task-quick-dialog'), button=dialog.querySelector('.btn-primary');
+  if(!dialog.textContent.includes('完全適用は未確認') || !button.disabled) throw new Error('unsupported preset is not explained and blocked');
+  if(button.getBoundingClientRect().bottom>dialog.getBoundingClientRect().bottom) throw new Error('start action clipped by preset explanation');
+  const folder=dialog.querySelector('select[aria-label="開始設定（Claudeの環境）"]');folder.value='__folder';folder.dispatchEvent(new Event('change',{bubbles:true}));
+  const next=document.querySelector('.task-quick-dialog'); if(next.querySelector('.btn-primary').getBoundingClientRect().bottom>next.getBoundingClientRect().bottom) throw new Error('folder start action clipped');
+  next.close();
+});
 await step('today', () => document.querySelector('.rb-day.is-today').click());
 await step('esc', () => key('Escape'));
 for (const k of ['live', 'fresh', 'active', 'dormant']) await step('phase ' + k, () => document.querySelector('.rb-phase.life-' + k).click(), 150);
@@ -220,6 +234,9 @@ return { errs, sessionOpened: !!document.querySelector('.th-conv') || true };
 
 test('the board, the ribbon, the time axis and the card layers run without page errors', { timeout: 120000, skip: !fs.existsSync(chromeBin) && 'no Chrome' }, async (t) => {
   const fx = makeFixtures();
+  const appDir = path.dirname(fx.desktopDir);
+  fs.writeFileSync(path.join(appDir,'config.json'),JSON.stringify({lastKnownAccountUuid:'fixture-account'}));
+  fs.writeFileSync(path.join(appDir,'ccd-session-presets.json'),JSON.stringify({byAccount:{'fixture-account':{presets:[{id:'fixture-env',name:'複数フォルダの環境',target:{kind:'local',cwd:'/r/web',additionalFolders:['/r/api']}}]}}}));
   const edgeDb = new DatabaseSync(path.join(fx.codexHome, 'state_5.sqlite'));
   edgeDb.exec("CREATE TABLE thread_spawn_edges (parent_thread_id TEXT, child_thread_id TEXT); INSERT INTO thread_spawn_edges VALUES ('t1','t2')");
   edgeDb.prepare("UPDATE threads SET title='リリースの確認', name='リリースの確認', updated_at_ms=? WHERE id='t1'").run(Date.now() - 120000);

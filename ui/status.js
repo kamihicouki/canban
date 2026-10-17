@@ -1,6 +1,6 @@
 // Part of board.html: included into its script by server/ui.mjs and shares its scope.
 // Live status, unread and automatic-move rules
-const STATUS_LABELS = { running: '実行中', waiting: '入力待ち', completed: '完了', aborted: '中断', idle: '待機' };
+const STATUS_LABELS = { running: '実行中', waiting: '入力待ち', completed: '応答済み', aborted: '中断', idle: '待機中' };
 // Codex sections as triggers: "moved into § doing" (names come from the board).
 function triggerLabel(t) {
   if (t.startsWith('section:')) {
@@ -12,7 +12,7 @@ function triggerLabel(t) {
 const TRIGGER_LABELS = {
   'status:running': '実行中になったら',
   'status:waiting': '入力待ちになったら',
-  'status:completed': '完了したら',
+  'status:completed': '最後の応答が終了したら',
   'status:aborted': '中断したら',
   archived: 'アーカイブされたら',
   activity: '新しい活動があったら',

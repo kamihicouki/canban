@@ -9,7 +9,7 @@ function sessionCreationDefaults(board, context) {
 // Desktop routes start at what the app lists: a Claude「環境」, or a Codex「プロジェクト」
 // with「実行場所」. '__folder' falls back to a typed folder; '__none' is Codex's
 // 「プロジェクトなしで作業」. Defaults follow the app: its most recent environment /
-// selected project, and the cloud environment named like the project.
+// selected project. Cloud environments always require an explicit selection.
 function applySessionTargetDefaults(draft, targets) {
   if (!targets) return draft;
   const envs = targets.claude?.environments || [], projects = targets.codex?.projects || [], clouds = targets.codex?.cloudEnvironments || [];
@@ -17,8 +17,7 @@ function applySessionTargetDefaults(draft, targets) {
   if (!draft.projectId || (!['__none', '__folder'].includes(draft.projectId) && !projects.some(p => p.id === draft.projectId))) draft.projectId = draft.cwd ? '__folder' : projects[0]?.id || '__none';
   draft.runOn ||= 'local';
   if (draft.runOn === 'cloud' && !clouds.some(e => e.id === draft.cloudEnvironment)) {
-    const name = projects.find(p => p.id === draft.projectId)?.name?.toLowerCase();
-    draft.cloudEnvironment = clouds.find(e => e.name.toLowerCase() === name)?.id || (clouds.length === 1 ? clouds[0].id : null);
+    draft.cloudEnvironment = null;
   }
   return draft;
 }
@@ -49,8 +48,9 @@ function sessionStartRequest(draft) {
   if (sessionUsesFolder(draft)) return request;
   delete request.hostId; request.cwd = '';
   if (draft.agent === 'claude') request.environmentId = draft.environmentId;
-  else if (draft.projectId !== '__none' && draft.projectId !== '__folder') request.projectId = draft.projectId;
+  else if (!sessionRunsInCloud(draft) && draft.projectId !== '__none' && draft.projectId !== '__folder') request.projectId = draft.projectId;
   if (sessionRunsInCloud(draft)) Object.assign(request, { runOn: 'cloud', cloudEnvironment: draft.cloudEnvironment });
+  if (request.projectId && draft.sourceRef) request.sourceRef = { ...draft.sourceRef };
   return request;
 }
 
@@ -74,11 +74,12 @@ function taskCreationDefaults(board, filters, { listId, lane, soloLane } = {}, e
     if (value && !(key === 'agent' && value === 'all')) context[key] = value === '__none' ? null : value;
   }
   const draft = { listId: listId || board.defaultListId, directory: filters.directory || null,
-    labels: filters.label && filters.label !== '__none' ? [filters.label] : [], context };
+    labels: filters.label && filters.label !== '__none' ? [filters.label] : [], context, ...(filters.sourceFilters?.length ? { sourceContext: filters.sourceFilters.map(({ ref }) => ({ ref: { ...ref } })) } : {}) };
   for (const source of [soloLane?.creation, lane?.creation]) {
     if (!source) continue;
     if (Object.hasOwn(source, 'directory')) draft.directory = source.directory;
     Object.assign(context, source.context);
+    if (source.sourceContext) draft.sourceContext = source.sourceContext.map(x => ({ ref: { ...x.ref } }));
     if (source.labels) draft.labels = source.labels.length ? [...new Set([...source.labels, ...draft.labels])] : [];
   }
   return { ...draft, ...edits, context: { ...context, ...edits.context } };
@@ -99,7 +100,8 @@ function taskCreationResultMatches(args, result) {
   const stable = value => JSON.stringify(Object.entries(value || {}).sort(([a], [b]) => a.localeCompare(b)));
   return args.title === result.title && args.description === (result.description || '') && args.list === result.listId &&
     (args.directory || null) === (result.directoryId || null) &&
-    JSON.stringify(args.labels) === JSON.stringify(result.labels || []) && stable(args.context) === stable(result.context);
+    JSON.stringify(args.labels) === JSON.stringify(result.labels || []) && stable(args.context) === stable(result.context) &&
+    JSON.stringify(args.sourceContext || []) === JSON.stringify(result.sourceContext || []);
 }
 
 // Saving and refreshing are separate outcomes: a failed refresh must not invite a second creation.
@@ -110,6 +112,7 @@ async function saveQuickTaskDraft(draft, { callTool, refresh, newRequestId }) {
   draft.clientRequestId ||= newRequestId();
   const args = { title, description: draft.description, list: draft.listId, directory: draft.directory,
     labels: [...draft.labels], context: { ...draft.context }, clientRequestId: draft.clientRequestId };
+  if (draft.sourceContext) args.sourceContext = draft.sourceContext;
   if (draft.slackSource) args.slackSource = draft.slackSource;
   draft.submitting = true;
   try {

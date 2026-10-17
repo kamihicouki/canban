@@ -61,7 +61,7 @@ function workingLocations(session) {
   return !value.length && !explicit ? unknown('作業場所は未取得です') : { value, status: value.length ? 'known' : 'absent', observedAt: time(session.sourceObservedAt), sourceUpdatedAt: time(session.updatedAt), source: 'session', reason: null };
 }
 
-export function sessionSourceView(session, catalog = {}, receipts = []) {
+export function sessionSourceView(session, catalog = {}, receipts = session.launchReceipts || []) {
   const entities = Array.isArray(catalog.entities) ? catalog.entities : [];
   const view = { version: 1, attributes: {}, relations: [], workingLocations: workingLocations(session) };
   const addRelation = (type, observation, requestId = null) => {

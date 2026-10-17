@@ -30,6 +30,7 @@ export async function claudeEnvironments(appDir) {
   const metadata = p => ({
     sourceRef: { provider: 'claude', identityDomain: 'preset-account', scopeId: JSON.stringify([storageScope(appDir), account]), kind: 'environment', nativeId: p.id },
     sourceObservation,
+    startCapability: { status: 'unsupported', reason: '環境全体の完全適用経路は未確認です。Claudeで環境を選んで開始してください', nativeEntry: 'claude://code/new' },
     workingLocations: [p.target.cwd, ...(Array.isArray(p.target.additionalFolders) ? p.target.additionalFolders : [])].filter(folder => str(folder)).map((folder, i) => ({
       folder, primary: i === 0, executionTarget: p.target.kind,
       branchRequested: str(p.target.folderSettings?.[folder]?.branch),
