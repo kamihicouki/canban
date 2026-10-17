@@ -7,6 +7,7 @@
 // is removed, so each account is separate again. Canban never quits Desktop itself
 // (Desktop vetoes an outside quit while a session runs); it waits for the user's ⌘Q.
 import fs from 'node:fs/promises';
+import { withDesktopMutationLock } from './claude-desktop-lock.mjs';
 import fsSync from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -102,6 +103,11 @@ export async function readLedger(paths = guestPaths()) {
 // The lock appears with its owner already written (link of a finished file), and a dead
 // owner's lock is taken over by rename, so a fresh lock is never removed by mistake.
 async function withLock(paths, fn) {
+  const dataDir = paths.dataDir || path.dirname(paths.state);
+  await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
+  return withDesktopMutationLock({ dataDir }, () => withGuestLock(paths, fn));
+}
+async function withGuestLock(paths, fn) {
   await fs.mkdir(paths.state, { recursive: true, mode: 0o700 });
   const lock = path.join(paths.state, 'lock');
   // A process killed while waiting leaves its "lock.<pid>.<uuid>" behind: remove those of dead pids.

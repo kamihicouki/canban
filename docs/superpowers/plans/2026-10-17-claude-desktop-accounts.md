@@ -49,10 +49,10 @@ Claude の認証保持は Task 5 の実機受け入れが別途必要。偽プ�
 
 **Interfaces:** `createDesktopAccounts({dataDir, appDir, runtime, restoreGuests, open, quit, backup, identity, now})` は `{view(), command(command), withAccount(account, options, action)}` を返す。`command` は `enroll-current | begin-login | finish-login | cancel | recover` と要求 ID・期待アカウントだけを受ける。`view()` は `DesktopAccountView` を返す。`server/claude-desktop-roots.mjs` の `readDesktopProfileRoots({dataDir, appDir})` は検証済みの実体一覧を返す。読み取り用モジュールは `accounts.mjs`・切替サービス・runtime に依存せず、scanner/runtime はここだけを参照する。
 
-- [ ] **Step 1: 失敗するテストを書く。** `enroll-current preserves CLI homes and records no credentials` で偽 home の Desktop A と CLI A/B を作る。`assert.equal((await service.view()).profiles[0].account, 'claude:a')`、CLI のパス・ファイル・Keychain スタブが無変更であること、対応表が `id/account/active/dir` 以外の認証情報を含まないことを確認する。symlink・別 device・所有者不一致・不正アカウント・想定外ファイルを拒否し、書込み0回を確認する。
-- [ ] **Step 2: RED を確認する。** `node --test tests/claude-desktop-accounts.test.mjs`。未実装の公開インターフェースで失敗すること。
-- [ ] **Step 3: 上記インターフェースの登録・一覧部分を実装する。** ID は UUID、ルートは注入した2箇所だけ、台帳は原子的に保存する。CLI home は固定し、Desktop 初回接続を CLI のログインと同一視しない。実機の保存先はテストから参照しない。
-- [ ] **Step 4: GREEN と版の同期を確認してコミットする。** 上記テストと `tests/accounts.test.mjs`、`npm run build:chrome`、`git diff --check` を実行する。実装した範囲だけ配置の契約へ記載する。
+- [x] **Step 1: 失敗するテストを書く。** `enroll-current preserves CLI homes and records no credentials` で偽 home の Desktop A と CLI A/B を作る。`assert.equal((await service.view()).profiles[0].account, 'claude:a')`、CLI のパス・ファイル・Keychain スタブが無変更であること、対応表が `id/account/active/dir` 以外の認証情報を含まないことを確認する。symlink・別 device・所有者不一致・不正アカウント・想定外ファイルを拒否し、書込み0回を確認する。
+- [x] **Step 2: RED を確認する。** `node --test tests/claude-desktop-accounts.test.mjs`。未実装の公開インターフェースで失敗すること。
+- [x] **Step 3: 上記インターフェースの登録・一覧部分を実装する。** ID は UUID、ルートは注入した2箇所だけ、台帳は原子的に保存する。CLI home は固定し、Desktop 初回接続を CLI のログインと同一視しない。実機の保存先はテストから参照しない。
+- [x] **Step 4: GREEN と版の同期を確認してコミットする。** 上記テストと `tests/accounts.test.mjs`、`npm run build:chrome`、`git diff --check` を実行する。実装した範囲だけ配置の契約へ記載する。
 
 ### Task 2: 停止中の入替えと中断復旧
 
@@ -60,10 +60,10 @@ Claude の認証保持は Task 5 の実機受け入れが別途必要。偽プ�
 
 **Interfaces:** `withAccount(account, {requestId, allowQuit}, action)` は `AccountResult` または `action()` の結果を返す。待機時は `action()` を呼ばない。内部 journal は `parking → parked → activating → activated → committed` の intent、実パス、device/inode を文字列で保持する。`command({type:'recover'})` は停止確認後にだけ復元・確定する。既存 `desktopProfileLock()` を使う `withDesktopMutationLock({dataDir,lease}, action)` を lock モジュールへ追加する。切替・open・ゲスト配置/書戻し・watcher は同じ lifecycle lock を取得し、その後に既存 guest lock を取得する。既に保持した処理だけが内部の opaque lease を渡して再入でき、MCP の入力から lease を受けない。
 
-- [ ] **Step 1: 失敗するテストを書く。** `same account opens without quit or login`、`A-B-A preserves both trees`、`crash after each rename recovers`、`lost lock stops the next mutation`、`guest watcher cannot write across a swap` を追加する。`assert.equal(quitCalls, 0)`、`assert.equal(loginCalls, 0)`、A/B の会話と cookie の偽データを確認する。各 rename 直前に外部起動・標準パスの再作成・device/inode の変更を注入し、既存ファイルを残すことも確認する。watcher と切替を競合させ、書戻しが元アカウント内で完了してから rename されること、再入で deadlock しないことを確認する。
-- [ ] **Step 2: RED を確認する。** `node --test tests/claude-desktop-accounts.test.mjs tests/claude-desktop-journal.test.mjs`。
-- [ ] **Step 3: ロック・intent 保存・rename・復旧を実装する。** 同一アカウントの no-op も、実体の照合からアプリを開くまでロックで保護する。副作用前の durable な intent を fsync し、既存パスは上書きしない。プロセスや実体が不明な場合、強制終了・自動削除・ロックの強奪をしない。
-- [ ] **Step 4: GREEN と版の同期を確認してコミットする。** 上記テストに `tests/claude-desktop-guests.test.mjs` を加えて実行し、Chrome をビルドする。
+- [x] **Step 1: 失敗するテストを書く。** `same account opens without quit or login`、`A-B-A preserves both trees`、`crash after each rename recovers`、`lost lock stops the next mutation`、`guest watcher cannot write across a swap` を追加する。`assert.equal(quitCalls, 0)`、`assert.equal(loginCalls, 0)`、A/B の会話と cookie の偽データを確認する。各 rename 直前に外部起動・標準パスの再作成・device/inode の変更を注入し、既存ファイルを残すことも確認する。watcher と切替を競合させ、書戻しが元アカウント内で完了してから rename されること、再入で deadlock しないことを確認する。
+- [x] **Step 2: RED を確認する。** `node --test tests/claude-desktop-accounts.test.mjs tests/claude-desktop-journal.test.mjs`。
+- [x] **Step 3: ロック・intent 保存・rename・復旧を実装する。** 同一アカウントの no-op も、実体の照合からアプリを開くまでロックで保護する。副作用前の durable な intent を fsync し、既存パスは上書きしない。プロセスや実体が不明な場合、強制終了・自動削除・ロックの強奪をしない。
+- [x] **Step 4: GREEN と版の同期を確認してコミットする。** 上記テストに `tests/claude-desktop-guests.test.mjs` を加えて実行し、Chrome をビルドする。
 
 ### Task 3: 初回ログイン・ゲスト復元・既存 CLI との分離
 

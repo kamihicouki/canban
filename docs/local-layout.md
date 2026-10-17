@@ -62,6 +62,8 @@ Canban は Desktop のプロフィールやリンクを切り替えない（0.24
 
 この段階では登録サービスを通常のUIやDesktop起動へ接続せず、保存先の入替えも行わない。既存の起動経路と上記ピュア構成の契約は維持する。切替機能の有効化には、別途、復元・同時実行・実機の認証保持の検証が必要となる。
 
+0.29.25 の内部サービスは、明示した切替要求だけを受け、停止確認後に同じファイルシステム内で exclusive rename する。Node.js の通常の rename による空ディレクトリの上書きを避けるため、`server/desktop-files.py` のOS標準APIを使い、未対応OSでは停止する。操作前の `switch.json`（600）に実パス・device/inode・段階を記録し、元に戻すか切替済みの状態を確定する。外部で作られた保存先は消さない。切替とゲストの配置・書戻し・watcherは `<Canban保存先>/desktop-accounts/claude/lifecycle.lock` を共有する。新しい開始要求はロックを取り直し、処理内部のゲスト復元だけが既に取得した権限を再利用する。この内部処理も、通常の開始経路へはまだ接続していない。
+
 ## ローカルmainとChrome更新
 
 Claude Desktop の拡張は `update:local` では更新されません。通常mainから `npm run pack:mcpb` で `dist/canban.mcpb` を生成し、Desktopの拡張設定で既存のCanbanを更新します。MCPBも `dist/codex-plugin/` のコミット済みGit管理ファイルだけを使い、`.local/` と未追跡資料を含めません。インストールコピーのmanifestと保存先を読み戻し、更新を確認します。アプリ管理キャッシュを手編集しません。

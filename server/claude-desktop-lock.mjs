@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { inspectProfileDirectory } from './claude-desktop-roots.mjs';
 
 const busy = () => Object.assign(new Error('Desktop のプロフィール切替が進行中です。完了してから再操作してください'), { code: 'desktop_busy' });
 const same = (a, b) => a && b && a.ino === b.ino && a.dev === b.dev && a.birthtimeMs === b.birthtimeMs;
@@ -11,10 +13,11 @@ export async function desktopProfileLock(lock, { staleMs = 60000, heartbeatMs = 
   try { await fs.mkdir(lock, { mode: 0o700 }); }
   catch (error) {
     if (error.code !== 'EEXIST') throw error;
-    const original = await fs.stat(lock);
+    const original = await fs.lstat(lock);
+    if (!original.isDirectory() || original.isSymbolicLink() || process.getuid && original.uid !== process.getuid()) throw busy();
     let owner;
     try { owner = JSON.parse(await fs.readFile(ownerFile, 'utf8')); } catch { owner = null; }
-    if (Date.now() - original.mtimeMs <= staleMs || (Number.isInteger(owner?.pid) && owner.pid > 0 && alive(owner.pid))) throw busy();
+    if (!Number.isInteger(owner?.pid) || owner.pid <= 0 || typeof owner.generation !== 'string' || Date.now() - original.mtimeMs <= staleMs || alive(owner.pid)) throw busy();
     const current = await fs.stat(lock).catch(() => null);
     if (!same(original, current) || original.mtimeMs !== current.mtimeMs) throw busy();
     // Move the abandoned generation aside. A competing acquisition must verify
@@ -50,4 +53,31 @@ export async function desktopProfileLock(lock, { staleMs = 60000, heartbeatMs = 
       await fs.unlink(ownerFile); await fs.rmdir(lock);
     }
   } };
+}
+
+// Async context permits only trusted nested calls (open -> guest restore). A new
+// MCP call or a watcher process has no lease and must acquire the same lock.
+const lifecycle = new AsyncLocalStorage();
+const leases = new WeakMap();
+export async function withDesktopMutationLock({ dataDir, lease }, action) {
+  const data = await inspectProfileDirectory(dataDir);
+  // null explicitly starts a new user request; only nested implementation calls
+  // omit the lease and inherit the current trusted transaction.
+  const inherited = lease === null ? null : lease || lifecycle.getStore();
+  if (inherited) {
+    const owner = leases.get(inherited);
+    if (!owner || owner.dataDir !== data.dir) throw busy();
+    await inherited.assertHeld();
+    return action(inherited);
+  }
+  const state = path.join(data.dir, 'desktop-accounts', 'claude');
+  for (const dir of [path.dirname(state), state]) {
+    try { await fs.mkdir(dir, { mode: 0o700 }); }
+    catch (error) { if (error.code !== 'EEXIST') throw error; }
+    await inspectProfileDirectory(dir, { device: data.device });
+  }
+  const acquired = await desktopProfileLock(path.join(state, 'lifecycle.lock'));
+  leases.set(acquired, { dataDir: data.dir });
+  try { return await lifecycle.run(acquired, () => action(acquired)); }
+  finally { leases.delete(acquired); await acquired.release(); }
 }

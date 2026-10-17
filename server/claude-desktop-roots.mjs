@@ -47,7 +47,11 @@ export async function readDesktopIdentity(dir) {
 export async function readDesktopRegistry(paths) {
   const value = await readDesktopJson(paths.registry);
   if (!value) return { version: 1, profiles: [] };
-  if (value.version !== 1 || !Array.isArray(value.profiles) || value.profiles.length > 32) throw desktopError('Desktop の対応表を確認できません');
+  return validateDesktopRegistry(paths, value);
+}
+
+export function validateDesktopRegistry(paths, value) {
+  if (value?.version !== 1 || !Array.isArray(value.profiles) || value.profiles.length > 32) throw desktopError('Desktop の対応表を確認できません');
   const ids = new Set(), accounts = new Set();
   let active = 0;
   for (const p of value.profiles) {
