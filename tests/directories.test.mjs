@@ -75,7 +75,13 @@ test('source categories persist, keep manual names, and respect explicit categor
       {id:'claude:1',agent:'claude',cwd:'/r/api',claudeGroup:{id:'g1',name:'Team'}},
       {id:'claude:2',agent:'claude',cwd:'/r/api'},
     ];
-    await store.createDirectory({name:'Legacy',paths:['/r']});
+    await store.createDirectory({name:'Legacy',paths:[]});
+    const previous = await store.load();
+    previous.directories.push(...sources.filter(s => s.codexProject || s.agent === 'claude').map((s, i) => ({
+      id: `old-${i}`, name: s.codexProject?.name || s.claudeGroup?.name || 'api', color: null, paths: [],
+      sourceKeys: [JSON.stringify([s.agent, 'local', s.codexProject || s.claudeGroup ? 'group' : 'cwd', s.codexProject?.id || s.claudeGroup?.id || s.cwd])],
+    })));
+    await store.save(previous);
     assert.equal(await store.syncSessionCategories(sources),true);
     assert.equal(await store.syncSessionCategories(sources),false);
     let state = await store.load();

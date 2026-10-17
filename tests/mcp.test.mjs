@@ -159,15 +159,15 @@ test('an archive rule can be replayed over MCP even when disabled and archived c
   await call('canban_delete_list', { listId: archive.id });
 });
 
-test('directories: source categories, explicit assignment and category-less filter', async () => {
+test('directories: explicit folder rules, explicit assignment and category-less filter', async () => {
   const dir = (await call('canban_create_directory', { name: 'Web', paths: ['/r/web'] })).structuredContent.result;
   let board = (await call('canban_get_board', { days: 0 })).structuredContent;
   const all = board.lists.flatMap((l) => l.cards);
   const inWeb = all.filter((c) => c.cwd === '/r/web');
   assert.ok(inWeb.length, 'fixtures have sessions under /r/web');
-  assert.ok(inWeb.filter(c => c.agent === 'codex').every(c => c.directory === null), 'Codex without a project stays category-less');
-  assert.ok(inWeb.filter(c => c.agent === 'claude').every(c => c.directory?.name === 'web'), 'Claude falls back to its cwd name');
-  assert.equal(board.directories.find(d => d.id === dir.id).count, 0);
+  assert.ok(inWeb.every(c => c.directory?.id === dir.id), 'existing explicit full folder rules remain active');
+  assert.equal(board.directories.find(d => d.id === dir.id).count, inWeb.length);
+  assert.ok(!board.directories.some(d => d.name === 'web'), 'new source names do not create categories');
   for (const card of inWeb) await call('canban_update_card', { cardId: card.id, directory: dir.id });
   board = (await call('canban_get_board', { days: 0 })).structuredContent;
   assert.equal(board.directories.find(d => d.id === dir.id).count, inWeb.length);

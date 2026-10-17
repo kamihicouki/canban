@@ -8,6 +8,8 @@ import crypto from 'node:crypto';
 import { resolveDataDirectory } from './data-directory.mjs';
 import { normalizeTaskDashboard, taskDashboardRecord } from './task-dashboard.mjs';
 import { normalizeTaskContext } from './task-context.mjs';
+import { legacySessionCategory, migrateSourceData, resolveCategory, normalizeSourceSelections, normalizeCategoryBindings } from './category-bindings.mjs';
+import { sessionSourceView } from './source-model.mjs';
 import { attachSlackReference } from './slack-store.mjs';
 import { loopRecord, applyLoopCommand, loopProgress } from './loop.mjs';
 
@@ -73,12 +75,12 @@ function normalizeDispatch(x) {
   };
 }
 
-const VIEW_FILTER_KEYS = ['agent', 'host', 'account', 'status', 'project', 'folder', 'section', 'directory', 'label', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'dotScope', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
+const VIEW_FILTER_KEYS = ['agent', 'host', 'account', 'status', 'project', 'folder', 'section', 'sourceFilters', 'cardKind', 'directory', 'label', 'laneHeight', 'q', 'days', 'includeArchived', 'includeSubagents', 'dotScope', 'pinnedOnly', 'groupBranch', 'fulltext', 'swimlane'];
 function normalizeView(v) {
   if (!v || typeof v.id !== 'string' || !String(v.name || '').trim()) return null;
   const filters = {};
   for (const k of VIEW_FILTER_KEYS) if (v.filters && v.filters[k] !== undefined) filters[k] = v.filters[k];
-  return { id: v.id, name: String(v.name).trim().slice(0, 60), filters };
+  return { id: v.id, name: String(v.name).trim().slice(0, 60), filters, ...(v.sourceMigration?.version === 1 ? { sourceMigration: structuredClone(v.sourceMigration) } : {}) };
 }
 
 // `section:<id>`: a Codex thread entered that sidebar section (Codex sections play
@@ -130,38 +132,22 @@ function normalizeDirectory(d) {
     ...(Array.isArray(d.sourceKeys) ? { sourceKeys: [...new Set(d.sourceKeys.filter(k => typeof k === 'string'))] } : {}) };
 }
 
-// Agent-owned grouping becomes a Canban category; Codex has no cwd fallback.
-export function sessionCategory(session) {
-  if (!session || !['codex', 'claude'].includes(session.agent)) return null;
-  const host = session.host?.id || 'local';
-  const group = session.agent === 'codex' ? session.codexProject : session.claudeGroup;
-  const name = String(group?.name || (session.agent === 'claude' ? session.cwd?.replace(/\/+$/, '').split('/').pop() || session.cwd || '' : '')).trim().slice(0, 80);
-  if (!name) return null;
-  return { name, key: JSON.stringify([session.agent, host, group ? 'group' : 'cwd', group ? group.id || group.name : session.cwd]) };
-}
+// The old unscoped category key is kept solely for compatibility snapshots.
+export const sessionCategory = legacySessionCategory;
 
-// Explicit assignment wins ('__none' opts out), then the agent's grouping.
-// Task cards and callers without source metadata retain the legacy path rules.
 export function resolveDirectory(state, card, cwd, session = null) {
-  const id = card?.directoryId;
-  if (id === '__none') return null;
-  if (id) {
-    const d = (state.directories || []).find((x) => x.id === id);
-    if (d) return d;
+  const mapping = state.categoryMapping;
+  const result = resolveCategory({ card, sourceView: session ? sessionSourceView(session) : null,
+    bindings: mapping?.bindings || [], legacy: { directories: state.directories || [], cwd,
+      cards: mapping?.legacyCards || {}, sessionId: session?.id, tombstones: mapping?.tombstones || [] } });
+  if (result.categoryId) return state.directories.find(d => d.id === result.categoryId) || null;
+  // Before a snapshot exists, read old assignments exactly as before. No new
+  // unscoped sourceKeys are ever created by syncSessionCategories.
+  if ((!mapping || mapping.snapshotPending) && result.status === 'unclassified' && session) {
+    const old = sessionCategory(session);
+    if (old && !state.settings?.ignoredCategorySources?.includes(old.key)) return state.directories.find(d => d.sourceKeys?.includes(old.key)) || null;
   }
-  if (session && ['codex', 'claude'].includes(session.agent)) {
-    const source = sessionCategory(session);
-    return source ? (state.directories || []).find(d => d.sourceKeys?.includes(source.key)) || null : null;
-  }
-  if (!cwd) return null;
-  const clean = String(cwd).replace(/\/+$/, '');
-  let best = null, len = -1;
-  for (const d of state.directories || []) {
-    for (const p of d.paths || []) {
-      if ((clean === p || clean.startsWith(`${p}/`)) && p.length > len) { best = d; len = p.length; }
-    }
-  }
-  return best;
+  return null;
 }
 function placeCard(card, toListId, order, at = new Date().toISOString()) {
   if (card.listId !== toListId) {
@@ -209,6 +195,7 @@ export function normalize(s) {
     defaultListId: s?.defaultListId,
     labels: Array.isArray(s?.labels) ? s.labels.filter((l) => l && l.id) : d.labels,
     directories: Array.isArray(s?.directories) ? s.directories.map(normalizeDirectory).filter(Boolean) : [],
+    ...(s?.categoryMapping?.version === 1 ? { categoryMapping: structuredClone(s.categoryMapping) } : {}),
     cards: s?.cards && typeof s.cards === 'object' ? s.cards : {},
     remoteHosts: s?.remoteHosts && typeof s.remoteHosts === 'object' ? s.remoteHosts : {},
     uiState: normalizeUiStateRecord(s?.uiState),
@@ -235,7 +222,7 @@ function cloneUiState(state) {
 
 const SKIP_WRITE = Symbol('skipWrite');
 
-function taskAttributes(state, { directory, labels, context }) {
+function taskAttributes(state, { directory, labels, context, sourceContext }) {
   const attrs = {};
   if (directory !== undefined && directory !== null && directory !== '') {
     if (directory !== '__none' && !state.directories.some(d => d.id === directory)) throw new Error('カテゴリが見つかりません');
@@ -246,6 +233,7 @@ function taskAttributes(state, { directory, labels, context }) {
     attrs.labels = [...new Set(labels)];
   }
   if (context !== undefined) attrs.context = normalizeTaskContext(context);
+  if (sourceContext !== undefined) attrs.sourceContext = sourceContext === null ? [] : normalizeSourceSelections(sourceContext);
   return attrs;
 }
 
@@ -415,7 +403,7 @@ export class Store {
   }
 
   // ---- task cards (not backed by a session) -------------------------------
-  async createTask({ title, listId, description = '', directory, labels, context, clientRequestId, slackSource }) {
+  async createTask({ title, listId, description = '', directory, labels, context, sourceContext, clientRequestId, slackSource }) {
     title = String(title || '').trim();
     if (!title) throw new Error('カード名を入力してください');
     if (clientRequestId !== undefined && (typeof clientRequestId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(clientRequestId))) throw new Error('作成リクエストが不正です');
@@ -424,7 +412,7 @@ export class Store {
         const existing = Object.entries(s.cards).find(([, c]) => c.kind === 'task' && c.clientRequestId === clientRequestId);
         if (existing) return { cardId: existing[0], ...existing[1] };
       }
-      const attrs = taskAttributes(s, { directory, labels, context });
+      const attrs = taskAttributes(s, { directory, labels, context, sourceContext });
       if (listId && !s.lists.some(l => l.id === listId)) throw new Error('リストが見つかりません');
       const lid = s.lists.some((l) => l.id === listId) ? listId : s.defaultListId;
       const id = `task:${crypto.randomBytes(6).toString('hex')}`;
@@ -445,11 +433,11 @@ export class Store {
     return this.mutate(s => { const card = s.cards[cardId]; if (card) card.slackRefs = (card.slackRefs || []).filter(k => k !== key); return { cardId, key }; });
   }
 
-  updateTask({ cardId, title, description, target, context, directory, labels }) {
+  updateTask({ cardId, title, description, target, context, sourceContext, directory, labels }) {
     return this.mutate((s) => {
       const card = s.cards[cardId];
       if (card?.kind !== 'task') throw new Error('タスクカードが見つかりません');
-      Object.assign(card, taskAttributes(s, { directory, labels, context }));
+      Object.assign(card, taskAttributes(s, { directory, labels, context, sourceContext }));
       if (directory === null || directory === '') delete card.directoryId;
       if (title !== undefined) {
         const t = String(title).trim();
@@ -751,19 +739,12 @@ export class Store {
 
   // ---- directories -------------------------------------------------------
   syncSessionCategories(sessions) {
-    const current = this.load();
-    const ignored = new Set(current.settings.ignoredCategorySources);
-    const sources = new Map(sessions.map(sessionCategory).filter(source => source && !ignored.has(source.key)).map(source => [source.key, source]));
-    // No write/revision churn when the categories are already present.
-    if ([...sources.keys()].every(key => current.directories.some(d => d.sourceKeys?.includes(key)))) return false;
+    const mapping = this.load().categoryMapping;
+    if (mapping?.version === 1 && !mapping.snapshotPending) return false;
     return this.mutate(s => {
-      for (const source of sources.values()) {
-        if (s.settings.ignoredCategorySources.includes(source.key)) continue;
-        if (s.directories.some(d => d.sourceKeys?.includes(source.key))) continue;
-        let dir = s.directories.find(d => d.name === source.name);
-        if (!dir) { dir = { id: newId('dir'), name: source.name, color: null, paths: [] }; s.directories.push(dir); }
-        dir.sourceKeys = [...(dir.sourceKeys || []), source.key];
-      }
+      const migrated = migrateSourceData(s, sessions).state;
+      s.categoryMapping = migrated.categoryMapping;
+      s.settings.views = migrated.settings.views;
       return true;
     });
   }
@@ -778,13 +759,24 @@ export class Store {
     });
   }
 
-  updateDirectory({ directoryId, name, color, paths }) {
+  updateDirectory({ directoryId, name, color, paths, sourceBindings }) {
     return this.mutate((s) => {
       const dir = s.directories.find((d) => d.id === directoryId);
       if (!dir) throw new Error('カテゴリが見つかりません');
       if (name !== undefined && String(name).trim()) dir.name = String(name).trim().slice(0, 80);
       if (color !== undefined) dir.color = LIST_COLORS.includes(color) ? color : null;
       if (paths !== undefined) dir.paths = normalizePaths(paths);
+      if (sourceBindings !== undefined) {
+        const selected = normalizeCategoryBindings(sourceBindings);
+        s.categoryMapping ||= { version: 1, snapshotPending: true, bindings: [], tombstones: [], legacyCards: {} };
+        const mapping = s.categoryMapping;
+        const same = (a, b) => JSON.stringify(a.ref) === JSON.stringify(b.ref) && a.relation === b.relation;
+        const removed = mapping.bindings.filter(b => b.categoryId === directoryId && !selected.some(x => same(x, b)));
+        mapping.tombstones.push(...removed.map(({ ref, relation, legacySourceKey }) => ({ ref, relation, legacySourceKey })));
+        for (const [id, saved] of Object.entries(mapping.legacyCards)) if (removed.some(b => b.legacySourceKey === saved.sourceKey && saved.categoryId === directoryId)) delete mapping.legacyCards[id];
+        mapping.bindings = [...mapping.bindings.filter(b => b.categoryId !== directoryId), ...selected.map(b => ({ categoryId: directoryId, ...b }))];
+        mapping.tombstones = mapping.tombstones.filter(b => !selected.some(x => same(x, b)));
+      }
       return dir;
     });
   }
@@ -793,6 +785,12 @@ export class Store {
     return this.mutate((s) => {
       const deleted = s.directories.find(d => d.id === directoryId);
       s.settings.ignoredCategorySources = [...new Set([...s.settings.ignoredCategorySources, ...(deleted?.sourceKeys || [])])];
+      if (s.categoryMapping) {
+        const removed = s.categoryMapping.bindings.filter(b => b.categoryId === directoryId);
+        s.categoryMapping.tombstones.push(...removed.map(({ ref, relation, legacySourceKey }) => ({ ref, relation, legacySourceKey })));
+        s.categoryMapping.bindings = s.categoryMapping.bindings.filter(b => b.categoryId !== directoryId);
+        for (const [id, saved] of Object.entries(s.categoryMapping.legacyCards)) if (saved.categoryId === directoryId) delete s.categoryMapping.legacyCards[id];
+      }
       s.directories = s.directories.filter((d) => d.id !== directoryId);
       for (const c of Object.values(s.cards)) if (c.directoryId === directoryId) delete c.directoryId;
       return { deleted: directoryId };

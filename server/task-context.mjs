@@ -21,13 +21,16 @@ export function normalizeTaskContext(value) {
 }
 
 export function effectiveTaskContext(task, links = []) {
+  // Multiple links are a set of facts, not a representative project/account.
+  // Keep the legacy single-link API; explicit context still has three states.
+  const one = links.length === 1 ? links[0] : null;
   const fallback = {
-    project: links.find(s => s.project)?.project || null,
-    folder: links.find(s => s.folder)?.folder || null,
-    section: links.find(s => s.codexSection)?.codexSection.id || null,
-    agent: task.context?.account?.split(':')[0] || links[0]?.agent || task.target?.agent || null,
-    host: links.length ? links[0].host?.id || 'local' : task.target?.hostId || 'local',
-    account: links.find(s => s.account)?.account || null,
+    project: one?.project || null,
+    folder: one?.folder || null,
+    section: one?.codexSection?.id || null,
+    agent: task.context?.account?.split(':')[0] || one?.agent || (!links.length ? task.target?.agent : null) || null,
+    host: one ? one.host?.id || 'local' : !links.length ? task.target?.hostId || 'local' : null,
+    account: one?.account || null,
   };
   return Object.fromEntries(TASK_CONTEXT_KEYS.map(key => [key, Object.hasOwn(task.context || {}, key) ? task.context[key] : fallback[key]]));
 }

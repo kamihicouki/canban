@@ -34,6 +34,7 @@ import { accountActions, accountActionTools } from './account-actions.mjs';
 import { shutdownLogins } from './login.mjs';
 import { boardHtml } from './ui.mjs';
 import { taskContextSchema } from './task-context.mjs';
+import { sourceSelectionSchema } from './category-bindings.mjs';
 import { uploadImage, promptImages, listSkills, withSkills, withImagePaths, remoteImages } from './prompt-input.mjs';
 import { resolveSession, inspect, timingProblem } from './dispatch.mjs';
 import { claudeExecutionSession, savedClaudeExecutionSession } from './claude-handoff.mjs';
@@ -114,6 +115,8 @@ const appOnly = { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true, 
 const appAndModel = { ui: { visibility: ['model', 'app'] }, 'openai/widgetAccessible': true };
 
 const filterProps = {
+  sourceFilters: sourceSelectionSchema,
+  cardKind: { type: 'string', enum: ['all', 'task', 'session'] },
   agent: { type: 'string', enum: ['all', 'codex', 'claude'], description: 'AI App（codex / claude）で絞り込み' },
   host: { type: 'string', description: "マシンで絞り込み（'local' またはリモート接続の hostId）" },
   account: accountFilterProp,
@@ -646,11 +649,11 @@ const TOOLS = [
     name: 'canban_create_task',
     title: 'タスクカードを追加',
     description: 'セッションに紐づかないタスクカードを作る（Trello のカードと同じ）。list はリスト ID か名前（省略時は既定のリスト）。',
-    inputSchema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, list: { type: 'string' }, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } }, context: taskContextSchema, clientRequestId: { type: 'string', maxLength: 128 }, slackSource: { type: 'string', maxLength: 120 } }, required: ['title'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, list: { type: 'string' }, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } }, context: taskContextSchema, sourceContext: { anyOf: [sourceSelectionSchema, { type: 'null' }] }, clientRequestId: { type: 'string', maxLength: 128 }, slackSource: { type: 'string', maxLength: 120 } }, required: ['title'], additionalProperties: false },
     _meta: appAndModel,
-    handler: async ({ title, description, list, directory, labels, context, clientRequestId, slackSource }) => {
+    handler: async ({ title, description, list, directory, labels, context, sourceContext, clientRequestId, slackSource }) => {
       const l = list ? resolveList((await store.load()).lists, list) : null;
-      const res = await store.createTask({ title, description, listId: l?.id || list, directory, labels, context, clientRequestId, slackSource });
+      const res = await store.createTask({ title, description, listId: l?.id || list, directory, labels, context, sourceContext, clientRequestId, slackSource });
       return { text: `タスクカード「${res.title}」を作成しました（${res.cardId}）`, structured: res };
     },
   },
@@ -793,7 +796,7 @@ const TOOLS = [
     },
   },
   appTool('canban_unlink_session', 'セッションの紐付けを解除', { taskId: { type: 'string' }, sessionId: { type: 'string' } }, ['taskId', 'sessionId'], (a) => store.unlinkSession(a)),
-  appTool('canban_update_task', 'タスクカードを更新', { cardId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, context: taskContextSchema, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } } }, ['cardId'], (a) => store.updateTask(a)),
+  appTool('canban_update_task', 'タスクカードを更新', { cardId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, context: taskContextSchema, sourceContext: { anyOf: [sourceSelectionSchema, { type: 'null' }] }, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } } }, ['cardId'], (a) => store.updateTask(a)),
   {
     name: 'canban_set_session_card_state',
     title: 'セッションカードを整理',
@@ -923,7 +926,7 @@ const TOOLS = [
   appTool('canban_update_label', 'ラベルを更新', { labelId: { type: 'string' }, name: { type: 'string' }, color: { type: 'string' } }, ['labelId'], (a) => store.updateLabel(a)),
   appTool('canban_delete_label', 'ラベルを削除', { labelId: { type: 'string' } }, ['labelId'], (a) => store.deleteLabel(a)),
   appTool('canban_create_directory', 'カテゴリを追加', { name: { type: 'string' }, color: { type: ['string', 'null'] }, paths: { type: 'array', items: { type: 'string' } } }, ['name'], (a) => store.createDirectory(a)),
-  appTool('canban_update_directory', 'カテゴリを更新', { directoryId: { type: 'string' }, name: { type: 'string' }, color: { type: ['string', 'null'] }, paths: { type: 'array', items: { type: 'string' } } }, ['directoryId'], (a) => store.updateDirectory(a)),
+  appTool('canban_update_directory', 'カテゴリを更新', { sourceBindings: sourceSelectionSchema, directoryId: { type: 'string' }, name: { type: 'string' }, color: { type: ['string', 'null'] }, paths: { type: 'array', items: { type: 'string' } } }, ['directoryId'], (a) => store.updateDirectory(a)),
   appTool('canban_delete_directory', 'カテゴリを削除', { directoryId: { type: 'string' } }, ['directoryId'], (a) => store.deleteDirectory(a)),
   appTool('canban_get_ui_state', '共有画面状態を取得', {}, [], () => store.getUiState()),
   appTool('canban_save_ui_state', '共有画面状態を保存', {

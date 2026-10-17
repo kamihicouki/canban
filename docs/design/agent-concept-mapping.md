@@ -248,3 +248,70 @@ type CompactCapabilities = ReturnType<typeof compactCapabilities>;
 - relationの `attribute` は同じ転送オブジェクトのattributesだけを指す。そのObservationからref/key/observationを復元する。requestedWith/startedWithのtypeとrequestIdは保持し、参照できる同一属性がなければ完全relationを送る。別カードへの参照やdanglingなsession IDは作らない。
 - 能力の各既定値はoperationと共通targetIdを補完する。open/start/archive/restore/deleteはunknownでreason=`操作条件は未取得です`、sendPromptはunknownでreason=`最新の状態・権限・送信設定は未取得です`。fork/interrupt/pinはunsupportedでreason=`Canbanからの操作には対応していません。元アプリで操作してください`。既定と異なる操作だけoperationsへ入れ、全reason/routes/個別targetIdを保持する。省略を「操作を隠す」と解釈しない。
 - 固定fixture: `tests/source-model.test.mjs` のcompact round-tripとboard/full detail比較、`tests/source-capabilities.test.mjs` のcapability round-trip。unknown/absent/stale/unavailable、requestedWith/startedWithをJSON転送前後で比較する。
+
+## 分類・検索・移行の公開Interface v1（Task2）
+
+`server/category-bindings.mjs` の `resolveCategory({card,sourceView,bindings,legacy})` は
+`{status,categoryId,categoryIds?}` を返す。status は `explicit|none|bound|conflict|legacy|unclassified`。
+明示 `directoryId` と `__none` を最優先にし、SourceRef と relation が完全一致する binding を使う。
+競合は `categoryIds` を返し、既存 snapshot の有効カテゴリを保持する。新規カードは未分類。
+環境の分類は `startedWith` だけを認め、`requestedWith` や cwd 一致から分類しない。
+
+既存 board payload に `categoryMapping:{version:1,bindings,tombstones,legacyCards,report}` を追加する。
+binding は `{categoryId,ref,relation,legacySourceKey?}`、tombstone は `{ref,relation,legacySourceKey?}`。
+`legacyCards` は snapshot 時点の session ID をキーに `{categoryId,sourceKey}` を持つ。
+元の directories、sourceKeys、色、名前、手動指定、削除抑止は保持する。新規出典の名前結合・カテゴリ自動作成は行わない。
+`canban_update_directory({directoryId,sourceBindings:[{ref,relation}]})` はそのカテゴリの対応を置き換える。
+解除時は native tombstone と旧 snapshot の抑止を同時に更新する。別カテゴリとの重複は競合として公開する。
+未取得状態で対応を編集した場合は `snapshotPending:true` として、全取得 sessions による最初の snapshot まで保留する。
+
+ボードは `categoryBindings` と `categoryBindingConflicts:[{ref,relation,categoryIds}]` を返す。
+既存の公開名 `directories` / `directoryId` は変更しない。
+
+### Task3 が使う検索と由来
+
+```ts
+sourceFilters: {ref:SourceRef, relation?:'memberOf'|'displayedIn'|'requestedWith'|'startedWith'}[];
+cardKind: 'all'|'task'|'session';
+sourceContext: {ref:SourceRef, relation?:SourceRelation['type']}[];
+sourceRelations: {type:SourceRelation['type'],ref:SourceRef,key:string,
+  sessions:{sessionId:string,requestId:string|null,observation:Observation<SourceEntity>}[]}[];
+sourceFacets: {key:string,ref:SourceRef,name:string|null,count:number,
+  relations:SourceRelation['type'][],origins:('observed'|'planned')[]}[];
+sourceFacetBasis: 'filtered-board-cards';
+```
+
+`sourceFilters` は AND、同一 ref/relation 条件は重複排除。relation 省略時は観測と開始予定 sourceContext の双方に一致する。
+relation 明示時はその観測関係だけを対象にする。開始予定を memberOf / startedWith / requestedWith に昇格させない。
+`sourceContext` は旧 `context` と別の create/update 引数。未指定の update は保持、null と [] は予定指定を解除する。
+新規タスクで未指定なら予定なし。解除してもリンク済みセッションの観測は残る。
+旧 context のキー省略はリンクに従い、キーの null は明示的ななし、context:null は全キーのリンク追従へ戻る。
+複数リンクから仮想の代表 project/account/host を合成しない。旧フィルターのリンク集合検索は維持する。
+
+facet は全条件と cardKind を適用した最終表示集合を母数とし、選択中の facet 条件も外さない。
+リンク済みセッションは独立カードとして数えず、同じ Task が複数リンク・予定・観測で一致しても count は1。
+origins と relations は内訳であり別カード件数ではない。観測時刻・状態は sourceRelations.sessions に残す。
+候補の名前が不明なら nativeId と scope の補助表示を使い、開始カタログで所属件数を補わない。
+旧 project/folder/section は受理し、確認できる新旧条件の矛盾は拒否する。旧 folder は末尾名と完全パスに対応する。
+WorkingLocation の machineId は local/接続相対 ID までしか確認できないため、作業フォルダの確定 SourceRef は作らない。
+Task3 は native sourceFacets と旧 folder 条件のピッカーを分けて使う。
+
+### コピー移行と rollback
+
+`migrateSourceData(state,sessions) -> {state,report}` は入力を変更しない純粋な dry run。
+既存 SQLite の payload 追加だけを使う。全取得 sessions（days/filters/cardKind 適用前）から旧対応を記録し、
+native ID と scope が全候補で一意なものだけ binding 化する。名前だけ・unknown・複数 scope は snapshot カードの分類を維持する。
+新しく現れた別 scope の同名出典と、snapshot 時点で取得できなかった host/account/歴史セッションへ旧名を拡散しない。
+既存の明示完全 folder path 規則は将来のカードにも適用する。
+report は `unique/ambiguous/unresolved/suppressed/preservedCards`、例（上限50）、unknown理由内訳、
+`viewResolutions:[{viewId,field,value,outcome,candidateKeys}]` と取得限界を返す。再実行は同じ state と alreadyMigrated を返す。
+
+保存ビューの旧 project/section は全候補が一意な native ref のときだけ sourceFilters へ変換し、
+元 filters と変換項目を `view.sourceMigration:{version:1,legacyFilters,convertedFields,convertedSelections}` に保持する。
+folder/unknown/複数scope は旧条件のまま。共有 uiState の filters と下書きは変更しない。
+
+旧版へ戻す前は `rollbackSourceViews(latestState) -> {state,report}` をコピーへ適用する。
+変換したビューの旧条件だけを復元し、移行後の days 等の変更、新しいカード・説明・下書きを保持する。
+新規 sourceFilters や cardKind 等、旧版で表せないビューは旧版の一覧から保留し、`report.heldViews` に全記録を返す。
+この report は `.local/` の sidecar に保存して人が確認する。旧サーバーへ変換済み filters をそのまま渡すと、未知条件が落ち全件へ広がるため禁止。
+DB全体を古いバックアップへ巻き戻さない。実データへの適用・旧版切替は本Taskで行わない。
