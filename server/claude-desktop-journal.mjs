@@ -64,7 +64,8 @@ async function checkedMove(paths, lease, runtime, move, from, to, expected) {
 }
 
 export async function switchDesktopProfiles(paths, registry, target, { requestId, lease, runtime, backup, move = moveProfileDirectory }) {
-  const current = registry.profiles.find(p => p.active);
+  const pending = registry.pending;
+  const current = registry.profiles.find(p => p.active) || (pending?.active ? { id: pending.id, account: pending.expectedAccount, dir: paths.appDir } : null);
   if (!current || current.id === target.id) throw desktopError('切替前の Desktop を確認できません');
   const from = { id: current.id, account: current.account, ...await inspectProfileDirectory(current.dir, { device: paths.device }) };
   const to = { id: target.id, account: target.account, ...await inspectProfileDirectory(target.dir, { device: paths.device }) };
@@ -75,7 +76,8 @@ export async function switchDesktopProfiles(paths, registry, target, { requestId
   const backupDir = await backup({ requestId, profiles: [current, target] });
   if (typeof backupDir !== 'string' || !path.isAbsolute(backupDir)) throw desktopError('Desktop のバックアップを確認できません');
   await inspectProfileDirectory(backupDir);
-  const journal = { version: 1, requestId, phase: 'parking', from, to, registry, backupDir };
+  const kind = pending?.active ? 'cancel-login' : pending?.id === target.id ? 'login' : 'switch';
+  const journal = { version: 1, requestId, kind, phase: 'parking', from, to, registry, backupDir };
   await lease.assertHeld(); await writeDesktopRecord(paths, 'switch.json', journal);
   await checkedMove(paths, lease, runtime, move, paths.appDir, parked, from);
   journal.phase = 'parked'; await writeDesktopRecord(paths, 'switch.json', journal);
@@ -86,7 +88,9 @@ export async function switchDesktopProfiles(paths, registry, target, { requestId
 }
 
 function switchedRegistry(paths, journal) {
-  return { version: 1, profiles: journal.registry.profiles.map(p => ({ ...p, active: p.id === journal.to.id, dir: p.id === journal.to.id ? paths.appDir : path.join(paths.profiles, p.id) })) };
+  const value = { ...journal.registry, profiles: journal.registry.profiles.map(p => ({ ...p, active: p.id === journal.to.id, dir: p.id === journal.to.id ? paths.appDir : path.join(paths.profiles, p.id) })) };
+  if (journal.kind === 'login' || journal.kind === 'cancel-login') value.pending = { ...journal.registry.pending, active: journal.kind === 'login' };
+  return value;
 }
 async function commitActivated(paths, journal, lease) {
   await lease.assertHeld();
@@ -99,9 +103,12 @@ export async function recoverDesktopProfiles(paths, { lease, runtime, move = mov
   const journal = await readDesktopJson(paths.journal);
   if (!journal) return null;
   validateDesktopRegistry(paths, journal.registry);
-  const from = journal.registry.profiles.find(p => p.id === journal.from?.id && p.active);
-  const to = journal.registry.profiles.find(p => p.id === journal.to?.id && !p.active);
+  const pending = journal.registry.pending;
+  const pendingProfile = pending && { id: pending.id, account: pending.expectedAccount, dir: pending.active ? paths.appDir : path.join(paths.profiles, pending.id) };
+  const from = journal.kind === 'cancel-login' && pending?.active ? pendingProfile : journal.registry.profiles.find(p => p.id === journal.from?.id && p.active);
+  const to = journal.kind === 'login' && pending && !pending.active ? pendingProfile : journal.registry.profiles.find(p => p.id === journal.to?.id && !p.active);
   if (journal.version !== 1 || !from || !to || from.account !== journal.from.account || to.account !== journal.to.account ||
+      from.id !== journal.from.id || to.id !== journal.to.id || !['switch', 'login', 'cancel-login'].includes(journal.kind) ||
       journal.from.dir !== paths.appDir || journal.to.dir !== path.join(paths.profiles, to.id) ||
       ![journal.from, journal.to].every(p => /^\d+$/.test(p.device) && /^\d+$/.test(p.inode)) ||
       !['parking', 'parked', 'activating', 'activated', 'committed', 'rolling-back'].includes(journal.phase)) throw desktopError('Desktop の復元記録を確認できません');

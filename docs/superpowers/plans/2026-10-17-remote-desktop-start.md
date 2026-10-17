@@ -12,6 +12,7 @@
 
 ## Global Constraints
 
+- この作業の Codex 新規・再開・サブエージェント・レビューは `gpt-6.1-sol` のみを使い、旧GPTモデルへフォールバックしない（ユーザーの更新AGENTS.md）。
 - 「モデルのターンは開始しない」。Desktop での送信はユーザーが行う。
 - `codex://threads/new` に `hostId` を追加してリモート対応と扱わない。既存 thread を `hostId` と `prompt` 付きで開く。
 - ローカル Desktop のアカウントと、リモートの CLI 認証をコピー・同期しない。Codex の Desktop アカウント自動切替は追加しない。

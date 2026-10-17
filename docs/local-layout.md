@@ -64,7 +64,12 @@ Canban は Desktop のプロフィールやリンクを切り替えない（0.24
 
 0.29.25 の内部サービスは、明示した切替要求だけを受け、停止確認後に同じファイルシステム内で exclusive rename する。Node.js の通常の rename による空ディレクトリの上書きを避けるため、`server/desktop-files.py` のOS標準APIを使い、未対応OSでは停止する。操作前の `switch.json`（600）に実パス・device/inode・段階を記録し、元に戻すか切替済みの状態を確定する。外部で作られた保存先は消さない。切替とゲストの配置・書戻し・watcherは `<Canban保存先>/desktop-accounts/claude/lifecycle.lock` を共有する。新しい開始要求はロックを取り直し、処理内部のゲスト復元だけが既に取得した権限を再利用する。この内部処理も、通常の開始経路へはまだ接続していない。
 
+0.29.26 では初回接続の候補を `registry.pending` に保持し、期待アカウント・元のプロフィール・操作IDだけを記録する。候補は登録済みプロフィールではなく、Desktopが想定したアカウントでログインしたことを確認してから登録する。取消しは候補を退避して元のプロフィールを戻し、候補のデータを消さない。初回接続中も、登録済みの退避プロフィールから元のカードIDと所有者を読み取る。対応表の変更は世代を確認して即座に読み直し、古いパスのキャッシュだけで会話を別アカウントへ付け替えない。同じCLI会話IDに異なるDesktop所有者がある場合は、Desktopでの再開を止めて確認を案内する。
+
+Desktop起動の子プロセスには `CANBAN_*` に加えてCLIの認証・接続先の上書き（`ANTHROPIC_*`・`OPENAI_*`・`CLAUDE_CODE_OAUTH_TOKEN`・`CLAUDE_CODE_USE_*`・`CODEX_ACCESS_TOKEN`・`CODEX_API_KEY`）、`CLAUDE_CONFIG_DIR`・`CODEX_HOME` を渡さない。親CLIの環境・認証ファイル・キューは変更しない。対応表の保存先に `.local/data` のような参照を使う場合は実パスへ解決して共通ロックを取得する。Desktopの標準保存先と管理下の子ディレクトリのsymlinkは禁止のままとする。
+
 ## ローカルmainとChrome更新
+
 
 Claude Desktop の拡張は `update:local` では更新されません。通常mainから `npm run pack:mcpb` で `dist/canban.mcpb` を生成し、Desktopの拡張設定で既存のCanbanを更新します。MCPBも `dist/codex-plugin/` のコミット済みGit管理ファイルだけを使い、`.local/` と未追跡資料を含めません。インストールコピーのmanifestと保存先を読み戻し、更新を確認します。アプリ管理キャッシュを手編集しません。
 

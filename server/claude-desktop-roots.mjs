@@ -21,7 +21,9 @@ export async function inspectProfileDirectory(dir, { uid = process.getuid?.(), d
 
 export async function desktopAccountPaths({ dataDir, appDir }) {
   if (!path.isAbsolute(dataDir || '') || !path.isAbsolute(appDir || '')) throw desktopError('Desktop の保存先を確認できません');
-  const data = await inspectProfileDirectory(dataDir);
+  // The configured Canban root may be the documented .local/data reference.
+  // Descendants and the Desktop app directory must still be real directories.
+  const data = await inspectProfileDirectory(await fs.realpath(dataDir));
   const app = path.join(await fs.realpath(path.dirname(appDir)), path.basename(appDir));
   const state = path.join(data.dir, 'desktop-accounts', 'claude');
   for (const dir of [path.dirname(state), state, path.join(state, 'profiles')]) {
@@ -59,6 +61,11 @@ export function validateDesktopRegistry(paths, value) {
     const expected = p.active ? paths.appDir : path.join(paths.profiles, p.id);
     if (p.dir !== expected) throw desktopError('Desktop の保存先が対応表と一致しません');
     ids.add(p.id); accounts.add(p.account); active += Number(p.active);
+  }
+  if (value.pending != null) {
+    const p = value.pending;
+    if (!validId(p.id) || ids.has(p.id) || !validDesktopAccount(p.expectedAccount) || !ids.has(p.previousId) || typeof p.active !== 'boolean' || !/^[A-Za-z0-9_-]{1,128}$/.test(p.requestId || '')) throw desktopError('Desktop の初回接続記録を確認できません');
+    active += Number(p.active);
   }
   if (active > 1) throw desktopError('有効な Desktop プロフィールを1つにしてください');
   return value;

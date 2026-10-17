@@ -101,6 +101,7 @@ export function resumeCommand(s) {
 }
 
 export function desktopLink(s) {
+  if (s.agent === 'claude' && s.desktopAmbiguous) return null;
   return AGENTS[s.agent]?.desktop(s) ?? null;
 }
 

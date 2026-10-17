@@ -53,3 +53,10 @@ test('apps opened by Canban do not inherit Canban settings', async () => {
   const { appEnv } = await import('../server/launcher.mjs');
   assert.deepEqual(appEnv({ PATH: '/bin', CANBAN_CLIENT: 'canban-chrome', CANBAN_DATA_DIR: '/x', HOME: '/h' }), { PATH: '/bin', HOME: '/h' });
 });
+
+test('Desktop startup never inherits a CLI account directory or authentication override', async () => {
+  const { appEnv } = await import('../server/launcher.mjs');
+  assert.deepEqual(appEnv({ PATH: '/bin', HOME: '/h', CLAUDE_CONFIG_DIR: '/cli-a', CODEX_HOME: '/codex-a',
+    ANTHROPIC_AUTH_TOKEN: 'test-secret', ANTHROPIC_API_KEY: 'test-secret', ANTHROPIC_BASE_URL: 'https://example.invalid',
+    CLAUDE_CODE_OAUTH_TOKEN: 'test-secret', CLAUDE_CODE_USE_BEDROCK: '1', OPENAI_API_KEY: 'test-secret', OPENAI_BASE_URL: 'https://example.invalid', CODEX_ACCESS_TOKEN: 'test-secret' }), { PATH: '/bin', HOME: '/h' });
+});

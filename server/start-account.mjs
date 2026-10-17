@@ -17,7 +17,7 @@ const nativeConfig = home => home.default && path.resolve(home.dir) === path.joi
 export async function startAccount({ agent, account, host, route, labels = {} }) {
   if (!account) return { prefix: '', open: fn => fn(), account: null };
   if (!ACCOUNT_KEY.test(account) || account.split(':')[0] !== agent) throw new Error('AI App とアカウントが一致していません');
-  if (host && host.local === false) throw new Error('アカウントを選んで開始できるのはこのマシンだけです。リモートではそのマシンのログインで開始します');
+  if (host && host.local === false && route !== 'desktop') throw new Error('アカウントを選んで開始できるのはこのマシンだけです。リモートではそのマシンのログインで開始します');
   const name = accountName(account, labels);
   const registry = await refreshAccounts({ force: true });
   const homes = registry.homes[agent].filter(h => h.account === account && !h.missing);

@@ -12,6 +12,7 @@
 
 ## Global Constraints
 
+- この作業の Codex 新規・再開・サブエージェント・レビューは `gpt-6.1-sol` のみを使い、旧GPTモデルへフォールバックしない（ユーザーの更新AGENTS.md）。
 - 「Desktop で同時に操作するアカウントを1つにする」。各アカウントの認証セッションは保持する。
 - 「ログアウト0回・再ログイン0回」。初回登録と確認済みの認証失効は分けて扱う。
 - 有効な保存先は `~/Library/Application Support/Claude/` の実ディレクトリ。symlink・別ボリューム・既存保存先の上書きは認めない。
@@ -71,10 +72,10 @@ Claude の認証保持は Task 5 の実機受け入れが別途必要。偽プ�
 
 **Interfaces:** `begin-login` は `waiting-for-login`、`finish-login` は期待アカウントが一致した場合だけ `prepared` を返す。`withDesktopAccount()` は Task 2 のサービスへ委譲する。`claudeEnvironments(appDir, {expectedAccount}={})` はアカウントが不一致なら環境を返さない。既存 `startAccount()` の CLI 用 `{prefix, account, open}` 契約は維持する。
 
-- [ ] **Step 1: 失敗するテストを書く。** `wrong Desktop login never rebinds CLI`、`network failure is unknown, not logout`、`guest restore failure prevents switching`、`parked history keeps card IDs` を追加する。CLI A を実行したまま Desktop B の準備を行い、起動済みプロセス・キューの home とアカウントが A のままであることをスタブと既存認証分離テストで確認する。異なる所有者の同じ Desktop ID と古い sourcePath を自動統合しない。
-- [ ] **Step 2: RED を確認する。** `node --test tests/claude-desktop-accounts.test.mjs tests/start-account.test.mjs tests/accounts.test.mjs`。
-- [ ] **Step 3: 登録と既存起動経路を接続する。** ゲストの書戻しを入替え前に完了し、切替後に探索キャッシュと sourcePath を再解決する。Desktop のローカルアカウントと SSH 作業先を分離する一方、CLI のリモートアカウント選択制約は勝手に変更しない。CLI の access token 更新と Desktop の認証更新を結合しない。
-- [ ] **Step 4: GREEN と版の同期を確認してコミットする。** 上記5テストに `tests/claude-auth-isolation.test.mjs` と `tests/claude-handoff.test.mjs` を加える。未登録の Desktop 別アカウントを拒否する既存テストは残し、登録済みの場合だけ成功するテストを追加する。
+- [x] **Step 1: 失敗するテストを書く。** `wrong Desktop login never rebinds CLI`、`network failure is unknown, not logout`、`guest restore failure prevents switching`、`parked history keeps card IDs` を追加する。CLI A を実行したまま Desktop B の準備を行い、起動済みプロセス・キューの home とアカウントが A のままであることをスタブと既存認証分離テストで確認する。異なる所有者の同じ Desktop ID と古い sourcePath を自動統合しない。
+- [x] **Step 2: RED を確認する。** `node --test tests/claude-desktop-accounts.test.mjs tests/start-account.test.mjs tests/accounts.test.mjs`。
+- [x] **Step 3: 登録と既存起動経路を接続する。** ゲストの書戻しを入替え前に完了し、切替後に探索キャッシュと sourcePath を再解決する。Desktop のローカルアカウントと SSH 作業先を分離する一方、CLI のリモートアカウント選択制約は勝手に変更しない。CLI の access token 更新と Desktop の認証更新を結合しない。
+- [x] **Step 4: GREEN と版の同期を確認してコミットする。** 上記5テストに `tests/claude-auth-isolation.test.mjs` と `tests/claude-handoff.test.mjs` を加える。未登録の Desktop 別アカウントを拒否する既存テストは残し、登録済みの場合だけ成功するテストを追加する。
 
 ### Task 4: 再開可能な開始要求と UI 権限
 

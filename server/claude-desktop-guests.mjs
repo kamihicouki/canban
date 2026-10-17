@@ -14,7 +14,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { claudeDesktopSessionsDir, defaultClaudeHome } from './accounts.mjs';
+import { claudeDesktopSessionsDir, defaultClaudeHome, desktopStorageDirectory } from './accounts.mjs';
 import { desktopConfigPath, readDesktopConfig, planGuestGroups, assignGuestGroups } from './claude-desktop-groups.mjs';
 
 // Values that belong to the account the session was created in.
@@ -29,6 +29,7 @@ export function guestPaths({ env = process.env } = {}) {
   const sessions = claudeDesktopSessionsDir();
   const state = env.CANBAN_DESKTOP_GUESTS_DIR || path.join(os.homedir(), '.canban', 'desktop-integrated');
   return {
+    dataDir: desktopStorageDirectory() || env.CANBAN_DATA_DIR || path.dirname(state),
     sessions,
     app: path.dirname(sessions),
     projects: path.join(defaultClaudeHome(), 'projects'),

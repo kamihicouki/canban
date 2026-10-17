@@ -60,7 +60,7 @@ export async function desktopProfileLock(lock, { staleMs = 60000, heartbeatMs = 
 const lifecycle = new AsyncLocalStorage();
 const leases = new WeakMap();
 export async function withDesktopMutationLock({ dataDir, lease }, action) {
-  const data = await inspectProfileDirectory(dataDir);
+  const data = await inspectProfileDirectory(await fs.realpath(dataDir));
   // null explicitly starts a new user request; only nested implementation calls
   // omit the lease and inherit the current trusted transaction.
   const inherited = lease === null ? null : lease || lifecycle.getStore();

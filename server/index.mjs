@@ -27,7 +27,7 @@ import { Presence, appLabel } from './presence.mjs';
 import { codexHome } from './sources/codex.mjs';
 import { claudeHome, claudeDesktopSessionsDir } from './sources/claude.mjs';
 import { accountTools, accountFilterProp, accountDesktopNote, extraWatchRoots } from './accounts-mcp.mjs';
-import { accountName, accountLabel, desktopAccountMismatch } from './accounts.mjs';
+import { accountName, accountLabel, desktopAccountMismatch, configureDesktopStorage } from './accounts.mjs';
 import { recoverGuests, setGuestRunningCheck, guestPaths } from './claude-desktop-guests.mjs';
 import { openDesktopApp, integratedNote } from './claude-desktop-open.mjs';
 import { accountActions, accountActionTools } from './account-actions.mjs';
@@ -79,6 +79,7 @@ function readManifest(...candidates) {
 }
 
 const store = new Store();
+configureDesktopStorage(store.dir);
 attachSummaryCache(store.dir); // Claude transcript summaries survive a restart: only new lines are read
 // Integrated Desktop sidebar: the ledger lives with the data, and the watcher inherits it.
 process.env.CANBAN_DESKTOP_GUESTS_DIR ||= path.join(store.dir, 'desktop-integrated');
@@ -423,6 +424,7 @@ const TOOLS = [
       await store.markSeen({ cardId });
       const prefs = state.settings.launch;
       let useRoute = isCloudSession(session) ? 'desktop' : selected && !route ? 'terminal' : route || prefs.route;
+      if (session.desktopAmbiguous && useRoute === 'desktop') throw new Error('この会話には複数の Desktop 所有者があります。実行アカウントを確認してください');
       // Another account's session, run as the account signed in to Desktop: open the
       // original through the integrated sidebar. Desktop's import (claude://resume)
       // would make a second, unlinked record in the signed-in account instead.

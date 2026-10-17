@@ -3,7 +3,10 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { claudeDesktopRoots, invalidateDesktopRoots } from './accounts.mjs';
+import { claudeDesktopRoots, invalidateDesktopRoots, desktopStorageDirectory } from './accounts.mjs';
+import { createDesktopAccounts } from './claude-desktop-accounts.mjs';
+import { withDesktopMutationLock } from './claude-desktop-lock.mjs';
+import { guestPaths, restoreGuests } from './claude-desktop-guests.mjs';
 
 import { inspectDesktopRuntime } from './claude-desktop-runtime.mjs';
 
@@ -35,6 +38,26 @@ export async function desktopProfilePlan(account, { platform = process.platform 
 // Runs the action only while Desktop is signed in to the account. A running app
 // must be confirmed to have that data folder open.
 export async function withDesktopAccount(account, action, options = {}) {
+  const dataDir = desktopStorageDirectory();
+  const registered = dataDir && await fs.lstat(path.join(dataDir, 'desktop-accounts', 'claude', 'registry.json')).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+  if (options.accounts || registered) {
+    const service = options.accounts || createDesktopAccounts({ dataDir, appDir: path.dirname(guestPaths().sessions), runtime: plan => processCheck(plan), restoreGuests: () => restoreGuests({ paths: guestPaths() }) });
+    let performed = false;
+    const result = await service.withAccount(account, options, status => {
+      performed = true; invalidateDesktopRoots();
+      return action({ ...status, maintained: true, pending: false, profile: status.profileId });
+    });
+    if (!performed) throw Object.assign(new Error(result.reason || 'Desktop の準備を待っています'), { code: result.state === 'waiting-for-quit' ? 'desktop_running' : 'desktop_unavailable' });
+    return result;
+  }
+  if (dataDir) return withDesktopMutationLock({ dataDir, lease: null }, async () => {
+    if (await fs.lstat(path.join(dataDir, 'desktop-accounts', 'claude', 'registry.json')).catch(() => null)) throw Object.assign(new Error('Desktop の登録状態が変わりました。もう一度確認してください'), { code: 'desktop_busy' });
+    return useCurrentDesktopAccount(account, action, options);
+  });
+  return useCurrentDesktopAccount(account, action, options);
+}
+
+async function useCurrentDesktopAccount(account, action, options) {
   const plan = await desktopProfilePlan(account, options);
   if (!plan.available) throw Object.assign(new Error(plan.reason), { code: 'desktop_unavailable' });
   const runtime = await processCheck(plan);
@@ -45,6 +68,7 @@ export async function withDesktopAccount(account, action, options = {}) {
 // Normal Desktop startup only searches ~/.claude/projects for CLI imports.
 // A continue link is usable only when the selected account owns/reaches it.
 export async function desktopExecutionLink(session, account, { cliHome = path.join(os.homedir(), '.claude'), platform = process.platform } = {}) {
+  if (session.desktopAmbiguous) return null;
   if (!/^claude:[A-Za-z0-9_-]{1,128}$/.test(account)) return null;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session.nativeId)) return null;
   const projects = path.join(cliHome, 'projects');

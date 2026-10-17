@@ -88,3 +88,91 @@ test('untrusted registry paths and symlink metadata cannot expose another profil
   await fs.unlink(file); await fs.symlink(path.join(f.appDir, 'config.json'), file);
   await assert.rejects(service.view(), /通常ファイル/);
 });
+
+async function onboarding(t, overrides = {}) {
+  const { createDesktopAccounts } = await import(modulePath);
+  const f = await fixture(t), opened = [];
+  const backup = async ({ requestId, profiles }) => {
+    const dir = path.join(f.root, 'backups', requestId);
+    await fs.mkdir(dir, { recursive: true });
+    for (const p of profiles) await fs.cp(p.dir, path.join(dir, p.id), { recursive: true });
+    return dir;
+  };
+  const options = { ...f, runtime: async () => ({ running: false }), backup, open: async x => opened.push(x), ...overrides };
+  const service = createDesktopAccounts(options);
+  await service.command({ type: 'enroll-current', account: 'claude:a' });
+  return { ...f, service, opened, options };
+}
+
+test('first Desktop login holds the old login and never binds the wrong account to CLI', async t => {
+  const f = await onboarding(t);
+  const begin = await f.service.command({ type: 'begin-login', account: 'claude:b', requestId: 'connect-b' });
+  assert.equal(begin.state, 'waiting-for-login');
+  assert.equal((await f.service.view()).profiles.some(p => p.account === 'claude:b'), false);
+  await fs.writeFile(path.join(f.appDir, 'config.json'), JSON.stringify({ lastKnownAccountUuid: 'wrong-account' }));
+  const wrong = await f.service.command({ type: 'finish-login', account: 'claude:b' });
+  assert.equal(wrong.state, 'waiting-for-login');
+  assert.equal((await f.service.view()).profiles.some(p => p.account === 'claude:wrong-account'), false);
+  assert.equal((await f.service.view()).profiles.some(p => p.account === 'claude:b'), false);
+  await fs.writeFile(path.join(f.appDir, 'config.json'), JSON.stringify({ lastKnownAccountUuid: 'b' }));
+  assert.equal((await f.service.command({ type: 'finish-login', account: 'claude:b' })).state, 'prepared');
+  assert.equal((await f.service.command({ type: 'finish-login', account: 'claude:b' })).state, 'prepared');
+  assert.equal((await f.service.view()).profiles.find(p => p.active).account, 'claude:b');
+  assert.equal((await f.service.withAccount('claude:a', { requestId: 'back-a', allowSwitch: true }, () => ({ state: 'opened' }))).state, 'opened');
+  assert.equal(JSON.parse(await fs.readFile(path.join(f.appDir, 'config.json'), 'utf8')).privateValue, 'never-copy-this');
+  for (const name of ['cli-a', 'cli-b']) assert.equal(await fs.readFile(path.join(f.root, name, 'auth'), 'utf8'), name + ' credential');
+  assert.equal(f.opened[0].purpose, 'login');
+});
+
+test('cancelling initial Desktop login restores A and retains the unconnected profile', async t => {
+  const f = await onboarding(t);
+  const begin = await f.service.command({ type: 'begin-login', account: 'claude:b', requestId: 'cancel-b' });
+  await fs.writeFile(path.join(f.appDir, 'unsent-draft'), 'keep this registration draft');
+  assert.equal((await f.service.command({ type: 'cancel', requestId: 'restore-a' })).state, 'cancelled');
+  assert.equal((await f.service.view()).profiles.find(p => p.active).account, 'claude:a');
+  assert.equal(await fs.readFile(path.join(f.dataDir, 'desktop-accounts', 'claude', 'profiles', begin.profileId, 'unsent-draft'), 'utf8'), 'keep this registration draft');
+  assert.equal((await f.service.view()).pending.active, false);
+  assert.equal(f.opened.at(-1).purpose, 'restore');
+});
+
+test('a runtime status failure keeps login state and asks for a state recheck', async t => {
+  const f = await onboarding(t, { runtime: async () => { throw Error('network unavailable'); } });
+  const original = await fs.readFile(path.join(f.appDir, 'config.json'), 'utf8');
+  const result = await f.service.withAccount('claude:a', { requestId: 'uncertain-runtime' }, () => assert.fail('must not open an unconfirmed profile'));
+  assert.equal(result.state, 'waiting-for-quit');
+  assert.notEqual(result.state, 'waiting-for-login');
+  assert.equal(await fs.readFile(path.join(f.appDir, 'config.json'), 'utf8'), original);
+});
+
+test('Desktop environments are resolved only for their expected account', async t => {
+  const { claudeEnvironments } = await import('../server/sources/launch-targets.mjs');
+  const f = await fixture(t);
+  await fs.writeFile(path.join(f.appDir, 'ccd-session-presets.json'), JSON.stringify({ byAccount: { a: { presets: [{ id: 'env-a', name: 'A work', target: { kind: 'local', cwd: '/work/a' } }] } } }));
+  assert.deepEqual((await claudeEnvironments(f.appDir, { expectedAccount: 'claude:b' })).environments, []);
+  assert.equal((await claudeEnvironments(f.appDir, { expectedAccount: 'claude:a' })).environments[0].id, 'env-a');
+});
+
+test('aliases of the configured Canban data root share the same lifecycle lock', async t => {
+  const { createDesktopAccounts } = await import(modulePath);
+  const f = await onboarding(t), alias = path.join(f.root, 'data-link');
+  await fs.symlink(f.dataDir, alias);
+  const other = createDesktopAccounts({ ...f.options, dataDir: alias });
+  assert.equal((await other.view()).profiles[0].account, 'claude:a');
+  await other.withAccount('claude:a', {}, async () => {
+    await assert.rejects(f.service.withAccount('claude:a', {}, () => {}), { code: 'desktop_busy' });
+  });
+});
+
+test('the existing Desktop gateway delegates a registered account without changing CLI selection', async t => {
+  const { withDesktopAccount } = await import('../server/claude-desktop-profile.mjs');
+  const f = await onboarding(t);
+  await f.service.command({ type: 'begin-login', account: 'claude:b', requestId: 'delegate-b' });
+  await fs.writeFile(path.join(f.appDir, 'config.json'), JSON.stringify({ lastKnownAccountUuid: 'b' }));
+  await f.service.command({ type: 'finish-login', account: 'claude:b' });
+  const previous = process.env.CANBAN_CLAUDE_DESKTOP_DIR;
+  process.env.CANBAN_CLAUDE_DESKTOP_DIR = path.join(f.appDir, 'claude-code-sessions');
+  t.after(() => { if (previous === undefined) delete process.env.CANBAN_CLAUDE_DESKTOP_DIR; else process.env.CANBAN_CLAUDE_DESKTOP_DIR = previous; });
+  const result = await withDesktopAccount('claude:a', status => ({ openedAs: status.account }), { accounts: f.service, allowSwitch: true, requestId: 'delegate-a' });
+  assert.equal(result.openedAs, 'claude:a');
+  assert.equal(await fs.readFile(path.join(f.root, 'cli-b', 'auth'), 'utf8'), 'cli-b credential');
+});

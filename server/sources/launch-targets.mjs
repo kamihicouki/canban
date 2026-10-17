@@ -17,9 +17,10 @@ async function json(file) {
 }
 
 // appDir: Claude Desktop's data folder (~/Library/Application Support/Claude).
-export async function claudeEnvironments(appDir) {
+export async function claudeEnvironments(appDir, { expectedAccount } = {}) {
   const [config, presets, ssh] = await Promise.all(['config.json', 'ccd-session-presets.json', 'ssh_configs.json'].map((f) => json(path.join(appDir, f))));
   const account = str(config?.lastKnownAccountUuid);
+  if (expectedAccount && `claude:${account}` !== expectedAccount) return { account: account ? `claude:${account}` : null, environments: [], reason: '選択した Desktop アカウントの環境を読み直してください' };
   const list = account ? presets?.byAccount?.[account]?.presets : null;
   const sshHosts = new Map((Array.isArray(ssh?.configs) ? ssh.configs : []).map((c) => [str(c?.id), c]));
   const out = [];
