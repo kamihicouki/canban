@@ -156,7 +156,7 @@ const taskQuickAdd = {
       placeholder: '何をしてほしいですか？', oninput: e => { draft.prompt = e.target.value; } });
     prompt.value = draft.prompt;
     // Same composer as session cards: images and $skills ride along with the start request. The form's ⌘Enter submits.
-    const composer = this.composer = promptComposer(prompt, { key: 'quick-start', context: () => ({ agent: draft.agent, hostId: draft.hostId, cwd: draft.cwd.trim() }),
+    const composer = this.composer = promptComposer(prompt, { key: 'quick-start', context: () => ({ agent: draft.agent, route: draft.route, hostId: draft.hostId, cwd: draft.cwd.trim() }),
       keys: [keyHint(['⌘', 'Enter'], '開始'), keyHint(['$'], 'スキル')] });
     const select = (label, value, choices, change) => {
       const el = h('select', { class: 'text-input', 'aria-label': label, onchange: e => change(e.target.value) }, choices.map(([v, text]) => h('option', { value: v, text })));
@@ -221,7 +221,14 @@ const taskQuickAdd = {
     const message = [result.note || result.reason || (result.state === 'cancelled' ? '開始待機を取り消しました。本文と画像は保持しています。' : waiting ? 'Desktop の準備を待っています。' : 'ターミナルを開きました。実行状況はターミナルで確認してください。'),
       result.state === 'opened' ? `タスクカードは作成していません。${result.route === 'cloud' ? '' : 'セッションはアプリで作成された後にボードへ表示されます。'}` : '',
       refreshError ? '表示の更新に失敗しました。起動は繰り返していません。' : ''].filter(Boolean).join(' ');
-    this.feedback.replaceChildren(h('span', { text: message }), waiting ? h('button', { type: 'button', class: 'btn', text: '開始待機を取り消す', onclick: () => this.cancelSessionWait() }) : null);
+    const imageIds = result.imageIds || this.sessionDraft.startRequest?.imageIds || [];
+    const canCopy = result.attachmentCopyAvailable ?? this.targets?.desktopCapabilities?.clipboardImages;
+    const copyMessage = result.imageCopy?.state === 'copied' ? '画像をコピーしました。アプリの入力欄で⌘Vを押してください。' : result.imageCopy?.reason;
+    this.feedback.replaceChildren(...[h('span', { text: [message,copyMessage].filter(Boolean).join(' ') }),
+      waiting ? h('button', { type: 'button', class: 'btn', text: '開始待機を取り消す', onclick: () => this.cancelSessionWait() }) : null,
+      result.state === 'opened' && imageIds.length ? h('button', { type: 'button', class: 'btn', text: '画像をコピー', 'aria-label': '画像をコピー', disabled: !canCopy, onclick: () => this.copySessionImages() }, keycap('Enter')) : null,
+      result.state === 'opened' && imageIds.length ? h('span', { class: 'muted', text: canCopy ? 'アプリで画像を貼り付けてください（⌘V）' : '画像の受取りは実機未確認です。アプリの通常の添付操作を使ってください。' }) : null,
+    ].filter(Boolean));
     clearTimeout(this.startStatusTimer);
     const draft = this.sessionDraft, id = draft.startRequest?.clientRequestId;
     if (waiting && id && this.dialog?.open) this.startStatusTimer = setTimeout(async () => {
@@ -233,6 +240,17 @@ const taskQuickAdd = {
       } catch { this.feedback.textContent = '状態を確認できません。本文と画像は保持しています。「開始結果を確認」で再確認できます。'; }
     }, 2500);
 
+  },
+  async copySessionImages() {
+    const draft = this.sessionDraft, imageIds = draft.startResult?.imageIds || draft.startRequest?.imageIds;
+    if (draft.copyingImages || draft.startResult?.state !== 'opened' || !imageIds?.length) return;
+    draft.copyingImages = true;
+    try {
+      const response = await bridge.callTool('canban_copy_prompt_images', { imageIds });
+      draft.startResult = { ...draft.startResult, imageCopy: response.result || response };
+      this.showSessionFeedback(draft.startResult);
+    } catch (error) { this.feedback.textContent = `画像をコピーできませんでした。${error.message}`; }
+    finally { draft.copyingImages = false; }
   },
   async cancelSessionWait() {
     const draft = this.sessionDraft;

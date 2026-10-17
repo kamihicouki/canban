@@ -115,3 +115,7 @@ CLIの選択保存とDesktopへの適用は別の結果として返す。Desktop
 試行は `scripts/desktop-account-trial.mjs plan` でアカウント・操作・復元先を先に確認する。`apply --apply --plan <保存した計画>` と `rollback --apply --plan <保存した計画>` は人が承認した計画でだけ実行する。自動終了・強制終了はしない。停止した実プロフィールを `<Canban保存先>/desktop-backups/<要求ID>-<生成値>/`（700）へコピーし、`backup.json`（600）へ元の保存先を記録する。KeychainとCLIは動かさない。`verify` は読取り専用で、アカウントIDの一致をOAuth有効性の証明にしない。
 
 `desktop-capabilities.json` は実機の受け入れ記録で、ツールから書き込めない。アプリのbuild署名と、3往復・再ログイン0回・ログアウト0回・CLI/Desktopの会話と下書き保持を確認した記録が一致する場合だけ、通常UIの切替を有効にする。fixtureの成功だけでは作成しない。アプリ更新で記録が古くなれば再び無効にする。
+
+### Desktopの画像受渡し
+
+画像は共有Canban保存先の `prompt-images/` に置く。Desktopへの新規依頼ではこのMacのIDを維持し、SSHへ先行転送せず本文にパス列を埋め込まない。コピー操作はUI tokenで確認し、検証済みファイルのNSURLだけをAppKitへ渡す。自動コピー・自動添付・自動送信はしない。非macOSと実機の画像受取りが未確認の構成では通常の添付操作を案内する。CLI/headlessの画像引数・構造化入力と必要なリモート転送は維持する。サムネイルの再取得は最大128KiBのchunkを使い、本文・共有UI状態に画像バイナリを保存しない。

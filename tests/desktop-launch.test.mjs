@@ -96,3 +96,13 @@ test('separate Node processes share the open reservation', async t => {
   await Promise.all([child(), child()]);
   assert.equal(await fs.readFile(marker,'utf8'), 'open\n');
 });
+
+test('cancellation during the last target check prevents the subsequent open', async t => {
+  let resolves=0, release, entered, opens=0;
+  const blocked=new Promise(r=>{entered=r;});
+  const gate=new Promise(r=>{release=r;});
+  const a=createDesktopLaunches(await fixture(t,{resolveTarget:async()=>{if(++resolves===2){entered();await gate;}return {hostId:'local'};},open:async()=>{opens++;return {};}}));
+  const pending=a.start(input);await blocked;
+  assert.equal((await a.cancel(input.clientRequestId,{uiAuthorized:true})).state,'cancelled');
+  release();assert.equal((await pending).state,'cancelled');assert.equal(opens,0);
+});

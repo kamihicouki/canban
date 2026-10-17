@@ -25,7 +25,7 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, prepar
     try { await fs.rename(temp, file); const d = await fs.open(dir, 'r'); try { await d.sync(); } finally { await d.close(); } }
     finally { await fs.rm(temp, { force: true }); }
   }
-  const result = record => ({ clientRequestId: record.input.clientRequestId, route: 'desktop', account: record.input.account || null, imageIds: record.input.imageIds || [], ...record.result });
+  const result = record => ({ clientRequestId: record.input.clientRequestId, route: 'desktop', account: record.input.account || null, imageIds: record.input.imageIds || [], ...(record.input.imageIds?.length ? { attachmentState: 'pending-paste' } : {}), ...record.result });
   async function start(input, { uiAuthorized = false } = {}) {
     const id = input.clientRequestId || randomUUID(), f = files(id);
     const { uiToken: omitted, allowDesktopSwitch, allowQuit, ...payload } = input;
@@ -77,6 +77,7 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, prepar
         try { current = await resolveTarget(payload); } catch { current = null; }
         if (stable(current) !== stable(target)) return set({ state: 'failed', reason: '開始先が変更されました' });
         record.intent = 'open'; await set({ state: 'opening' });
+        if (await cancelled()) { delete record.intent; return set({ state: 'cancelled' }); }
         try {
           const opened = await open(payload, target, record.thread);
           delete record.intent;
@@ -110,6 +111,8 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, prepar
     if (!record) return null;
     if (final.has(record.result.state) || record.intent) return result(record);
     await save(f.cancel, { at: now() });
+    const current = await read(f.record);
+    if (current?.intent || final.has(current?.result?.state)) return result(current);
     return { ...result(record), state: 'cancelled', reason: '開始を取り消しました。CLI の処理と下書きは保持しています' };
   }
   async function recover() {

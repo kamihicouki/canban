@@ -171,15 +171,14 @@ const desktopLaunches = createDesktopLaunches({
     const state = await store.load(), labels = state.settings.accounts.labels;
     const skillPrompt = withSkills(input.prompt, input.skills || []);
     const localImages = promptImages(store.dir, input.imageIds || []);
-    const images = target.host.local === false ? await remoteImages(store.dir, localImages, target.host, pool) : localImages;
-    const text = withImagePaths(skillPrompt, images);
+    const text = skillPrompt;
     const link = target.prepareThread ? preparedCodexLink(thread, { prompt: text }) : newSessionLink(input.agent, { ...target, prompt: text });
     const integrated = await openDesktopApp(link.url, { labelOf: a => accountLabel(`claude:${a}`, labels).replace(/@.*/, '') });
     if (input.taskId) {
       await store.updateTask({ cardId: input.taskId, target: { agent: input.agent, hostId: target.host.id, cwd: target.cwd, account: input.account } });
       await store.addPending({ taskId: input.taskId, pending: { agent: input.agent, hostId: target.host.id, cwd: target.cwd, prompt: text.slice(0,200), startedAt: Date.now() } });
     }
-    return { url: link.url, hostId: target.host.id, cwd: target.cwd, ...(thread ? { threadId: thread.threadId } : {}), note: '新規画面を開きました。依頼の送信と実行状況はアプリで確認してください。', integrated: integrated && { ok: integrated.ok, placed: integrated.placed || 0, code: integrated.code || null, reason: integrated.reason || null } };
+    return { attachmentCopyAvailable: (await readDesktopCapabilities(store.dir)).clipboardImages, url: link.url, hostId: target.host.id, cwd: target.cwd, ...(thread ? { threadId: thread.threadId } : {}), note: '新規画面を開きました。依頼の送信と実行状況はアプリで確認してください。', integrated: integrated && { ok: integrated.ok, placed: integrated.placed || 0, code: integrated.code || null, reason: integrated.reason || null } };
   },
 });
 desktopLaunches.recover().catch(() => log('Desktop の開始記録を確認できません'));

@@ -44,6 +44,7 @@ function promptComposer(input, { key, context, submit, placeholder, leading = []
       h('button', { type: 'button', class: 'icon-btn', text: '✕', disabled: draft.sending, 'aria-label': `${i.name} を削除`, onclick: () => {
         draft.images = draft.images.filter(x => x !== i); i.removed = true; URL.revokeObjectURL(i.preview); paint();
       } }))),
+      ...(context().route === 'desktop' && draft.images.length ? [h('span', { class: 'prompt-paste-hint muted', text: '画像は起動後にコピーし、アプリの入力欄で⌘Vを押してください' })] : []),
       ...draft.skills.map(s => h('div', { class: 'prompt-skill-chip', title: s.path },
         h('span', { text: `$${s.name}` }), h('button', { type: 'button', class: 'icon-btn', text: '✕', disabled: draft.sending,
           'aria-label': `${s.name} を削除`, onclick: () => { draft.skills = draft.skills.filter(x => x.path !== s.path); paint(); } }))));

@@ -23,7 +23,7 @@ before(async () => {
   child = spawn(process.execPath, ['server/index.mjs'], { cwd: root, stdio: ['pipe', 'pipe', 'inherit'], env: {
     ...process.env, HOME: dataDir, CANBAN_DATA_DIR: dataDir, CANBAN_CODEX_HOME: fx.codexHome,
     CANBAN_CLAUDE_HOME: fx.claudeHome, CANBAN_CLAUDE_DESKTOP_DIR: fx.desktopDir,
-    CANBAN_LAUNCH_DRYRUN: '1', CANBAN_SEARCH_INDEX: '0', CANBAN_BACKGROUND: '0',
+    CANBAN_LAUNCH_DRYRUN: '1', CANBAN_SSH: path.join(dataDir,'ssh-must-not-run'), CANBAN_SEARCH_INDEX: '0', CANBAN_BACKGROUND: '0',
   } });
   readline.createInterface({ input: child.stdout }).on('line', line => {
     const message = JSON.parse(line);
@@ -120,4 +120,17 @@ test('verified remote capability opens an existing Codex thread without a termin
   state['codex-managed-remote-connections'][0].sshPort=2222;fs.writeFileSync(file,JSON.stringify(state));
   const claude=await call('canban_start_session',{agent:'claude',route:'desktop',hostId:'remote-ssh-discovered:box',cwd:'/srv/app',prompt:'確認',clientRequestId:'mismatch-port'});
   assert.equal(claude.isError,true,'a different Desktop environment port cannot be guessed');
+});
+
+test('Desktop images stay local IDs and never become prompt paths on local or SSH starts',async()=>{
+  const file=path.join(fx.codexHome,'.codex-global-state.json'),state=JSON.parse(fs.readFileSync(file,'utf8'));delete state['codex-managed-remote-connections'][0].sshPort;fs.writeFileSync(file,JSON.stringify(state));
+  const bytes=fs.readFileSync(path.join(root,'assets','canban.png'));let image;
+  for(let offset=0;offset<bytes.length;offset+=128*1024){const r=await call('canban_upload_prompt_image',{...(image?{id:image.id}:{name:'canban.png',mime:'image/png',size:bytes.length}),offset,data:bytes.subarray(offset,offset+128*1024).toString('base64')});image=r.structuredContent.result;}
+  for(const agent of ['claude','codex'])for(const remote of [false,true]){
+    const args={agent,route:'desktop',prompt:'画像を確認してください',imageIds:[image.id],clientRequestId:`image-${agent}-${remote}`,...(remote?(agent==='claude'?{environmentId:'env-ssh'}:{projectId:'p-srv'}):{cwd:'/r/web'})};
+    const response=await call('canban_start_session',args);assert.ok(!response.isError,response.content?.[0]?.text);
+    assert.equal(response.structuredContent.state,'opened');const url=new URL(response.structuredContent.url);
+    assert.equal(url.searchParams.get(agent==='claude'?'q':'prompt'),args.prompt);
+    assert.deepEqual(response.structuredContent.imageIds,[image.id]);assert.equal(response.structuredContent.attachmentState,'pending-paste');
+  }
 });
