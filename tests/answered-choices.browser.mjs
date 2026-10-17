@@ -45,11 +45,22 @@ test('answered questions stop offering replies across live updates and reopening
   const answer = '今回は見送ります。';
   await page.locator('.card[data-card-id="codex:t1"]').click(); await pane.locator('.cx-choice').first().waitFor();
   await input.fill(draft); const feed = pane.locator('.feed'); await feed.evaluate(el => { el.scrollTop = 200; });
-  const reading = await feed.evaluate(el => el.scrollTop), appendAt = performance.now();
+  const reading = await feed.evaluate(el => el.scrollTop);
+  await page.keyboard.press('Meta+k'); await page.locator('.palette input').fill('答える:');
+  assert.equal(await page.locator('.palette .picker-row').count(), 2);
+  const appendAt = performance.now();
   fs.appendFileSync(fx.rollout, JSON.stringify({ timestamp: new Date().toISOString(), type: 'event_msg', payload: { type: 'item_completed', item: { type: 'UserMessage', id: 'fictional-reply', content: [{ type: 'text', text: answer }] } } }) + '\n');
   await page.waitForFunction(answer => [...document.querySelectorAll('.fi-user .raw')].some(el => el.textContent === answer), answer);
   assert.equal(await pane.locator('.cx-choice').count(), expected);
+  assert.equal(await page.locator('.palette .picker-row').count(), expected, 'an already-open palette drops old answers');
+  assert.equal(await page.locator('.palette input').inputValue(), '答える:');
+  assert.equal(await page.locator('.palette input').evaluate(el => el === document.activeElement), true);
   const appendToChoicesMs = Math.round((performance.now() - appendAt) * 10) / 10;
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
+    if (shots) await page.screenshot({ path: path.join(shots, `palette-${theme}.png`) });
+  }
+  await page.keyboard.press('Escape');
   assert.equal(await feed.evaluate(el => el.scrollTop), reading, 'live reply preserves the reading position');
   for (const view of ['board', 'timeline']) {
     if (view === 'timeline') {
@@ -76,8 +87,14 @@ test('answered questions stop offering replies across live updates and reopening
   await page.reload();
   try { await input.waitFor({ timeout: 3000 }); } catch { await page.locator('.card[data-card-id="codex:t1"]').click(); await input.waitFor(); }
   assert.equal(await pane.locator('.cx-choice').count(), expected, 'initial full fetch also knows the question was answered');
+  await page.keyboard.press('Meta+k'); await page.locator('.palette input').fill('答える:');
   fs.appendFileSync(fx.rollout, JSON.stringify({ timestamp: new Date().toISOString(), type: 'event_msg', payload: { type: 'item_completed', item: { type: 'AgentMessage', phase: 'final', content: [{ type: 'Text', text: '次の調査を始めてよいですか？' }] } } }) + '\n');
   await pane.locator('.cx-choice').first().waitFor(); assert.equal(await pane.locator('.cx-choice').count(), 2);
+  assert.equal(await page.locator('.palette .picker-row').count(), 2, 'new answers appear in an already-open palette');
+  assert.equal(await page.locator('.palette input').inputValue(), '答える:');
+  const currentDraft = await input.inputValue();
+  await page.keyboard.press('Enter');
+  assert.equal(await input.inputValue(), currentDraft.trimEnd() ? `${currentDraft.trimEnd()}\nはい。` : 'はい。', 'fresh palette answer still fills the draft');
   assert.deepEqual(writes, []); assert.deepEqual(errors, []);
   if (shots) fs.writeFileSync(path.join(shots, 'metrics.json'), JSON.stringify({ viewport: [1280, 800], question, answer, choicesAfterReply: expected, paletteActionsAfterReply: expected, appendToChoicesMs, rawPreserved: true, draftPreserved: true, readingPositionPreserved: true, initialLoadChecked: true, nextQuestionChoices: 2, submitted: writes, errors }, null, 2));
 });

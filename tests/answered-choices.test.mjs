@@ -15,7 +15,7 @@ function fixture() {
   const box = node('div'), pane = { el: { querySelector: selector => selector.includes('.cx-choices') ? box : null } };
   const live = { feeds: new Map() };
   const api = vm.runInNewContext(read('message-preview.js') + render + update + choices + '\n({renderFeed,applyFeed,paintChoices})', {
-    h: node, live, keycap: () => [], queueMicrotask: fn => fn(), editSummary: () => ({ el: node('div') }),
+    document: { querySelector: () => null }, refreshShortcutHints() {}, h: node, live, keycap: () => [], queueMicrotask: fn => fn(), editSummary: () => ({ el: node('div') }),
     feedPush: () => true, paintFeedFoot() {}, kickLive() {}, atFeedEnd: () => false,
     refreshDispatch() {}, renderSignals: () => node('div'),
   });
