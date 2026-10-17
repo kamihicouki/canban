@@ -121,7 +121,7 @@ const bridge = (() => {
   }
 
   async function callTool(name, args = {}) {
-    if (['canban_review_loop', 'canban_send_loop'].includes(name) || name.startsWith('canban_terminal_')) args = { ...args, uiToken: '__CANBAN_UI_TOKEN__' };
+    if (['canban_review_loop', 'canban_send_loop', 'canban_start_session', 'canban_cancel_start_session'].includes(name) || name.startsWith('canban_terminal_')) args = { ...args, uiToken: '__CANBAN_UI_TOKEN__' };
     let res;
     const t0 = performance.now();
     const pending = !!hooks.pending?.();

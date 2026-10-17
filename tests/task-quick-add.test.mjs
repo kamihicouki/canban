@@ -259,3 +259,14 @@ test('desktop creation waits visibly for targets without losing the request', as
   assert.equal(dialog.primary.disabled, false, 'a failed lookup keeps the existing manual-folder fallback');
   assert.equal(dialog.sessionDraft.prompt, '保持する未送信の依頼');
 });
+
+test('a waiting Desktop start keeps its original images and input when resumed', async () => {
+  const draft = { ...plain(model.sessionCreationDefaults({}, {})), prompt: '元の依頼', attachments: { imageIds: ['img-1'] } };
+  const seen = [];
+  const io = { newRequestId: () => 'waiting-id', refresh: async () => {}, callTool: async (name, args) => { seen.push(args); return { state: 'waiting-for-quit' }; } };
+  await model.saveQuickSessionDraft(draft, io);
+  draft.prompt = '次の入力'; draft.attachments.imageIds.push('img-2');
+  await model.saveQuickSessionDraft(draft, io);
+  assert.deepEqual(seen[1], seen[0]); assert.equal(draft.prompt, '次の入力');
+  assert.deepEqual(draft.attachments.imageIds, ['img-1','img-2']);
+});
