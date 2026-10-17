@@ -85,6 +85,40 @@ export function promptImages(dir, ids = []) {
   });
 }
 
+// Cache only validated file generations, never image bytes. A restarted MCP host
+// revalidates once; every returned chunk is still bounded and bound to its hash.
+const imageGenerations = new Map();
+const imageStamp = file => {
+  const s = fs.lstatSync(file,{bigint:true});
+  if (!s.isFile() || s.isSymbolicLink() || s.nlink !== 1n || process.getuid && s.uid !== BigInt(process.getuid())) throw new Error('画像の保存先が変更されています');
+  return `${s.dev}:${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
+};
+export function readPromptImageChunk(dir, { id, offset = 0, maxBytes = 128*1024, expectedSha256 } = {}) {
+  if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(maxBytes) || maxBytes < 1 || maxBytes > 128*1024 || offset > 0 && !/^[a-f0-9]{64}$/.test(expectedSha256 || '')) throw new Error('画像の読込み範囲・ハッシュが不正です');
+  const meta = imageMetadata(dir,id);
+  if (offset > meta.size || expectedSha256 && expectedSha256 !== meta.sha256) throw new Error('画像の内容が変更されています');
+  const key = `${fs.realpathSync(dir)}:${id}`, stamp = imageStamp(meta.path) + ':' + imageStamp(imagePath(dir,id,'json'));
+  const cached = imageGenerations.get(key);
+  if (cached && cached !== stamp && offset > 0) throw new Error('読込み途中で画像が変更されています');
+  if (cached !== stamp) {
+    promptImages(dir,[id]);
+    imageGenerations.set(key,stamp);
+    if (imageGenerations.size > 256) imageGenerations.delete(imageGenerations.keys().next().value);
+  }
+  const bytes = Buffer.alloc(Math.min(maxBytes, meta.size-offset));
+  const fd = fs.openSync(meta.path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+  let total = 0;
+  try {
+    while (total < bytes.length) {
+      const n = fs.readSync(fd,bytes,total,bytes.length-total,offset+total);
+      if (!n) throw new Error('画像を最後まで読み込めません');
+      total += n;
+    }
+  } finally { fs.closeSync(fd); }
+  if (imageStamp(meta.path) + ':' + imageStamp(imagePath(dir,id,'json')) !== stamp) throw new Error('読込み途中で画像が変更されています');
+  return { id, name: meta.name, mime: meta.mime, size: meta.size, sha256: meta.sha256, offset, nextOffset: offset+total, complete: offset+total===meta.size, data: bytes.toString('base64') };
+}
+
 export function skillRoots({ agent = 'codex', cwd = '', homeDir } = {}) {
   if (!['codex', 'claude'].includes(agent)) throw new Error('未対応のAI Appです');
   const home = homeDir || (agent === 'codex' ? codexHome() : claudeHome());

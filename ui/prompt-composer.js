@@ -40,7 +40,7 @@ function promptComposer(input, { key, context, submit, placeholder, leading = []
     root.dataset.unsavedForm = String(!!draft.images.length || !!draft.skills.length || draft.sending);
     assets.replaceChildren(...draft.images.map(i => h('div', { class: 'prompt-image' },
       i.preview ? h('img', { src: i.preview, alt: i.name }) : null,
-      h('span', { class: 'ellipsis', text: i.loading ? '添付中…' : i.name, title: i.name }),
+      h('span', { class: 'ellipsis', text: i.loading ? '添付中…' : i.previewLoading ? '画像を読込み中…' : i.previewError ? `${i.name || '添付画像'}（プレビューを表示できません）` : i.name, title: i.name }),
       h('button', { type: 'button', class: 'icon-btn', text: '✕', disabled: draft.sending, 'aria-label': `${i.name} を削除`, onclick: () => {
         draft.images = draft.images.filter(x => x !== i); i.removed = true; URL.revokeObjectURL(i.preview); paint();
       } }))),
@@ -56,6 +56,32 @@ function promptComposer(input, { key, context, submit, placeholder, leading = []
     for (const view of draft.views) {
       if (view === paintView || view.root.isConnected) view(); else draft.views.delete(view);
     }
+  }
+  async function restoreImage(item) {
+    if (item.preview || item.previewLoading) return;
+    item.previewLoading = true; paint();
+    const current = () => !item.removed && draft.images.includes(item);
+    try {
+      let offset = 0, sha256, mime, size; const chunks = [];
+      do {
+        const response = await bridge.callTool('canban_read_prompt_image', { id: item.id, offset, maxBytes: 128*1024, ...(sha256 ? { expectedSha256: sha256 } : {}) });
+        if (!current()) return;
+        const part = response.result;
+        if (!part || part.id !== item.id || part.offset !== offset || !Number.isInteger(part.size) || part.size < 1 || part.size > 10*1024*1024 || !['image/png','image/jpeg','image/webp','image/gif'].includes(part.mime) || !/^[a-f0-9]{64}$/.test(part.sha256)) throw new Error('画像の内容を確認できません');
+        if (sha256 && (part.sha256 !== sha256 || part.size !== size || part.mime !== mime)) throw new Error('画像が変更されています');
+        sha256 = part.sha256; size = part.size; mime = part.mime;
+        const bytes = Uint8Array.from(atob(part.data), c => c.charCodeAt(0));
+        if (!bytes.length || bytes.length > 128*1024 || part.nextOffset !== offset+bytes.length || part.nextOffset > size || part.complete !== (part.nextOffset === size)) throw new Error('画像の読込み範囲が一致しません');
+        chunks.push(bytes); offset = part.nextOffset; item.name ||= part.name || '添付画像';
+      } while (offset < size);
+      const bytes = new Uint8Array(size); let at = 0;
+      for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.length; }
+      const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(x => x.toString(16).padStart(2,'0')).join('');
+      if (digest !== sha256) throw new Error('画像のハッシュが一致しません');
+      if (!current()) return;
+      item.mime = mime; item.preview = URL.createObjectURL(new Blob([bytes], { type: mime })); item.previewError = false;
+    } catch { if (current()) item.previewError = true; }
+    finally { item.previewLoading = false; paint(); }
   }
   const readData = blob => new Promise((resolve, reject) => {
     const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1]); reader.onerror = () => reject(new Error('画像を読み取れませんでした')); reader.readAsDataURL(blob);
@@ -153,6 +179,7 @@ function promptComposer(input, { key, context, submit, placeholder, leading = []
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); submit?.(); }
   });
   paint();
+  for (const item of draft.images) if (item.id && !item.preview && !item.previewError) restoreImage(item);
   return { root, box, toolbar, draft, contextChanged() { currentContext(); closeSkills(); paint(); },
     hasContent: () => !!(input.value.trim() || draft.images.length || draft.skills.length),
     payload() {
@@ -166,9 +193,12 @@ function promptComposer(input, { key, context, submit, placeholder, leading = []
     restore(request) {
       if (this.hasContent()) throw new Error('入力中の指示があります。先に確認してください');
       draft.text = input.value = request.prompt || ''; draft.skills = (request.skills || []).map(s => ({ ...s }));
-      // History keeps server asset IDs; previews are fetched only on demand.
-      draft.images = (request.images || []).map(i => ({ id: i.id, name: i.name, mime: i.mime, preview: '', loading: false }));
+      // Shared drafts own the object URLs; closing a view does not release them.
+      const images = request.images || (request.imageIds || []).map(id => ({ id }));
+      if (!Array.isArray(images) || images.length > 8) throw new Error('画像は8枚までです');
+      draft.images = images.map(i => ({ id: i.id, name: i.name, mime: i.mime, preview: '', loading: false }));
       paint(); fit(); input.focus();
+      return Promise.all(draft.images.map(restoreImage));
     },
   };
 }

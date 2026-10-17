@@ -34,7 +34,7 @@ import { accountActions, accountActionTools } from './account-actions.mjs';
 import { shutdownLogins } from './login.mjs';
 import { boardHtml } from './ui.mjs';
 import { taskContextSchema } from './task-context.mjs';
-import { uploadImage, promptImages, listSkills, withSkills, withImagePaths, remoteImages } from './prompt-input.mjs';
+import { uploadImage, promptImages, readPromptImageChunk, listSkills, withSkills, withImagePaths, remoteImages } from './prompt-input.mjs';
 import { resolveSession, inspect, timingProblem } from './dispatch.mjs';
 import { claudeExecutionSession, savedClaudeExecutionSession } from './claude-handoff.mjs';
 import { startAccount } from './start-account.mjs';
@@ -868,6 +868,7 @@ const TOOLS = [
       return { text: detail.note || (detail.route === 'desktop' ? 'デスクトップの新規画面を開きました' : detail.route === 'cloud' ? 'Codex Cloud にタスクを送信しました' : 'ターミナルに開始を依頼しました'), structured: detail };
     },
   },
+  appTool('canban_read_prompt_image', '添付画像のプレビューを読み込む', { id: { type: 'string' }, offset: { type: 'integer', minimum: 0 }, maxBytes: { type: 'integer', minimum: 1, maximum: 131072 }, expectedSha256: { type: 'string' }, uiToken: { type: 'string' } }, ['id','uiToken'], a => readPromptImageChunk(store.dir, requireLoopUi(a))),
   appTool('canban_copy_prompt_images', '添付画像をコピー', { imageIds: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 8 }, uiToken: { type: 'string' } }, ['imageIds','uiToken'], async a => {
     const args = requireLoopUi(a);
     if (!(await readDesktopCapabilities(store.dir)).clipboardImages) return { state: 'unverified', reason: 'Desktopでの画像受取りを確認するまで、アプリの通常の添付操作を使ってください' };
