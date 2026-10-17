@@ -9,7 +9,8 @@ import { resolveDataDirectory } from './data-directory.mjs';
 import { normalizeTaskDashboard, taskDashboardRecord } from './task-dashboard.mjs';
 import { normalizeTaskContext } from './task-context.mjs';
 import { legacySessionCategory, migrateSourceData, resolveCategory, normalizeSourceSelections, normalizeCategoryBindings } from './category-bindings.mjs';
-import { sessionSourceView } from './source-model.mjs';
+import { sessionSourceView, sourceKey } from './source-model.mjs';
+import { validateSourceFilterCompatibility } from './source-filters.mjs';
 import { attachSlackReference } from './slack-store.mjs';
 import { loopRecord, applyLoopCommand, loopProgress } from './loop.mjs';
 
@@ -137,18 +138,17 @@ export const sessionCategory = legacySessionCategory;
 
 export function resolveDirectory(state, card, cwd, session = null) {
   const mapping = state.categoryMapping;
+  const old = sessionCategory(session);
+  const legacyDirectory = (!mapping || mapping.snapshotPending) && old && !state.settings?.ignoredCategorySources?.includes(old.key)
+    ? state.directories.find(d => d.sourceKeys?.includes(old.key)) : null;
   const result = resolveCategory({ card, sourceView: session ? sessionSourceView(session) : null,
-    bindings: mapping?.bindings || [], legacy: { directories: state.directories || [], cwd,
-      cards: mapping?.legacyCards || {}, sessionId: session?.id, tombstones: mapping?.tombstones || [] } });
-  if (result.categoryId) return state.directories.find(d => d.id === result.categoryId) || null;
-  // Before a snapshot exists, read old assignments exactly as before. No new
-  // unscoped sourceKeys are ever created by syncSessionCategories.
-  if ((!mapping || mapping.snapshotPending) && result.status === 'unclassified' && session) {
-    const old = sessionCategory(session);
-    if (old && !state.settings?.ignoredCategorySources?.includes(old.key)) return state.directories.find(d => d.sourceKeys?.includes(old.key)) || null;
-  }
-  return null;
+    bindings: mapping?.bindings || [], legacy: { directories: state.directories || [], cwd: cwd || session?.cwd,
+      cards: mapping?.legacyCards || {}, sessionId: session?.id, tombstones: mapping?.tombstones || [],
+      fallbackCategoryId: legacyDirectory?.id, legacySourceKey: old?.key,
+      pathBindings: mapping?.legacyPathBindings || [], hostId: session?.host?.id || 'local', agent: session?.agent } });
+  return result.categoryId ? state.directories.find(d => d.id === result.categoryId) || null : null;
 }
+
 function placeCard(card, toListId, order, at = new Date().toISOString()) {
   if (card.listId !== toListId) {
     card.history = [...(card.history || []), { listId: toListId, at }].slice(-HISTORY_MAX);
@@ -252,6 +252,8 @@ export class Store {
   saveUiState({ expectedRevision, state }) {
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw new Error('画面状態のリビジョンが正しくありません');
     const nextState = cloneUiState(state);
+    if (nextState.filters?.sourceFilters !== undefined) nextState.filters.sourceFilters = normalizeSourceSelections(nextState.filters.sourceFilters);
+    if (nextState.filters) validateSourceFilterCompatibility(nextState.filters);
     return this.mutate((current) => {
       const record = current.uiState;
       if (record.revision !== expectedRevision) {
@@ -641,6 +643,8 @@ export class Store {
   async saveView({ id, name, filters }) {
     const v = normalizeView({ id: id || newId('view'), name, filters });
     if (!v) throw new Error('ビュー名を入力してください');
+    if (v.filters.sourceFilters !== undefined) v.filters.sourceFilters = normalizeSourceSelections(v.filters.sourceFilters);
+    validateSourceFilterCompatibility(v.filters);
     return this.mutate((s) => {
       const i = s.settings.views.findIndex((x) => x.id === v.id);
       if (i >= 0) s.settings.views[i] = v;
@@ -738,16 +742,9 @@ export class Store {
   }
 
   // ---- directories -------------------------------------------------------
-  syncSessionCategories(sessions) {
-    const mapping = this.load().categoryMapping;
-    if (mapping?.version === 1 && !mapping.snapshotPending) return false;
-    return this.mutate(s => {
-      const migrated = migrateSourceData(s, sessions).state;
-      s.categoryMapping = migrated.categoryMapping;
-      s.settings.views = migrated.settings.views;
-      return true;
-    });
-  }
+  // Kept as a compatibility entry point. Board reads must not apply the copy
+  // migration, freeze coverage, or rewrite saved views without a reviewed apply.
+  syncSessionCategories() { return false; }
   async createDirectory({ name, color = null, paths = [] }) {
     name = String(name || '').trim();
     if (!name) throw new Error('カテゴリ名を入力してください');
@@ -770,12 +767,12 @@ export class Store {
         const selected = normalizeCategoryBindings(sourceBindings);
         s.categoryMapping ||= { version: 1, snapshotPending: true, bindings: [], tombstones: [], legacyCards: {} };
         const mapping = s.categoryMapping;
-        const same = (a, b) => JSON.stringify(a.ref) === JSON.stringify(b.ref) && a.relation === b.relation;
+        const same = (a, b) => sourceKey(a.ref) === sourceKey(b.ref) && a.relation === b.relation;
         const removed = mapping.bindings.filter(b => b.categoryId === directoryId && !selected.some(x => same(x, b)));
-        mapping.tombstones.push(...removed.map(({ ref, relation, legacySourceKey }) => ({ ref, relation, legacySourceKey })));
+        mapping.tombstones.push(...removed.map(({ ref, relation, legacySourceKey }) => ({ categoryId: directoryId, ref, relation, legacySourceKey })));
         for (const [id, saved] of Object.entries(mapping.legacyCards)) if (removed.some(b => b.legacySourceKey === saved.sourceKey && saved.categoryId === directoryId)) delete mapping.legacyCards[id];
         mapping.bindings = [...mapping.bindings.filter(b => b.categoryId !== directoryId), ...selected.map(b => ({ categoryId: directoryId, ...b }))];
-        mapping.tombstones = mapping.tombstones.filter(b => !selected.some(x => same(x, b)));
+        mapping.tombstones = mapping.tombstones.filter(b => !((!b.categoryId || b.categoryId === directoryId) && selected.some(x => same(x, b))));
       }
       return dir;
     });
@@ -787,7 +784,7 @@ export class Store {
       s.settings.ignoredCategorySources = [...new Set([...s.settings.ignoredCategorySources, ...(deleted?.sourceKeys || [])])];
       if (s.categoryMapping) {
         const removed = s.categoryMapping.bindings.filter(b => b.categoryId === directoryId);
-        s.categoryMapping.tombstones.push(...removed.map(({ ref, relation, legacySourceKey }) => ({ ref, relation, legacySourceKey })));
+        s.categoryMapping.tombstones.push(...removed.map(({ ref, relation, legacySourceKey }) => ({ categoryId: directoryId, ref, relation, legacySourceKey })));
         s.categoryMapping.bindings = s.categoryMapping.bindings.filter(b => b.categoryId !== directoryId);
         for (const [id, saved] of Object.entries(s.categoryMapping.legacyCards)) if (saved.categoryId === directoryId) delete s.categoryMapping.legacyCards[id];
       }

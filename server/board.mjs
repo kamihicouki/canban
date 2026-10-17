@@ -25,7 +25,7 @@ import { configureAccounts, accountsView, accountName } from './accounts.mjs';
 import { matchesAccount, withAccountNote } from './accounts-mcp.mjs';
 import { effectiveTaskContext } from './task-context.mjs';
 import { normalizeSourceSelections, categoryBindingConflicts } from './category-bindings.mjs';
-import { sourceRelationsForTask, matchesSourceFilters, validateSourceFilterCompatibility, sourceFacetsForCards, plannedSourceRelations, legacyMatches } from './source-filters.mjs';
+import { sourceRelationsForTask, matchesSourceFilters, sourceFacetsForCards, plannedSourceRelations, legacyMatches } from './source-filters.mjs';
 
 import { peekGit, refreshGit } from './gitlive.mjs';
 import { RuleEngine, replayRule } from './rules.mjs';
@@ -141,7 +141,6 @@ function matches(session, card, f, labelsById, hits, dir) {
 
 export function matchesTask(t, links, status, f, labelsById, dir) {
   if (f.cardKind === 'session') return false;
-  validateSourceFilterCompatibility(f, links);
   if (!matchesSourceFilters([...sourceRelationsForTask(links), ...plannedSourceRelations(t.sourceContext)], f.sourceFilters)) return false;
   if (f.dotScope === 'only' && !links.some(s => s.dot)) return false;
   if (!matchesDirectory(f, dir)) return false;
@@ -346,7 +345,6 @@ async function tickRulesImpl(store) {
   if (!pendingTasks && !state.settings.rules.some((r) => r.enabled)) return [];
   const { sessions: sourceSessions } = await allSessions(state);
   const sessions = sessionCardStates(sourceSessions, state);
-  validateSourceFilterCompatibility(filters, sessions);
   if ((await store.resolvePending(matchPending(state, sessions))).length) state = (await store.load());
   return runRules(store, state, sessions);
 }
@@ -361,9 +359,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
   let state = (await store.load());
   const { sessions: sourceSessions, errors, hosts, app } = await allSessions(state, { force });
   const sessions = sessionCardStates(sourceSessions, state);
-  validateSourceFilterCompatibility(filters, sessions);
   await exchangeIndex.sync(sessions);
-  if (await store.syncSessionCategories(sessions)) state = await store.load();
   if ((await store.resolvePending(matchPending(state, sessions))).length) state = (await store.load());
   if ((await runRules(store, state, sessions)).length) state = (await store.load());
   const byId = new Map(sessions.map((x) => [x.id, x]));
@@ -628,7 +624,6 @@ function recentFolders(sessions, limit = 60) {
 export async function findSession(store, cardId) {
   let state = (await store.load());
   const { sessions, hosts } = await allSessions(state);
-  if (await store.syncSessionCategories(sessions)) state = await store.load();
   const s = sessions.find((x) => x.id === cardId);
   if (!s) throw new Error('セッションが見つかりません');
   return { session: s, state, host: !isCloudSession(s) && s.host?.local === false ? hosts.find((h) => h.id === s.host.id) : null };

@@ -21,14 +21,11 @@ export function plannedSourceRelations(sourceContext = []) {
 }
 
 const legacyMatches = (session, key, value) => key === 'section' ? value === '__none' ? !session.codexSection : session.codexSection?.id === value : key === 'folder' && value.startsWith('/') ? session.cwd?.replace(/\/+$/, '') === value.replace(/\/+$/, '') : session[key] === value;
-export function validateSourceFilterCompatibility(filters, sessions) {
-  if (!filters.sourceFilters?.length || !['project', 'folder', 'section'].some(k => filters[k])) return;
-  for (const selection of normalizeSourceSelections(filters.sourceFilters || [])) {
-    const matching = sessions.filter(s => matchesSourceFilters(expandSourceView(s.sourceView || sessionSourceView(s)).relations, [selection]));
-    for (const key of ['project', 'folder', 'section']) {
-      if (filters[key] && matching.length && !matching.some(s => legacyMatches(s, key, filters[key]))) throw new Error(`出典と旧${key}条件が矛盾しています`);
-    }
-  }
+// Input-only validation of immutable identifiers. Session observations (names,
+// folders, missing memberships) never turn an AND condition into an exception.
+export function validateSourceFilterCompatibility(filters) {
+  const selections = normalizeSourceSelections(filters.sourceFilters || []);
+  if (filters.section && selections.some(s => s.ref.provider === 'codex' && s.ref.kind === 'section' && (filters.section === '__none' || s.ref.nativeId !== filters.section))) throw new Error('出典と旧section条件の識別子が矛盾しています');
 }
 
 export function sourceFacetsForCards(cards) {

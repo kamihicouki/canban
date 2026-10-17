@@ -30,9 +30,10 @@ test('legacy context never synthesizes a project/account tuple across multiple l
   assert.equal(effectiveTaskContext({ context: { project: 'Manual', account: null } }, links).project, 'Manual');
 });
 
-test('contradictory new and old filters reject instead of preferring one', () => {
+test('source and legacy conditions stay AND filters when observations differ', () => {
   const links = [session('codex:a')];
-  assert.throws(() => matchesTask({}, links, 'idle', normalizeFilters({ project: 'Other', sourceFilters: [{ ref: ref() }] }), new Map(), null), /矛盾/);
+  assert.equal(matchesTask({}, links, 'idle', normalizeFilters({ project: 'Other', sourceFilters: [{ ref: ref() }] }), new Map(), null), false);
+  assert.equal(matchesTask({}, links, 'idle', normalizeFilters({ folder: '/elsewhere', sourceFilters: [{ ref: ref() }] }), new Map(), null), false);
 });
 
 test('task relation set retains all link observations; source facets count one task once', () => {
@@ -82,13 +83,15 @@ test('board source facets use the final filtered cards and card kind', async () 
       const included = await buildBoard(store, { ...filter, directory: dir.id });
       const excluded = await buildBoard(store, { ...filter, directory: '__none' });
       const sessionsOnly = await buildBoard(store, { ...filter, cardKind: 'session' });
-      console.log(JSON.stringify([included, excluded, sessionsOnly].map(b => ({ facets: b.sourceFacets, count: b.totals.shown }))));
+      const mixedUnmatched = await buildBoard(store, { ...filter, folder: '/unmatched' });
+      console.log(JSON.stringify([included, excluded, sessionsOnly, mixedUnmatched].map(b => ({ facets: b.sourceFacets, count: b.totals.shown }))));
       process.exit(0);
     `], { cwd: path.resolve(import.meta.dirname, '..'), env: { ...process.env, CANBAN_DATA_DIR: path.join(fx.root, 'store'), CANBAN_CODEX_HOME: fx.codexHome, CANBAN_CLAUDE_HOME: fx.claudeHome, CANBAN_CLAUDE_DESKTOP_DIR: fx.desktopDir }, encoding: 'utf8', timeout: 30000 });
-    const [included, excluded, sessionsOnly] = JSON.parse(output);
+    const [included, excluded, sessionsOnly, mixedUnmatched] = JSON.parse(output);
     assert.equal(included.count, 1);
     assert.equal(included.facets[0].count, 1);
     assert.equal(excluded.count, 0); assert.deepEqual(excluded.facets, []);
     assert.equal(sessionsOnly.count, 0); assert.deepEqual(sessionsOnly.facets, []);
+    assert.equal(mixedUnmatched.count, 0); assert.deepEqual(mixedUnmatched.facets, []);
   } finally { fx.cleanup(); }
 });

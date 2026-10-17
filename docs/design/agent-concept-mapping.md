@@ -257,13 +257,15 @@ type CompactCapabilities = ReturnType<typeof compactCapabilities>;
 競合は `categoryIds` を返し、既存 snapshot の有効カテゴリを保持する。新規カードは未分類。
 環境の分類は `startedWith` だけを認め、`requestedWith` や cwd 一致から分類しない。
 
-既存 board payload に `categoryMapping:{version:1,bindings,tombstones,legacyCards,report}` を追加する。
-binding は `{categoryId,ref,relation,legacySourceKey?}`、tombstone は `{ref,relation,legacySourceKey?}`。
+既存 board payload に `categoryMapping:{version:1,snapshotPending?,bindings,tombstones,legacyCards,legacyPathBindings?,report?}` を追加する。
+binding は `{categoryId,ref,relation,legacySourceKey?}`、新しい tombstone は `{categoryId,ref,relation,legacySourceKey?}`。
+解除はそのカテゴリだけを抑止し、別カテゴリへ追加する順序に影響しない。categoryId のない旧 tombstone は従来の全体抑止として読む。
 `legacyCards` は snapshot 時点の session ID をキーに `{categoryId,sourceKey}` を持つ。
 元の directories、sourceKeys、色、名前、手動指定、削除抑止は保持する。新規出典の名前結合・カテゴリ自動作成は行わない。
 `canban_update_directory({directoryId,sourceBindings:[{ref,relation}]})` はそのカテゴリの対応を置き換える。
 解除時は native tombstone と旧 snapshot の抑止を同時に更新する。別カテゴリとの重複は競合として公開する。
-未取得状態で対応を編集した場合は `snapshotPending:true` として、全取得 sessions による最初の snapshot まで保留する。
+移行前の対応編集は `snapshotPending:true` として、保存済みの正確な旧キーによる分類と明示 binding を共存させる。
+通常のボード取得・詳細取得・自動化は snapshot を確定せず、保存ビューも変換しない。未取得 host が後から復帰しても旧キーによる分類を維持する。
 
 ボードは `categoryBindings` と `categoryBindingConflicts:[{ref,relation,categoryIds}]` を返す。
 既存の公開名 `directories` / `directoryId` は変更しない。
@@ -292,23 +294,29 @@ facet は全条件と cardKind を適用した最終表示集合を母数とし�
 リンク済みセッションは独立カードとして数えず、同じ Task が複数リンク・予定・観測で一致しても count は1。
 origins と relations は内訳であり別カード件数ではない。観測時刻・状態は sourceRelations.sessions に残す。
 候補の名前が不明なら nativeId と scope の補助表示を使い、開始カタログで所属件数を補わない。
-旧 project/folder/section は受理し、確認できる新旧条件の矛盾は拒否する。旧 folder は末尾名と完全パスに対応する。
+旧 project/folder/section は受理し、各条件の AND として検索する。観測した名前・folder の非一致で描画を例外にしない。
+保存ビューと共有 UI 状態の保存時は sourceFilters の構造と、旧 section と native section ID の確定的な矛盾を検証する。
+旧 folder は末尾名と完全パスに対応する。
 WorkingLocation の machineId は local/接続相対 ID までしか確認できないため、作業フォルダの確定 SourceRef は作らない。
 Task3 は native sourceFacets と旧 folder 条件のピッカーを分けて使う。
 
 ### コピー移行と rollback
 
-`migrateSourceData(state,sessions) -> {state,report}` は入力を変更しない純粋な dry run。
+`migrateSourceData(state,sessions,{coverage}?) -> {state,report}` は入力を変更しない純粋なコピー dry run。通常読取からは呼ばない。
 既存 SQLite の payload 追加だけを使う。全取得 sessions（days/filters/cardKind 適用前）から旧対応を記録し、
-native ID と scope が全候補で一意なものだけ binding 化する。名前だけ・unknown・複数 scope は snapshot カードの分類を維持する。
-新しく現れた別 scope の同名出典と、snapshot 時点で取得できなかった host/account/歴史セッションへ旧名を拡散しない。
-既存の明示完全 folder path 規則は将来のカードにも適用する。
-report は `unique/ambiguous/unresolved/suppressed/preservedCards`、例（上限50）、unknown理由内訳、
+native ID と scope が一意に確認できる参照だけを binding 化する。一部 unknown でも確定候補が1つなら `partial` とし、その参照だけを対応させる。
+名前だけ・unknown・複数 scope は snapshot カードの分類を維持する。unknown 候補や別 scope の同名出典へ確定 ref を推測適用しない。
+同一 host と完全 cwd の旧 Claude 規則は `legacyPathBindings:[{categoryId,hostId,path,legacySourceKey}]` として後続 session にも適用する。filesystem SourceRef は作らない。
+既存の明示完全 folder path 規則も将来のカードに適用する。
+coverage は `complete:true`、`expectedHosts/observedHosts`、`expectedAccounts/observedAccounts`、`errors/unavailableHosts/unavailableAccounts` を使う。
+expectedHosts が空でなく期待 host/account がすべて取得済みで、エラー・取得不能がない場合だけ `report.applicable:true`。未指定・不足は false と理由を返す。
+これはコピーの取得条件判定であり適用許可ではない。実データの明示適用には別途差分確認と `.local/` sidecar 保存が必要。
+report は `unique/partial/ambiguous/unresolved/suppressed/preservedCards`、`applicable/applicationBlockedReasons`、例（上限50）、unknown理由内訳、
 `viewResolutions:[{viewId,field,value,outcome,candidateKeys}]` と取得限界を返す。再実行は同じ state と alreadyMigrated を返す。
 
 保存ビューの旧 project/section は全候補が一意な native ref のときだけ sourceFilters へ変換し、
 元 filters と変換項目を `view.sourceMigration:{version:1,legacyFilters,convertedFields,convertedSelections}` に保持する。
-folder/unknown/複数scope は旧条件のまま。共有 uiState の filters と下書きは変更しない。
+folder/unknown/複数scope、および旧 task context でその条件に一致するタスクがある場合は旧条件のまま。共有 uiState の filters と下書きは変更しない。
 
 旧版へ戻す前は `rollbackSourceViews(latestState) -> {state,report}` をコピーへ適用する。
 変換したビューの旧条件だけを復元し、移行後の days 等の変更、新しいカード・説明・下書きを保持する。

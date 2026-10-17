@@ -44,26 +44,31 @@ export function resolveCategory({ card, sourceView, bindings = [], legacy = {} }
   if (card?.directoryId === '__none') return { status: 'none', categoryId: null };
   if (card?.directoryId && (!legacy.directories || legacy.directories.some(d => d.id === card.directoryId))) return { status: 'explicit', categoryId: card.directoryId };
   const relations = expandSourceView(sourceView)?.relations || [];
-  const suppressed = new Set((legacy.tombstones || []).map(b => JSON.stringify([sourceKey(b.ref), b.relation])));
-  const ids = [...new Set(bindings.filter(b => sourceKey(b.ref) && categoryRelation(b.ref) === b.relation && !suppressed.has(JSON.stringify([sourceKey(b.ref), b.relation])) && relations.some(r => sourceKey(r.ref) === sourceKey(b.ref) && r.type === b.relation)).map(b => b.categoryId))];
+  const suppressed = b => (legacy.tombstones || []).some(t => (!t.categoryId || t.categoryId === b.categoryId) && sourceKey(t.ref) === sourceKey(b.ref) && t.relation === b.relation);
+  const ids = [...new Set(bindings.filter(b => sourceKey(b.ref) && categoryRelation(b.ref) === b.relation && !suppressed(b) && relations.some(r => sourceKey(r.ref) === sourceKey(b.ref) && r.type === b.relation)).map(b => b.categoryId))];
   const saved = legacy.cards?.[legacy.sessionId];
-  const savedId = saved && (!legacy.directories || legacy.directories.some(d => d.id === saved.categoryId)) ? saved.categoryId : null;
+  const compatibleId = saved?.categoryId || legacy.fallbackCategoryId;
+  const savedId = compatibleId && (!legacy.directories || legacy.directories.some(d => d.id === compatibleId)) && !(legacy.tombstones || []).some(t => (!t.categoryId || t.categoryId === compatibleId) && (t.legacySourceKey && t.legacySourceKey === (saved?.sourceKey || legacy.legacySourceKey) || relations.some(r => sourceKey(t.ref) === sourceKey(r.ref) && t.relation === r.type))) ? compatibleId : null;
   if (ids.length > 1) return { status: 'conflict', categoryId: savedId, categoryIds: ids };
   if (ids.length === 1) return { status: 'bound', categoryId: ids[0] };
   if (savedId) return { status: 'legacy', categoryId: savedId };
+  const legacyPath = legacy.agent === 'claude' && (legacy.pathBindings || []).find(b => b.hostId === legacy.hostId && b.path === legacy.cwd && (!legacy.directories || legacy.directories.some(d => d.id === b.categoryId)));
+  if (legacyPath) return { status: 'legacy', categoryId: legacyPath.categoryId };
   const path = pathCategory(legacy.directories, legacy.cwd);
   return path ? { status: 'legacy', categoryId: path.id } : { status: 'unclassified', categoryId: null };
 }
 
 // Pure dry run. Callers may persist this copy using the existing board payload;
 // no source settings, filesystem or physical SQLite schema is changed here.
-export function migrateSourceData(input, sessions = []) {
+export function migrateSourceData(input, sessions = [], options = {}) {
   const state = structuredClone(input);
   if (state.categoryMapping?.version === 1 && !state.categoryMapping.snapshotPending) return { state, report: { ...state.categoryMapping.report, alreadyMigrated: true } };
   const pending = state.categoryMapping?.snapshotPending ? state.categoryMapping : null;
   const directories = state.directories || [], ignored = new Set(state.settings?.ignoredCategorySources || []);
-  const report = { version: 1, unique: 0, ambiguous: 0, unresolved: 0, suppressed: 0, preservedCards: 0, examples: [], viewResolutions: [], unknownReasons: {}, limits: ['snapshotに未取得のhost/accountと後から現れる歴史セッションは旧名前キーで自動分類しません。明示folder path規則は継続します。'] };
-  const bindings = [], tombstones = [], legacyCards = {};
+  const coverage = options.coverage;
+  const complete = coverage?.complete === true && Array.isArray(coverage.expectedHosts) && coverage.expectedHosts.length > 0 && coverage.expectedHosts.every(h => coverage.observedHosts?.includes(h)) && Array.isArray(coverage.expectedAccounts) && coverage.expectedAccounts.every(a => coverage.observedAccounts?.includes(a)) && !coverage.errors?.length && !coverage.unavailableHosts?.length && !coverage.unavailableAccounts?.length;
+  const report = { version: 1, unique: 0, partial: 0, ambiguous: 0, unresolved: 0, suppressed: 0, preservedCards: 0, examples: [], viewResolutions: [], unknownReasons: {}, applicable: complete, applicationBlockedReasons: complete ? [] : ['host/accountの取得coverageを完了確認できないため適用不可です'], limits: ['通常のボード取得は移行を適用しません。別途coverage確認・差分確認・sidecar保存を伴う明示適用が必要です。'] };
+  const bindings = [], tombstones = [], legacyCards = {}, legacyPathBindings = [];
   const byLegacyKey = new Map();
   for (const session of sessions) {
     const old = legacySessionCategory(session);
@@ -81,7 +86,11 @@ export function migrateSourceData(input, sessions = []) {
     const candidates = new Map();
     let incomplete = false;
     let nativeId = null;
-    try { const parts = JSON.parse(key); if (parts[2] === 'group') nativeId = parts[3]; } catch {}
+    let legacyParts;
+    try { legacyParts = JSON.parse(key); if (legacyParts[2] === 'group') nativeId = legacyParts[3]; } catch {}
+    if (legacyParts?.[0] === 'claude' && legacyParts[2] === 'cwd' && typeof legacyParts[1] === 'string' && typeof legacyParts[3] === 'string' && legacyParts[3].startsWith('/') && !ignored.has(key)) {
+      for (const dir of directories.filter(d => d.sourceKeys?.includes(key))) legacyPathBindings.push({ categoryId: dir.id, hostId: legacyParts[1], path: legacyParts[3], legacySourceKey: key });
+    }
     for (const session of byLegacyKey.get(key) || []) {
       const view = sessionSourceView(session);
       const r = view.relations.find(r => session.agent === 'codex' ? r.type === 'memberOf' && r.ref.kind === 'project' : r.type === 'displayedIn' && r.ref.kind === 'group');
@@ -89,12 +98,12 @@ export function migrateSourceData(input, sessions = []) {
       else incomplete = true;
     }
     const matches = [...candidates.values()];
-    const outcome = matches.length > 1 ? 'ambiguous' : matches.length === 1 && !incomplete ? 'unique' : 'unresolved';
+    const outcome = matches.length > 1 ? 'ambiguous' : matches.length === 1 ? incomplete ? 'partial' : 'unique' : 'unresolved';
     report[outcome]++;
     const suppressed = ignored.has(key);
     if (suppressed) report.suppressed++;
     if (report.examples.length < 50) report.examples.push({ sourceKey: key, outcome, suppressed, candidateKeys: [...candidates.keys()] });
-    if (outcome !== 'unique') continue;
+    if (outcome !== 'unique' && outcome !== 'partial') continue;
     const relation = matches[0];
     if (suppressed) tombstones.push({ ref: relation.ref, relation: relation.type, legacySourceKey: key });
     else for (const dir of directories.filter(d => d.sourceKeys?.includes(key))) bindings.push({ categoryId: dir.id, ref: relation.ref, relation: relation.type, legacySourceKey: key });
@@ -107,6 +116,7 @@ export function migrateSourceData(input, sessions = []) {
       const matching = sessions.filter(s => field === 'section' ? value === '__none' ? !s.codexSection : s.codexSection?.id === value : field === 'folder' && value.startsWith('/') ? s.cwd?.replace(/\/+$/, '') === value.replace(/\/+$/, '') : s[field] === value);
       const candidates = new Map();
       let incomplete = false;
+      if (Object.values(state.cards || {}).some(c => c.kind === 'task' && Object.hasOwn(c.context || {}, field) && (value === '__none' ? c.context[field] === null : c.context[field] === value))) incomplete = true;
       for (const session of matching) {
         const attribute = sessionSourceView(session).attributes[field === 'project' ? 'codexProject' : 'codexSection'];
         if (field === 'folder' || !attribute.value) { incomplete = true; continue; }
@@ -124,7 +134,7 @@ export function migrateSourceData(input, sessions = []) {
     }
   }
   report.preservedCards = Object.keys(legacyCards).length;
-  state.categoryMapping = { version: 1, bindings: [...bindings, ...(pending?.bindings || [])], tombstones: [...tombstones, ...(pending?.tombstones || [])], legacyCards, report };
+  state.categoryMapping = { version: 1, bindings: [...bindings, ...(pending?.bindings || [])], tombstones: [...tombstones, ...(pending?.tombstones || [])], legacyCards, legacyPathBindings, report };
   return { state, report };
 }
 

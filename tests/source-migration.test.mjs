@@ -152,3 +152,62 @@ test('rollback restores legacy view conditions without rewinding new work and ho
   assert.equal(rolled.report.heldViews[0].id, 'new');
   assert.ok(migrated.settings.views[0].filters.sourceFilters, 'input copy remains unchanged');
 });
+
+test('normal category sync never applies snapshots or converts saved views, including late hosts', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-no-apply-')), store = new Store(root);
+  try {
+    const state = fixture(); state.settings.views = [{ id: 'old', name: 'Old', filters: { project: 'Old' } }];
+    const remoteKey = JSON.stringify(['codex', 'late-host', 'group', 'p1']);
+    state.directories[0].sourceKeys.push(remoteKey);
+    await store.save(state);
+    assert.equal(await store.syncSessionCategories([session('codex:b', '/home/a')]), false);
+    assert.equal(await store.syncSessionCategories([]), false);
+    const loaded = await store.load();
+    assert.equal(loaded.categoryMapping, undefined);
+    assert.deepEqual(loaded.settings.views, state.settings.views);
+    assert.equal(resolveDirectory(loaded, null, null, { ...session('codex:late'), host: { id: 'late-host' } }).id, 'kept');
+    await assert.rejects(store.saveView({ name: 'Bad', filters: { sourceFilters: [{ ref: { scopeId: '' } }] } }), /出典/);
+  } finally { await store.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('dry-run keeps same-host exact Claude cwd rules and known refs despite unknown candidates', () => {
+  const input = fixture(), pathKey = JSON.stringify(['claude', 'local', 'cwd', '/full/repo']);
+  input.directories.push({ id: 'cwd', name: 'Folder', paths: [], color: null, sourceKeys: [pathKey] });
+  const old = { id: 'claude:old', agent: 'claude', cwd: '/full/repo' };
+  const { state, report } = migrateSourceData(input, [session('codex:known', '/home/a'), session('codex:unknown'), old]);
+  assert.equal(state.categoryMapping.bindings.length, 1);
+  assert.equal(resolveDirectory(state, null, null, session('codex:new', '/home/a')).id, 'kept');
+  assert.equal(resolveDirectory(state, null, null, session('codex:new-b', '/home/b')), null);
+  assert.equal(resolveDirectory(state, null, null, { ...old, id: 'claude:new' }).id, 'cwd');
+  assert.equal(resolveDirectory(state, null, null, { ...old, id: 'claude:other', host: { id: 'other' } }), null);
+  assert.equal(report.applicable, false);
+  assert.ok(report.applicationBlockedReasons.length);
+});
+
+test('dry-run cannot narrow a task context-only view and reports unavailable coverage', () => {
+  const input = fixture();
+  input.cards['task:manual'] = { kind: 'task', context: { project: 'Old' }, links: [] };
+  input.settings.views = [{ id: 'task', name: 'Task', filters: { project: 'Old' } }];
+  const { state, report } = migrateSourceData(input, [{ ...session('codex:known', '/home/a'), project: 'Old' }], { coverage: { complete: false, unavailableHosts: ['offline'] } });
+  assert.deepEqual(state.settings.views[0].filters, { project: 'Old' });
+  assert.equal(report.viewResolutions[0].outcome, 'unresolved');
+  assert.equal(report.applicable, false);
+});
+
+test('moving a native binding works in either category edit order; old global tombstones remain readable', async () => {
+  for (const addFirst of [true, false]) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-move-binding-')), store = new Store(root);
+    try {
+      await store.save(migrateSourceData(fixture(), [session('codex:old', '/home/a')]).state);
+      const b = await store.createDirectory({ name: 'B' });
+      const add = () => store.updateDirectory({ directoryId: b.id, sourceBindings: [{ ref: ref('/home/a'), relation: 'memberOf' }] });
+      const remove = () => store.updateDirectory({ directoryId: 'kept', sourceBindings: [] });
+      if (addFirst) { await add(); await remove(); } else { await remove(); await add(); }
+      const state = await store.load();
+      assert.equal(resolveDirectory(state, null, null, session('codex:new', '/home/a')).id, b.id);
+      assert.ok(state.categoryMapping.tombstones.some(t => t.categoryId === 'kept'));
+    } finally { await store.close(); fs.rmSync(root, { recursive: true, force: true }); }
+  }
+  const view = sessionSourceView(session('codex:new', '/home/a'));
+  assert.equal(resolveCategory({ sourceView: view, bindings: [{ categoryId: 'kept', ref: ref('/home/a'), relation: 'memberOf' }], legacy: { tombstones: [{ ref: ref('/home/a'), relation: 'memberOf' }] } }).categoryId, null);
+});

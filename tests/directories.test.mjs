@@ -82,7 +82,7 @@ test('source categories persist, keep manual names, and respect explicit categor
       sourceKeys: [JSON.stringify([s.agent, 'local', s.codexProject || s.claudeGroup ? 'group' : 'cwd', s.codexProject?.id || s.claudeGroup?.id || s.cwd])],
     })));
     await store.save(previous);
-    assert.equal(await store.syncSessionCategories(sources),true);
+    assert.equal(await store.syncSessionCategories(sources),false, 'normal reads never apply a migration');
     assert.equal(await store.syncSessionCategories(sources),false);
     let state = await store.load();
     const resolve = (session, card = null) => resolveDirectory(state,card,session.cwd,session);
