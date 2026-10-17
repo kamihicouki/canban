@@ -56,6 +56,12 @@ Canban は Desktop のプロフィールやリンクを切り替えない（0.24
 
 0.24.4以降、実行アカウント一覧はアプリバー・サイドバーと同じアカウントID単位にまとめ、CLI設定フォルダーは各アカウントの「接続設定を指定」に残す。保存済みhome IDは受動的な表示や同じアカウントの再選択で変更しない。
 
+### Desktop のアカウント対応表（0.29.24、起動経路への接続前）
+
+`server/claude-desktop-accounts.mjs` は、このMacの標準Desktop保存先をアカウントIDと対応付ける。対応表は `<Canban保存先>/desktop-accounts/claude/registry.json`（600）、管理ディレクトリは700で保存する。登録には標準保存先の実ディレクトリ・所有者・同一ファイルシステム・ログイン中アカウントの一致が必要で、認証情報は対応表へコピーしない。CLIの認証・履歴・キュー・Keychainを変更しない。読取り専用の `server/claude-desktop-roots.mjs` は切替サービスやCLIアカウントのモジュールに依存しない。
+
+この段階では登録サービスを通常のUIやDesktop起動へ接続せず、保存先の入替えも行わない。既存の起動経路と上記ピュア構成の契約は維持する。切替機能の有効化には、別途、復元・同時実行・実機の認証保持の検証が必要となる。
+
 ## ローカルmainとChrome更新
 
 Claude Desktop の拡張は `update:local` では更新されません。通常mainから `npm run pack:mcpb` で `dist/canban.mcpb` を生成し、Desktopの拡張設定で既存のCanbanを更新します。MCPBも `dist/codex-plugin/` のコミット済みGit管理ファイルだけを使い、`.local/` と未追跡資料を含めません。インストールコピーのmanifestと保存先を読み戻し、更新を確認します。アプリ管理キャッシュを手編集しません。
