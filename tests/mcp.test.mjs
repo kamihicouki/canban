@@ -165,8 +165,13 @@ test('directories: explicit folder rules, explicit assignment and category-less 
   const all = board.lists.flatMap((l) => l.cards);
   const inWeb = all.filter((c) => c.cwd === '/r/web');
   assert.ok(inWeb.length, 'fixtures have sessions under /r/web');
-  assert.ok(inWeb.every(c => c.directory?.id === dir.id), 'existing explicit full folder rules remain active');
-  assert.equal(board.directories.find(d => d.id === dir.id).count, inWeb.length);
+  assert.ok(inWeb.every(c => c.directory?.id !== dir.id), 'directory paths do not classify native sessions');
+  assert.equal(board.directories.find(d => d.id === dir.id).count, 0);
+  const task = (await call('canban_create_task', { title: 'Existing folder rule' })).structuredContent;
+  await call('canban_update_task', { cardId: task.cardId, target: { agent: 'codex', host: 'local', cwd: '/r/web' } });
+  board = (await call('canban_get_board', { days: 0, directory: dir.id })).structuredContent;
+  assert.deepEqual(board.lists.flatMap(l => l.cards).map(c => c.id), [task.cardId], 'existing explicit full folder rules remain active for tasks');
+  await call('canban_delete_task', { cardId: task.cardId });
   assert.ok(!board.directories.some(d => d.name === 'web'), 'new source names do not create categories');
   for (const card of inWeb) await call('canban_update_card', { cardId: card.id, directory: dir.id });
   board = (await call('canban_get_board', { days: 0 })).structuredContent;

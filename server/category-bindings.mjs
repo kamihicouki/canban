@@ -54,7 +54,9 @@ export function resolveCategory({ card, sourceView, bindings = [], legacy = {} }
   if (savedId) return { status: 'legacy', categoryId: savedId };
   const legacyPath = legacy.agent === 'claude' && (legacy.pathBindings || []).find(b => b.hostId === legacy.hostId && b.path === legacy.cwd && (!legacy.directories || legacy.directories.some(d => d.id === b.categoryId)));
   if (legacyPath) return { status: 'legacy', categoryId: legacyPath.categoryId };
-  const path = pathCategory(legacy.directories, legacy.cwd);
+  // Directory prefixes belong to Task/source-less callers; native sessions
+  // keep their exact source keys/bindings, including the Claude cwd rule above.
+  const path = ['codex', 'claude'].includes(legacy.agent) ? null : pathCategory(legacy.directories, legacy.cwd);
   return path ? { status: 'legacy', categoryId: path.id } : { status: 'unclassified', categoryId: null };
 }
 

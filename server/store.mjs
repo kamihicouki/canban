@@ -121,8 +121,8 @@ function normalizeSettings(s) {
   };
 }
 
-// A directory is a user-made, single-membership grouping of cards. `paths` are cwd
-// prefixes whose sessions belong to it unless a card was assigned explicitly.
+// A directory is a user-made, single-membership grouping of cards. `paths` are
+// legacy cwd prefixes for Task/source-less callers, never native session rules.
 function normalizePaths(paths) {
   if (!Array.isArray(paths)) return [];
   return [...new Set(paths.map((p) => String(p || '').trim().replace(/\/+$/, '')).filter((p) => p.startsWith('/')))].slice(0, 20);

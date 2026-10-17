@@ -307,7 +307,8 @@ Task3 は native sourceFacets と旧 folder 条件のピッカーを分けて使
 native ID と scope が一意に確認できる参照だけを binding 化する。一部 unknown でも確定候補が1つなら `partial` とし、その参照だけを対応させる。
 名前だけ・unknown・複数 scope は snapshot カードの分類を維持する。unknown 候補や別 scope の同名出典へ確定 ref を推測適用しない。
 同一 host と完全 cwd の旧 Claude 規則は `legacyPathBindings:[{categoryId,hostId,path,legacySourceKey}]` として後続 session にも適用する。filesystem SourceRef は作らない。
-既存の明示完全 folder path 規則も将来のカードに適用する。
+`directories.paths` の既存 prefix 規則は Task / 出典なし呼出しだけに適用し、Codex / Claude session には cwd fallback として使わない。
+この範囲は旧 `resolveDirectory` の契約を維持する。session には手動指定・none・native binding・legacyCards・旧完全 sourceKey を使い、上記の同一 host＋完全 cwd の旧 Claude 規則は prefix 規則と区別する。
 coverage は `complete:true`、`expectedHosts/observedHosts`、`expectedAccounts/observedAccounts`、`errors/unavailableHosts/unavailableAccounts` を使う。
 expectedHosts が空でなく期待 host/account がすべて取得済みで、エラー・取得不能がない場合だけ `report.applicable:true`。未指定・不足は false と理由を返す。
 これはコピーの取得条件判定であり適用許可ではない。実データの明示適用には別途差分確認と `.local/` sidecar 保存が必要。

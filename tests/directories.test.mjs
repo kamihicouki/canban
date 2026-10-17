@@ -66,6 +66,15 @@ test('stats: directory breakdown and filter', async () => {
   assert.equal(computeStats(state, sessions, { days: 7, now, directory: '__none' }).totals.tokens, 7);
 });
 
+for (const agent of ['codex', 'claude']) test(`directory paths never classify ${agent} sessions by cwd`, () => {
+  const state = { directories: [{ id: 'path', name: 'Task folder', paths: ['/r/web'] }, { id: 'manual', name: 'Manual', paths: [] }] };
+  const session = { id: `${agent}:new`, agent, cwd: '/r/web/src' };
+  assert.equal(resolveDirectory(state, null, session.cwd, session), null);
+  assert.equal(resolveDirectory(state, { directoryId: 'manual' }, session.cwd, session)?.id, 'manual');
+  assert.equal(resolveDirectory(state, { directoryId: '__none' }, session.cwd, session), null);
+  assert.equal(resolveDirectory(state, { kind: 'task' }, session.cwd)?.id, 'path');
+});
+
 test('source categories persist, keep manual names, and respect explicit category-less overrides', async () => {
   const root = tmp(), store = new Store(root);
   try {

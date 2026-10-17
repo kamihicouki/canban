@@ -54,10 +54,13 @@ test('unknown scope/name-only legacy remains on snapshot cards and cannot become
   assert.equal(migrateSourceData(input, [nameOnly]).state.categoryMapping.bindings.length, 0);
 });
 
-test('explicit folder rules keep matching future sessions and conflict is distinct from none', () => {
+test('explicit folder rules stay task-only after dry-run and conflict is distinct from none', () => {
   const input = fixture(); input.directories[0].paths = ['/full/repo'];
   const { state } = migrateSourceData(input, []);
-  assert.equal(resolveDirectory(state, null, '/full/repo/sub', { ...session('codex:new'), cwd: '/full/repo/sub' }).id, 'kept');
+  assert.equal(resolveDirectory(state, { kind: 'task' }, '/full/repo/sub').id, 'kept');
+  for (const agent of ['codex', 'claude']) {
+    assert.equal(resolveDirectory(state, null, '/full/repo/sub', { id: `${agent}:new`, agent, cwd: '/full/repo/sub' }), null);
+  }
   const sourceView = sessionSourceView(session('codex:b', '/home/a'));
   assert.deepEqual(resolveCategory({ sourceView, bindings: [{ categoryId: 'one', ref: ref('/home/a'), relation: 'memberOf' }, { categoryId: 'two', ref: ref('/home/a'), relation: 'memberOf' }] }), { status: 'conflict', categoryId: null, categoryIds: ['one', 'two'] });
   assert.equal(sourceKey(ref('/home/a')), sourceView.relations[0].key);
