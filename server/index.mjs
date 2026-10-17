@@ -43,6 +43,7 @@ import { startCodexCloud, setCloudRunner } from './codex-cloud.mjs';
 import { launchOnce } from './launcher.mjs';
 import { resolveSshTarget, matchDesktopTarget } from './sources/ssh-targets.mjs';
 import { prepareCodexDesktop } from './codex-desktop-start.mjs';
+import { copyPromptImages } from './prompt-clipboard.mjs';
 import { readDesktopCapabilities } from './desktop-capabilities.mjs';
 import { managedDesktopAccounts } from './claude-desktop-profile.mjs';
 import { createDesktopLaunches } from './desktop-launch.mjs';
@@ -867,6 +868,11 @@ const TOOLS = [
       return { text: detail.note || (detail.route === 'desktop' ? 'デスクトップの新規画面を開きました' : detail.route === 'cloud' ? 'Codex Cloud にタスクを送信しました' : 'ターミナルに開始を依頼しました'), structured: detail };
     },
   },
+  appTool('canban_copy_prompt_images', '添付画像をコピー', { imageIds: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 8 }, uiToken: { type: 'string' } }, ['imageIds','uiToken'], async a => {
+    const args = requireLoopUi(a);
+    if (!(await readDesktopCapabilities(store.dir)).clipboardImages) return { state: 'unverified', reason: 'Desktopでの画像受取りを確認するまで、アプリの通常の添付操作を使ってください' };
+    return copyPromptImages({ dataDir: store.dir, imageIds: args.imageIds }, { uiAuthorized: true });
+  }),
   appTool('canban_desktop_accounts', 'Desktop の接続状態', {}, [], async () => ({ ...await managedDesktopAccounts(store.dir).view(), ...await readDesktopCapabilities(store.dir) })),
   appTool('canban_desktop_account_command', 'Desktop の接続を変更', { type: { type: 'string', enum: ['enroll-current','begin-login','finish-login','cancel','recover'] }, account: { type: 'string' }, requestId: { type: 'string' }, uiToken: { type: 'string' } }, ['type','uiToken'], async a => {
     const args = requireLoopUi(a);

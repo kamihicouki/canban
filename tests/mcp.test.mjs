@@ -352,6 +352,8 @@ test('Desktop status is read-only and cancellation requires the rendered UI capa
   assert.deepEqual(listed.find(t => t.name === 'canban_cancel_start_session')._meta.ui.visibility, ['app']);
   assert.equal(listed.find(t => t.name === 'canban_get_start_session').annotations.readOnlyHint, true);
   assert.equal((await call('canban_cancel_start_session', { clientRequestId: 'absent', uiToken: 'forged' })).isError, true);
+  assert.deepEqual(listed.find(t => t.name === 'canban_copy_prompt_images')._meta.ui.visibility, ['app']);
+  assert.equal((await call('canban_copy_prompt_images', { imageIds: [], uiToken: 'forged' })).isError, true);
   assert.equal((await call('canban_start_session', { agent: 'claude', uiToken: 'forged', allowQuit: true })).isError, true);
   assert.equal((await call('canban_get_start_session', { clientRequestId: 'absent' })).structuredContent.result, null);
 });

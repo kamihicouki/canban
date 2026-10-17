@@ -54,15 +54,34 @@ export function uploadImage(dir, { id, offset = 0, data, name, mime, size }) {
   return { ...meta, offset: nextOffset, complete: !!meta.sha256 };
 }
 
+function readImageFile(file, maxBytes) {
+  const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+  try {
+    const before = fs.fstatSync(fd, { bigint: true });
+    if (!before.isFile() || before.nlink !== 1n || process.getuid && before.uid !== BigInt(process.getuid()) || before.size > BigInt(maxBytes)) throw new Error('保存された画像が変更されています。もう一度追加してください');
+    const bytes = Buffer.alloc(Number(before.size) + 1);
+    let total = 0, read;
+    while (total < bytes.length && (read = fs.readSync(fd, bytes, total, bytes.length-total, total))) total += read;
+    const after = fs.fstatSync(fd, { bigint: true });
+    if (BigInt(total) !== before.size || after.size !== before.size || after.mtimeNs !== before.mtimeNs || after.ctimeNs !== before.ctimeNs) throw new Error('保存された画像が変更されています。もう一度追加してください');
+    return bytes.subarray(0,total);
+  } finally { fs.closeSync(fd); }
+}
+function imageMetadata(dir, id) {
+  const file = imagePath(dir, id, 'json');
+  const root = fs.lstatSync(imageDir(dir));
+  if (!root.isDirectory() || root.isSymbolicLink() || process.getuid && root.uid !== process.getuid()) throw new Error('画像の保存先を確認できません');
+  const meta = JSON.parse(readImageFile(file,4096).toString('utf8'));
+  if (!meta.sha256 || !TYPES[meta.mime]) throw new Error('アップロードが完了していない画像です');
+  if (meta.id !== id || !Number.isInteger(meta.size) || meta.size < 1 || meta.size > IMAGE_MAX_BYTES || !/^[a-f0-9]{64}$/.test(meta.sha256)) throw new Error('画像の指定・サイズが不正です');
+  return { ...meta, path: imagePath(dir, id, TYPES[meta.mime]) };
+}
 export function promptImages(dir, ids = []) {
   if (!Array.isArray(ids) || ids.length > IMAGE_MAX_COUNT) throw new Error('画像は8枚までです');
   return [...new Set(ids)].map(id => {
-    const meta = JSON.parse(fs.readFileSync(imagePath(dir, id, 'json'), 'utf8'));
-    if (!meta.sha256 || !TYPES[meta.mime]) throw new Error('アップロードが完了していない画像です');
-    const file = imagePath(dir, id, TYPES[meta.mime]);
-    const data = fs.readFileSync(file);
-    if (data.length !== meta.size || crypto.createHash('sha256').update(data).digest('hex') !== meta.sha256) throw new Error('保存された画像が変更されています。もう一度追加してください');
-    return { ...meta, path: file };
+    const meta = imageMetadata(dir,id), data = readImageFile(meta.path,IMAGE_MAX_BYTES);
+    if (data.length !== meta.size || crypto.createHash('sha256').update(data).digest('hex') !== meta.sha256 || imageType(data) !== meta.mime) throw new Error('保存された画像が変更されています。もう一度追加してください');
+    return meta;
   });
 }
 
