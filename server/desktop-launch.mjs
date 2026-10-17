@@ -63,7 +63,7 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, prepar
       record.target = target; await save(f.record, record);
       const perform = async () => {
         if (await cancelled()) return set({ state: 'cancelled' });
-        if (prepareThread && !record.thread) {
+        if (prepareThread && target.prepareThread !== false && !record.thread) {
           record.intent = 'prepare-thread'; await save(f.record, record);
           try {
             record.thread = await prepareThread(payload, target);

@@ -33,6 +33,8 @@ test('Desktop waiting and cancellation retain the composer draft with keyboard a
   assert.match(await page.locator('#feedback').textContent(), /取り消/);
   assert.deepEqual(await page.evaluate(() => [ui.sessionDraft.prompt, ui.sessionDraft.attachments.imageIds]), ['保持する本文',['img-a']]);
   assert.match(await page.evaluate(() => { ui.sessionDraft.startRequest = null; return ui.sessionActionLabel(); }), /A → B に切り替えて開く/);
+  assert.match(await page.evaluate(() => { ui.sessionDraft.route='terminal'; return ui.sessionActionLabel(); }), /Claude Codeを開始/);
+  await page.evaluate(() => { ui.sessionDraft.route='desktop'; });
   await page.evaluate(() => { ui.showSessionFeedback({state:'waiting-for-login',reason:'状態を確認できません'}); });
   assert.match(await page.locator('#feedback').textContent(), /状態を確認できません/);
   await page.evaluate(() => { ui.dialog={open:true}; ui.sessionDraft.startRequest={clientRequestId:'resuming'}; ui.showSessionFeedback({state:'waiting-for-quit'}); });

@@ -21,7 +21,7 @@ const rpc = (method, params) => new Promise(resolve => {
 const call = async (name, args = {}) => (await rpc('tools/call', { name, arguments: args })).result;
 before(async () => {
   child = spawn(process.execPath, ['server/index.mjs'], { cwd: root, stdio: ['pipe', 'pipe', 'inherit'], env: {
-    ...process.env, CANBAN_DATA_DIR: dataDir, CANBAN_CODEX_HOME: fx.codexHome,
+    ...process.env, HOME: dataDir, CANBAN_DATA_DIR: dataDir, CANBAN_CODEX_HOME: fx.codexHome,
     CANBAN_CLAUDE_HOME: fx.claudeHome, CANBAN_CLAUDE_DESKTOP_DIR: fx.desktopDir,
     CANBAN_LAUNCH_DRYRUN: '1', CANBAN_SEARCH_INDEX: '0', CANBAN_BACKGROUND: '0',
   } });
@@ -99,4 +99,25 @@ test('a terminal start never runs the agent when changing to the requested folde
   const command = newSessionCommand('codex', { cwd: path.join(dataDir, 'missing'), prompt: 'hello' });
   spawnSync('/bin/sh', ['-c', command], { env: { PATH: binDir, CANBAN_START_MARKER: marker } });
   assert.equal(fs.existsSync(marker), false);
+});
+
+// Receipt and dry-run are confined to this disposable fixture data root.
+test('verified remote capability opens an existing Codex thread without a terminal fallback', async () => {
+  const { desktopBuilds } = await import('../server/desktop-capabilities.mjs');
+  fs.writeFileSync(path.join(dataDir,'desktop-capabilities.json'), JSON.stringify({version:1,builds:await desktopBuilds(),codexRemote:{verified:true,modelTurns:0,draftVerified:true}}),{mode:0o600});
+  const file=path.join(fx.codexHome,'.codex-global-state.json'), state=JSON.parse(fs.readFileSync(file,'utf8'));
+  state['codex-managed-remote-connections']=[{hostId:'remote-ssh-discovered:box',alias:'box'}];
+  fs.writeFileSync(file,JSON.stringify(state));
+  const args={agent:'codex',route:'desktop',projectId:'p-srv',prompt:'未送信の下書き',clientRequestId:'remote-existing-1'};
+  const response=await call('canban_start_session',args);
+  assert.ok(!response.isError,response.content?.[0]?.text);
+  assert.equal(response.structuredContent.state,'opened');
+  const url=new URL(response.structuredContent.url);
+  assert.equal(url.searchParams.get('hostId'),'remote-ssh-discovered:box');
+  assert.equal(url.searchParams.get('prompt'),'未送信の下書き');
+  assert.notEqual(url.pathname,'/new');
+  assert.deepEqual((await call('canban_start_session',args)).structuredContent,response.structuredContent);
+  state['codex-managed-remote-connections'][0].sshPort=2222;fs.writeFileSync(file,JSON.stringify(state));
+  const claude=await call('canban_start_session',{agent:'claude',route:'desktop',hostId:'remote-ssh-discovered:box',cwd:'/srv/app',prompt:'確認',clientRequestId:'mismatch-port'});
+  assert.equal(claude.isError,true,'a different Desktop environment port cannot be guessed');
 });
