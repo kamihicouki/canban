@@ -1,6 +1,6 @@
 # 元アプリの概念対応と観測モデル
 
-2026-10-17、Task 1（P1/P2）。既存のカードID・project/folder・カテゴリ・API引数・開始処理・状態キーを維持する互換追加。分類移行、UI表示、開始経路の変更は後段で扱う。
+2026-10-17、0.29.28時点。出典観測モデル、コピーに限った分類・保存ビュー移行、UI表示と絞り込み、開始設定のガードを実装済み。既存のカードID・旧project/folder条件・カテゴリ・API引数・状態キーの互換を維持する。実データ移行、ローカル拡張への反映、実起動による適用確認は別工程。
 
 ## 採用した用語と受け持ち
 
@@ -275,6 +275,7 @@ binding は `{categoryId,ref,relation,legacySourceKey?}`、新しい tombstone �
 ```ts
 sourceFilters: {ref:SourceRef, relation?:'memberOf'|'displayedIn'|'requestedWith'|'startedWith'}[];
 cardKind: 'all'|'task'|'session';
+workingFolder: string; // 絶対パス。空文字は条件なし。旧folderとは別条件。
 sourceContext: {ref:SourceRef, relation?:SourceRelation['type']}[];
 sourceRelations: {type:SourceRelation['type'],ref:SourceRef,key:string,
   sessions:{sessionId:string,requestId:string|null,observation:Observation<SourceEntity>}[]}[];
@@ -298,7 +299,7 @@ origins と relations は内訳であり別カード件数ではない。観測�
 保存ビューと共有 UI 状態の保存時は sourceFilters の構造と、旧 section と native section ID の確定的な矛盾を検証する。
 旧 folder は末尾名と完全パスに対応する。
 WorkingLocation の machineId は local/接続相対 ID までしか確認できないため、作業フォルダの確定 SourceRef は作らない。
-Task3 は native sourceFacets と旧 folder 条件のピッカーを分けて使う。
+UIはnative sourceFacetsと`workingFolder`条件のピッカーを分けて使う。旧`folder`の保存条件は「旧フォルダ条件」として保持する。
 
 ### コピー移行と rollback
 
@@ -321,7 +322,7 @@ folder/unknown/複数scope、および旧 task context でその条件に一致�
 
 旧版へ戻す前は `rollbackSourceViews(latestState) -> {state,report}` をコピーへ適用する。
 変換したビューの旧条件だけを復元し、移行後の days 等の変更、新しいカード・説明・下書きを保持する。
-新規 sourceFilters や cardKind 等、旧版で表せないビューは旧版の一覧から保留し、`report.heldViews` に全記録を返す。
+新規sourceFilters、workingFolder、cardKind等、旧版で表せないビューは旧版の一覧から保留し、`report.heldViews` に全記録を返す。
 この report は `.local/` の sidecar に保存して人が確認する。旧サーバーへ変換済み filters をそのまま渡すと、未知条件が落ち全件へ広がるため禁止。
 DB全体を古いバックアップへ巻き戻さない。実データへの適用・旧版切替は本Taskで行わない。
 
@@ -360,3 +361,14 @@ Task composerは明示的な開始操作で、依頼文・開始設定・マシ�
 詳細取得は対象sessionを選んでからsourceViewを作る。boardや全体ルール評価に必要な集合は維持し、全体性能の受入判定とは分ける。
 
 同じ文面を改めて開始したい場合は、Task composerの既存の開始メニュー（⋯）または⌘Kで「新しい依頼に切り替える」を選ぶ。旧要求と結果を履歴に残して新しい要求を準備するだけで、選択自体は起動しない。その後の既存の開始ボタン／⌘Enterが新しいIDを発行する。未変更の依頼をそのまま開始すると、従来のIDで結果確認する。メニューは通常のTab／Enterで操作し、新しい予約キーは追加しない。
+
+
+### 0.29.28 最終修正の境界（I1/I2/M2）
+
+新UIの作業フォルダ選択は`workingFolder`で送信する。述語は`sourceFolderEntries`と同じ絶対path集合に含まれること。集合は観測WorkingLocation（追加場所を含む）とTaskの明示的な絶対パス予定から作る。旧名が観測pathの末尾名に一意に対応する場合は同じpathの予定由来を足すだけで、新たなpathやSourceRefを作らない。未解決旧名はこの集合へ追加しない。path条件はmachine scopeを持つSourceRefへ昇格せず、既存host条件、sourceFilters、旧folder等とANDする。旧folderはキー省略ならリンク追従、nullなら明示なし、値があれば完全一致という既存のTask文脈優先規則を維持する。保存済み旧ビューは自動変換しない。
+
+workingFolderはUI既定値、picker／sidebar、RPC schema・正規化・検索、保存ビュー／共有UI状態、ビュー比較・chip解除・リセットへ通す。cardKindも同じ取得・比較・解除経路で保持する。旧版でworkingFolderを表せないため、rollbackはそのビューを`report.heldViews`へ全内容付きで保留する。sidecar保存と手動確認が必要であり、黙って条件を落とした広いビューへ戻さない。
+
+Codexプロジェクト／セクション、Claude環境／グループのTaskレーンは、予定・値のある観測がなく、該当providerの関連リンクが1件以上あり、すべて確認済みabsentなら「なし（確認済み）」へ置く。他providerのリンクをその軸のabsent根拠にしない。関連リンクのunknown・stale・unavailable、未解決リンク、該当providerリンクなしは未取得に残す。作業フォルダも、予定・観測pathがなく、1件以上の全リンクの場所配列が確認済み空の場合だけ「なし（確認済み）」とする。
+
+新しい入口・レイヤー・予約キーは追加しない。作業フォルダは既存sidebar（レイヤー1）と`p`／⌘Kのpicker（レイヤー4）、保存ビューは既存入口、解除はアプリバーのchipを使う。5配置で同じ部品を用いる。実データ移行・実起動・実送信・mainへの取り込み・push・merge・update:localは実施しない。全体性能M1の受入は未判定のまま維持する。

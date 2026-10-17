@@ -1,6 +1,23 @@
 import { sourceKey, sessionSourceView, expandSourceView } from './source-model.mjs';
 import { normalizeSourceSelections } from './category-bindings.mjs';
 
+// Path-set condition used by the working-folder UI. Legacy folder keeps context precedence.
+export function normalizeWorkingFolder(value) {
+  if (value == null || value === '') return '';
+  if (typeof value !== 'string' || !value.startsWith('/') || value.includes('\0')) throw new Error('作業フォルダ条件には絶対パスを指定してください');
+  return value.replace(/\/+$/, '') || '/';
+}
+
+export function matchesWorkingFolder(card, links, wanted) {
+  if (!wanted) return true;
+  const observed = links ? [card, ...links] : [card];
+  const folders = observed.flatMap(s => expandSourceView(s.sourceView || sessionSourceView(s)).workingLocations.value || []).map(l => l.folder).filter(p => typeof p === 'string' && p.startsWith('/')).map(normalizeWorkingFolder);
+  // A legacy name adds only an origin to an already observed path; it cannot add a new path.
+  if (folders.includes(wanted)) return true;
+  const planned = card.context?.folder;
+  return typeof planned === 'string' && planned.startsWith('/') && normalizeWorkingFolder(planned) === wanted;
+}
+
 export function sourceRelationsForTask(links = []) {
   const set = new Map();
   for (const session of links) for (const relation of expandSourceView(session.sourceView || sessionSourceView(session))?.relations || []) {
@@ -24,6 +41,7 @@ const legacyMatches = (session, key, value) => key === 'section' ? value === '__
 // Input-only validation of immutable identifiers. Session observations (names,
 // folders, missing memberships) never turn an AND condition into an exception.
 export function validateSourceFilterCompatibility(filters) {
+  normalizeWorkingFolder(filters.workingFolder);
   const selections = normalizeSourceSelections(filters.sourceFilters || []);
   if (filters.section && selections.some(s => s.ref.provider === 'codex' && s.ref.kind === 'section' && (filters.section === '__none' || s.ref.nativeId !== filters.section))) throw new Error('出典と旧section条件の識別子が矛盾しています');
 }

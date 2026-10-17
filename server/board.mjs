@@ -25,7 +25,7 @@ import { configureAccounts, accountsView, accountName } from './accounts.mjs';
 import { matchesAccount, withAccountNote } from './accounts-mcp.mjs';
 import { effectiveTaskContext } from './task-context.mjs';
 import { normalizeSourceSelections, categoryBindingConflicts } from './category-bindings.mjs';
-import { sourceRelationsForTask, matchesSourceFilters, sourceFacetsForCards, plannedSourceRelations, legacyMatches } from './source-filters.mjs';
+import { sourceRelationsForTask, matchesSourceFilters, sourceFacetsForCards, plannedSourceRelations, legacyMatches, normalizeWorkingFolder, matchesWorkingFolder } from './source-filters.mjs';
 
 import { peekGit, refreshGit } from './gitlive.mjs';
 import { RuleEngine, replayRule } from './rules.mjs';
@@ -122,6 +122,7 @@ function matches(session, card, f, labelsById, hits, dir) {
   if (!matchesSourceFilters((session.sourceView || sessionSourceView(session)).relations, f.sourceFilters)) return false;
   if (f.project && !legacyMatches(session, 'project', f.project)) return false;
   if (f.folder && !legacyMatches(session, 'folder', f.folder)) return false;
+  if (!matchesWorkingFolder(session, null, f.workingFolder)) return false;
   if (f.section && (f.section === '__none' ? session.codexSection : session.codexSection?.id !== f.section)) return false;
   if (!matchesDirectory(f, dir)) return false;
   if (f.label && (f.label === '__none' ? card?.labels?.length : !card?.labels?.includes(f.label))) return false;
@@ -146,6 +147,7 @@ function matches(session, card, f, labelsById, hits, dir) {
 export function matchesTask(t, links, status, f, labelsById, dir) {
   if (f.cardKind === 'session') return false;
   if (!matchesSourceFilters([...sourceRelationsForTask(links), ...plannedSourceRelations(t.sourceContext)], f.sourceFilters)) return false;
+  if (!matchesWorkingFolder(t, links, f.workingFolder)) return false;
   if (f.dotScope === 'only' && !links.some(s => s.dot)) return false;
   if (!matchesDirectory(f, dir)) return false;
   if (f.label && (f.label === '__none' ? t.labels?.length : !t.labels?.includes(f.label))) return false;
@@ -180,6 +182,7 @@ export function normalizeFilters(f = {}) {
     cardKind: ['task', 'session'].includes(f.cardKind) ? f.cardKind : 'all',
     project: f.project || null,
     folder: typeof f.folder === 'string' && f.folder ? f.folder : null,
+    workingFolder: normalizeWorkingFolder(f.workingFolder),
     section: typeof f.section === 'string' && f.section ? f.section : null,
     directory: typeof f.directory === 'string' && f.directory ? f.directory : null,
     label: typeof f.label === 'string' && f.label ? f.label : null,

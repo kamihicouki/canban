@@ -79,6 +79,34 @@ for (const from of ids) for (const to of ids) if (from !== to) {
 }
 field.value = originalFieldValue; key('Escape'); await w();
 check(document.querySelector('.mgmt-drawer').hidden,'Esc closes management');
+// Real DOM picker / saved-view buttons -> real RPC. No access to the app's private scope.
+const fixtureTool=async(name,args)=>{const response=await window.openai.callTool(name,args);check(!response.isError,name);const data=response.structuredContent;return data.result||data;};
+const originalFilters=JSON.parse(localStorage.getItem('sk:filters')||'{}');
+const restoreView=await fixtureTool('canban_save_view',{name:'回帰前の表示',filters:originalFilters});
+const created=await fixtureTool('canban_create_task',{title:'作業場所の統合回帰',context:{folder:'web'}});
+const aliasTaskId=created.cardId;
+await fixtureTool('canban_link_session',{taskId:aliasTaskId,sessionId:'claude:c2'});
+const savedView=await fixtureTool('canban_save_view',{name:'タスク種別の統合回帰',filters:{cardKind:'task',days:0,dotScope:'all'}});
+key('r');
+for(let i=0;i<50&&![...document.querySelectorAll('#sidebar .side-row')].some(el=>el.textContent.includes(savedView.name));i++)await w();
+key('p'); await w();
+const folderChoice=[...document.querySelectorAll('.picker-row')].find(el=>el.textContent.includes('/r/web'));
+check(folderChoice,'working-folder candidate is reachable by p');folderChoice.click();
+for(let i=0;i<50&&!document.querySelector('[data-card-id="'+aliasTaskId+'"]');i++)await w();
+check(document.querySelector('[data-card-id="'+aliasTaskId+'"]'),'working-folder picker retains its advertised alias task');
+check(JSON.parse(localStorage.getItem('sk:filters')).workingFolder==='/r/web','new picker sends workingFolder');
+check(!JSON.parse(localStorage.getItem('sk:filters')).folder,'new picker does not use the old folder predicate');
+[...document.querySelectorAll('#sidebar .side-row')].find(el=>el.textContent.includes(savedView.name)).click();
+for(let i=0;i<50&&!document.querySelector('.filter-chip[title="タスクカードのみ を外す"]');i++)await w();
+check(document.querySelectorAll('.card.face.task').length>0&&!document.querySelector('.card.face:not(.task)'),'saved task-only view survives load');
+const kindChip=[...document.querySelectorAll('#filterChips button')].find(el=>el.textContent.includes('タスクカードのみ'));
+check(kindChip,'saved card kind is visible as a removable chip');kindChip.click();
+for(let i=0;i<50&&!document.querySelector('.card.face:not(.task)');i++)await w();
+check(document.querySelector('.card.face:not(.task)'),'chip removal restores session cards');
+[...document.querySelectorAll('#sidebar .side-row')].find(el=>el.textContent.includes(restoreView.name)).click();await w();
+await fixtureTool('canban_delete_task',{cardId:aliasTaskId});
+await fixtureTool('canban_delete_view',{viewId:savedView.id});
+await fixtureTool('canban_delete_view',{viewId:restoreView.id});key('r');await w();
 return { errs };
 `;
 

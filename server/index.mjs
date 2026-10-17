@@ -116,6 +116,7 @@ const appOnly = { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true, 
 const appAndModel = { ui: { visibility: ['model', 'app'] }, 'openai/widgetAccessible': true };
 
 const filterProps = {
+  workingFolder: { type: 'string', description: '作業フォルダの絶対パス。追加のWorkingLocationとTaskの明示絶対パス予定も検索。旧folderは文脈優先条件を維持' },
   sourceFilters: sourceSelectionSchema,
   cardKind: { type: 'string', enum: ['all', 'task', 'session'] },
   agent: { type: 'string', enum: ['all', 'codex', 'claude'], description: 'AI App（codex / claude）で絞り込み' },

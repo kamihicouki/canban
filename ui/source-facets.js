@@ -73,12 +73,19 @@ function workingFolderFacets(board) {
   return [...set.values()];
 }
 function sourceLane(card, axis, peers = []) {
+  const links = (card.links || []).filter(s => s && typeof s === 'object');
+  const completeLinks = !card.missingLinks && !(card.linkedSessionIds?.length > links.length);
+  const locationsAbsent = s => {
+    const observation = expandUiSourceView(s.sourceView).workingLocations;
+    return ['known', 'absent'].includes(observation.status) && Array.isArray(observation.value) && observation.value.length === 0;
+  };
   if (axis === 'workingFolder') {
     const folders = sourceFolders(card);
     if (folders.length > 1) return { id: '__multiple', name: '複数', creation: {} };
     if (folders.length) return { id: folders[0], name: folders[0], creation: { context: { folder: folders[0] } } };
     if (card.context?.folder) return { id: `legacy:${card.context.folder}`, name: `旧フォルダ条件: ${card.context.folder}`, legacyCondition: card.context.folder, creation: { context: { folder: card.context.folder } } };
-    return { id: '__unknown', name: '未取得', creation: {} };
+    const absent = card.kind === 'task' ? completeLinks && links.length > 0 && links.every(locationsAbsent) : locationsAbsent(card);
+    return absent ? { id: '__absent', name: 'なし（確認済み）', creation: {} } : { id: '__unknown', name: '未取得', creation: {} };
   }
   const set = new Map();
   for (const relation of cardSourceRelations(card)) if (sourceAxis(relation.ref) === axis && !set.has(sourceRefKey(relation.ref))) set.set(sourceRefKey(relation.ref), relation);
@@ -89,7 +96,10 @@ function sourceLane(card, axis, peers = []) {
     return { id: key, name: sourceFacetName({ ref: relation.ref, name }, peers), creation: { sourceContext: [{ ref: relation.ref }] } };
   }
   const observation = expandUiSourceView(card.sourceView).attributes[axis];
-  return observation?.status === 'absent' ? { id: '__absent', name: 'なし（確認済み）', creation: {} } : { id: '__unknown', name: '未取得', creation: {} };
+  const provider = axis.startsWith('codex') ? 'codex' : 'claude';
+  const relevant = links.filter(s => !s.agent || s.agent === provider);
+  const absent = card.kind === 'task' ? completeLinks && relevant.length > 0 && relevant.every(s => expandUiSourceView(s.sourceView).attributes[axis]?.status === 'absent') : observation?.status === 'absent';
+  return absent ? { id: '__absent', name: 'なし（確認済み）', creation: {} } : { id: '__unknown', name: '未取得', creation: {} };
 }
 function sourceObservationText(observation) {
   const status = observation?.status || 'unknown';

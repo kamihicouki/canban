@@ -1,7 +1,7 @@
 // Part of board.html: included into its script by server/ui.mjs and shares its scope.
 // Sidebar: lanes (jump), directories and projects (one-click filters)
 // ---- filters in effect, as chips in the app bar (each ✕ takes one off) ----
-const FILTER_KEYS = ['sourceFilters', 'agent', 'days', 'status', 'directory', 'project', 'folder', 'section', 'label', 'host', 'account', 'includeArchived', 'includeSubagents', 'dotScope', 'pinnedOnly'];
+const FILTER_KEYS = ['sourceFilters', 'cardKind', 'workingFolder', 'agent', 'days', 'status', 'directory', 'project', 'folder', 'section', 'label', 'host', 'account', 'includeArchived', 'includeSubagents', 'dotScope', 'pinnedOnly'];
 const sameFilters = (a, b) => FILTER_KEYS.every((k) => JSON.stringify(a[k] ?? DEFAULT_FILTERS[k]) === JSON.stringify(b[k] ?? DEFAULT_FILTERS[k]));
 function activeView(b) { return (b?.settings?.views || []).find((v) => sameFilters({ ...DEFAULT_FILTERS, ...v.filters }, state.filters)); }
 // The lane axis is not also a filter: lanes by category already show every category.
@@ -18,7 +18,9 @@ function filterChips(b) {
     const facet = b?.sourceFacets?.find(x => x.key === sourceRefKey(selection.ref)) || selection;
     add(sourceFacetLabel(facet), { sourceFilters: f.sourceFilters.filter(x => x !== selection) });
   }
-  if (f.folder) add(`作業フォルダ ${f.folder}`, { folder: '' });
+  if (f.folder) add(`旧フォルダ条件 ${f.folder}`, { folder: '' });
+  if (f.workingFolder) add(`作業フォルダ ${f.workingFolder}`, { workingFolder: '' });
+  if (f.cardKind && f.cardKind !== 'all') add(f.cardKind === 'task' ? 'タスクカードのみ' : 'セッションカードのみ', { cardKind: 'all' });
   if (f.section && !laneHides('section')) add(`§ ${f.section === '__none' ? 'セクションなし' : b?.codexSections?.find((x) => x.id === f.section)?.name || f.section}`, { section: '' });
   if (f.label && !laneHides('label')) add(`ラベル: ${f.label === '__none' ? 'なし' : b?.labels.find((l) => l.id === f.label)?.name || f.label}`, { label: '' });
   if (f.host && !laneHides('host')) { const x = b?.hosts.find((y) => (y.local ? 'local' : y.id) === f.host); add(x?.local ? 'このマシン' : x?.label || f.host, { host: '' }); }
@@ -43,7 +45,7 @@ function scopeLabel(b) {
   const dir = f.directory === '__none' ? 'カテゴリ無し' : b?.directories.find((d) => d.id === f.directory)?.name;
   const sec = f.section === '__none' ? 'セクションなし' : b?.codexSections?.find((x) => x.id === f.section)?.name;
   const host = f.host ? b?.hosts.find((x) => (x.local ? 'local' : x.id) === f.host) : null;
-  const parts = [dir, f.project, f.folder && `フォルダ ${f.folder}`, sec && `§ ${sec}`, f.label && `ラベル: ${f.label === '__none' ? 'なし' : b?.labels.find(l => l.id === f.label)?.name || f.label}`,
+  const parts = [dir, f.project, f.folder && `旧フォルダ条件 ${f.folder}`, f.workingFolder && `作業フォルダ ${f.workingFolder}`, sec && `§ ${sec}`, f.label && `ラベル: ${f.label === '__none' ? 'なし' : b?.labels.find(l => l.id === f.label)?.name || f.label}`,
     host && `マシン: ${host.local ? 'このマシン' : host.label}`].filter(Boolean);
   return parts.length ? parts.join(' · ') : 'すべて';
 }
@@ -61,22 +63,23 @@ function scopePicker(anchor) {
   const f = state.filters;
   picker(anchor, {
     title: `${T.category}・元アプリで絞り込み`, width: 340,
-    selected: [...(f.sourceFilters || []).map(x => `source:${sourceRefKey(x.ref)}`), f.directory ? `d:${f.directory}` : null, f.project ? `p:${f.project}` : null, f.folder ? `f:${f.folder}` : null, f.section ? `s:${f.section}` : null, f.label ? `l:${f.label}` : null, !f.label && !f.directory && !f.project && !f.folder && !f.section ? '' : null].filter((x) => x != null),
+    selected: [...(f.sourceFilters || []).map(x => `source:${sourceRefKey(x.ref)}`), f.directory ? `d:${f.directory}` : null, f.project ? `p:${f.project}` : null, f.workingFolder ? `wf:${f.workingFolder}` : null, f.folder ? `f:${f.folder}` : null, f.section ? `s:${f.section}` : null, f.label ? `l:${f.label}` : null, !f.label && !f.directory && !f.project && !f.folder && !f.workingFolder && !f.section ? '' : null].filter((x) => x != null),
     items: [
       { value: '', label: 'すべて（絞り込みを解除）' },
       ...directoryItems(false).map((it) => ({ ...it, value: `d:${it.value}`, group: `${T.category}` })),
       ...(b.sourceFacets || []).filter(x => !laneHides(sourceAxis(x.ref))).map(x => ({ value: `source:${x.key}`, label: sourceFacetLabel(x, b.sourceFacets), description: sourceFacetHint(x), keywords: sourceFacetTitle(x), hint: `${x.count}カード`, group: '元アプリ' })),
-      ...(!laneHides('workingFolder') ? workingFolderFacets(b) : []).map((x) => ({ value: `f:${x.cwd}`, label: x.name, description: (x.origins || []).map(o => o === 'planned' ? '開始予定' : '観測').join('・'), keywords: x.cwd, hint: x.count, group: '作業フォルダ' })),
+      ...(!laneHides('workingFolder') ? workingFolderFacets(b) : []).map((x) => ({ value: `wf:${x.cwd}`, label: x.name, description: (x.origins || []).map(o => o === 'planned' ? '開始予定' : '観測').join('・'), keywords: x.cwd, hint: x.count, group: '作業フォルダ' })),
       { value: 'l:__none', label: 'ラベルなし', group: 'ラベル' },
       ...b.labels.map(l => ({ value: `l:${l.id}`, label: l.name, color: l.color, group: 'ラベル' })),
 
     ],
     onPick: (v) => {
-      if (!v) return setScope({ directory: '', project: '', folder: '', section: '', label: '', sourceFilters: [] });
+      if (!v) return setScope({ directory: '', project: '', folder: '', workingFolder: '', section: '', label: '', sourceFilters: [], cardKind: 'all' });
       if (v.startsWith('source:')) return toggleSourceFilter(b.sourceFacets.find(x => x.key === v.slice(7)).ref);
       if (v.startsWith('l:')) return setScope({ label: f.label === v.slice(2) ? '' : v.slice(2) });
       if (v.startsWith('s:')) return setScope({ section: f.section === v.slice(2) ? '' : v.slice(2) });
-      if (v.startsWith('d:')) setScope({ directory: f.directory === v.slice(2) ? '' : v.slice(2), project: '', folder: '' });
+      if (v.startsWith('wf:')) return setScope({ workingFolder: f.workingFolder === v.slice(3) ? '' : v.slice(3) });
+      if (v.startsWith('d:')) setScope({ directory: f.directory === v.slice(2) ? '' : v.slice(2), project: '', folder: '', workingFolder: '' });
       else if (v.startsWith('f:')) setScope({ folder: f.folder === v.slice(2) ? '' : v.slice(2) });
       else setScope({ project: f.project === v.slice(2) ? '' : v.slice(2) });
     },
@@ -116,7 +119,7 @@ function setLaneAxis(mode) {
   // The axis now shown as lanes stops filtering, so every lane has its cards.
   if (SOURCE_AXES[mode]) {
     const sourceFilters = (state.filters.sourceFilters || []).filter(f => sourceAxis(f.ref) !== mode);
-    if (sourceFilters.length !== (state.filters.sourceFilters || []).length || mode === 'workingFolder' && state.filters.folder) return setScope({ sourceFilters, ...(mode === 'workingFolder' ? { folder: '' } : {}) });
+    if (sourceFilters.length !== (state.filters.sourceFilters || []).length || mode === 'workingFolder' && (state.filters.folder || state.filters.workingFolder)) return setScope({ sourceFilters, ...(mode === 'workingFolder' ? { folder: '', workingFolder: '' } : {}) });
   }
   const key = LANE_FILTER[mode];
   if (key && (key === 'agent' ? state.filters.agent !== 'all' : state.filters[key])) return setScope({ [key]: key === 'agent' ? 'all' : '' });
@@ -201,7 +204,7 @@ function filterSection(b, hit = () => true) {
   }
   nodes.push(sideHead('元アプリ', keycap('p')));
   for (const [axis, label] of Object.entries(SOURCE_AXES)) if (!laneHides(axis)) {
-    if (axis === 'workingFolder') group(label, workingFolderFacets(b).map(x => choice(`${x.name} · ${(x.origins || []).map(o => o === 'planned' ? '予定' : '観測').join('・')}`, f.folder === x.cwd, () => setScope({ folder: f.folder === x.cwd ? '' : x.cwd }), null, sideCountEl(x.count))));
+    if (axis === 'workingFolder') group(label, workingFolderFacets(b).map(x => choice(`${x.name} · ${(x.origins || []).map(o => o === 'planned' ? '予定' : '観測').join('・')}`, f.workingFolder === x.cwd, () => setScope({ workingFolder: f.workingFolder === x.cwd ? '' : x.cwd }), null, sideCountEl(x.count))));
     else group(label, (b.sourceFacets || []).filter(x => sourceAxis(x.ref) === axis).map(x => choice(`${sourceFacetName(x, b.sourceFacets)} · ${(x.origins || []).map(o => o === 'planned' ? '予定' : '観測').join('・')}`, sourceFilterSelected(x.ref), () => toggleSourceFilter(x.ref), null, sideCountEl(x.count))));
   }
   const hosts = (b.hosts || []).filter((x) => x.local || x.enabled);

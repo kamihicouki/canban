@@ -150,8 +150,8 @@ export function rollbackSourceViews(input) {
     const same = (a, b) => sourceKey(a.ref) === sourceKey(b.ref) && a.relation === b.relation;
     const originalSelections = migration?.legacyFilters?.sourceFilters || [];
     const extra = (view.filters.sourceFilters || []).filter(s => !migration?.convertedSelections?.some(c => same(s, c)));
-    if (extra.length || originalSelections.length || (view.filters.cardKind && view.filters.cardKind !== 'all')) {
-      report.heldViews.push({ ...view, reason: '旧版で表せない出典条件またはカード種別を手動確認してください' });
+    if (extra.length || originalSelections.length || view.filters.workingFolder || (view.filters.cardKind && view.filters.cardKind !== 'all')) {
+      report.heldViews.push({ ...view, reason: '旧版で表せない出典条件・作業フォルダ条件・カード種別を手動確認してください' });
       continue;
     }
     if (migration) {
@@ -160,6 +160,7 @@ export function rollbackSourceViews(input) {
     }
     delete view.filters.sourceFilters;
     delete view.filters.cardKind;
+    delete view.filters.workingFolder;
     delete view.sourceMigration;
     retained.push(view);
   }

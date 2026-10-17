@@ -8,6 +8,8 @@ async function load({ refresh = false, throwOnError = false } = {}) {
   if (f.sourceFilters?.length) args.sourceFilters = f.sourceFilters;
   if (f.project) args.project = f.project;
   if (f.folder) args.folder = f.folder;
+  if (f.workingFolder) args.workingFolder = f.workingFolder;
+  args.cardKind = f.cardKind || 'all';
   if (f.section) args.section = f.section;
   if (f.directory) args.directory = f.directory;
   if (f.label) args.label = f.label;
