@@ -66,7 +66,7 @@ function scopePicker(anchor) {
       { value: '', label: 'すべて（絞り込みを解除）' },
       ...directoryItems(false).map((it) => ({ ...it, value: `d:${it.value}`, group: `${T.category}` })),
       ...(b.sourceFacets || []).filter(x => !laneHides(sourceAxis(x.ref))).map(x => ({ value: `source:${x.key}`, label: sourceFacetLabel(x, b.sourceFacets), description: sourceFacetHint(x), keywords: sourceFacetTitle(x), hint: `${x.count}カード`, group: '元アプリ' })),
-      ...(!laneHides('workingFolder') ? workingFolderFacets(b) : []).map((x) => ({ value: `f:${x.cwd}`, label: x.name, hint: x.count, group: '作業フォルダ' })),
+      ...(!laneHides('workingFolder') ? workingFolderFacets(b) : []).map((x) => ({ value: `f:${x.cwd}`, label: x.name, description: (x.origins || []).map(o => o === 'planned' ? '開始予定' : '観測').join('・'), keywords: x.cwd, hint: x.count, group: '作業フォルダ' })),
       { value: 'l:__none', label: 'ラベルなし', group: 'ラベル' },
       ...b.labels.map(l => ({ value: `l:${l.id}`, label: l.name, color: l.color, group: 'ラベル' })),
 
@@ -201,7 +201,7 @@ function filterSection(b, hit = () => true) {
   }
   nodes.push(sideHead('元アプリ', keycap('p')));
   for (const [axis, label] of Object.entries(SOURCE_AXES)) if (!laneHides(axis)) {
-    if (axis === 'workingFolder') group(label, workingFolderFacets(b).map(x => choice(x.name, f.folder === x.cwd, () => setScope({ folder: f.folder === x.cwd ? '' : x.cwd }), null, sideCountEl(x.count))));
+    if (axis === 'workingFolder') group(label, workingFolderFacets(b).map(x => choice(`${x.name} · ${(x.origins || []).map(o => o === 'planned' ? '予定' : '観測').join('・')}`, f.folder === x.cwd, () => setScope({ folder: f.folder === x.cwd ? '' : x.cwd }), null, sideCountEl(x.count))));
     else group(label, (b.sourceFacets || []).filter(x => sourceAxis(x.ref) === axis).map(x => choice(`${sourceFacetName(x, b.sourceFacets)} · ${(x.origins || []).map(o => o === 'planned' ? '予定' : '観測').join('・')}`, sourceFilterSelected(x.ref), () => toggleSourceFilter(x.ref), null, sideCountEl(x.count))));
   }
   const hosts = (b.hosts || []).filter((x) => x.local || x.enabled);
@@ -280,7 +280,7 @@ function directoryMenu(anchor, dirId) {
       if (input.checked) next.push({ ref: facet.ref, relation: sourceCategoryRelation(facet.ref) });
       act('canban_update_directory', { directoryId: d.id, sourceBindings: next }, { okMsg: '元アプリとの対応を保存しました' }).then(again);
     } });
-    return h('label', { class: 'side-check', title: sourceFacetTitle(facet) }, input, sourceFacetLabel(facet));
+    return h('label', { class: 'side-check', title: sourceFacetTitle(facet) }, input, sourceFacetLabel(facet), facet.ref.provider === 'claude' && facet.ref.kind === 'environment' ? h('span', { class: 'muted', text: '開始実績の確認後に有効' }) : null);
   });
   popover(anchor, `${T.category}の設定`, h('div', {},
     name,
@@ -292,7 +292,7 @@ function directoryMenu(anchor, dirId) {
       h('button', { class: 'icon-btn', 'aria-label': `${pth} を外す`, text: '✕', onclick: () => act('canban_update_directory', { directoryId: d.id, paths: d.paths.filter((x) => x !== pth) }).then(again) }))),
     path, folders,
     h('div', { class: 'field-label', text: '元アプリとの明示的な対応' }),
-    h('p', { class: 'muted', text: '観測済みの出典を対応させます。同名の出典へ自動で結合しません。表示中のボードにない既存の対応も保持します。' }),
+    h('p', { class: 'muted', text: '候補は現在の絞り込み後のボードで取得できた出典です。絞り込み中は候補が減ります。同名の出典へ自動で結合しません。表示外の既存の対応も保持します。' }),
     ...bindingRows,
     h('div', { class: 'sep' }),
     h('button', { class: 'menu-item', text: `この${T.category}だけを表示`, onclick: () => { closePopover(); setScope({ directory: d.id }); } }),

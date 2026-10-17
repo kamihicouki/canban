@@ -627,10 +627,15 @@ function recentFolders(sessions, limit = 60) {
   return [...seen.values()];
 }
 
+export function detailSessionState(sessions, state, cardId) {
+  const selected = sessions.find(session => session.id === cardId);
+  return selected ? sessionCardStates([selected], state)[0] : null;
+}
+
 export async function findSession(store, cardId) {
   let state = (await store.load());
   const { sessions, hosts } = await allSessions(state);
-  const s = sessionCardStates(sessions, state).find((x) => x.id === cardId);
+  const s = detailSessionState(sessions, state, cardId);
   if (!s) throw new Error('セッションが見つかりません');
   return { session: s, state, host: !isCloudSession(s) && s.host?.local === false ? hosts.find((h) => h.id === s.host.id) : null };
 }
@@ -690,7 +695,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   const claudeProfiles = await claudeResumeAccounts(s, labels);
   const claudeExecutionAccounts = groupClaudeResumeAccounts(claudeProfiles, accountsView(state.settings.accounts).accounts, s, card.claudeExecution);
   return {
-    session: { ...rest, sourceView: sessionSourceView(s), capabilities: capabilitiesFor({ session: s }), actions: sessionActions(s), host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: s.account ? accountName(s.account, labels) : null },
+    session: { ...rest, sourceView: s.sourceView || sessionSourceView(s), capabilities: capabilitiesFor({ session: s }), actions: sessionActions(s), host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: s.account ? accountName(s.account, labels) : null },
     card: {
       slackRefs: card.slackRefs || [],
       listId, labels: card.labels || [], note: card.note || '', priority: card.priority || null, due: card.due || null, archived: !!s.archived,

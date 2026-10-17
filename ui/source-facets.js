@@ -44,20 +44,40 @@ function cardSourceRelations(card) {
   const observed = card.sourceRelations || expandUiSourceView(card.sourceView).relations;
   return [...observed.map(r => ({ ...r, origin: 'observed' })), ...(card.sourceContext || []).map(r => ({ ...r, origin: 'planned' }))];
 }
-function sourceFolders(card) {
-  const values = [card, ...(card.links || []).filter(link => typeof link === 'object')].flatMap(item => (expandUiSourceView(item.sourceView).workingLocations.value || []).map(l => l.folder));
-  return [...new Set([...values, card.context?.folder].filter(Boolean))];
+// Display aliases only. Never rewrite the task's raw legacy condition or create a native ref.
+function sourceFolderEntries(card) {
+  const entries = new Map();
+  const clean = folder => typeof folder === 'string' && folder.startsWith('/') ? folder.replace(/\/+$/, '') || '/' : null;
+  const add = (folder, origin) => {
+    const path = clean(folder); if (!path) return;
+    if (!entries.has(path)) entries.set(path, { folder: path, origins: [] });
+    const entry = entries.get(path); if (!entry.origins.includes(origin)) entry.origins.push(origin);
+  };
+  for (const item of [card, ...(card.links || []).filter(link => typeof link === 'object')]) for (const location of expandUiSourceView(item.sourceView).workingLocations.value || []) add(location.folder, 'observed');
+  const planned = card.context?.folder;
+  if (clean(planned)) add(planned, 'planned');
+  else if (planned) {
+    const matches = [...entries.keys()].filter(folder => folder.split('/').filter(Boolean).at(-1) === planned);
+    if (matches.length === 1) add(matches[0], 'planned');
+  }
+  return [...entries.values()];
 }
+function sourceFolders(card) { return sourceFolderEntries(card).map(entry => entry.folder); }
 function workingFolderFacets(board) {
   const set = new Map();
-  for (const card of (board.lists || []).flatMap(l => l.cards)) for (const folder of sourceFolders(card)) set.set(folder, (set.get(folder) || 0) + 1);
-  return [...set].map(([cwd, count]) => ({ cwd, name: cwd, count }));
+  for (const card of (board.lists || []).flatMap(l => l.cards)) for (const entry of sourceFolderEntries(card)) {
+    if (!set.has(entry.folder)) set.set(entry.folder, { cwd: entry.folder, name: entry.folder, count: 0, origins: [] });
+    const facet = set.get(entry.folder); facet.count++;
+    for (const origin of entry.origins) if (!facet.origins.includes(origin)) facet.origins.push(origin);
+  }
+  return [...set.values()];
 }
 function sourceLane(card, axis, peers = []) {
   if (axis === 'workingFolder') {
     const folders = sourceFolders(card);
     if (folders.length > 1) return { id: '__multiple', name: '複数', creation: {} };
     if (folders.length) return { id: folders[0], name: folders[0], creation: { context: { folder: folders[0] } } };
+    if (card.context?.folder) return { id: `legacy:${card.context.folder}`, name: `旧フォルダ条件: ${card.context.folder}`, legacyCondition: card.context.folder, creation: { context: { folder: card.context.folder } } };
     return { id: '__unknown', name: '未取得', creation: {} };
   }
   const set = new Map();
@@ -84,7 +104,7 @@ function sourceDetailRows(card) {
   const view = expandUiSourceView(card.sourceView);
   const rows = Object.entries(SOURCE_AXES).filter(([axis]) => axis !== 'workingFolder' && card.kind !== 'task' && (axis.startsWith(card.agent || '__unknown') || view.attributes[axis]?.value || view.attributes[axis]?.source || view.relations.some(r => sourceAxis(r.ref) === axis))).map(([axis, label]) => [label, sourceObservationText(view.attributes[axis])]);
   if (card.kind === 'task') {
-    if (card.context?.folder) rows.push(['開始予定の作業フォルダ', card.context.folder]);
+    if (card.context?.folder) rows.push([card.context.folder.startsWith('/') ? '開始予定の作業フォルダ' : '旧フォルダ条件（開始予定）', card.context.folder]);
     for (const link of card.links || []) if (typeof link === 'object') rows.push([`観測した作業場所 · ${link.title || link.id}`, sourceObservationText(expandUiSourceView(link.sourceView).workingLocations)]);
   } else rows.push(['作業場所', sourceObservationText(view.workingLocations)]);
   if (card.kind === 'task') for (const r of cardSourceRelations(card)) rows.push([r.origin === 'planned' ? '開始予定' : '観測', `${sourceFacetLabel({ ref: r.ref, name: r.observation?.value?.name || r.sessions?.find(s => s.observation?.value)?.observation.value.name })}${r.sessions?.length ? ` · ${r.sessions.length}セッション` : ''} · ${r.ref.scopeId}`]);

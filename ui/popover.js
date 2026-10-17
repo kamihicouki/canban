@@ -17,7 +17,7 @@ function closePopover(p = null) {
   popoverClosedAt = Date.now();
   if (!document.activeElement || document.activeElement === document.body) refocus(gone[0].returnFocus);
 }
-function popover(anchor, title, body, { width, stack = false } = {}) {
+function popover(anchor, title, body, { width, stack = false, placement = 'bottom' } = {}) {
   if (anchor?._pagePanel) {
     anchor._pagePanel.replaceChildren(body);
     workspace.trackDrafts(body);
@@ -37,7 +37,8 @@ function popover(anchor, title, body, { width, stack = false } = {}) {
     const minTop = Math.max(8, ($('.appbar')?.getBoundingClientRect().bottom || 48) + 8);
     p.style.maxHeight = `${Math.max(120, window.innerHeight - minTop - 8)}px`;
     p.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - p.offsetWidth - 8))}px`;
-    p.style.top = `${Math.max(minTop, Math.min(r.bottom + 6, window.innerHeight - p.offsetHeight - 8))}px`;
+    const preferredTop = placement === 'top' ? r.top - p.offsetHeight - 6 : r.bottom + 6;
+    p.style.top = `${Math.max(minTop, Math.min(preferredTop, window.innerHeight - p.offsetHeight - 8))}px`;
   };
   place();
   const observer = new ResizeObserver(place);

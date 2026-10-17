@@ -345,3 +345,18 @@ DB全体を古いバックアップへ巻き戻さない。実データへの適
 cwd・依頼文・時刻でpendingがリンクしてもReceiptは変更しない。`confirmed`かつ正確なsession IDが一致するReceiptだけを読取モデルへ渡し、`appliedRefs`がある場合だけ`startedWith`を作る。今回、元アプリから完全適用を確認してconfirmed Receiptを生成する経路は追加しない。native deep linkのmodel適用は確認できず、model指定済み・適用済みとは表示しない。
 
 セッションの`completed`は最後の応答が終了した「応答済み」。自動化の内部キー`status:completed`は維持し、説明を「最後の応答が終了したら」にする。Taskカード上の集約状態もリンクしたセッションの状態であり、TaskやGoalの達成、ツールの実行完了とは別に扱う。
+
+
+### Task3 review fix round1の開始・表示契約
+
+`recordLaunch`は`launchSelection`と`launchReceipts`のみ更新し、手動の`sourceContext`を一切変更しない。folder／preset／projectless、起動の失敗や未確認でも同じである。開始予定を変更するのは明示的なTask作成・更新だけとする。
+
+`canban_start_session.sourceRef`は`agent:'codex'`で同じnativeIdの`projectId`を指定し、最新カタログのscoped refと一致する場合だけ受け付ける。`projectId`なし、環境／section／group、異なるID／scopeは理由付きで拒否する。明示folder開始はsourceRefを送らず、APIもrefを黙って無視しない。
+
+Task composerは明示的な開始操作で、依頼文・開始設定・マシン・アカウント・画像／skills・route／terminal／targetを含むpayloadを比較する。同じ内容なら前の`clientRequestId`で結果確認を行い、編集した内容で開始を押した場合だけ新しいpayload／IDを作る。編集だけでは送信しない。前の未確認結果とReceiptを保持し、既存toastとcomposerの説明で結果確認と新しい依頼を区別する。
+
+作業フォルダ軸の観測はworkingLocationsの絶対パス、Taskの明示的な絶対パスはplannedとして扱う。旧`context.folder`名が、そのTaskの観測パスの末尾名と一意に一致する場合は表示上だけ同じ場所へ寄せ、observed／plannedの由来は両方保持する。未解決／複数候補の旧名を絶対パスやnative refへ変換せず、raw contextも保存条件も書き換えない。レーン作成の完全path条件は既存フォームの未登録選択肢として保持し、保存時にも失わない。
+
+詳細取得は対象sessionを選んでからsourceViewを作る。boardや全体ルール評価に必要な集合は維持し、全体性能の受入判定とは分ける。
+
+同じ文面を改めて開始したい場合は、Task composerの既存の開始メニュー（⋯）または⌘Kで「新しい依頼に切り替える」を選ぶ。旧要求と結果を履歴に残して新しい要求を準備するだけで、選択自体は起動しない。その後の既存の開始ボタン／⌘Enterが新しいIDを発行する。未変更の依頼をそのまま開始すると、従来のIDで結果確認する。メニューは通常のTab／Enterで操作し、新しい予約キーは追加しない。

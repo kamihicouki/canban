@@ -127,3 +127,30 @@ async function saveQuickTaskDraft(draft, { callTool, refresh, newRequestId }) {
     draft.submitting = false;
   }
 }
+
+
+// Called only by an explicit task composer submit. Editing alone never launches anything.
+function taskSessionRequest(draft, args, newRequestId) {
+  const ordered = value => Array.isArray(value) ? value.map(ordered) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, ordered(value[key])])) : value;
+  const payload = JSON.parse(JSON.stringify(args));
+  const previous = draft.launchRequest;
+  const fingerprint = request => { const { clientRequestId, ...body } = request; return JSON.stringify(ordered(body)); };
+  if (previous && fingerprint(previous) === fingerprint(payload)) return previous;
+  const request = { ...payload, clientRequestId: newRequestId() };
+  draft.launchRequest = request;
+  delete draft.launchNewRequest;
+  draft.launchResult = null;
+  draft.launchHistory = [...(draft.launchHistory || []), { request, result: null }].slice(-20);
+  return request;
+}
+function rememberTaskLaunchResult(draft, result) {
+  draft.launchResult = result;
+  const entry = draft.launchHistory?.find(item => item.request.clientRequestId === draft.launchRequest?.clientRequestId);
+  if (entry) entry.result = result;
+}
+
+function beginNewTaskRequest(draft) {
+  delete draft.launchRequest;
+  draft.launchNewRequest = true;
+  // History and the previous receipt/result remain available; this action never sends.
+}

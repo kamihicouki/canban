@@ -550,7 +550,6 @@ export class Store {
       if (task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
       task.launchSelection = selection;
       task.launchReceipts = [...(task.launchReceipts || []).filter(r => r.requestId !== receipt.requestId), receipt].slice(-20);
-      task.sourceContext = selection.selectedRefs.map(ref => ({ ref }));
       return { selection, receipt };
     });
   }

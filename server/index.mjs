@@ -693,7 +693,7 @@ const TOOLS = [
         terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
         target: { type: 'string', enum: ['new-window', 'new-tab', 'split', 'current'] },
         account: { type: ['string', 'null'], description: "開始するアカウント（canban_get_usage の key。例 'claude:<uuid>'）。省略・null はいまのログイン。Desktop は現在ログインしているアカウントでのみ開ける" },
-        sourceRef: sourceRefSchema,
+        sourceRef: { ...sourceRefSchema, description: '同じnativeIdのCodex projectIdと一緒に指定する開始設定の参照。Claude環境・section・group・projectIdなしの指定は拒否し、フォルダ開始へ変換しない' },
         environmentId: { type: 'string', maxLength: 128, description: 'Claude環境のID。完全適用経路が未確認の場合は開始を拒否し、元アプリでの開始または明示folder指定を案内する' },
         projectId: { type: 'string', maxLength: 200, description: 'Codex のプロジェクト（canban_launch_targets の codex.projects[].id）。そのプロジェクトのマシン・フォルダで開く。hostId / cwd より優先' },
         runOn: { type: 'string', enum: ['local', 'cloud'], description: "Codex の実行場所。'cloud' は Codex Cloud にタスクを送信して開始する（新規画面は開かない）" },

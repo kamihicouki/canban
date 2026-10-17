@@ -4,6 +4,7 @@ export async function prepareLaunchSelection(request, targets = {}) {
   const { agent, route = 'desktop', environmentId, projectId, sourceRef, cwd = '', runOn = 'local', cloudEnvironment } = request;
   const selectedRefs = [];
   let hostId = request.hostId || 'local', folder = cwd;
+  if (sourceRef !== undefined && (!sourceKey(sourceRef) || agent !== 'codex' || sourceRef.provider !== 'codex' || sourceRef.kind !== 'project' || !projectId || sourceRef.nativeId !== projectId)) throw new Error('出典sourceRefは一致するCodexプロジェクトのprojectIdと一緒に指定してください。環境・section・groupやフォルダ開始への縮約には対応していません');
   if (environmentId) throw new Error('Claudeの環境を完全適用できる公式経路は未確認です。元アプリで環境を選んで開始するか、「フォルダを指定して開始」を明示的に選んでください');
   if ((projectId || runOn === 'cloud') && targets.codex?.sourceObservation?.status !== 'known') throw new Error('開始設定の最新のscopeを確認できません。元アプリで設定を確認して選び直してください');
   if (projectId && runOn === 'cloud') throw new Error('クラウドではCodexプロジェクトの設定を適用できません。クラウド環境だけを明示的に選んでください');
