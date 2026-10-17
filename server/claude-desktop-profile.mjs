@@ -8,6 +8,8 @@ import { createDesktopAccounts } from './claude-desktop-accounts.mjs';
 import { withDesktopMutationLock } from './claude-desktop-lock.mjs';
 import { guestPaths, restoreGuests } from './claude-desktop-guests.mjs';
 
+import { backupDesktopProfiles } from './desktop-backup.mjs';
+import { readDesktopCapabilities } from './desktop-capabilities.mjs';
 import { inspectDesktopRuntime } from './claude-desktop-runtime.mjs';
 
 let processCheck = inspectDesktopRuntime;
@@ -41,7 +43,8 @@ export async function withDesktopAccount(account, action, options = {}) {
   const dataDir = desktopStorageDirectory();
   const registered = dataDir && await fs.lstat(path.join(dataDir, 'desktop-accounts', 'claude', 'registry.json')).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
   if (options.accounts || registered) {
-    const service = options.accounts || createDesktopAccounts({ dataDir, appDir: path.dirname(guestPaths().sessions), runtime: plan => processCheck(plan), restoreGuests: () => restoreGuests({ paths: guestPaths() }) });
+    const service = options.accounts || managedDesktopAccounts(dataDir);
+    if (!options.accounts && options.allowSwitch) options = { ...options, allowSwitch: (await readDesktopCapabilities(dataDir)).accountSwitch };
     let performed = false;
     const result = await service.withAccount(account, options, status => {
       performed = true; invalidateDesktopRoots();
@@ -110,4 +113,9 @@ export async function saveClaudeExecutionAccount(account, commit, options = {}) 
     if (!['desktop_unavailable', 'desktop_running', 'desktop_busy'].includes(error.code)) throw error;
     return { execution, desktop: { maintained: false, pending: true, account, reason: error.message, code: error.code } };
   }
+}
+
+// Shared production adapter; callers gate profile changes with the UI capability.
+export function managedDesktopAccounts(dataDir = desktopStorageDirectory()) {
+  return createDesktopAccounts({ dataDir, appDir: path.dirname(guestPaths().sessions), runtime: plan => processCheck(plan), restoreGuests: () => restoreGuests({ paths: guestPaths() }), backup: request => backupDesktopProfiles({ dataDir, ...request }), open: () => import('./claude-desktop-open.mjs').then(m => m.openDesktopApp('claude://code')) });
 }

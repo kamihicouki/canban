@@ -48,11 +48,11 @@ Canbanから追加するClaudeアカウントは `<Canban保存先>/accounts/cla
 
 Claude のセッションごとの実行先は共有SQLiteのカード属性 `claudeExecution` にCLI home IDとアカウントIDだけを保存する。Chrome・Codex・Claudeからの再開と送信はこの選択を使い、認証情報は保存しない。キューは追加時の実行先を保持する。標準の `~/.claude` を選ぶ場合は `CLAUDE_CONFIG_DIR` を外し、通常の `~/.claude.json` と標準Keychain項目を使う。明示的な設定フォルダーでは従来どおり同変数を指定する。0.24.3以降は実行前に公式 CLI の `auth status --json` を同じ認証環境で読み、未ログイン・メールや組織の不一致を拒否する。
 
-macOS の Desktop はCLIとは別のログインを使う。このMacの Desktop は素の構成（ピュア構成）にする。保存先は `~/Library/Application Support/Claude` の実ディレクトリ1つだけで、アカウントごとの会話はその中の `claude-code-sessions/<accountId>/<orgId>/` に実ファイルとして置く。ログインは同時に1つで、別アカウントを使うときは Desktop でログインし直す。`Claude-Profiles`・`Claude-*` のプロフィール、保存先のリンク、アカウント間の共有リンクは使わない。Claude Profiles.app も使わない。移行と戻し方は [claude-desktop-pure-layout-plan.md](claude-desktop-pure-layout-plan.md) と `scripts/desktop-pure-migrate.mjs` を参照。
+macOS の Desktop はCLIとは別のログインを使う。このMacの Desktop は素の構成（ピュア構成）にする。保存先は `~/Library/Application Support/Claude` の実ディレクトリ1つだけで、アカウントごとの会話はその中の `claude-code-sessions/<accountId>/<orgId>/` に実ファイルとして置く。同時に操作するログインは1つとする。認証保持の実機確認が完了した構成では、停止中に登録済みの保存先を入れ替え、通常切替でのログアウト・再ログインを不要にする。未確認の構成では標準の保存先を維持する。`Claude-Profiles`・`Claude-*` のプロフィール、保存先のリンク、アカウント間の共有リンクは使わない。Claude Profiles.app も使わない。移行と戻し方は [claude-desktop-pure-layout-plan.md](claude-desktop-pure-layout-plan.md) と `scripts/desktop-pure-migrate.mjs` を参照。
 
 ほかのアカウントの会話は、Desktop を終了した状態で Canban から開くと、ログイン中の Desktop にまとめて表示する（統合サイドバー、`server/claude-desktop-guests.mjs`）。ほかのアカウントの記録を `🔗 <アカウント> · ` を付けたゲストとしてログイン中のアカウントのフォルダへ複製し、ユーザーの ⌘Q の後に元の記録へ進行を書き戻してゲストを消す。台帳と会話記録の退避（APFS clone）は `~/.canban/desktop-integrated/` に置く。仕組みと実機検証は [claude-desktop-integrated-sidebar-research.md](claude-desktop-integrated-sidebar-research.md) を参照。
 
-Canban は Desktop のプロフィールやリンクを切り替えない（0.24.2〜0.27 の切替は廃止）。Desktop で開くのはログイン中のアカウントの会話だけで、それ以外は理由を返し、CLI での実行かログインの切り替えを案内する。起動中の Desktop は、ログイン中の保存先を開いていることを確認できた場合だけ使う。ボードは保存先内の全アカウントの会話を表示する。
+旧来のプロフィール切替（0.24.2〜0.27）は廃止した。0.29以降の管理下切替は、同一ファイルシステムの実ディレクトリ・停止確認・共通ロック・バックアップ・台帳・実機受け入れのすべてを満たす場合だけ使用する。リンクの切替はしない。Desktop で開くのはログイン中のアカウントの会話だけで、それ以外は理由を返し、CLI での実行かログインの切り替えを案内する。起動中の Desktop は、ログイン中の保存先を開いていることを確認できた場合だけ使う。ボードは保存先内の全アカウントの会話を表示する。
 
 0.24.4以降、実行アカウント一覧はアプリバー・サイドバーと同じアカウントID単位にまとめ、CLI設定フォルダーは各アカウントの「接続設定を指定」に残す。保存済みhome IDは受動的な表示や同じアカウントの再選択で変更しない。
 
@@ -109,3 +109,9 @@ CLIの選択保存とDesktopへの適用は別の結果として返す。Desktop
 ## セッションの開始結果（0.29.9）
 
 開始リクエストの重複防止記録は、各クライアントが選んだCanban保存先の `launches/<clientRequestId>.json` に権限600で保存する。通常Chrome・MCPは `~/.canban/launches/`、明示した `CANBAN_DATA_DIR` ではその配下、テストは隔離ディレクトリを使う。認証情報は含めず、依頼の指紋と起動結果を記録する。OSへの依頼前に記録を予約し、プロセス終了や応答切断で結果が不明な場合も自動で再起動しない。タスクカードを伴わない開始でもこの記録を使う。
+
+### Desktop の実機受け入れとバックアップ
+
+試行は `scripts/desktop-account-trial.mjs plan` でアカウント・操作・復元先を先に確認する。`apply --apply --plan <保存した計画>` と `rollback --apply --plan <保存した計画>` は人が承認した計画でだけ実行する。自動終了・強制終了はしない。停止した実プロフィールを `<Canban保存先>/desktop-backups/<要求ID>-<生成値>/`（700）へコピーし、`backup.json`（600）へ元の保存先を記録する。KeychainとCLIは動かさない。`verify` は読取り専用で、アカウントIDの一致をOAuth有効性の証明にしない。
+
+`desktop-capabilities.json` は実機の受け入れ記録で、ツールから書き込めない。アプリのbuild署名と、3往復・再ログイン0回・ログアウト0回・CLI/Desktopの会話と下書き保持を確認した記録が一致する場合だけ、通常UIの切替を有効にする。fixtureの成功だけでは作成しない。アプリ更新で記録が古くなれば再び無効にする。

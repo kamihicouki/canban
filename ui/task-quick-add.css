@@ -1,7 +1,11 @@
 .quick-task-trigger { flex: none; white-space: nowrap; min-height: 32px; }
 .list-head .quick-task-trigger { min-width: 30px; }
 .lane-head .quick-task-trigger { margin-left: auto; color: var(--on-board); background: var(--on-board-btn); padding: 4px 10px; border-radius: 6px; }
-.task-quick-dialog { width: 600px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 112px); margin: auto; padding: 20px; border: 1px solid var(--btn-subtle-hover); border-radius: 14px; background: var(--modal-bg); color: var(--list-fg); box-shadow: var(--lift-shadow); overflow: auto; }
+.task-quick-dialog { width: 600px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 112px); margin: auto; padding: 20px; border: 1px solid var(--btn-subtle-hover); border-radius: 14px; background: var(--modal-bg); color: var(--list-fg); box-shadow: var(--lift-shadow); overflow: hidden; }
+.task-quick-dialog[open] { display: flex; flex-direction: column; }
+.task-quick-dialog > form { display: flex; flex-direction: column; min-height: 0; }
+.creation-body { min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
+.task-quick-head, .creation-modes, .task-quick-actions, .task-quick-feedback { flex-shrink: 0; }
 .task-quick-dialog::backdrop { background: var(--overlay); }
 .task-quick-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
 .task-quick-head h2 { flex: 1; margin: 0; font-size: 20px; }

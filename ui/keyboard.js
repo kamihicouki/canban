@@ -185,6 +185,7 @@ function commandPalette() {
     { label: 'すべて既読にする', run: () => act('canban_mark_all_seen', {}, { okMsg: 'すべて既読にしました' }) },
     { label: state.sideOpen ? 'サイドバーを閉じる' : 'サイドバーを開く', run: () => toggleSidebar(), hint: 'b' },
     { label: '作成（タスクカード / 今すぐ始める）', run: () => taskQuickAdd.open(), hint: 'c' },
+    ...(taskQuickAdd.sessionDraft?.startRequest && ['waiting-for-quit','waiting-for-login','prepared'].includes(taskQuickAdd.sessionDraft.startResult?.state) ? [{ label: 'Desktop の開始待機を取り消す', run: () => taskQuickAdd.cancelSessionWait(), hint: 'Tab → Enter' }] : []),
     { label: 'エージェントで今すぐ始める', run: () => taskQuickAdd.open({ mode: 'session' }) },
     ...[['exclude', 'dotのセッションを除く'], ['all', 'dotのセッションを含める'], ['only', 'dotのセッションだけ表示']].map(([dotScope, label]) => ({ label, run: () => setScope({ dotScope }), hint: dotScope === 'only' ? '' : 'Shift+V' })),
     { label: slackUi.visible ? 'Slackタイムラインを隠す' : 'Slackタイムラインを表示', run: () => slackUi.toggle(), hint: 'v' },

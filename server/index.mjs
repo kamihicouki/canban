@@ -41,6 +41,8 @@ import { startAccount } from './start-account.mjs';
 import { claudeEnvironments, codexLaunchTargets } from './sources/launch-targets.mjs';
 import { startCodexCloud, setCloudRunner } from './codex-cloud.mjs';
 import { launchOnce } from './launcher.mjs';
+import { readDesktopCapabilities } from './desktop-capabilities.mjs';
+import { managedDesktopAccounts } from './claude-desktop-profile.mjs';
 import { createDesktopLaunches } from './desktop-launch.mjs';
 import { desktopProfilePlan, withDesktopAccount, saveClaudeExecutionAccount, desktopExecutionLink } from './claude-desktop-profile.mjs';
 import { SlackService, slackTools } from './slack.mjs';
@@ -162,6 +164,14 @@ const desktopLaunches = createDesktopLaunches({
   },
 });
 desktopLaunches.recover().catch(() => log('Desktop の開始記録を確認できません'));
+if (process.env.CANBAN_BACKGROUND !== '0') {
+  let resuming = false;
+  setInterval(async () => {
+    if (resuming) return;
+    resuming = true;
+    try { await desktopLaunches.recover(); } catch {} finally { resuming = false; }
+  }, 5000).unref();
+}
 
 // ---- tool definitions ----------------------------------------------------
 const appOnly = { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true, 'openai/visibility': 'private' };
@@ -721,7 +731,7 @@ const TOOLS = [
       return {
         text: [`Claude の環境: ${claude.environments.map((e) => e.name).join('、') || 'なし'}`, `Codex のプロジェクト: ${codex.projects.map((p) => p.name).join('、') || 'なし'}`,
           `Codex Cloud の環境: ${codex.cloudEnvironments.map((e) => e.name).join('、') || 'なし'}`].join('\n'),
-        structured: { claude, codex },
+        structured: { claude, codex, desktopCapabilities: { ...await readDesktopCapabilities(store.dir), activeAccount: claude.account || null } },
       };
     },
   },
@@ -841,6 +851,12 @@ const TOOLS = [
       return { text: detail.note || (detail.route === 'desktop' ? 'デスクトップの新規画面を開きました' : detail.route === 'cloud' ? 'Codex Cloud にタスクを送信しました' : 'ターミナルに開始を依頼しました'), structured: detail };
     },
   },
+  appTool('canban_desktop_accounts', 'Desktop の接続状態', {}, [], async () => ({ ...await managedDesktopAccounts(store.dir).view(), ...await readDesktopCapabilities(store.dir) })),
+  appTool('canban_desktop_account_command', 'Desktop の接続を変更', { type: { type: 'string', enum: ['enroll-current','begin-login','finish-login','cancel','recover'] }, account: { type: 'string' }, requestId: { type: 'string' }, uiToken: { type: 'string' } }, ['type','uiToken'], async a => {
+    const args = requireLoopUi(a);
+    if (!(await readDesktopCapabilities(store.dir)).accountSwitch) return { state: 'unverified', reason: '認証保持の実機確認が完了していません。既存のCLIとDesktopは維持しています' };
+    return managedDesktopAccounts(store.dir).command(args);
+  }),
   {
     name: 'canban_get_start_session', title: '開始状況を確認', description: '同じ開始要求の待機・起動結果を読み取る。',
     inputSchema: { type: 'object', properties: { clientRequestId: { type: 'string' } }, required: ['clientRequestId'], additionalProperties: false },
