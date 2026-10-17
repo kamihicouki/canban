@@ -26,6 +26,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { exists, listDir, listSubdirs, readJson, realpath, stat } from './sources/readonly.mjs';
 import { ACCOUNT_COLORS } from './accounts-settings.mjs';
+import { readDesktopProfileRoots } from './claude-desktop-roots.mjs';
 
 const DISCOVER_TTL_MS = 60e3;
 const MAX_HOMES = 12;
@@ -47,15 +48,30 @@ export function claudeDesktopSessionsDir() {
 // Claude desktop app data folders: the default one (next to claude-code-sessions) and
 // other profiles beside it, one per real folder. { id, dir, sessionsDir, default }
 let desktopCache = { at: 0, roots: [] };
+let desktopDataDir = null;
+export const desktopStorageDirectory = () => desktopDataDir;
+export function configureDesktopStorage(dir) {
+  if (dir !== null && !path.isAbsolute(dir || '')) throw new Error('Desktop の対応表は絶対パスで指定してください');
+  if (desktopDataDir !== dir) { desktopDataDir = dir; invalidateDesktopRoots(); }
+}
 export function invalidateDesktopRoots() { desktopCache.at = 0; registry.at = 0; }
 export async function claudeDesktopRoots(now = Date.now()) {
-  if (now - desktopCache.at < DISCOVER_TTL_MS) return desktopCache.roots;
   const sessionsDir = claudeDesktopSessionsDir();
   const def = path.dirname(sessionsDir);
+  const record = desktopDataDir && await fs.stat(path.join(desktopDataDir, 'desktop-accounts', 'claude', 'registry.json'), { bigint: true }).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+  const stamp = record ? `${record.ino}:${record.mtimeNs}:${record.size}` : null;
+  if (now - desktopCache.at < DISCOVER_TTL_MS && desktopCache.stamp === stamp && desktopCache.dataDir === desktopDataDir) return desktopCache.roots;
   const defReal = (await realpath(def)) || def;
   // name: the profile's folder name when the default folder is a link to one (a profile switcher).
   const roots = [{ id: 'default', dir: def, sessionsDir, default: true, name: defReal !== def ? path.basename(defReal) : null }];
   const seen = new Set([defReal]);
+  if (record) {
+    for (const r of await readDesktopProfileRoots({ dataDir: desktopDataDir, appDir: def })) {
+      if (seen.has(r.dir)) continue;
+      seen.add(r.dir);
+      roots.push({ id: `canban:${r.id}`, dir: r.dir, sessionsDir: r.sessionsDir, default: false, name: r.account.slice('claude:'.length) });
+    }
+  }
   if (config.discover) {
     const parent = path.dirname(def);
     const cands = [];
@@ -71,7 +87,7 @@ export async function claudeDesktopRoots(now = Date.now()) {
       roots.push({ id, dir, sessionsDir: path.join(dir, 'claude-code-sessions'), default: false, name: path.basename(real).replace(/^Claude-/, '') });
     }
   }
-  desktopCache = { at: now, roots };
+  desktopCache = { at: now, roots, stamp, dataDir: desktopDataDir };
   return roots;
 }
 
@@ -467,6 +483,7 @@ export function accountsView({ labels = {}, marks = {}, hidden = [], sessions = 
 }
 
 export function resetAccountsForTest() {
+  desktopDataDir = null;
   registry = { at: 0, accounts: new Map(), homes: { claude: [], codex: [] }, desktopActive: null, orgToAccount: new Map(), planUsage: {} };
   discovered = { at: 0, claude: [], codex: [] };
   desktopCache = { at: 0, roots: [] };

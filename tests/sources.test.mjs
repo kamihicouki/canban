@@ -122,3 +122,65 @@ test('Claude sessions without desktop metadata are not claimed to be unarchived'
   assert.deepEqual([s.desktopKnown, s.archived, s.entrypoint], [false, false, 'cli']);
   assert.equal(normalizeClaudeSummary(sum, { isArchived: true }).desktopKnown, true);
 });
+
+test('Claude groups keep actual account/org scope and never become named environments', async () => {
+  const { sessionSourceView } = await import('../server/source-model.mjs');
+  const summary = { ...newSummary('source-test'), prompts: ['hello'], turns: 1 };
+  const session = normalizeClaudeSummary(summary, { _account: 'owner-a', _org: 'org-a', _sourceScope: '/desktop', _observedAt: 1000, group: { id: 'g1', name: 'dev' } });
+  const source = sessionSourceView(session);
+  assert.equal(source.attributes.claudeGroup.value.ref.scopeId, '["/desktop","owner-a","org-a"]');
+  assert.equal(source.attributes.claudeGroup.value.ref.nativeId, 'g1');
+  assert.equal(source.attributes.claudeEnvironment.status, 'unknown');
+  const namelessId = normalizeClaudeSummary(summary, { _account: 'owner-a', _org: 'org-a', _sourceScope: '/desktop', group: 'dev' });
+  assert.equal(sessionSourceView(namelessId).attributes.claudeGroup.status, 'unknown');
+});
+
+test('launch target metadata exposes scoped multi-root references and excludes secret values', async () => {
+  const os = await import('node:os');
+  const { claudeEnvironments, codexLaunchTargets } = await import('../server/sources/launch-targets.mjs');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-source-targets-'));
+  try {
+    fs.writeFileSync(path.join(root, 'config.json'), JSON.stringify({ lastKnownAccountUuid: 'a' }));
+    fs.writeFileSync(path.join(root, 'ccd-session-presets.json'), JSON.stringify({ byAccount: { a: { presets: [{ id: 'e', name: 'dev', target: { kind: 'local', cwd: '/one', additionalFolders: ['/two'], folderSettings: { '/two': { branch: 'topic', worktree: true } }, envVars: { API_KEY: 'secret-value' } } }] } } }));
+    const { environments } = await claudeEnvironments(root);
+    assert.equal(environments[0].sourceRef.scopeId, JSON.stringify([fs.realpathSync(root), 'a']));
+    assert.deepEqual(environments[0].workingLocations.map(l => l.folder), ['/one', '/two']);
+    assert.equal(environments[0].workingLocations[1].branchRequested, 'topic');
+    assert.equal(environments[0].settingsPresence.environmentVariables, 'unknown');
+    assert.ok(!JSON.stringify(environments).includes('secret-value'));
+    fs.writeFileSync(path.join(root, '.codex-global-state.json'), JSON.stringify({ 'local-projects': { p: { name: 'dev', rootPaths: ['/one', '/two'] } } }));
+    const codex = await codexLaunchTargets({ home: root });
+    assert.equal(codex.projects[0].sourceRef.scopeId, fs.realpathSync(root));
+    assert.deepEqual(codex.projects[0].roots, ['/one', '/two']);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('an unreadable selected-account preset catalog is unknown rather than an empty known catalog', async () => {
+  const os = await import('node:os');
+  const { claudeEnvironments } = await import('../server/sources/launch-targets.mjs');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-source-missing-presets-'));
+  try {
+    fs.writeFileSync(path.join(root, 'config.json'), JSON.stringify({ lastKnownAccountUuid: 'a' }));
+    fs.writeFileSync(path.join(root, 'ccd-session-presets.json'), JSON.stringify({ byAccount: { other: { presets: [] } } }));
+    const missing = await claudeEnvironments(root);
+    assert.equal(missing.sourceObservation.status, 'unknown');
+    assert.deepEqual(missing.environments, []);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('unknown Claude grouping does not borrow the desktop file timestamp', () => {
+  const summary = { ...newSummary('unknown-group'), prompts: ['hello'], turns: 1 };
+  const session = normalizeClaudeSummary(summary, { _observedAt: 9000 });
+  assert.equal(session.sourceMetadata.claudeGroup.status, 'unknown');
+  assert.equal(session.sourceMetadata.claudeGroup.observedAt, null);
+});
+
+test('guest or conflicting group namespaces remain unknown despite a known session owner', async () => {
+  const { sessionSourceView } = await import('../server/source-model.mjs');
+  const summary = { ...newSummary('guest-group'), prompts: ['hello'], turns: 1 };
+  for (const patch of [{ _groupOwnerKnown: false }, { _groupConflict: true }]) {
+    const s = normalizeClaudeSummary(summary, { _account: 'original', _org: 'original-org', _sourceScope: '/desktop', group: { id: 'g', name: 'host-only' }, ...patch });
+    assert.equal(sessionSourceView(s).attributes.claudeGroup.status, 'unknown');
+    assert.equal(sessionSourceView(s).attributes.claudeGroup.value, null);
+  }
+});

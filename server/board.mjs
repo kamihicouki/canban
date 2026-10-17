@@ -1,5 +1,7 @@
 import { normalizeClaudeExecution } from './accounts.mjs';
 import { sessionActions } from './session-actions.mjs';
+import { capabilitiesFor, compactCapabilities } from './source-capabilities.mjs';
+import { sessionSourceView, compactSourceView } from './source-model.mjs';
 import { leaderFor } from './leader.mjs';
 // Combines read-only session listings (local + enabled remote hosts) with the
 // Canban store into a board snapshot.
@@ -22,6 +24,8 @@ import { currentLimits, cardSignals, limitsByAccount } from './signals.mjs';
 import { configureAccounts, accountsView, accountName } from './accounts.mjs';
 import { matchesAccount, withAccountNote } from './accounts-mcp.mjs';
 import { effectiveTaskContext } from './task-context.mjs';
+import { normalizeSourceSelections, categoryBindingConflicts } from './category-bindings.mjs';
+import { sourceRelationsForTask, matchesSourceFilters, sourceFacetsForCards, plannedSourceRelations, legacyMatches, normalizeWorkingFolder, matchesWorkingFolder } from './source-filters.mjs';
 
 import { peekGit, refreshGit } from './gitlive.mjs';
 import { RuleEngine, replayRule } from './rules.mjs';
@@ -102,16 +106,23 @@ function matchesDirectory(f, dir) {
 
 
 function sessionCardStates(sessions, state) {
-  return sessions; // archive and deletion belong exclusively to the agent
+  const receipts = Object.values(state.cards).flatMap(card => card.launchReceipts || []);
+  return sessions.map(session => {
+    const launchReceipts = receipts.filter(receipt => receipt.sessionId === session.id && receipt.status === 'confirmed');
+    return { ...session, launchReceipts, sourceView: sessionSourceView(session, {}, launchReceipts) };
+  }); // archive and deletion belong exclusively to the agent
 }
 
 function matches(session, card, f, labelsById, hits, dir) {
+  if (f.cardKind === 'task') return false;
   if (!matchesDotScope(session, f.dotScope)) return false;
   if (f.agent && f.agent !== 'all' && session.agent !== f.agent) return false;
   if (f.host && (session.host?.id || 'local') !== f.host) return false;
   if (f.account && !matchesAccount(f.account, session)) return false;
-  if (f.project && session.project !== f.project) return false;
-  if (f.folder && session.folder !== f.folder) return false;
+  if (!matchesSourceFilters((session.sourceView || sessionSourceView(session)).relations, f.sourceFilters)) return false;
+  if (f.project && !legacyMatches(session, 'project', f.project)) return false;
+  if (f.folder && !legacyMatches(session, 'folder', f.folder)) return false;
+  if (!matchesWorkingFolder(session, null, f.workingFolder)) return false;
   if (f.section && (f.section === '__none' ? session.codexSection : session.codexSection?.id !== f.section)) return false;
   if (!matchesDirectory(f, dir)) return false;
   if (f.label && (f.label === '__none' ? card?.labels?.length : !card?.labels?.includes(f.label))) return false;
@@ -134,6 +145,9 @@ function matches(session, card, f, labelsById, hits, dir) {
 }
 
 export function matchesTask(t, links, status, f, labelsById, dir) {
+  if (f.cardKind === 'session') return false;
+  if (!matchesSourceFilters([...sourceRelationsForTask(links), ...plannedSourceRelations(t.sourceContext)], f.sourceFilters)) return false;
+  if (!matchesWorkingFolder(t, links, f.workingFolder)) return false;
   if (f.dotScope === 'only' && !links.some(s => s.dot)) return false;
   if (!matchesDirectory(f, dir)) return false;
   if (f.label && (f.label === '__none' ? t.labels?.length : !t.labels?.includes(f.label))) return false;
@@ -143,7 +157,7 @@ export function matchesTask(t, links, status, f, labelsById, dir) {
   const context = t.context || {};
   const match = (key, legacy) => !f[key] || (key === 'agent' && f[key] === 'all') ||
     (Object.hasOwn(context, key) ? (f[key] === '__none' ? !context[key] : context[key] === f[key]) : legacy());
-  if (!match('folder', () => anyLink(s => s.folder === f.folder))) return false;
+  if (!match('folder', () => anyLink(s => legacyMatches(s, 'folder', f.folder)))) return false;
   if (!match('section', () => anyLink(s => f.section === '__none' ? !s.codexSection : s.codexSection?.id === f.section))) return false;
   if (!match('agent', () => anyLink(s => s.agent === f.agent) || t.target?.agent === f.agent || t.context?.account?.split(':')[0] === f.agent)) return false;
   if (!match('host', () => anyLink(s => (s.host?.id || 'local') === f.host) || (t.target?.hostId || 'local') === f.host)) return false;
@@ -164,8 +178,11 @@ export function normalizeFilters(f = {}) {
     agent: ['codex', 'claude'].includes(f.agent) ? f.agent : 'all',
     host: typeof f.host === 'string' && f.host ? f.host : null,
     account: typeof f.account === 'string' && f.account ? f.account : null,
+    sourceFilters: normalizeSourceSelections(f.sourceFilters || []),
+    cardKind: ['task', 'session'].includes(f.cardKind) ? f.cardKind : 'all',
     project: f.project || null,
     folder: typeof f.folder === 'string' && f.folder ? f.folder : null,
+    workingFolder: normalizeWorkingFolder(f.workingFolder),
     section: typeof f.section === 'string' && f.section ? f.section : null,
     directory: typeof f.directory === 'string' && f.directory ? f.directory : null,
     label: typeof f.label === 'string' && f.label ? f.label : null,
@@ -350,7 +367,6 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
   const { sessions: sourceSessions, errors, hosts, app } = await allSessions(state, { force });
   const sessions = sessionCardStates(sourceSessions, state);
   await exchangeIndex.sync(sessions);
-  if (await store.syncSessionCategories(sessions)) state = await store.load();
   if ((await store.resolvePending(matchPending(state, sessions))).length) state = (await store.load());
   if ((await runRules(store, state, sessions)).length) state = (await store.load());
   const byId = new Map(sessions.map((x) => [x.id, x]));
@@ -400,6 +416,8 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       project: s.project,
       folder: s.folder,
       codexProject: s.codexProject || null,
+      sourceView: compactSourceView(s.sourceView || sessionSourceView(s)),
+      capabilities: compactCapabilities(capabilitiesFor({ session: s })),
       directory: dirView(dir),
       cwd: s.cwd,
       branch: s.branch,
@@ -447,13 +465,14 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
   // Task cards: user-created cards that may have sessions linked to them.
   const now = Date.now();
   for (const [id, t] of taskEntries(state)) {
-    const allLinks = (t.links || []).map((sid) => byId.get(sid)).filter(Boolean);
+    const allLinks = [...new Set(t.links || [])].map((sid) => byId.get(sid)).filter(Boolean);
     const links = allLinks.filter(s => (filters.includeArchived || !s.archived));
     const status = aggregateStatus(links.map((x) => x.status || 'idle'));
     const taskUpdatedAt = typeof t.updatedAt === 'number' ? t.updatedAt : Date.parse(t.updatedAt) || 0;
     const updatedAt = Math.max(t.createdAt || 0, taskUpdatedAt, ...links.map((x) => x.updatedAt || 0), ...(loopSummaries[id]?.cycles || []).map(c => c.updatedAt));
     const dir = resolveDirectory(state, t, t.target?.cwd || links.find((x) => x.cwd)?.cwd);
     const context = effectiveTaskContext(t, links);
+    const sourceRelations = sourceRelationsForTask(links);
     if (t.context?.project) projects.set(context.project, (projects.get(context.project) || 0) + 1);
     if (t.context?.folder) folders.set(context.folder, (folders.get(context.folder) || 0) + 1);
     if (t.context?.section) {
@@ -472,6 +491,8 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       slackRefs: t.slackRefs || [],
       directory: dirView(dir),
       context: t.context || {},
+      sourceContext: t.sourceContext || [],
+      sourceRelations,
       directoryId: t.directoryId || null,
       project: context.project,
       folder: context.folder,
@@ -480,7 +501,9 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       account: context.account,
       codexSection: context.section ? { id: context.section, name: sections.get(context.section)?.name || context.section } : null,
       target: t.target || null,
-      links: links.map((x) => ({ id: x.id, agent: x.agent, account: x.account || null, title: x.title, status: x.status || 'idle', statusKnown: x.statusKnown !== false, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, updatedAt: x.updatedAt })),
+      launchSelection: t.launchSelection || null,
+      launchReceipts: t.launchReceipts || [],
+      links: links.map((x) => ({ id: x.id, sourceView: compactSourceView(x.sourceView || sessionSourceView(x)), capabilities: compactCapabilities(capabilitiesFor({ session: x })), agent: x.agent, account: x.account || null, title: x.title, status: x.status || 'idle', statusKnown: x.statusKnown !== false, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, updatedAt: x.updatedAt })),
       linkedSessionIds: [...(t.links || [])],
       missingLinks: (t.links || []).length - allLinks.length,
       pending: (t.pending || []).map((p) => ({ agent: p.agent, startedAt: p.startedAt, expired: now - p.startedAt > PENDING_MS })),
@@ -510,6 +533,10 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
     filters,
     lists,
     labels: state.labels,
+    sourceFacetBasis: 'filtered-board-cards',
+    sourceFacets: sourceFacetsForCards(lists.flatMap(l => l.cards)),
+    categoryBindings: state.categoryMapping?.bindings || [],
+    categoryBindingConflicts: categoryBindingConflicts(state.categoryMapping?.bindings),
     directories: state.directories.map((d) => ({ ...d, count: dirCounts.get(d.id) || 0 })),
     uncategorizedCount: dirCounts.get('__none') || 0,
     defaultListId: state.defaultListId,
@@ -603,11 +630,15 @@ function recentFolders(sessions, limit = 60) {
   return [...seen.values()];
 }
 
+export function detailSessionState(sessions, state, cardId) {
+  const selected = sessions.find(session => session.id === cardId);
+  return selected ? sessionCardStates([selected], state)[0] : null;
+}
+
 export async function findSession(store, cardId) {
   let state = (await store.load());
   const { sessions, hosts } = await allSessions(state);
-  if (await store.syncSessionCategories(sessions)) state = await store.load();
-  const s = sessions.find((x) => x.id === cardId);
+  const s = detailSessionState(sessions, state, cardId);
   if (!s) throw new Error('セッションが見つかりません');
   return { session: s, state, host: !isCloudSession(s) && s.host?.local === false ? hosts.find((h) => h.id === s.host.id) : null };
 }
@@ -667,7 +698,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   const claudeProfiles = await claudeResumeAccounts(s, labels);
   const claudeExecutionAccounts = groupClaudeResumeAccounts(claudeProfiles, accountsView(state.settings.accounts).accounts, s, card.claudeExecution);
   return {
-    session: { ...rest, actions: sessionActions(s), host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: s.account ? accountName(s.account, labels) : null },
+    session: { ...rest, sourceView: s.sourceView || sessionSourceView(s), capabilities: capabilitiesFor({ session: s }), actions: sessionActions(s), host: h?.local === false ? { id: h.id, alias: h.alias, label: h.label } : null, accountLabel: s.account ? accountName(s.account, labels) : null },
     card: {
       slackRefs: card.slackRefs || [],
       listId, labels: card.labels || [], note: card.note || '', priority: card.priority || null, due: card.due || null, archived: !!s.archived,

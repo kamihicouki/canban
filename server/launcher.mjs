@@ -13,7 +13,8 @@ const ALLOWED_SCHEMES = new Set(['codex:', 'claude:']);
 // An app started by "open" inherits this process's environment (seen 2026-10-16: Claude
 // Desktop and every session in it got CANBAN_CLIENT=canban-chrome from the Chrome host).
 // Canban's own settings stay with Canban.
-export const appEnv = (env = process.env) => Object.fromEntries(Object.entries(env).filter(([k]) => !k.startsWith('CANBAN_')));
+const CLI_AUTH_OVERRIDE = /^(?:CANBAN_|ANTHROPIC_|OPENAI_|CLAUDE_CONFIG_DIR$|CODEX_HOME$|CLAUDE_CODE_OAUTH_TOKEN$|CLAUDE_CODE_USE_|CODEX_ACCESS_TOKEN$|CODEX_API_KEY$)/;
+export const appEnv = (env = process.env) => Object.fromEntries(Object.entries(env).filter(([k]) => !CLI_AUTH_OVERRIDE.test(k)));
 
 let runner = (file, args, input) =>
   new Promise((resolve, reject) => {

@@ -45,7 +45,7 @@ test('real lane construction keeps stable attribute IDs even when display names 
   ];
   const board = { labels, lists: [{ id: 'inbox', cards }], projects: [{ name: 'p' }], directories: [{ id: 'd1', name: '同名' }, { id: 'd2', name: '同名' }, { id: 'empty', name: '空' }] };
   const context = vm.createContext({ state: { board }, T: { category: 'カテゴリ', taskCard: 'タスクカード' }, accountLaneKey: () => '同じ表示名', accountName: key => `Codex · ${key}` });
-  vm.runInContext(fs.readFileSync(new URL('../ui/task-quick-add-model.js', import.meta.url), 'utf8') + '\n' + code, context);
+  vm.runInContext(fs.readFileSync(new URL('../ui/source-facets.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../ui/task-quick-add-model.js', import.meta.url), 'utf8') + '\n' + code, context);
   for (const mode of ['directory', 'label', 'section', 'account']) {
     const lanes = context.buildLanes(board, mode).filter(l => l.count);
     assert.equal(lanes.length, 2, mode);
@@ -207,8 +207,9 @@ test('desktop starts use the app lists: a Claude environment, a Codex project an
   assert.equal(codex.projectId, 'p-local');
   assert.equal(m.sessionStartRequest(codex).projectId, 'p-local');
   codex.runOn = 'cloud'; m.applySessionTargetDefaults(codex, targets);
-  assert.equal(codex.cloudEnvironment, 'asenvcfg_2', 'the cloud environment named like the project');
-  assert.deepEqual(plain(m.sessionStartRequest(codex)), { agent: 'codex', route: 'desktop', terminal: 'terminal', target: 'new-window', cwd: '', prompt: '直して', account: null, projectId: 'p-local', runOn: 'cloud', cloudEnvironment: 'asenvcfg_2' });
+  assert.equal(codex.cloudEnvironment, null, 'cloud selection is explicit even when names match');
+  codex.cloudEnvironment = 'asenvcfg_2';
+  assert.deepEqual(plain(m.sessionStartRequest(codex)), { agent: 'codex', route: 'desktop', terminal: 'terminal', target: 'new-window', cwd: '', prompt: '直して', account: null, runOn: 'cloud', cloudEnvironment: 'asenvcfg_2' });
   const typed = m.applySessionTargetDefaults({ ...base, agent: 'codex', cwd: '/typed' }, targets);
   assert.equal(typed.projectId, '__folder', 'a typed folder is kept');
   assert.equal(m.sessionStartRequest(typed).cwd, '/typed');
@@ -224,12 +225,13 @@ test('desktop creation waits visibly for targets without losing the request', as
   const pending = new Promise(resolve => { resolveTargets = resolve; });
   const calls = [];
   let failTargets = false;
-  const dialog = new vm.Script(fs.readFileSync(new URL('../ui/task-quick-add.js', import.meta.url), 'utf8') + '\n taskQuickAdd').runInNewContext({
+  const source = fs.readFileSync(new URL('../ui/task-quick-add-model.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../ui/task-quick-add.js', import.meta.url), 'utf8');
+  const dialog = new vm.Script(source + '\n taskQuickAdd').runInNewContext({
     bridge: { callTool: name => { calls.push(name); return failTargets ? Promise.reject(new Error('取得失敗')) : pending; } },
-    sessionRunsInCloud: () => false,
+    sessionRunsInCloud: () => false, sessionHostId: () => 'local',
   });
   const label = { textContent: '' };
-  dialog.sessionDraft = { agent: 'codex', route: 'desktop', prompt: '保持する未送信の依頼' };
+  dialog.sessionDraft = { agent: 'codex', route: 'desktop', hostId: 'local', prompt: '保持する未送信の依頼' };
   dialog.form = { querySelectorAll: () => [], querySelector: () => ({ value: dialog.sessionDraft.prompt }) };
   dialog.primary = { disabled: false, querySelector: () => label };
   dialog.feedback = { hidden: true, classList: { remove() {} }, textContent: '' };
@@ -258,4 +260,42 @@ test('desktop creation waits visibly for targets without losing the request', as
   dialog.paintSessionState();
   assert.equal(dialog.primary.disabled, false, 'a failed lookup keeps the existing manual-folder fallback');
   assert.equal(dialog.sessionDraft.prompt, '保持する未送信の依頼');
+});
+
+test('a waiting Desktop start keeps its original images and input when resumed', async () => {
+  const draft = { ...plain(model.sessionCreationDefaults({}, {})), prompt: '元の依頼', attachments: { imageIds: ['img-1'] } };
+  const seen = [];
+  const io = { newRequestId: () => 'waiting-id', refresh: async () => {}, callTool: async (name, args) => { seen.push(args); return { state: 'waiting-for-quit' }; } };
+  await model.saveQuickSessionDraft(draft, io);
+  draft.prompt = '次の入力'; draft.attachments.imageIds.push('img-2');
+  await model.saveQuickSessionDraft(draft, io);
+  assert.deepEqual(seen[1], seen[0]); assert.equal(draft.prompt, '次の入力');
+  assert.deepEqual(draft.attachments.imageIds, ['img-1','img-2']);
+});
+
+test('remote Desktop actions explain the unverified capability before a click', () => {
+  const dialog = new vm.Script(fs.readFileSync(new URL('../ui/task-quick-add-model.js',import.meta.url),'utf8')+'\n'+fs.readFileSync(new URL('../ui/task-quick-add.js',import.meta.url),'utf8')+'\n taskQuickAdd').runInNewContext();
+  const label={textContent:''};
+  Object.assign(dialog,{sessionDraft:{route:'desktop',agent:'codex',projectId:'__folder',hostId:'remote-ssh-discovered:box'},targets:{desktopCapabilities:{codexRemote:false}},form:{querySelectorAll:()=>[]},primary:{disabled:false,querySelector:()=>label}});
+  dialog.paintSessionState();assert.equal(dialog.primary.disabled,true);assert.match(label.textContent,/実機確認/);
+});
+
+test('verified remote drafts still refuse a Project preset while explicit folders follow the capability gate', async () => {
+  const source = fs.readFileSync(new URL('../ui/task-quick-add-model.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../ui/task-quick-add.js', import.meta.url), 'utf8');
+  const dialog = new vm.Script(source + '\n taskQuickAdd').runInNewContext();
+  const label = { textContent: '' };
+  Object.assign(dialog, { sessionDraft: { route: 'desktop', agent: 'codex', projectId: 'remote-project', hostId: 'remote', cwd: '/srv', prompt: '保持する依頼' }, targets: { codex: { projects: [{ id: 'remote-project', hostId: 'remote', root: '/srv' }] }, desktopCapabilities: { codexRemote: true } }, form: { querySelectorAll: () => [], querySelector: () => null }, primary: { disabled: false, querySelector: () => label }, feedback: { classList: { add() {} } } });
+  dialog.paintSessionState();
+  assert.equal(dialog.primary.disabled, true, 'remote draft verification is not full Project application');
+  assert.match(label.textContent, /フォルダ/);
+  await dialog.submitSession();
+  assert.match(dialog.feedback.textContent, /完全適用/);
+  assert.equal(dialog.sessionDraft.startRequest, undefined, 'the unsupported choice never allocates a request');
+  dialog.sessionDraft.projectId = '__folder';
+  dialog.paintSessionState();
+  assert.equal(dialog.primary.disabled, false, 'explicit folders remain supported behind their own gate');
+  dialog.targets.desktopCapabilities.codexRemote = false;
+  dialog.paintSessionState();
+  assert.equal(dialog.primary.disabled, true);
+  assert.match(label.textContent, /実機確認/);
 });

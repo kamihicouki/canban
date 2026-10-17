@@ -1,12 +1,12 @@
 // Part of board.html: included into its script by server/ui.mjs and shares its scope.
 // Sidebar: lanes (jump), directories and projects (one-click filters)
 // ---- filters in effect, as chips in the app bar (each ✕ takes one off) ----
-const FILTER_KEYS = ['agent', 'days', 'status', 'directory', 'project', 'folder', 'section', 'label', 'host', 'account', 'includeArchived', 'includeSubagents', 'dotScope', 'pinnedOnly'];
-const sameFilters = (a, b) => FILTER_KEYS.every((k) => (a[k] ?? DEFAULT_FILTERS[k]) === (b[k] ?? DEFAULT_FILTERS[k]));
+const FILTER_KEYS = ['sourceFilters', 'cardKind', 'workingFolder', 'agent', 'days', 'status', 'directory', 'project', 'folder', 'section', 'label', 'host', 'account', 'includeArchived', 'includeSubagents', 'dotScope', 'pinnedOnly'];
+const sameFilters = (a, b) => FILTER_KEYS.every((k) => JSON.stringify(a[k] ?? DEFAULT_FILTERS[k]) === JSON.stringify(b[k] ?? DEFAULT_FILTERS[k]));
 function activeView(b) { return (b?.settings?.views || []).find((v) => sameFilters({ ...DEFAULT_FILTERS, ...v.filters }, state.filters)); }
 // The lane axis is not also a filter: lanes by category already show every category.
 const LANE_FILTER = { directory: 'directory', agent: 'agent', host: 'host', label: 'label', project: 'project', section: 'section', account: 'account' };
-const laneHides = (key) => LANE_FILTER[state.filters.swimlane] === key;
+const laneHides = (key) => state.filters.swimlane === key || LANE_FILTER[state.filters.swimlane] === key;
 function filterChips(b) {
   const f = state.filters, out = [];
   const add = (text, patch) => out.push({ text, patch });
@@ -14,7 +14,13 @@ function filterChips(b) {
   if (f.status) add(STATUS_LABELS[f.status] || f.status, { status: '' });
   if (f.directory && !laneHides('directory')) add(f.directory === '__none' ? 'カテゴリ無し' : b?.directories.find((d) => d.id === f.directory)?.name || f.directory, { directory: '' });
   if (f.project && !laneHides('project')) add(f.project, { project: '' });
-  if (f.folder) add(`フォルダ ${f.folder}`, { folder: '' });
+  for (const selection of f.sourceFilters || []) {
+    const facet = b?.sourceFacets?.find(x => x.key === sourceRefKey(selection.ref)) || selection;
+    add(sourceFacetLabel(facet), { sourceFilters: f.sourceFilters.filter(x => x !== selection) });
+  }
+  if (f.folder) add(`旧フォルダ条件 ${f.folder}`, { folder: '' });
+  if (f.workingFolder) add(`作業フォルダ ${f.workingFolder}`, { workingFolder: '' });
+  if (f.cardKind && f.cardKind !== 'all') add(f.cardKind === 'task' ? 'タスクカードのみ' : 'セッションカードのみ', { cardKind: 'all' });
   if (f.section && !laneHides('section')) add(`§ ${f.section === '__none' ? 'セクションなし' : b?.codexSections?.find((x) => x.id === f.section)?.name || f.section}`, { section: '' });
   if (f.label && !laneHides('label')) add(`ラベル: ${f.label === '__none' ? 'なし' : b?.labels.find((l) => l.id === f.label)?.name || f.label}`, { label: '' });
   if (f.host && !laneHides('host')) { const x = b?.hosts.find((y) => (y.local ? 'local' : y.id) === f.host); add(x?.local ? 'このマシン' : x?.label || f.host, { host: '' }); }
@@ -39,7 +45,7 @@ function scopeLabel(b) {
   const dir = f.directory === '__none' ? 'カテゴリ無し' : b?.directories.find((d) => d.id === f.directory)?.name;
   const sec = f.section === '__none' ? 'セクションなし' : b?.codexSections?.find((x) => x.id === f.section)?.name;
   const host = f.host ? b?.hosts.find((x) => (x.local ? 'local' : x.id) === f.host) : null;
-  const parts = [dir, f.project, f.folder && `フォルダ ${f.folder}`, sec && `§ ${sec}`, f.label && `ラベル: ${f.label === '__none' ? 'なし' : b?.labels.find(l => l.id === f.label)?.name || f.label}`,
+  const parts = [dir, f.project, f.folder && `旧フォルダ条件 ${f.folder}`, f.workingFolder && `作業フォルダ ${f.workingFolder}`, sec && `§ ${sec}`, f.label && `ラベル: ${f.label === '__none' ? 'なし' : b?.labels.find(l => l.id === f.label)?.name || f.label}`,
     host && `マシン: ${host.local ? 'このマシン' : host.label}`].filter(Boolean);
   return parts.length ? parts.join(' · ') : 'すべて';
 }
@@ -56,22 +62,24 @@ function scopePicker(anchor) {
   const b = state.board;
   const f = state.filters;
   picker(anchor, {
-    title: `${T.category}・プロジェクトで絞り込み`, width: 340,
-    selected: [f.directory ? `d:${f.directory}` : null, f.project ? `p:${f.project}` : null, f.folder ? `f:${f.folder}` : null, f.section ? `s:${f.section}` : null, f.label ? `l:${f.label}` : null, !f.label && !f.directory && !f.project && !f.folder && !f.section ? '' : null].filter((x) => x != null),
+    title: `${T.category}・元アプリで絞り込み`, width: 340,
+    selected: [...(f.sourceFilters || []).map(x => `source:${sourceRefKey(x.ref)}`), f.directory ? `d:${f.directory}` : null, f.project ? `p:${f.project}` : null, f.workingFolder ? `wf:${f.workingFolder}` : null, f.folder ? `f:${f.folder}` : null, f.section ? `s:${f.section}` : null, f.label ? `l:${f.label}` : null, !f.label && !f.directory && !f.project && !f.folder && !f.workingFolder && !f.section ? '' : null].filter((x) => x != null),
     items: [
       { value: '', label: 'すべて（絞り込みを解除）' },
       ...directoryItems(false).map((it) => ({ ...it, value: `d:${it.value}`, group: `${T.category}` })),
-      ...b.projects.map((p) => ({ value: `p:${p.name}`, label: p.name, hint: p.count, group: 'プロジェクト（Codex のプロジェクト、なければフォルダ名）' })),
-      ...(b.folders || []).map((x) => ({ value: `f:${x.name}`, label: x.name, hint: x.count, group: `${T.folder}（Codex のプロジェクトに入っているもの）` })),
+      ...(b.sourceFacets || []).filter(x => !laneHides(sourceAxis(x.ref))).map(x => ({ value: `source:${x.key}`, label: sourceFacetLabel(x, b.sourceFacets), description: sourceFacetHint(x), keywords: sourceFacetTitle(x), hint: `${x.count}カード`, group: '元アプリ' })),
+      ...(!laneHides('workingFolder') ? workingFolderFacets(b) : []).map((x) => ({ value: `wf:${x.cwd}`, label: x.name, description: (x.origins || []).map(o => o === 'planned' ? '開始予定' : '観測').join('・'), keywords: x.cwd, hint: x.count, group: '作業フォルダ' })),
       { value: 'l:__none', label: 'ラベルなし', group: 'ラベル' },
       ...b.labels.map(l => ({ value: `l:${l.id}`, label: l.name, color: l.color, group: 'ラベル' })),
-      ...(b.codexSections || []).map((x) => ({ value: `s:${x.id}`, label: `§ ${x.name}`, hint: x.count, group: 'Codex セクション' })),
+
     ],
     onPick: (v) => {
-      if (!v) return setScope({ directory: '', project: '', folder: '', section: '', label: '' });
+      if (!v) return setScope({ directory: '', project: '', folder: '', workingFolder: '', section: '', label: '', sourceFilters: [], cardKind: 'all' });
+      if (v.startsWith('source:')) return toggleSourceFilter(b.sourceFacets.find(x => x.key === v.slice(7)).ref);
       if (v.startsWith('l:')) return setScope({ label: f.label === v.slice(2) ? '' : v.slice(2) });
       if (v.startsWith('s:')) return setScope({ section: f.section === v.slice(2) ? '' : v.slice(2) });
-      if (v.startsWith('d:')) setScope({ directory: f.directory === v.slice(2) ? '' : v.slice(2), project: '', folder: '' });
+      if (v.startsWith('wf:')) return setScope({ workingFolder: f.workingFolder === v.slice(3) ? '' : v.slice(3) });
+      if (v.startsWith('d:')) setScope({ directory: f.directory === v.slice(2) ? '' : v.slice(2), project: '', folder: '', workingFolder: '' });
       else if (v.startsWith('f:')) setScope({ folder: f.folder === v.slice(2) ? '' : v.slice(2) });
       else setScope({ project: f.project === v.slice(2) ? '' : v.slice(2) });
     },
@@ -92,7 +100,7 @@ const SIDE_LOOK = [['analytics', 'chart', '分析', 'a'], ['usage', 'gauge', 'Ag
 const SIDE_MANAGE = [['rules', 'zap', T.automation], ['labels', 'tag', 'ラベル'], ['views', 'bookmark', '保存ビュー'], ['hosts', 'server', 'マシン'], ['slack', 'message', 'Slack接続'], ['settings', 'gear', '設定']];
 // The axes a lane can follow, in the order the sidebar offers them; the rest sit behind ⋯.
 const LANE_AXES = [['', 'なし'], ['directory', T.category], ['agent', 'AI Apps'], ['host', 'マシン'], ['label', 'ラベル']];
-const LANE_MORE = [['project', 'プロジェクト'], ['section', 'Codex セクション'], ['account', 'アカウント']];
+const LANE_MORE = [...Object.entries(SOURCE_AXES), ['account', 'アカウント']];
 function sideCount(b, page) {
   return { rules: b.settings?.rules?.length, views: b.settings?.views?.length, labels: b.labels?.length, directories: b.directories?.length,
     hosts: (b.hosts || []).filter((x) => !x.local && !x.cloud && x.enabled).length || null }[page] ?? null;
@@ -109,6 +117,10 @@ const sideCountEl = (n) => h('span', { class: 'count', text: String(n ?? '') });
 function setLaneAxis(mode) {
   state.filters.swimlane = mode; state.soloLane = null;
   // The axis now shown as lanes stops filtering, so every lane has its cards.
+  if (SOURCE_AXES[mode]) {
+    const sourceFilters = (state.filters.sourceFilters || []).filter(f => sourceAxis(f.ref) !== mode);
+    if (sourceFilters.length !== (state.filters.sourceFilters || []).length || mode === 'workingFolder' && (state.filters.folder || state.filters.workingFolder)) return setScope({ sourceFilters, ...(mode === 'workingFolder' ? { folder: '', workingFolder: '' } : {}) });
+  }
   const key = LANE_FILTER[mode];
   if (key && (key === 'agent' ? state.filters.agent !== 'all' : state.filters[key])) return setScope({ [key]: key === 'agent' ? 'all' : '' });
   saveFilters(); render();
@@ -133,7 +145,7 @@ function laneSection(b, hit) {
   const more = LANE_MORE.find(([k]) => k === mode);
   const axes = h('div', { class: 'side-seg side-seg-wrap', role: 'group', 'aria-label': 'レーンの軸' },
     ...LANE_AXES.map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(mode === k), text: label, onclick: () => setLaneAxis(k) })),
-    h('button', { type: 'button', 'aria-pressed': String(!!more), title: 'ほかの軸（プロジェクト・Codex セクション・アカウント）', text: more ? more[1] : '⋯',
+    h('button', { type: 'button', 'aria-pressed': String(!!more), title: 'ほかの軸（元アプリ・作業フォルダ・アカウント）', text: more ? more[1] : '⋯',
       onclick: (e) => popover(e.currentTarget, 'レーンの軸', h('div', {}, LANE_MORE.map(([k, label]) => h('button', { class: 'menu-item', text: label, onclick: () => { closePopover(); setLaneAxis(k); } }))), { width: 240 }) }));
   const tools = mode ? [h('button', { class: 'side-mini', title: 'すべて展開', text: '⊞', onclick: () => setAllLanes(false) }),
     h('button', { class: 'side-mini', title: 'すべてたたむ', text: '⊟', onclick: () => setAllLanes(true) })] : [];
@@ -189,6 +201,11 @@ function filterSection(b, hit = () => true) {
       d.id === '__none' ? null : h('button', { class: 'icon-btn', 'aria-label': `${d.name} の設定`, text: '⋯', onclick: (e) => directoryMenu(e.currentTarget, d.id) })) })),
       state.layout === 'omni' || (state.layout === 'rail' && matchMedia('(min-width: 721px)').matches) ? null :
         h('button', { class: 'side-mini', title: `${T.category}を管理`, 'aria-label': `${T.category}を管理`, html: picon('gear', 14), onclick: () => workspace.toggle('directories') }));
+  }
+  nodes.push(sideHead('元アプリ', keycap('p')));
+  for (const [axis, label] of Object.entries(SOURCE_AXES)) if (!laneHides(axis)) {
+    if (axis === 'workingFolder') group(label, workingFolderFacets(b).map(x => choice(`${x.name} · ${(x.origins || []).map(o => o === 'planned' ? '予定' : '観測').join('・')}`, f.workingFolder === x.cwd, () => setScope({ workingFolder: f.workingFolder === x.cwd ? '' : x.cwd }), null, sideCountEl(x.count))));
+    else group(label, (b.sourceFacets || []).filter(x => sourceAxis(x.ref) === axis).map(x => choice(`${sourceFacetName(x, b.sourceFacets)} · ${(x.origins || []).map(o => o === 'planned' ? '予定' : '観測').join('・')}`, sourceFilterSelected(x.ref), () => toggleSourceFilter(x.ref), null, sideCountEl(x.count))));
   }
   const hosts = (b.hosts || []).filter((x) => x.local || x.enabled);
   if (!laneHides('host') && hosts.length > 1) group('マシン', hosts.map((x) => { const id = x.local ? 'local' : x.id;
@@ -257,15 +274,29 @@ function directoryMenu(anchor, dirId) {
   };
   const del = h('button', { class: 'menu-item danger', text: `この${T.category}を削除…`,
     onclick: () => { if (confirmInline(del, `「${d.name}」を削除します（カードやセッションは消えず、このカテゴリの自動分類も解除されます）。`)) act('canban_delete_directory', { directoryId: d.id }, { okMsg: '削除しました' }).then(() => closePopover()); } });
+  const bindings = (state.board.categoryBindings || []).filter(x => x.categoryId === d.id).map(({ ref, relation }) => ({ ref, ...(relation ? { relation } : {}) }));
+  const knownSources = new Map([...(state.board.sourceFacets || []).map(x => [x.key, x]), ...bindings.map(x => [sourceRefKey(x.ref), { key: sourceRefKey(x.ref), ref: x.ref }])]);
+  const bindingRows = [...knownSources.values()].map(facet => {
+    const selected = bindings.some(x => sourceRefKey(x.ref) === facet.key);
+    const input = h('input', { type: 'checkbox', checked: selected, onchange: () => {
+      const next = bindings.filter(x => sourceRefKey(x.ref) !== facet.key);
+      if (input.checked) next.push({ ref: facet.ref, relation: sourceCategoryRelation(facet.ref) });
+      act('canban_update_directory', { directoryId: d.id, sourceBindings: next }, { okMsg: '元アプリとの対応を保存しました' }).then(again);
+    } });
+    return h('label', { class: 'side-check', title: sourceFacetTitle(facet) }, input, sourceFacetLabel(facet), facet.ref.provider === 'claude' && facet.ref.kind === 'environment' ? h('span', { class: 'muted', text: '開始実績の確認後に有効' }) : null);
+  });
   popover(anchor, `${T.category}の設定`, h('div', {},
     name,
     h('div', { class: 'field-label', text: '色' }),
     h('div', { class: 'swatches' }, [null, ...COLORS].map((c) => h('button', { class: 'swatch', title: c ? COLOR_NAMES[c] : '色なし', 'aria-label': c ? COLOR_NAMES[c] : '色なし', 'aria-pressed': String((d.color || null) === c),
       style: { background: c ? colorVar(c) : 'var(--btn-subtle-hover)' }, text: c ? '' : '✕', onclick: () => act('canban_update_directory', { directoryId: d.id, color: c }).then(again) }))),
-    h('div', { class: 'field-label' }, 'タスクの自動分類に使うフォルダ ', helpTip('セッションの自動分類には Codex の project、Claude の group（なければ作業フォルダ）を使います。カードのカテゴリは個別に変更できます。')),
+    h('div', { class: 'field-label' }, 'タスクの自動分類に使うフォルダ ', helpTip('フォルダのパス規則はタスクに適用します。セッションには元アプリの出典との明示的な対応を設定します。カードのカテゴリは個別に変更できます。')),
     ...d.paths.map((pth) => h('div', { class: 'rule-row' }, h('span', { class: 'ellipsis grow', title: pth, text: pth }),
       h('button', { class: 'icon-btn', 'aria-label': `${pth} を外す`, text: '✕', onclick: () => act('canban_update_directory', { directoryId: d.id, paths: d.paths.filter((x) => x !== pth) }).then(again) }))),
     path, folders,
+    h('div', { class: 'field-label', text: '元アプリとの明示的な対応' }),
+    h('p', { class: 'muted', text: '候補は現在の絞り込み後のボードで取得できた出典です。絞り込み中は候補が減ります。同名の出典へ自動で結合しません。表示外の既存の対応も保持します。' }),
+    ...bindingRows,
     h('div', { class: 'sep' }),
     h('button', { class: 'menu-item', text: `この${T.category}だけを表示`, onclick: () => { closePopover(); setScope({ directory: d.id }); } }),
     del), { width: 340 });

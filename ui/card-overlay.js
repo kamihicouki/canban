@@ -763,7 +763,7 @@ function renderPane(p, d) {
   if (card.slackRefs?.length) secs.slack = { nodes: [slackUi.sources(s.id, secs.send.nodes[0].querySelector('textarea'))] };
   secs.labels = { nodes: [labelWrap], extra: h('button', { class: 'link-btn', 'data-pane-key': 'l', text: '編集', onclick: e => labelPicker(e.currentTarget, s.id, card, paintLabels) }) };
   secs.memo = { nodes: [note] };
-  secs.detail = { nodes: [h('dl', { class: 'kv' },
+  secs.detail = { nodes: [sourceDetails(s), h('dl', { class: 'kv' },
     ...kv('AI App', s.agent === 'codex' ? 'Codex' : 'Claude Code'),
     ...kv('マシン', s.sourceKind === 'codex-cloud' ? 'Codex Cloud' : s.host ? `${s.host.label}（SSH: ${s.host.alias}）` : 'このマシン'),
     ...(s.dot ? kv('dot', dotTitle(s)) : []),

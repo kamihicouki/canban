@@ -67,3 +67,18 @@ test('CLI-only Claude sessions open via claude://resume', async () => {
   assert.equal(l.url, `claude://resume?session=${uuid}`);
   assert.equal(l.exact, true);
 });
+
+test('task sourceContext has independent absent/null/empty semantics and persists exact refs', async () => {
+  const root = tmp(), store = new Store(root);
+  const ref = { provider: 'codex', identityDomain: 'app-storage', scopeId: '/one', kind: 'project', nativeId: 'p' };
+  try {
+    const t = await store.createTask({ title: 'source', context: { project: null }, sourceContext: [{ ref }, { ref }] });
+    assert.deepEqual(t.sourceContext, [{ ref }]);
+    await store.updateTask({ cardId: t.cardId, description: 'keep' });
+    assert.deepEqual((await store.load()).cards[t.cardId].sourceContext, [{ ref }]);
+    await store.updateTask({ cardId: t.cardId, sourceContext: null });
+    assert.deepEqual((await store.load()).cards[t.cardId].sourceContext, []);
+    assert.deepEqual((await store.load()).cards[t.cardId].context, { project: null });
+    await assert.rejects(store.updateTask({ cardId: t.cardId, sourceContext: [{ ref: { ...ref, scopeId: '' } }] }), /出典/);
+  } finally { await store.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});

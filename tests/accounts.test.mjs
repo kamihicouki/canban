@@ -10,7 +10,7 @@ import { listClaudeSessions } from '../server/sources/claude.mjs';
 import { listCodexSessions } from '../server/sources/codex.mjs';
 import { configureAccounts, refreshAccounts, accountsView, accountLimits, desktopAccountMismatch, homeEnv, resetAccountsForTest, resolveAccountHome } from '../server/accounts.mjs';
 import { noteLimits, limitsByAccount, resetLimitsForTest } from '../server/signals.mjs';
-import { resumeCommand } from '../server/agents.mjs';
+import { resumeCommand, desktopLink } from '../server/agents.mjs';
 import { computeStats } from '../server/stats.mjs';
 import { defaultState } from '../server/store.mjs';
 
@@ -85,6 +85,29 @@ async function everything() {
 }
 const by = (sessions, nativeId) => sessions.find((s) => s.nativeId === nativeId);
 
+test('registered parked Desktop history keeps its card ID and owner while another account connects', async () => {
+  const { configureDesktopStorage } = await import('../server/accounts.mjs');
+  const { createDesktopAccounts } = await import('../server/claude-desktop-accounts.mjs');
+  const dataDir = path.join(root, 'managed-data'); fs.mkdirSync(dataDir, { recursive: true });
+  configureDesktopStorage(dataDir);
+  const appDir = path.dirname(process.env.CANBAN_CLAUDE_DESKTOP_DIR);
+  const service = createDesktopAccounts({ dataDir, appDir, runtime: async () => ({ running: false }), backup: async ({ requestId, profiles }) => {
+    const dir = path.join(root, 'managed-backups', requestId); fs.mkdirSync(dir, { recursive: true });
+    for (const p of profiles) fs.cpSync(p.dir, path.join(dir, p.id), { recursive: true });
+    return dir;
+  } });
+  await service.command({ type: 'enroll-current', account: 'claude:acct-a' });
+  const before = by(await everything(), 's1');
+  await service.command({ type: 'begin-login', account: 'claude:acct-new', requestId: 'history-new' });
+  const parked = by(await everything(), 's1');
+  assert.equal(parked.id, before.id);
+  assert.equal(parked.account, 'claude:acct-a');
+  assert.equal(parked.desktopSessionId, 'local_1');
+  assert.equal(parked.sourcePath, before.sourcePath);
+  await service.command({ type: 'cancel', requestId: 'history-restore' });
+  assert.equal(by(await everything(), 's1').account, 'claude:acct-a');
+});
+
 test('every account and config folder is listed, each session with its account', async () => {
   const all = await everything();
   assert.deepEqual(all.map((s) => s.nativeId).sort(), ['s1', 's2', 's3', 's4', 'x1', 'x2']);
@@ -98,6 +121,21 @@ test('every account and config folder is listed, each session with its account',
   assert.equal(by(all, 's3').home, resolveAccountHome('claude', 'claude-work').id);
   assert.equal(by(all, 'x1').account, 'codex:cx-1');
   assert.equal(by(all, 'x2').account, null);
+});
+
+test('conflicting Desktop owners never reassign a CLI card by the newest metadata', async t => {
+  const { invalidateDesktopRoots } = await import('../server/accounts.mjs');
+  const dir = path.join(root, 'Application Support', 'Claude-conflict');
+  t.after(() => { fs.rmSync(dir, { recursive: true, force: true }); invalidateDesktopRoots(); });
+  write(path.join(dir, 'config.json'), JSON.stringify({ lastKnownAccountUuid: 'acct-z' }));
+  write(path.join(dir, 'claude-code-sessions', 'acct-z', 'org-z', 'local_1.json'), JSON.stringify({ sessionId: 'local_1', cliSessionId: 's1', title: 'foreign account title', lastActivityAt: 999999 }));
+  invalidateDesktopRoots();
+  const session = by(await everything(), 's1');
+  assert.equal(session.account, null);
+  assert.equal(session.desktopAmbiguous, true);
+  assert.equal(session.desktopSessionId, null);
+  assert.equal(desktopLink(session), null);
+  assert.doesNotMatch(session.title, /foreign account/);
 });
 
 test('sessions from another config folder resume and run there', async () => {
