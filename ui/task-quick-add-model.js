@@ -31,6 +31,13 @@ function sessionUsesFolder(draft) {
 }
 
 // The machine a desktop start lands on (a remote Codex project / SSH environment, or the typed host).
+function unsupportedSessionPreset(draft, targets) {
+  if (draft.route !== 'desktop' || sessionRunsInCloud(draft)) return null;
+  if (draft.agent === 'claude' && !sessionUsesFolder(draft)) return '保存した環境の複数フォルダ・Worktree・設定の完全適用は未確認です。元アプリで環境を選んで開始してください。フォルダだけを使う場合は「フォルダを指定して開始」を選びます。';
+  const project = draft.agent === 'codex' && targets?.codex?.projects?.find(p => p.id === draft.projectId);
+  return project && project.hostId !== 'local' ? 'この開始方法ではプロジェクト設定の完全適用を確認できません。「フォルダを指定して開始」を選んでください。' : null;
+}
+
 function sessionHostId(draft, targets) {
   if (draft.route !== 'desktop' || sessionUsesFolder(draft)) return draft.hostId;
   if (draft.agent === 'claude') {

@@ -193,10 +193,11 @@ const taskQuickAdd = {
     const remoteCodex = draft.route === 'desktop' && draft.agent === 'codex' && !sessionRunsInCloud(draft) && sessionHostId(draft, targets) !== 'local';
     const cloud = sessionRunsInCloud(draft);
     const unsupportedEnvironment = desktop && draft.agent === 'claude' && !folder;
-    const note = unsupportedEnvironment ? '保存した環境の複数フォルダ・Worktree・設定の完全適用は未確認です。元アプリで環境を選んで開始してください。フォルダだけを使う場合は「フォルダを指定して開始」を選びます。' : remoteCodex && !targets?.desktopCapabilities?.codexRemote ? 'このDesktopでのリモート下書き表示は未確認です。実機確認が完了してから開始できます。'
+    const presetIssue = unsupportedSessionPreset(draft, targets);
+    const note = presetIssue || (remoteCodex && !targets?.desktopCapabilities?.codexRemote ? 'このDesktopでのリモート下書き表示は未確認です。実機確認が完了してから開始できます。'
       : cloud ? 'Codex Cloud にタスクを送信して開始します。新規画面は開きません。結果は Codex の「クラウド」で確認してください。'
       : targets?.failed && desktop ? 'アプリの一覧を読み込めませんでした。フォルダを指定して開けます。'
-      : desktop ? '新規画面に依頼を渡します。送信はアプリで行ってください。' : '選んだフォルダでCLIを起動し、依頼を開始します。';
+      : desktop ? '新規画面に依頼を渡します。送信はアプリで行ってください。' : '選んだフォルダでCLIを起動し、依頼を開始します。');
     const chosenEnvironment = targets?.claude?.environments?.find(e => e.id === draft.environmentId);
     const chosenProject = targets?.codex?.projects?.find(p => p.id === draft.projectId);
     const execution = loading ? '未確認（開始設定を取得中）' : cloud ? 'Codex Cloud' : unsupportedEnvironment ? chosenEnvironment ? `${chosenEnvironment.kind === 'ssh' ? chosenEnvironment.sshLabel || chosenEnvironment.sshHost : 'このマシン'}（保存設定の指定・未適用）` : '未確認' : !folder && draft.projectId !== '__none' ? chosenProject ? hostLabel(chosenProject.hostId) : '未確認' : draft.hostId === 'local' || board.hosts.some(h => h.id === draft.hostId) ? hostLabel(sessionHostId(draft, targets)) : '未確認';
@@ -215,9 +216,10 @@ const taskQuickAdd = {
       if (text) el.readOnly = locked;
     });
     this.form.querySelectorAll('.session-fields .cx-box button').forEach(el => { el.disabled = !!draft.submitting || locked; });
+    const presetIssue = !locked && !loading && unsupportedSessionPreset(draft, this.targets);
     const unverifiedRemote = !loading && draft.route === 'desktop' && draft.agent === 'codex' && !sessionRunsInCloud(draft) && sessionHostId(draft, this.targets) !== 'local' && !this.targets?.desktopCapabilities?.codexRemote;
-    this.primary.disabled = (!locked && draft.agent === 'claude' && draft.route === 'desktop' && !sessionUsesFolder(draft)) || loading || unverifiedRemote || !!draft.submitting || ['opened','cancelled','uncertain','failed'].includes(draft.startResult?.state);
-    this.primary.querySelector('span').textContent = loading ? '環境を読み込み中…' : unverifiedRemote ? '実機確認が必要です' : draft.startResult?.state === 'opened' ? (draft.startResult.route === 'cloud' ? '送信しました' : '開きました') : this.sessionActionLabel();
+    this.primary.disabled = !!presetIssue || loading || unverifiedRemote || !!draft.submitting || ['opened','cancelled','uncertain','failed'].includes(draft.startResult?.state);
+    this.primary.querySelector('span').textContent = loading ? '環境を読み込み中…' : presetIssue ? 'フォルダ指定を選んでください' : unverifiedRemote ? '実機確認が必要です' : draft.startResult?.state === 'opened' ? (draft.startResult.route === 'cloud' ? '送信しました' : '開きました') : this.sessionActionLabel();
     if (this.newRequestButton) this.newRequestButton.hidden = !locked;
   },
   showSessionFeedback(result, refreshError) {
@@ -273,6 +275,11 @@ const taskQuickAdd = {
     const promptInput = this.form.querySelector('.session-prompt');
     if (promptInput && !draft.startRequest) draft.prompt = promptInput.value; // skill picks edit the text without an input event
     if (!draft.prompt.trim()) return promptInput?.focus();
+    const presetIssue = !draft.startRequest && this.targets && unsupportedSessionPreset(draft, this.targets);
+    if (presetIssue) {
+      this.feedback.hidden = false; this.feedback.classList.add('error'); this.feedback.textContent = presetIssue;
+      return;
+    }
     if (!draft.startRequest && draft.route === 'desktop' && !this.targets) {
       this.feedback.hidden = false; this.feedback.classList.remove('error'); this.feedback.textContent = '環境を読み込み中です。取得後に開始できます。';
       return;

@@ -225,12 +225,13 @@ test('desktop creation waits visibly for targets without losing the request', as
   const pending = new Promise(resolve => { resolveTargets = resolve; });
   const calls = [];
   let failTargets = false;
-  const dialog = new vm.Script(fs.readFileSync(new URL('../ui/task-quick-add.js', import.meta.url), 'utf8') + '\n taskQuickAdd').runInNewContext({
+  const source = fs.readFileSync(new URL('../ui/task-quick-add-model.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../ui/task-quick-add.js', import.meta.url), 'utf8');
+  const dialog = new vm.Script(source + '\n taskQuickAdd').runInNewContext({
     bridge: { callTool: name => { calls.push(name); return failTargets ? Promise.reject(new Error('取得失敗')) : pending; } },
     sessionRunsInCloud: () => false, sessionHostId: () => 'local',
   });
   const label = { textContent: '' };
-  dialog.sessionDraft = { agent: 'codex', route: 'desktop', prompt: '保持する未送信の依頼' };
+  dialog.sessionDraft = { agent: 'codex', route: 'desktop', hostId: 'local', prompt: '保持する未送信の依頼' };
   dialog.form = { querySelectorAll: () => [], querySelector: () => ({ value: dialog.sessionDraft.prompt }) };
   dialog.primary = { disabled: false, querySelector: () => label };
   dialog.feedback = { hidden: true, classList: { remove() {} }, textContent: '' };
@@ -273,8 +274,28 @@ test('a waiting Desktop start keeps its original images and input when resumed',
 });
 
 test('remote Desktop actions explain the unverified capability before a click', () => {
-  const dialog = new vm.Script(fs.readFileSync(new URL('../ui/task-quick-add.js',import.meta.url),'utf8')+'\n taskQuickAdd').runInNewContext({sessionRunsInCloud:()=>false,sessionHostId:()=> 'remote-ssh-discovered:box'});
+  const dialog = new vm.Script(fs.readFileSync(new URL('../ui/task-quick-add-model.js',import.meta.url),'utf8')+'\n'+fs.readFileSync(new URL('../ui/task-quick-add.js',import.meta.url),'utf8')+'\n taskQuickAdd').runInNewContext();
   const label={textContent:''};
-  Object.assign(dialog,{sessionDraft:{route:'desktop',agent:'codex'},targets:{desktopCapabilities:{codexRemote:false}},form:{querySelectorAll:()=>[]},primary:{disabled:false,querySelector:()=>label}});
+  Object.assign(dialog,{sessionDraft:{route:'desktop',agent:'codex',projectId:'__folder',hostId:'remote-ssh-discovered:box'},targets:{desktopCapabilities:{codexRemote:false}},form:{querySelectorAll:()=>[]},primary:{disabled:false,querySelector:()=>label}});
   dialog.paintSessionState();assert.equal(dialog.primary.disabled,true);assert.match(label.textContent,/実機確認/);
+});
+
+test('verified remote drafts still refuse a Project preset while explicit folders follow the capability gate', async () => {
+  const source = fs.readFileSync(new URL('../ui/task-quick-add-model.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../ui/task-quick-add.js', import.meta.url), 'utf8');
+  const dialog = new vm.Script(source + '\n taskQuickAdd').runInNewContext();
+  const label = { textContent: '' };
+  Object.assign(dialog, { sessionDraft: { route: 'desktop', agent: 'codex', projectId: 'remote-project', hostId: 'remote', cwd: '/srv', prompt: '保持する依頼' }, targets: { codex: { projects: [{ id: 'remote-project', hostId: 'remote', root: '/srv' }] }, desktopCapabilities: { codexRemote: true } }, form: { querySelectorAll: () => [], querySelector: () => null }, primary: { disabled: false, querySelector: () => label }, feedback: { classList: { add() {} } } });
+  dialog.paintSessionState();
+  assert.equal(dialog.primary.disabled, true, 'remote draft verification is not full Project application');
+  assert.match(label.textContent, /フォルダ/);
+  await dialog.submitSession();
+  assert.match(dialog.feedback.textContent, /完全適用/);
+  assert.equal(dialog.sessionDraft.startRequest, undefined, 'the unsupported choice never allocates a request');
+  dialog.sessionDraft.projectId = '__folder';
+  dialog.paintSessionState();
+  assert.equal(dialog.primary.disabled, false, 'explicit folders remain supported behind their own gate');
+  dialog.targets.desktopCapabilities.codexRemote = false;
+  dialog.paintSessionState();
+  assert.equal(dialog.primary.disabled, true);
+  assert.match(label.textContent, /実機確認/);
 });
