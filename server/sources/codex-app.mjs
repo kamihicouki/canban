@@ -117,7 +117,9 @@ export function annotateCodexApp(sessions, app) {
     const p = app.projects.get(app.assignments.get(s.nativeId));
     s.codexProject = p ? { id: p.id, name: p.name } : null;
     const scoped = !!scopeId;
-    const ownsStorage = scoped && s.sourceKind !== 'codex-cloud' && !s.host?.cloud && s.host?.local !== false && (!s.homeDir || homeScope(s.homeDir) === scopeId);
+    const ownsStorage = scoped && s.sourceKind !== 'codex-cloud' && !s.host?.cloud && (!s.homeDir || homeScope(s.homeDir) === scopeId);
+    // The local app owns remote assignments too, but only for the exact host.
+    const projectHostMatches = s.host?.local !== false || !!p?.hostId && p.hostId === s.host?.id;
     const fact = (kind, value, status) => ({
       ref: value && scoped ? { provider: 'codex', identityDomain: 'app-storage', scopeId, kind, nativeId: value.id } : null,
       name: value?.name || null, product: 'Codex', surface: 'desktop',
@@ -128,9 +130,9 @@ export function annotateCodexApp(sessions, app) {
       reason: !scoped ? 'アプリ保存領域のscopeは未取得です' : status === 'unavailable' ? '所属先のプロジェクトを取得できません' : null,
     });
     s.sourceMetadata = { ...s.sourceMetadata,
-      codexProject: !ownsStorage ? { status: 'unknown', source: 'codex-app', reason: 'プロジェクトの所有元の保存領域は未取得です' } : fact('project', p, p ? 'known' : app.unresolvedAssignments?.has(s.nativeId) ? 'unavailable' : app.projectAssignmentsKnown ? 'absent' : 'unknown'),
+      codexProject: !ownsStorage || !projectHostMatches ? { status: 'unknown', source: 'codex-app', reason: !ownsStorage ? 'プロジェクトの所有元の保存領域は未取得です' : 'プロジェクトの実行先とセッションのホストの一致は未確認です' } : fact('project', p, p ? 'known' : app.unresolvedAssignments?.has(s.nativeId) ? 'unavailable' : app.projectAssignmentsKnown ? 'absent' : 'unknown'),
       // Remote DB sections are not owned by the local app's storage scope.
-      codexSection: !ownsStorage
+      codexSection: !ownsStorage || s.host?.local === false
         ? { status: 'unknown', source: 'codex-db', reason: 'セクションの所有元は未取得です' }
         : fact('section', s.codexSection, s.codexSection ? 'known' : 'unknown'),
     };

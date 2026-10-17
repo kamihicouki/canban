@@ -164,6 +164,8 @@ type LaunchReceipt = {
 
 ### 実際のAdapterと取得限界
 
+Codexのremote Project所属は、ローカルapp保存領域とセッションのhomeが一致し、明示assignment先のremote Project.hostIdとsession.host.idが一致するときだけknown（古いsnapshotはstale）にする。別host・不明host・別home・cloudはunknown。remote Sectionはremote DB由来なので引き続きunknownとする。
+
 | Adapter | 根拠とscope | 観測の範囲・限界 |
 |---|---|---|
 | Codex app | 読んだ `.codex-global-state.json` の `CODEX_HOME` 絶対パス。`identityDomain:app-storage` | 明示的なthread assignmentだけをProject所属にする。所有アカウントは未確認でも、実体を所有するアプリ保存領域は確認できる。Cloud組織のscopeとして流用しない。壊れたJSON時の前回値にはstaleを付け、元の観測時刻を保つ |

@@ -153,6 +153,38 @@ test('foreign storage and cloud threads cannot inherit local project facts', () 
   }
 });
 
+test('remote project membership is known only for the assigned project on the exact host', async () => {
+  const { sessionSourceView } = await import('../server/source-model.mjs');
+  const app = parseAppState(base, [], { scopeId: '/default-codex', status: 'known', observedAt: 9000 });
+  const session = { agent: 'codex', nativeId: 't9', homeDir: '/default-codex', host: { id: 'remote-ssh-discovered:vps', local: false }, codexSection: { id: 's', name: 'remote section' } };
+  annotateCodexApp([session], app);
+  const view = sessionSourceView(session);
+  assert.equal(view.attributes.codexProject.status, 'known');
+  assert.equal(view.attributes.codexProject.value.ref.nativeId, 'rp-1');
+  assert.equal(view.attributes.codexProject.value.ref.scopeId, '/default-codex');
+  assert.equal(view.attributes.codexProject.value.hostId, session.host.id);
+  assert.equal(view.attributes.codexSection.status, 'unknown');
+});
+
+test('remote membership stays unknown with mismatched or unobserved host, foreign home or cloud', () => {
+  const app = parseAppState(base, [], { scopeId: '/default-codex', status: 'known', observedAt: 9000 });
+  const remote = { agent: 'codex', nativeId: 't9', homeDir: '/default-codex', host: { id: 'remote-ssh-discovered:vps', local: false } };
+  for (const patch of [
+    { host: { id: 'remote-ssh-discovered:other', local: false } },
+    { host: { local: false } },
+    { homeDir: '/other-codex' },
+    { sourceKind: 'codex-cloud' },
+    { host: { ...remote.host, cloud: true } },
+    { nativeId: 'unassigned' },
+    { nativeId: 't1' }, // local assigned project has no remote host ownership
+  ]) {
+    const session = { ...remote, ...patch };
+    annotateCodexApp([session], app);
+    assert.equal(session.sourceMetadata.codexProject.status, 'unknown', JSON.stringify(patch));
+    assert.equal(session.sourceMetadata.codexSection.status, 'unknown');
+  }
+});
+
 test('storage scope canonicalizes aliases without trimming native IDs', async () => {
   const { storageScope, sourceKey } = await import('../server/source-model.mjs');
   const h = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-storage-scope-'));
