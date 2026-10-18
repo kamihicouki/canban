@@ -1,0 +1,122 @@
+{
+  "before-development": {
+    "viewport": [
+      1280,
+      800
+    ],
+    "question": "今回は公開を見送ってよいですか？",
+    "answer": "今回は見送ります。",
+    "choicesAfterReply": 0,
+    "paletteActionsAfterReply": 0,
+    "appendToChoicesMs": 229.5,
+    "focusSamples": [
+      {
+        "view": "board",
+        "retained": false,
+        "updateMs": 224.3
+      },
+      {
+        "view": "timeline",
+        "retained": false,
+        "updateMs": 187.8
+      }
+    ],
+    "rawPreserved": true,
+    "draftPreserved": true,
+    "readingPositionPreserved": true,
+    "initialLoadChecked": true,
+    "nextQuestionChoices": 2,
+    "submitted": [],
+    "errors": []
+  },
+  "after-development": {
+    "viewport": [
+      1280,
+      800
+    ],
+    "question": "今回は公開を見送ってよいですか？",
+    "answer": "今回は見送ります。",
+    "choicesAfterReply": 0,
+    "paletteActionsAfterReply": 0,
+    "appendToChoicesMs": 191.8,
+    "focusSamples": [
+      {
+        "view": "board",
+        "retained": true,
+        "updateMs": 200.8
+      },
+      {
+        "view": "timeline",
+        "retained": true,
+        "updateMs": 197.7
+      }
+    ],
+    "rawPreserved": true,
+    "draftPreserved": true,
+    "readingPositionPreserved": true,
+    "initialLoadChecked": true,
+    "nextQuestionChoices": 2,
+    "submitted": [],
+    "errors": []
+  },
+  "before-candidate": {
+    "viewport": [
+      1280,
+      800
+    ],
+    "question": "今回は公開を見送ってよいですか？",
+    "answer": "今回は見送ります。",
+    "choicesAfterReply": 0,
+    "paletteActionsAfterReply": 0,
+    "appendToChoicesMs": 223.2,
+    "focusSamples": [
+      {
+        "view": "board",
+        "retained": false,
+        "updateMs": 253
+      },
+      {
+        "view": "timeline",
+        "retained": false,
+        "updateMs": 186.9
+      }
+    ],
+    "rawPreserved": true,
+    "draftPreserved": true,
+    "readingPositionPreserved": true,
+    "initialLoadChecked": true,
+    "nextQuestionChoices": 2,
+    "submitted": [],
+    "errors": []
+  },
+  "after-candidate": {
+    "viewport": [
+      1280,
+      800
+    ],
+    "question": "今回は公開を見送ってよいですか？",
+    "answer": "今回は見送ります。",
+    "choicesAfterReply": 0,
+    "paletteActionsAfterReply": 0,
+    "appendToChoicesMs": 178.1,
+    "focusSamples": [
+      {
+        "view": "board",
+        "retained": true,
+        "updateMs": 230.4
+      },
+      {
+        "view": "timeline",
+        "retained": true,
+        "updateMs": 188.7
+      }
+    ],
+    "rawPreserved": true,
+    "draftPreserved": true,
+    "readingPositionPreserved": true,
+    "initialLoadChecked": true,
+    "nextQuestionChoices": 2,
+    "submitted": [],
+    "errors": []
+  }
+}

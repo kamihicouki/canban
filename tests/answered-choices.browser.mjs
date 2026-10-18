@@ -42,9 +42,30 @@ test('answered questions stop offering replies across live updates and reopening
   const stale = process.env.CANBAN_EXPECT_STALE_CHOICES === '1', expected = stale ? 2 : 0;
   const shots = process.env.CANBAN_ANSWERED_SHOTS; if (shots) fs.mkdirSync(shots, { recursive: true });
   const pane = page.locator('.pane[data-card-id="codex:t1"]'), input = pane.locator('.send-box textarea');
+  const focusSamples = [];
+  const checkChoiceFocus = async view => {
+    const note = `架空の補足 ${view}`, last = pane.locator('.cx-choice').last();
+    await input.focus(); await page.keyboard.press('Shift+Tab');
+    assert.equal(await last.evaluate(el => el === document.activeElement), true, 'Shift+Tab reaches the last answer');
+    const started = performance.now();
+    fs.appendFileSync(fx.rollout, JSON.stringify({ timestamp: new Date().toISOString(), type: 'event_msg', payload: { type: 'item_completed', item: { type: 'AgentMessage', phase: 'commentary', content: [{ type: 'Text', text: note }] } } }) + '\n');
+    await pane.locator('.fi-note').filter({ hasText: note }).waitFor();
+    const retained = await last.evaluate(el => el === document.activeElement);
+    assert.equal(retained, process.env.CANBAN_EXPECT_CHOICE_FOCUS_LOSS !== '1', 'unchanged choices keep keyboard focus');
+    focusSamples.push({ view, retained, updateMs: Math.round((performance.now() - started) * 10) / 10 });
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
+      if (shots) await page.screenshot({ path: path.join(shots, `focus-${view}-${theme}.png`) });
+    }
+    await last.focus(); await page.keyboard.press('Tab');
+    assert.equal(await input.evaluate(el => el === document.activeElement), true, 'Tab reaches the existing composer');
+  };
   const answer = '今回は見送ります。';
   await page.locator('.card[data-card-id="codex:t1"]').click(); await pane.locator('.cx-choice').first().waitFor();
-  await input.fill(draft); const feed = pane.locator('.feed'); await feed.evaluate(el => { el.scrollTop = 200; });
+  await input.fill(draft); const feed = pane.locator('.feed');
+  await checkChoiceFocus('board');
+  assert.equal(await input.inputValue(), draft);
+  await feed.evaluate(el => { el.scrollTop = 200; });
   const reading = await feed.evaluate(el => el.scrollTop);
   await page.keyboard.press('Meta+k'); await page.locator('.palette input').fill('答える:');
   assert.equal(await page.locator('.palette .picker-row').count(), 2);
@@ -95,6 +116,10 @@ test('answered questions stop offering replies across live updates and reopening
   const currentDraft = await input.inputValue();
   await page.keyboard.press('Enter');
   assert.equal(await input.inputValue(), currentDraft.trimEnd() ? `${currentDraft.trimEnd()}\nはい。` : 'はい。', 'fresh palette answer still fills the draft');
+  await pane.locator('.pane-close').click();
+  await page.locator('#sideBtn').focus(); await page.keyboard.press('i');
+  await page.locator('.irow[data-card-id="codex:t1"]').click(); await input.waitFor();
+  await checkChoiceFocus('timeline');
   assert.deepEqual(writes, []); assert.deepEqual(errors, []);
-  if (shots) fs.writeFileSync(path.join(shots, 'metrics.json'), JSON.stringify({ viewport: [1280, 800], question, answer, choicesAfterReply: expected, paletteActionsAfterReply: expected, appendToChoicesMs, rawPreserved: true, draftPreserved: true, readingPositionPreserved: true, initialLoadChecked: true, nextQuestionChoices: 2, submitted: writes, errors }, null, 2));
+  if (shots) fs.writeFileSync(path.join(shots, 'metrics.json'), JSON.stringify({ viewport: [1280, 800], question, answer, choicesAfterReply: expected, paletteActionsAfterReply: expected, appendToChoicesMs, focusSamples, rawPreserved: true, draftPreserved: true, readingPositionPreserved: true, initialLoadChecked: true, nextQuestionChoices: 2, submitted: writes, errors }, null, 2));
 });
