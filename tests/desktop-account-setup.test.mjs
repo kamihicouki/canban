@@ -51,6 +51,9 @@ test('setup persists a quit wait, resumes after restart, and can cancel the wait
   const f = await fixture(t); await connectB(f);
   const waiting = await f.setup.command({ type: 'trial-start', account: 'claude:a', requestId: 'trial' });
   assert.equal(waiting.state, 'ready');
+  const readyView = await f.setup.view();
+  assert.equal(readyView.setup.trial.state, 'ready', 'the unchanged Desktop build keeps the trial visible');
+  assert.equal(readyView.profiles.every(p => p.status === 'checking'), true);
   assert.equal((await f.setup.command({ type: 'trial-switch', requestId: 'switch-1' })).state, 'waiting-for-quit');
   assert.equal((await f.setup.view()).setup.pendingCommand.requestId, 'switch-1');
   await f.setup.command({ type: 'cancel-wait' });
@@ -66,7 +69,9 @@ test('acceptance requires six observed transitions and explicit history, CLI, dr
   for (let i = 0; i < 6; i++) {
     f.stopped();
     assert.equal((await f.setup.command({ type: 'trial-switch', requestId: `step-${i}` })).state, 'awaiting-observation');
-    assert.equal((await f.setup.view()).accountSwitch, false);
+    const observedView = await f.setup.view();
+    assert.equal(observedView.accountSwitch, false);
+    assert.equal(observedView.setup.trial.state, 'awaiting-observation');
     await f.setup.command({ type: 'trial-observe', confirmations: { authenticated: true, noLogin: true, draftsPreserved: true } });
   }
   await assert.rejects(f.setup.command({ type: 'trial-complete', confirmations: { cliPreserved: true } }));

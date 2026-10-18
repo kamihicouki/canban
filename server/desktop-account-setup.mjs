@@ -42,9 +42,10 @@ const requireConfirmed = (input, keys) => {
 export function createDesktopAccountSetup({ dataDir, appDir, accounts, runtime, open, builds = desktopBuilds, platform = process.platform }) {
   async function view() {
     const paths = await locations(dataDir, appDir), v = await accounts.view();
-    const capabilities = await readDesktopCapabilities(dataDir, { builds: await builds(), platform });
+    const currentBuilds = await builds();
+    const capabilities = await readDesktopCapabilities(dataDir, { builds: currentBuilds, platform });
     const setup = await readDesktopJson(path.join(paths.state, 'setup.json')) || {};
-    if (setup.trial && setup.trial.builds?.claude !== capabilities.builds?.claude) setup.trial = { ...setup.trial, state: 'needs-review' };
+    if (setup.trial && setup.trial.builds?.claude !== currentBuilds.claude) setup.trial = { ...setup.trial, state: 'needs-review' };
     const selection = await readDesktopJson(path.join(paths.state, 'selection.json'));
     const activeAccount = await readDesktopIdentity(appDir);
     return { ...v, ...capabilities, activeAccount, lastAccount: v.profiles.some(p => p.account === selection?.account) ? selection.account : null,
