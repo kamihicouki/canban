@@ -11,7 +11,7 @@ const stable = value => JSON.stringify(value, (_, v) => v && typeof v === 'objec
 const final = new Set(['opened', 'uncertain', 'failed', 'cancelled']);
 const unknown = () => ({ state: 'uncertain', reason: '起動結果を確認できません。アプリを確認してください。同じ依頼を自動で開き直すことはありません。' });
 
-export function createDesktopLaunches({ dataDir, accounts, resolveTarget, recordSelection, prepareThread, open, now = Date.now }) {
+export function createDesktopLaunches({ dataDir, accounts, resolveTarget, recordSelection, prepareThread, prepareOpen, open, now = Date.now }) {
   const dir = path.join(dataDir, 'desktop-launches');
   function files(id) {
     if (!validId(id)) throw new Error('開始リクエストが不正です');
@@ -61,7 +61,7 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, record
       if (await cancelled()) return set({ state: 'cancelled', reason: '開始を取り消しました。本文と画像は保持しています' });
       let target;
       try { target = await resolveTarget(payload); }
-      catch { return set({ state: 'failed', reason: '開始先を確認できません。接続先を選び直してください' }); }
+      catch (e) { return set({ state: 'failed', reason: e.code === 'desktop_resume_unavailable' ? e.message : '開始先を確認できません。接続先を選び直してください' }); }
       if (!target || record.target && stable(record.target) !== stable(target)) return set({ state: 'failed', reason: '開始先が変更されました。接続先を確認してください' });
       record.target = target; await save(f.record, record);
       // Persist source selection before account switching, thread preparation or opening.
@@ -86,11 +86,15 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, record
         let current;
         try { current = await resolveTarget(payload); } catch { current = null; }
         if (stable(current) !== stable(target)) return set({ state: 'failed', reason: '開始先が変更されました' });
+        const waiting = await prepareOpen?.(payload, target);
+        if (waiting) return set(waiting);
+        if (await cancelled()) return set({ state: 'cancelled' });
         record.intent = 'open'; await set({ state: 'opening' });
         if (await cancelled()) { delete record.intent; return set({ state: 'cancelled' }); }
         try {
           const opened = await open(payload, target, record.thread);
           delete record.intent;
+          if (opened?.notOpened === true) return set(opened);
           return set({ ...opened, state: 'opened' });
         } catch { return set(unknown()); }
       };

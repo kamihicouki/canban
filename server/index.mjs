@@ -28,7 +28,7 @@ import { codexHome } from './sources/codex.mjs';
 import { claudeHome, claudeDesktopSessionsDir } from './sources/claude.mjs';
 import { accountTools, accountFilterProp, accountDesktopNote, extraWatchRoots } from './accounts-mcp.mjs';
 import { accountName, accountLabel, desktopAccountMismatch, configureDesktopStorage } from './accounts.mjs';
-import { recoverGuests, setGuestRunningCheck, guestPaths } from './claude-desktop-guests.mjs';
+import { recoverGuests, setGuestRunningCheck, guestPaths, desktopRunning } from './claude-desktop-guests.mjs';
 import { openDesktopApp, integratedNote } from './claude-desktop-open.mjs';
 import { accountActions, accountActionTools } from './account-actions.mjs';
 import { shutdownLogins } from './login.mjs';
@@ -48,6 +48,8 @@ import { prepareCodexDesktop } from './codex-desktop-start.mjs';
 import { copyPromptImages } from './prompt-clipboard.mjs';
 import { readDesktopCapabilities } from './desktop-capabilities.mjs';
 import { managedDesktopSetup } from './claude-desktop-profile.mjs';
+import { createClaudeDesktopResume } from './claude-desktop-resume.mjs';
+import { rememberDesktopAccount } from './desktop-account-setup.mjs';
 import { createDesktopLaunches } from './desktop-launch.mjs';
 import { desktopProfilePlan, withDesktopAccount, saveClaudeExecutionAccount, desktopExecutionLink } from './claude-desktop-profile.mjs';
 import { SlackService, slackTools } from './slack.mjs';
@@ -119,7 +121,10 @@ if (process.env.CANBAN_LAUNCH_DRYRUN === '1') {
 recoverGuests().then(r => (r?.restored || r?.tidied) && process.stderr.write(`[canban] Desktop の統合を片付けました（書き戻し ${r.restored || 0} 件・台帳にない複製 ${r.tidied || 0} 件）\n`), error => process.stderr.write(`[canban] Desktop の統合の片付け: ${error.message}\n`));
 
 // Re-resolve persisted Desktop starts on every resume; no closure over stale targets.
+const desktopResume = createClaudeDesktopResume({ paths: guestPaths(), findSession: async cardId => (await findSession(store, cardId)).session,
+  check: async source => timingProblem(source, await inspect(source, null)), requests: async cardId => dispatcherFor(store).requests.list({ cardId }) });
 async function resolveDesktopStart(input) {
+  if (input.operation === 'resume') return desktopResume.resolve(input);
   const state = await store.load();
   if (input.taskId && state.cards[input.taskId]?.kind !== 'task') throw new Error('タスクカードが見つかりません');
   const selection = await prepareLaunchSelection({ ...input, route: 'desktop' }, { codex: await codexLaunchTargets() });
@@ -167,21 +172,32 @@ async function resolveDesktopStart(input) {
 const desktopLaunches = createDesktopLaunches({
   dataDir: store.dir, resolveTarget: resolveDesktopStart,
   recordSelection: async (input, target) => {
+    if (input.operation === 'resume') return { cardId: input.cardId, conversationId: target.desktopSessionId, nativeId: target.nativeId };
     const evidence = launchEvidence(target.selection, input.clientRequestId);
     if (input.taskId) await store.recordLaunch({ taskId: input.taskId, ...evidence });
     return evidence;
   },
   accounts: { withAccount: (account, options, action) => withDesktopAccount(account, action, options) },
+  prepareOpen: async (input, target) => input.operation === 'resume' && target.owner !== input.account && await desktopRunning()
+    ? { state: 'waiting-for-quit', reason: 'Desktop を保存して終了すると、選択したアカウントで同じ会話を開きます' } : null,
   prepareThread: async (input, target) => process.env.CANBAN_LAUNCH_DRYRUN === '1'
     ? { state: 'prepared', threadId: randomUUID(), hostId: target.host.id, cwd: target.cwd, writerClosed: true, dryRun: true }
     : prepareCodexDesktop({ host: target.host, cwd: target.cwd, clientRequestId: input.clientRequestId }, { pool }),
   open: async (input, target, thread) => {
     const state = await store.load(), labels = state.settings.accounts.labels;
+    if (input.operation === 'resume') {
+      const integrated = await openDesktopApp(target.url, { guestSessionId: target.owner !== input.account ? target.desktopSessionId : null, labelOf: a => accountLabel(`claude:${a}`, labels).replace(/@.*/, '') });
+      if (!integrated.opened) return { notOpened: true, state: integrated.code === 'desktop_running' ? 'waiting-for-quit' : 'failed', reason: integrated.reason };
+      await rememberDesktopAccount({ dataDir: store.dir, appDir: guestPaths().app, account: input.account });
+      await store.markSeen({ cardId: input.cardId });
+      return { url: target.url, exact: true, cwd: target.cwd, desktopAccount: input.account, note: '元の会話ID・履歴・作業先で開きました。続きは Desktop で確認してください。' };
+    }
     const skillPrompt = withSkills(input.prompt, input.skills || []);
     const localImages = promptImages(store.dir, input.imageIds || []);
     const text = skillPrompt;
     const link = target.prepareThread ? preparedCodexLink(thread, { prompt: text }) : newSessionLink(input.agent, { ...target, prompt: text });
     const integrated = await openDesktopApp(link.url, { labelOf: a => accountLabel(`claude:${a}`, labels).replace(/@.*/, '') });
+    if (input.agent === 'claude' && input.account) await rememberDesktopAccount({ dataDir: store.dir, appDir: guestPaths().app, account: input.account });
     if (input.taskId) {
       await store.updateTask({ cardId: input.taskId, target: { agent: input.agent, hostId: target.host.id, cwd: target.cwd, account: input.account } });
       await store.addPending({ taskId: input.taskId, pending: { agent: input.agent, hostId: target.host.id, cwd: target.cwd, prompt: text.slice(0,200), startedAt: Date.now() } });
@@ -498,13 +514,23 @@ const TOOLS = [
         terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
         target: { type: 'string', enum: ['new-window', 'new-tab', 'split', 'current'] },
         claudeHome: { type: 'string', description: 'Claude の実行アカウント（launch.claudeAccounts の ID）。省略時は保存した選択。空文字は元の CLI 設定' },
+        desktopAccount: { type: 'string', description: '今回起動する Claude Desktop アカウント。CLI設定とは独立' },
+        clientRequestId: { type: 'string' },
+        allowDesktopSwitch: { type: 'boolean' },
+        uiToken: { type: 'string' },
       },
       required: ['cardId'],
       additionalProperties: false,
     },
     _meta: appAndModel,
-    handler: async ({ cardId, route, terminal, target, claudeHome }) => {
+    handler: async ({ cardId, route, terminal, target, claudeHome, desktopAccount, clientRequestId, allowDesktopSwitch = false, uiToken: suppliedToken }) => {
       const { session: source, state } = await findSession(store, cardId);
+      if (desktopAccount !== undefined) {
+        if (source.agent !== 'claude' || route === 'terminal') throw new Error('Desktop の起動アカウントは Claude Desktop で選んでください');
+        const uiAuthorized = suppliedToken !== undefined ? !!requireLoopUi({ uiToken: suppliedToken }) : false;
+        const detail = await desktopLaunches.start({ operation: 'resume', agent: 'claude', cardId, account: desktopAccount, clientRequestId, allowDesktopSwitch }, { uiAuthorized });
+        return { text: detail.reason || detail.note || 'Desktop の再開状況', structured: detail };
+      }
       if (isCloudSession(source) && route === 'terminal') throw new Error(CLOUD_OPERATION_REASON);
       const session = await savedClaudeExecutionSession(source, state, claudeHome);
       const selected = !!session.executionAccount;
