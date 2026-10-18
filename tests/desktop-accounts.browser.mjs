@@ -22,7 +22,7 @@ test('Desktop waiting and cancellation retain the composer draft with keyboard a
     ${fs.readFileSync(new URL('../ui/task-quick-add.js',import.meta.url),'utf8')}
     taskQuickAdd.feedback = document.querySelector('#feedback');
     taskQuickAdd.targets = { desktopCapabilities: { activeAccount:'claude:a', accountSwitch:true } };
-    taskQuickAdd.sessionDraft = {agent:'claude',route:'desktop',account:'claude:b',prompt:'保持する本文',attachments:{imageIds:['img-a']},startRequest:{clientRequestId:'pending'}};
+    taskQuickAdd.sessionDraft = {agent:'claude',route:'desktop',account:'claude:cli',desktopAccount:'claude:b',prompt:'保持する本文',attachments:{imageIds:['img-a']},startRequest:{clientRequestId:'pending'}};
     taskQuickAdd.paintSessionState = () => {};
     window.ui = taskQuickAdd;
     window.ui.showSessionFeedback({state:'waiting-for-quit',reason:'Desktopを保存して終了してください'});
@@ -32,7 +32,7 @@ test('Desktop waiting and cancellation retain the composer draft with keyboard a
   await cancel.focus(); await page.keyboard.press('Enter');
   assert.match(await page.locator('#feedback').textContent(), /取り消/);
   assert.deepEqual(await page.evaluate(() => [ui.sessionDraft.prompt, ui.sessionDraft.attachments.imageIds]), ['保持する本文',['img-a']]);
-  assert.match(await page.evaluate(() => { ui.sessionDraft.startRequest = null; return ui.sessionActionLabel(); }), /A → B に切り替えて開く/);
+  assert.match(await page.evaluate(() => { ui.sessionDraft.startRequest = null; return ui.sessionActionLabel(); }), /B で Claude を開く/);
   assert.match(await page.evaluate(() => { ui.sessionDraft.route='terminal'; return ui.sessionActionLabel(); }), /Claude Codeを開始/);
   await page.evaluate(() => { ui.sessionDraft.route='desktop'; });
   await page.evaluate(() => { ui.showSessionFeedback({state:'waiting-for-login',reason:'状態を確認できません'}); });
@@ -48,7 +48,7 @@ test('Desktop waiting and cancellation retain the composer draft with keyboard a
     const state = {board:{accounts:{accounts:[{key:'claude:a',agent:'claude',label:'A'},{key:'claude:b',agent:'claude',label:'B'},{key:'claude:c',agent:'claude',label:'C'}]}}};
     let pending = {account:'claude:b',active:true};
     const bridge = {callTool:async(name,input)=>{
-      if(name==='canban_desktop_accounts')return {result:{accountSwitch:true,profiles:[{account:'claude:a',active:true}],pending}};
+      if(name==='canban_desktop_accounts')return {result:{accountSwitch:false,profiles:[{account:'claude:a',active:true}],pending}};
       if(input.type==='cancel'){pending.active=false;return {result:{state:'cancelled'}};}
       if(input.type==='begin-login'){pending={account:input.account,active:true};return {result:{state:'waiting-for-login'}};}
       return {result:{state:'prepared'}};

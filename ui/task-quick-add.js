@@ -70,6 +70,10 @@ const taskQuickAdd = {
         await this.cancelSessionWait();
         if (previous.startResult?.state !== 'cancelled') return;
       }
+      if (previous.startResult?.state === 'uncertain') {
+        try { await bridge.callTool('canban_acknowledge_desktop_launch', { clientRequestId: previous.startRequest.clientRequestId }); }
+        catch (e) { toast(e.message, true); return; }
+      }
       if (previous.startResult?.state === 'opened') this.composer?.clear();
       this.sessionDraft = { ...previous, prompt: previous.startResult?.state === 'opened' ? '' : previous.prompt };
       delete this.sessionDraft.startRequest; delete this.sessionDraft.startResult;
@@ -117,7 +121,10 @@ const taskQuickAdd = {
   },
   // The desktop apps' own lists (Claude の環境 / Codex のプロジェクト・クラウド環境), read fresh per open.
   async loadTargets() {
-    const pending = this.targetsPending = bridge.callTool('canban_launch_targets', this.sessionDraft?.account ? { account: this.sessionDraft.account } : {}).catch(() => null);
+    await desktopAccounts.refresh().catch(() => null);
+    if (this.sessionDraft && !this.sessionDraft.desktopAccount) this.sessionDraft.desktopAccount = desktopAccounts.defaultAccount();
+    const account = this.sessionDraft?.agent === 'claude' && this.sessionDraft?.route === 'desktop' ? this.sessionDraft.desktopAccount : this.sessionDraft?.account;
+    const pending = this.targetsPending = bridge.callTool('canban_launch_targets', account ? { account } : {}).catch(() => null);
     const targets = await pending;
     if (pending !== this.targetsPending) return;
     this.targets = targets || { claude: { environments: [] }, codex: { projects: [], cloudEnvironments: [] }, failed: true };
@@ -132,8 +139,7 @@ const taskQuickAdd = {
     const draft = this.sessionDraft;
     if (draft.startRequest) return '開始結果を確認';
     if (sessionRunsInCloud(draft)) return 'クラウドで開始';
-    const active = this.targets?.desktopCapabilities?.activeAccount;
-    if (draft.route === 'desktop' && draft.agent === 'claude' && draft.account && active && draft.account !== active && this.targets.desktopCapabilities.accountSwitch) return `${accountName(active)} → ${accountName(draft.account)} に切り替えて開く`;
+    if (draft.route === 'desktop' && draft.agent === 'claude') return draft.desktopAccount ? `${accountName(draft.desktopAccount)} で Claude を開く` : 'Desktop アカウントを選択';
     if (draft.route === 'terminal') return `${draft.agent === 'codex' ? 'Codex' : 'Claude Code'}を開始`;
     return `${draft.agent === 'codex' ? 'Codex' : 'Claude'}を開く`;
   },
@@ -186,7 +192,7 @@ const taskQuickAdd = {
     const folder = sessionUsesFolder(draft);
     const environment = h('div', { class: 'creation-environment' },
       folder ? select('マシン', draft.hostId, board.hosts.filter(host => !host.cloud).map(host => [host.local ? 'local' : host.id, host.local ? 'このマシン' : host.label]), value => { draft.hostId = value; draft.cwd = ''; if (value !== 'local' && !desktop) draft.account = null; this.mount('select[aria-label="マシン"]'); }) : null,
-      select('アカウント', draft.account || '', [['', 'いまのログイン'], ...(desktop || draft.hostId === 'local' ? board.accounts?.accounts || [] : []).filter(a => a.key.startsWith(`${draft.agent}:`)).map(a => [a.key, accountName(a.key)])], value => { draft.account = value || null; draft.environmentId = null; this.targets = null; this.loadTargets(); this.mount('select[aria-label="アカウント"]'); }));
+      desktop && draft.agent === 'claude' ? null : select('アカウント', draft.account || '', [['', 'いまのログイン'], ...(desktop || draft.hostId === 'local' ? board.accounts?.accounts || [] : []).filter(a => a.key.startsWith(`${draft.agent}:`)).map(a => [a.key, accountName(a.key)])], value => { draft.account = value || null; draft.environmentId = null; this.targets = null; this.loadTargets(); this.mount('select[aria-label="アカウント"]'); }));
     if (draft.route === 'terminal') environment.append(
       select('ターミナル', draft.terminal, (board.terminals || []).map(t => [t.id, t.label]), value => { draft.terminal = value; this.mount('select[aria-label="ターミナル"]'); }),
       select('ターミナルの表示先', draft.target, Object.entries(TARGET_LABELS).filter(([id]) => (board.terminals.find(t => t.id === draft.terminal)?.targets || ['new-window']).includes(id)), value => { draft.target = value; }));
@@ -201,10 +207,12 @@ const taskQuickAdd = {
     const chosenEnvironment = targets?.claude?.environments?.find(e => e.id === draft.environmentId);
     const chosenProject = targets?.codex?.projects?.find(p => p.id === draft.projectId);
     const execution = loading ? '未確認（開始設定を取得中）' : cloud ? 'Codex Cloud' : unsupportedEnvironment ? chosenEnvironment ? `${chosenEnvironment.kind === 'ssh' ? chosenEnvironment.sshLabel || chosenEnvironment.sshHost : 'このマシン'}（保存設定の指定・未適用）` : '未確認' : !folder && draft.projectId !== '__none' ? chosenProject ? hostLabel(chosenProject.hostId) : '未確認' : draft.hostId === 'local' || board.hosts.some(h => h.id === draft.hostId) ? hostLabel(sessionHostId(draft, targets)) : '未確認';
-    return h('div', { class: 'session-fields' }, destinations, ...place, folder ? field(`作業フォルダ${desktop ? '（任意）' : ''}`, cwd) : null, folder ? folders : null,
+    return h('div', { class: 'session-fields' }, destinations,
+      desktop && draft.agent === 'claude' ? desktopAccountPicker({ key: 'quick-start', value: draft.desktopAccount, onChange: (value, meta) => { draft.desktopAccount = value; if (meta?.initial) { this.paintSessionState(); return; } draft.environmentId = null; this.targets = null; this.loadTargets(); this.mount('.desktop-account-picker'); } }) : null,
+      ...place, folder ? field(`作業フォルダ${desktop ? '（任意）' : ''}`, cwd) : null, folder ? folders : null,
       unsupportedEnvironment ? h('button', { type: 'button', class: 'link-btn', text: '元アプリで開始', onclick: () => bridge.openLink('claude://code/new') }) : null,
       h('div', { class: 'creation-field' }, h('span', { class: 'creation-label', text: '依頼内容' }), composer.root), h('p', { class: `creation-route-note${remoteCodex && !targets?.desktopCapabilities?.codexRemote ? ' error' : ''}`, text: `実行先（開始要求）: ${execution}。${note}` }),
-      h('details', { class: 'creation-details', open: remoteCodex || draft.environmentOpen, ontoggle: e => { draft.environmentOpen = e.target.open; } }, h('summary', { text: `実行環境 · ${cloud ? 'クラウド' : hostLabel(sessionHostId(draft, targets))} · ${draft.account ? accountName(draft.account) : 'いまのログイン'}` }), environment));
+      h('details', { class: 'creation-details', open: remoteCodex || draft.environmentOpen, ontoggle: e => { draft.environmentOpen = e.target.open; } }, h('summary', { text: `実行環境 · ${cloud ? 'クラウド' : hostLabel(sessionHostId(draft, targets))} · ${(desktop && draft.agent === 'claude' ? draft.desktopAccount : draft.account) ? accountName(desktop && draft.agent === 'claude' ? draft.desktopAccount : draft.account) : 'いまのログイン'}` }), environment));
   },
   paintSessionState() {
     const draft = this.sessionDraft;
@@ -218,7 +226,9 @@ const taskQuickAdd = {
     this.form.querySelectorAll('.session-fields .cx-box button').forEach(el => { el.disabled = !!draft.submitting || locked; });
     const presetIssue = !locked && !loading && unsupportedSessionPreset(draft, this.targets);
     const unverifiedRemote = !loading && draft.route === 'desktop' && draft.agent === 'codex' && !sessionRunsInCloud(draft) && sessionHostId(draft, this.targets) !== 'local' && !this.targets?.desktopCapabilities?.codexRemote;
-    this.primary.disabled = !!presetIssue || loading || unverifiedRemote || !!draft.submitting || ['opened','cancelled','uncertain','failed'].includes(draft.startResult?.state);
+    const desktopIssue = !locked && draft.route === 'desktop' && draft.agent === 'claude' && desktopAccounts.problem(draft.desktopAccount);
+    this.form.querySelectorAll('.desktop-account-picker').forEach(el => { el.disabled = locked || !!draft.submitting; });
+    this.primary.disabled = !!desktopIssue || !!presetIssue || loading || unverifiedRemote || !!draft.submitting || ['opened','cancelled','uncertain','failed'].includes(draft.startResult?.state);
     this.primary.querySelector('span').textContent = loading ? '環境を読み込み中…' : presetIssue ? 'フォルダ指定を選んでください' : unverifiedRemote ? '実機確認が必要です' : draft.startResult?.state === 'opened' ? (draft.startResult.route === 'cloud' ? '送信しました' : '開きました') : this.sessionActionLabel();
     if (this.newRequestButton) this.newRequestButton.hidden = !locked;
   },
@@ -295,7 +305,8 @@ const taskQuickAdd = {
     if (!draft.startRequest && draft.agent === 'codex' && draft.route === 'desktop' && !sessionRunsInCloud(draft) && sessionHostId(draft, this.targets) !== 'local' && !this.targets?.desktopCapabilities?.codexRemote) return;
     if (!draft.startRequest) {
       const capabilities = this.targets?.desktopCapabilities;
-      draft.allowDesktopSwitch = draft.agent === 'claude' && draft.route === 'desktop' && !!capabilities?.accountSwitch && !!draft.account && draft.account !== capabilities.activeAccount;
+      if (draft.agent === 'claude' && draft.route === 'desktop' && desktopAccounts.problem(draft.desktopAccount)) return desktopAccounts.openSetup();
+      draft.allowDesktopSwitch = draft.agent === 'claude' && draft.route === 'desktop' && !!capabilities?.accountSwitch && !!draft.desktopAccount && draft.desktopAccount !== capabilities.activeAccount;
       try { draft.attachments = this.composer.payload(); } catch (error) { this.feedback.hidden = false; this.feedback.classList.add('error'); this.feedback.textContent = error.message; return; }
     }
     this.busy(true);

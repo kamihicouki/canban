@@ -25,7 +25,7 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, record
     try { await fs.rename(temp, file); const d = await fs.open(dir, 'r'); try { await d.sync(); } finally { await d.close(); } }
     finally { await fs.rm(temp, { force: true }); }
   }
-  const result = record => ({ clientRequestId: record.input.clientRequestId, route: 'desktop', account: record.input.account || null, imageIds: record.input.imageIds || [], ...(record.input.imageIds?.length ? { attachmentState: 'pending-paste' } : {}), ...record.evidence, ...record.result });
+  const result = record => ({ clientRequestId: record.input.clientRequestId, route: 'desktop', account: record.input.account || null, ...(record.input.operation === 'resume' ? { operation: 'resume', cardId: record.input.cardId } : {}), imageIds: record.input.imageIds || [], ...(record.input.imageIds?.length ? { attachmentState: 'pending-paste' } : {}), ...record.evidence, ...record.result });
   async function start(input, { uiAuthorized = false } = {}) {
     const id = input.clientRequestId || randomUUID(), f = files(id);
     const { uiToken: omitted, allowDesktopSwitch, allowQuit, ...payload } = input;
@@ -69,6 +69,20 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, record
       if (recordSelection && !record.evidence) {
         record.evidence = await recordSelection(payload, target);
         await save(f.record, record);
+      }
+      // Independent requests must not race to switch the one Claude Desktop.
+      if (payload.agent === 'claude') {
+        let guard;
+        try { guard = await desktopProfileLock(path.join(dir, 'reservation.lock')); }
+        catch (e) { return set({ state: e.code === 'desktop_busy' ? 'prepared' : 'failed', reason: 'ほかの Desktop 起動の状態を確認しています。起動はまだ依頼していません' }); }
+        try {
+          const reservation = await read(path.join(dir, 'claude.reservation'));
+          if (reservation?.id && reservation.id !== id) {
+            const other = await read(files(reservation.id).record);
+            if (other && !await read(files(reservation.id).cancel) && (!final.has(other.result.state) || other.result.state === 'uncertain' && !other.acknowledged)) return set({ state: 'failed', reason: '別の Claude Desktop 起動が待機中、または結果未確認です。元のカード・作成画面で取消しまたは確認を済ませてください' });
+          }
+          await guard.assertHeld(); await save(path.join(dir, 'claude.reservation'), { id });
+        } finally { await guard.release(); }
       }
       const perform = async () => {
         if (await cancelled()) return set({ state: 'cancelled' });
@@ -134,9 +148,30 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, record
     const results = [];
     for (const name of names.filter(n => /^[A-Za-z0-9_-]+\.json$/.test(n))) {
       const record = await read(path.join(dir, name));
-      if (record && !final.has(record.result?.state)) results.push(await start(record.input));
+      if (record?.input && !final.has(record.result?.state)) results.push(await start(record.input));
     }
     return results;
   }
-  return { start, status, cancel, recover };
+  async function pending() {
+    const names = await fs.readdir(dir).catch(e => { if (e.code === 'ENOENT') return []; throw e; });
+    const values = [];
+    for (const name of names.filter(n => /^[A-Za-z0-9_-]+\.json$/.test(n))) {
+      const record = await read(path.join(dir, name));
+      if (!record?.input || record.acknowledged) continue;
+      const value = await status(record.input.clientRequestId);
+      if (value && (!final.has(value.state) || value.state === 'uncertain')) values.push(value);
+    }
+    return values;
+  }
+  async function acknowledge(id, { uiAuthorized = false } = {}) {
+    if (!uiAuthorized) throw new Error('この操作はボードUIから確認してください');
+    const f = files(id), lease = await desktopProfileLock(f.lock);
+    try {
+      const record = await read(f.record);
+      if (!record || record.result.state !== 'uncertain') throw new Error('結果不明の起動要求を選んでください');
+      record.acknowledged = true; await lease.assertHeld(); await save(f.record, record);
+      return result(record);
+    } finally { await lease.release(); }
+  }
+  return { start, status, cancel, recover, pending, acknowledge };
 }

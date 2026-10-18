@@ -684,13 +684,13 @@ function renderPane(p, d) {
     h('div', { class: 'muted', text: d.dispatch.unavailableReason })) : h('div', { class: 'resume-box' },
     accountPicker ? h('div', { class: 'field-label' }, h('span', { text: '実行アカウント' }), ...keycap('Alt+a')) : null,
     accountPicker,
-    accountPicker ? h('div', { class: 'muted', text: '選択は CLI の再開と指示に使います。Desktop は別途適用状態を表示します。' }) : null,
+    accountPicker ? h('div', { class: 'muted', text: 'CLI の再開と指示に使うアカウントです。Desktop の起動は下の選択を使います。' }) : null,
     accountPicker ? h('div', { class: 'muted claude-thinking-note', text: '別アカウントでは過去の思考を再計算します。組織の思考に関する通知が出ても、会話履歴は引き継がれます。' }) : null,
     accountPicker ? h('div', { class: 'muted claude-desktop-account-note' }) : null,
     h('button', { class: 'btn-primary resume-main', 'data-pane-key': 'o', title: `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`, onclick: (e) => resume(s.id, optsFromEvent(e)) },
       h('span', { text: '▶ 再開' }), ...keycap('o')),
     h('div', { class: 'field-label', text: 'デスクトップアプリ' }),
-    L.desktop
+    s.agent === 'claude' && s.host?.local !== false ? desktopResumeControl(s.id) : L.desktop
       ? h('button', { class: 'side-btn', 'data-resume-desktop': '', text: `↗ ${L.desktop.label}`, title: L.desktop.url, onclick: () => resume(s.id, { route: 'desktop' }) })
       : h('div', { class: 'muted', text: s.host ? 'リモートのセッションはターミナルで再開します' : 'このセッションはデスクトップアプリでは開けません' }),
     L.desktop && L.desktop.note ? h('div', { class: 'muted', text: `${L.desktop.accountMismatch ? '⚠ ' : ''}${L.desktop.note}` }) : null,
@@ -704,7 +704,7 @@ function renderPane(p, d) {
     const selected = claudeExecutionHomes.get(s.id);
     const option = executionAccounts.find(a => a.id === selected);
     const desktop = resumeBox.querySelector('[data-resume-desktop]');
-    if (desktop) { desktop.disabled = !!selected && !option?.desktop?.link; desktop.title = selected ? option?.desktop?.reason || option?.desktop?.link?.note || '実行アカウントを選び直してください' : L.desktop.url; }
+    if (desktop && s.agent !== 'claude') { desktop.disabled = !!selected && !option?.desktop?.link; desktop.title = selected ? option?.desktop?.reason || option?.desktop?.link?.note || '実行アカウントを選び直してください' : L.desktop?.url || ''; }
     const desktopNote = resumeBox.querySelector('.claude-desktop-account-note');
     if (desktopNote) {
         const status = L.claudeDesktopStatus;

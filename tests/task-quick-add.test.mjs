@@ -228,7 +228,7 @@ test('desktop creation waits visibly for targets without losing the request', as
   const source = fs.readFileSync(new URL('../ui/task-quick-add-model.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../ui/task-quick-add.js', import.meta.url), 'utf8');
   const dialog = new vm.Script(source + '\n taskQuickAdd').runInNewContext({
     bridge: { callTool: name => { calls.push(name); return failTargets ? Promise.reject(new Error('取得失敗')) : pending; } },
-    sessionRunsInCloud: () => false, sessionHostId: () => 'local',
+    sessionRunsInCloud: () => false, sessionHostId: () => 'local', desktopAccounts: { refresh: async () => null, defaultAccount: () => null, problem: () => null },
   });
   const label = { textContent: '' };
   dialog.sessionDraft = { agent: 'codex', route: 'desktop', hostId: 'local', prompt: '保持する未送信の依頼' };
@@ -298,4 +298,16 @@ test('verified remote drafts still refuse a Project preset while explicit folder
   dialog.paintSessionState();
   assert.equal(dialog.primary.disabled, true);
   assert.match(label.textContent, /実機確認/);
+});
+
+test('Desktop creation sends its own account and leaves the CLI account and images intact', async () => {
+  const draft = { ...plain(model.sessionCreationDefaults({}, {})), agent: 'claude', route: 'desktop', account: 'claude:cli', desktopAccount: 'claude:desktop', prompt: '確認', cwd: '/work', attachments: { imageIds: ['image-a'] } };
+  const seen = [];
+  await model.saveQuickSessionDraft(draft, { newRequestId: () => 'desktop-choice', refresh: async () => {}, callTool: async (name, args) => { seen.push({ name, args: plain(args) }); return { state: 'waiting-for-quit' }; } });
+  assert.equal(seen[0].args.account, 'claude:desktop');
+  assert.equal(draft.account, 'claude:cli');
+  assert.deepEqual(seen[0].args.imageIds, ['image-a']);
+  draft.desktopAccount = 'claude:another';
+  await model.saveQuickSessionDraft(draft, { newRequestId: () => 'must-not-change', refresh: async () => {}, callTool: async (name, args) => { seen.push({ name, args: plain(args) }); return { state: 'waiting-for-quit' }; } });
+  assert.deepEqual(seen[1].args, seen[0].args);
 });

@@ -144,3 +144,30 @@ test('cancellation during thread preparation records its outcome and suppresses 
     assert.equal(uncertain ? record.thread.state : record.thread.threadId, uncertain ? 'uncertain' : 'prepared-thread');
   }
 });
+
+test('a separate pending Claude launch blocks a later request until explicitly cancelled', async t => {
+  let ready=false, opens=0;
+  const opts=await fixture(t,{accounts:{withAccount:async(a,p,run)=>ready?run():{state:'waiting-for-quit'}},open:async()=>{opens++;return {};}});
+  const launches=createDesktopLaunches(opts);
+  await launches.start({...input,operation:'resume',cardId:'claude:original'});
+  ready=true;
+  const other=await launches.start({...input,clientRequestId:'later-request',cardId:'claude:other'});
+  assert.equal(other.state,'failed');assert.equal(opens,0);
+  assert.equal((await launches.pending())[0].cardId,'claude:original');
+  await launches.cancel(input.clientRequestId,{uiAuthorized:true});
+  assert.equal((await launches.start({...input,clientRequestId:'after-cancel'})).state,'opened');
+  assert.equal(opens,1);
+});
+
+test('reservation contention reports a durable wait instead of an unknown external result', async t => {
+  const {desktopProfileLock}=await import('../server/claude-desktop-lock.mjs');
+  const opts=await fixture(t);await fs.mkdir(path.join(opts.dataDir,'desktop-launches'));
+  const guard=await desktopProfileLock(path.join(opts.dataDir,'desktop-launches','reservation.lock'));
+  const launches=createDesktopLaunches(opts);
+  try {
+    const value=await launches.start({...input,clientRequestId:'reservation-contention'});
+    assert.equal(value.state,'prepared');
+    assert.equal((await launches.status('reservation-contention')).state,'prepared');
+  } finally {await guard.release();}
+  assert.equal((await launches.recover())[0].state,'opened');
+});

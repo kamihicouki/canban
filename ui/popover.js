@@ -30,7 +30,7 @@ function popover(anchor, title, body, { width, stack = false, placement = 'botto
     h('button', { class: 'icon-btn close', 'aria-label': '閉じる', text: '✕', onclick: () => closePopover(p) }),
     body);
   p.returnFocus = returnFocus;
-  document.body.append(p);
+  (anchor?.closest?.('dialog[open]') || document.body).append(p);
   const place = () => {
     if (!p.isConnected) return;
     const r = anchor.getBoundingClientRect();

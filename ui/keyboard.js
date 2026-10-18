@@ -2,6 +2,10 @@
 // Keyboard: global shortcuts, command palette (⌘K) and the ? overlay
 const typingIn = (t) => t?.closest?.('input, textarea, select, [contenteditable]');
 document.addEventListener('keydown', e => {
+  if (e.altKey && !e.metaKey && !e.ctrlKey && !e.isComposing && e.code === 'KeyD' && !document.querySelector('.popover')) {
+    const picker = desktopPickerElement(true);
+    if (picker && !picker.disabled) { e.preventDefault(); picker.click(); }
+  }
   if (!e.shiftKey || e.metaKey || e.ctrlKey || e.altKey || e.isComposing || typingIn(e.target) || document.querySelector('dialog[open], .popover')) return;
   if (e.code === 'KeyO') { e.preventDefault(); toggleView('orbit'); }
   if (e.code === 'KeyL' && (openViewKind() === 'orbit' || focusedPane()?.kind === 'task' || document.activeElement?.closest?.('.card')?.dataset.cardId?.startsWith('task:'))) { e.preventDefault(); focusTaskLoop(); }
@@ -131,12 +135,13 @@ const SHORTCUTS = [
     ['o', '再開（既定）'], ['d / t', 'デスクトップ / ターミナルで再開'], ['w n s e', 'ターミナル: 新規ウィンドウ / 新規タブ / 分割 / 既存'],
   ]],
   ['カードを開いている間', [
+    ['Alt+D', 'Claude Desktop の起動アカウントを選ぶ（作成ダイアログでも共通）'],
     ['Alt+a', 'Claude の実行アカウントを選ぶ（このマシンのセッション）/ タスク: 開始するアカウントを選ぶ'],
     ['Shift+← / →', '左右の隣のリストへ移動（端で停止、入力中・配置調整中は無効）'],
     ['j / k', '表示リストの次 / 前のカードを開く（端で停止）'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'],
     ['z', 'エージェントのセッションをアーカイブ / 復元'], ['Delete', 'セッションと会話履歴を削除（確認あり）'], ['i', '指示の入力欄へ'], ['Tab / Enter', 'タスクの開始メニュー: 新しい依頼に切り替える（開始は⌘Enter）'], ['Alt+1〜9', 'エージェントの選択肢を入力欄へ（送信は ⌘Enter）'], ['$', '入力欄: スキルを選ぶ（⌘Kからも選択）'], ['d / f / t', 'スレッド表示: 詳細パネル / 変更 / ターミナルを開閉'], ['Shift+Esc', 'ターミナル: カードのキーへ戻る（Esc はシェルへ送る）'], ['Shift+R / Shift+X', 'カード: 終了したターミナルを開き直す / シェルを終了'], ['⌥Enter', '入力欄: キューに追加（⌘Enter は送信）'], ['o', '再開'], ['l g m', 'ラベル / ' + T.category + ' / リスト移動'], ['c', '作成ダイアログを開く'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
   ]],
-  ['作成ダイアログ', [['⌘Enter / Ctrl+Enter', 'タスクを作成 / アプリを開く'], ['Enter', 'タイトル欄: タスクを作成'], ['Esc', '下書きを残して閉じる']]],
+  ['作成ダイアログ', [['⌘Enter / Ctrl+Enter', 'タスクを作成 / アプリを開く'], ['Alt+D', 'Claude Desktop の起動アカウントを選ぶ'], ['Enter', 'タイトル欄: タスクを作成'], ['Esc', '下書きを残して閉じる']]],
   ['カードのサイズ', [['右端・下端 + 矢印', 'カードの幅と高さを調整（同じ種類のカードで共通）'], ['右端・下端 + Home', '既定のサイズへ戻す']]],
   ['ピッカー', [['文字を入力', '絞り込み'], ['↑ ↓ / Enter', '選ぶ'], ['Space', '複数選択の切り替え（入力が空のとき）'], ['Esc', '閉じる']]],
 ];
@@ -188,6 +193,8 @@ function commandPalette() {
     ...(taskQuickAdd.sessionDraft?.startResult?.state === 'opened' && taskQuickAdd.sessionDraft.startResult.imageIds?.length && (taskQuickAdd.sessionDraft.startResult.attachmentCopyAvailable ?? taskQuickAdd.targets?.desktopCapabilities?.clipboardImages) ? [{ label: '添付画像をコピー', run: () => taskQuickAdd.copySessionImages(), hint: 'Tab → Enter' }] : []),
     ...(taskQuickAdd.sessionDraft?.startRequest && ['waiting-for-quit','waiting-for-login','prepared'].includes(taskQuickAdd.sessionDraft.startResult?.state) ? [{ label: 'Desktop の開始待機を取り消す', run: () => taskQuickAdd.cancelSessionWait(), hint: 'Tab → Enter' }] : []),
     { label: 'エージェントで今すぐ始める', run: () => taskQuickAdd.open({ mode: 'session' }) },
+    ...(desktopPickerElement() || sessionPane?.id?.startsWith('claude:') ? [{ label: 'Claude Desktop の起動アカウントを選ぶ', run: () => desktopPickerElement(true)?.click(), hint: 'Alt+D' }] : []),
+    { label: 'Claude Desktop の接続・保持確認', run: () => desktopAccounts.openSetup() },
     ...[['exclude', 'dotのセッションを除く'], ['all', 'dotのセッションを含める'], ['only', 'dotのセッションだけ表示']].map(([dotScope, label]) => ({ label, run: () => setScope({ dotScope }), hint: dotScope === 'only' ? '' : 'Shift+V' })),
     { label: slackUi.visible ? 'Slackタイムラインを隠す' : 'Slackタイムラインを表示', run: () => slackUi.toggle(), hint: 'v' },
     ...((slackUi.selected && slackUi.visible) ? [
@@ -202,6 +209,10 @@ function commandPalette() {
         return { label: `カードを${step < 0 ? '左' : '右'}のリスト「${target.title}」へ移動`, run: () => movePaneAdjacent(p, step), hint: `Shift+${step < 0 ? '←' : '→'}` };
       }),
       ...(sessionPane ? [
+        ...(sessionPane.id?.startsWith('claude:') ? [
+          { label: `${desktopAccounts.selected(sessionPane.id) ? accountName(desktopAccounts.selected(sessionPane.id)) : '選択アカウント'} で Claude Desktop を開く`, run: () => resume(sessionPane.id, { route: 'desktop' }), hint: 'o' },
+          ...(['prepared','waiting-for-quit','waiting-for-login','opening'].includes(desktopAccounts.resumes.get(sessionPane.id)?.result?.state) ? [{ label: 'Claude Desktop の再開待機を取り消す', run: () => desktopAccounts.cancelResume(sessionPane.id) }] : []),
+        ] : []),
         ...(terminalAvailable(sessionPane) ? [
           { label: 'カードのターミナルを開閉', run: () => toggleThreadSide(sessionPane, 'terminal'), hint: 't' },
           ...(cardTerms.get(sessionPane.id)?.closed ? [{ label: 'ターミナルを開き直す', run: () => restartTerminal(sessionPane), hint: 'Shift+R' }] : cardTerms.get(sessionPane.id)?.id ? [{ label: 'ターミナルのシェルを終了', run: () => endTerminal(sessionPane), hint: 'Shift+X' }] : []),
@@ -244,7 +255,7 @@ function commandPalette() {
     const answers = (sessionPane?.choices || []).map((choice, i) => ({ value: `answer:${i}`, label: `答える: ${choice.key} ${choice.title}`, group: '操作', badge: '操作', hint: i < 9 ? `Alt+${i + 1}` : '', choice }));
     return [...items.slice(0, answerAt), ...answers, ...items.slice(answerAt)];
   };
-  const p = picker($('#q'), {
+  const p = picker(document.querySelector('dialog[open] .desktop-account-picker') || document.querySelector('dialog[open]') || $('#q'), {
     title: 'コマンド', items: currentItems, width: 560, placeholder: `カード・ビュー・${T.category}・操作を検索…`, limit: 200,
     onPick: (v, item) => {
       if (item.choice) {

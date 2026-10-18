@@ -909,7 +909,7 @@ const TOOLS = [
     if (!(await readDesktopCapabilities(store.dir)).clipboardImages) return { state: 'unverified', reason: 'Desktopでの画像受取りを確認するまで、アプリの通常の添付操作を使ってください' };
     return copyPromptImages({ dataDir: store.dir, imageIds: args.imageIds }, { uiAuthorized: true });
   }),
-  appTool('canban_desktop_accounts', 'Desktop の接続状態', {}, [], () => desktopSetup.view()),
+  appTool('canban_desktop_accounts', 'Desktop の接続状態', {}, [], async () => ({ ...await desktopSetup.view(), pendingLaunches: await desktopLaunches.pending() })),
   appTool('canban_desktop_account_command', 'Desktop の接続を変更', { type: { type: 'string', enum: ['enroll-current','begin-login','finish-login','cancel','recover','cancel-wait','trial-start','trial-switch','trial-observe','trial-complete','trial-cancel'] }, account: { type: 'string' }, requestId: { type: 'string' }, confirmations: { type: 'object', additionalProperties: { type: 'boolean' } }, uiToken: { type: 'string' } }, ['type','uiToken'], async a => {
     const args = requireLoopUi(a);
     return desktopSetup.command(args);
@@ -922,6 +922,9 @@ const TOOLS = [
   },
   appTool('canban_cancel_start_session', 'Desktop の開始待機を取り消す', { clientRequestId: { type: 'string' }, uiToken: { type: 'string' } }, ['clientRequestId', 'uiToken'], a => {
     const args = requireLoopUi(a); return desktopLaunches.cancel(args.clientRequestId, { uiAuthorized: true });
+  }),
+  appTool('canban_acknowledge_desktop_launch', '結果不明の起動をアプリで確認した', { clientRequestId: { type: 'string' }, uiToken: { type: 'string' } }, ['clientRequestId','uiToken'], a => {
+    const args = requireLoopUi(a); return desktopLaunches.acknowledge(args.clientRequestId, { uiAuthorized: true });
   }),
   {
     name: 'canban_link_session',

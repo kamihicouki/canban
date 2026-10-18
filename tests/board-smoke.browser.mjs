@@ -437,7 +437,7 @@ test('the board, the ribbon, the time axis and the card layers run without page 
         document.documentElement.dataset.theme=${JSON.stringify(theme)};
         await new Promise(r=>setTimeout(r,300));
         document.querySelector('#accountsBtn').click();
-        for(let i=0;i<40&&!document.querySelector('.acct-desktop-actions');i++)await new Promise(r=>setTimeout(r,100));
+        for(let i=0;i<40&&!document.querySelector('.acct-desktop-resume');i++)await new Promise(r=>setTimeout(r,100));
         const resume=[...document.querySelectorAll('.acct-desktop-actions button')].find(b=>b.textContent.includes('初回接続を再開'));
         if(!resume)throw new Error('cancelled Desktop connection cannot resume');
         const rect=resume.getBoundingClientRect();if(rect.top<0||rect.bottom>innerHeight)throw new Error('Desktop reconnect action clipped');
@@ -447,6 +447,19 @@ test('the board, the ribbon, the time axis and the card layers run without page 
       assert.equal(capture.result?.exceptionDetails, undefined, JSON.stringify(capture.result?.exceptionDetails));
       const shot = await cdp('Page.captureScreenshot', { format:'png',captureBeyondViewport:false });
       fs.writeFileSync(path.join(dir,`${view}-${theme}-accounts.png`),Buffer.from(shot.result.data,'base64'));
+      const pickerCapture = await cdp('Runtime.evaluate', { expression: `(async()=>{
+        document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+        const card=document.querySelector('[data-card-id="claude:c2"]');if(!card)throw new Error('Claude card not found');card.click();
+        for(let i=0;i<40&&!document.querySelector('.th-tool[data-side-tab="details"]');i++)await new Promise(r=>setTimeout(r,100));
+        const details=document.querySelector('.th-tool[data-side-tab="details"]');if(details?.getAttribute('aria-pressed')!=='true')details?.click();
+        const control=document.querySelector('.desktop-resume-control');if(!control)throw new Error('Desktop account picker absent');
+        control.scrollIntoView({block:'nearest'});
+        for(let i=0;i<40&&!control.textContent.includes('Claude を開く');i++)await new Promise(r=>setTimeout(r,100));
+        const button=control.querySelector('[data-resume-desktop]');if(!button.textContent.includes('Claude を開く'))throw new Error('selected Desktop name absent');button.scrollIntoView({block:'nearest'});
+      })()`, awaitPromise:true });
+      assert.equal(pickerCapture.result?.exceptionDetails,undefined,JSON.stringify(pickerCapture.result?.exceptionDetails));
+      const pickerShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+      fs.writeFileSync(path.join(dir,`${view}-${theme}-desktop-picker.png`),Buffer.from(pickerShot.result.data,'base64'));
     }
   }
   ws.close();
