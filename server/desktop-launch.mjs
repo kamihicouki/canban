@@ -25,7 +25,7 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, record
     try { await fs.rename(temp, file); const d = await fs.open(dir, 'r'); try { await d.sync(); } finally { await d.close(); } }
     finally { await fs.rm(temp, { force: true }); }
   }
-  const result = record => ({ clientRequestId: record.input.clientRequestId, route: 'desktop', account: record.input.account || null, ...(record.input.operation === 'resume' ? { operation: 'resume', cardId: record.input.cardId } : {}), imageIds: record.input.imageIds || [], ...(record.input.imageIds?.length ? { attachmentState: 'pending-paste' } : {}), ...record.evidence, ...record.result });
+  const result = record => ({ clientRequestId: record.input.clientRequestId, agent: record.input.agent, route: 'desktop', account: record.input.account || null, ...(record.input.taskId ? { taskId: record.input.taskId } : {}), ...(record.input.operation === 'resume' ? { operation: 'resume', cardId: record.input.cardId } : {}), imageIds: record.input.imageIds || [], ...(record.input.imageIds?.length ? { attachmentState: 'pending-paste' } : {}), ...record.evidence, ...record.result });
   async function start(input, { uiAuthorized = false } = {}) {
     const id = input.clientRequestId || randomUUID(), f = files(id);
     const { uiToken: omitted, allowDesktopSwitch, allowQuit, ...payload } = input;
@@ -173,5 +173,10 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, record
       return result(record);
     } finally { await lease.release(); }
   }
-  return { start, status, cancel, recover, pending, acknowledge };
+  async function draft(id, { uiAuthorized = false } = {}) {
+    if (!uiAuthorized) throw new Error('この操作はボードUIから確認してください');
+    const record = await read(files(id).record);
+    return record ? { input: { ...record.input, ...(record.permissions.allowSwitch ? { allowDesktopSwitch: true } : {}) }, result: await status(id) } : null;
+  }
+  return { start, status, cancel, recover, pending, acknowledge, draft };
 }

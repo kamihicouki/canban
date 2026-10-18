@@ -627,7 +627,7 @@ function renderPane(p, d) {
         if (result.execution) claudeExecutionHomes.set(s.id, result.execution.homeId); else claudeExecutionHomes.delete(s.id);
         L.claudeDesktopStatus = result.desktop;
           updateExecutionChoice();
-          toast(result.desktop?.maintained ? 'CLI と Desktop に適用しました' : result.execution ? 'CLI に保存しました。Desktop は適用待ちです' : '元の CLI 設定に戻しました');
+          toast(result.execution ? 'CLI の実行アカウントを保存しました' : '元の CLI 設定に戻しました');
       } catch (error) {
         toast(error.message, true);
         throw error;
@@ -686,7 +686,6 @@ function renderPane(p, d) {
     accountPicker,
     accountPicker ? h('div', { class: 'muted', text: 'CLI の再開と指示に使うアカウントです。Desktop の起動は下の選択を使います。' }) : null,
     accountPicker ? h('div', { class: 'muted claude-thinking-note', text: '別アカウントでは過去の思考を再計算します。組織の思考に関する通知が出ても、会話履歴は引き継がれます。' }) : null,
-    accountPicker ? h('div', { class: 'muted claude-desktop-account-note' }) : null,
     h('button', { class: 'btn-primary resume-main', 'data-pane-key': 'o', title: `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`, onclick: (e) => resume(s.id, optsFromEvent(e)) },
       h('span', { text: '▶ 再開' }), ...keycap('o')),
     h('div', { class: 'field-label', text: 'デスクトップアプリ' }),
@@ -705,13 +704,6 @@ function renderPane(p, d) {
     const option = executionAccounts.find(a => a.id === selected);
     const desktop = resumeBox.querySelector('[data-resume-desktop]');
     if (desktop && s.agent !== 'claude') { desktop.disabled = !!selected && !option?.desktop?.link; desktop.title = selected ? option?.desktop?.reason || option?.desktop?.link?.note || '実行アカウントを選び直してください' : L.desktop?.url || ''; }
-    const desktopNote = resumeBox.querySelector('.claude-desktop-account-note');
-    if (desktopNote) {
-        const status = L.claudeDesktopStatus;
-        desktopNote.textContent = !selected ? '' : status?.pending ? `CLI に保存済み · Desktop は適用待ち。${status.reason}`
-          : option?.desktop?.reason || (option?.desktop?.change ? 'CLI に保存済み · Desktop は適用待ち。アプリを終了してから再開すると適用します'
-            : `Desktop の通常起動先: ${option?.desktop?.profile || '標準'}。起動済みアプリへの適用は再開時に確認します`);
-      }
     resumeBox.querySelector('.resume-main').title = selected ? '選択した Claude CLI アカウントで再開' : `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`;
     const note = p.el.querySelector('.claude-execution-note');
     if (note) note.textContent = selected ? `実行アカウント: ${option ? accountName(option.account) : '選択したアカウント（利用できません）'}` : `実行アカウント: ${s.accountLabel || '元のアカウント'}`;

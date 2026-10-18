@@ -46,9 +46,11 @@ test('Desktop waiting and cancellation retain the composer draft with keyboard a
   await accountsPage.addScriptTag({ content: `${helpers}
     const $ = selector => document.querySelector(selector);
     const state = {board:{accounts:{accounts:[{key:'claude:a',agent:'claude',label:'A'},{key:'claude:b',agent:'claude',label:'B'},{key:'claude:c',agent:'claude',label:'C'}]}}};
-    let pending = {account:'claude:b',active:true};
+    let pending = {account:'claude:b',active:true}, waitingLaunches=[];
+    window.queueNewLaunch=()=>{pending=null;waitingLaunches=[{clientRequestId:'new-launch',account:'claude:a',state:'waiting-for-quit'}];};
     const bridge = {callTool:async(name,input)=>{
-      if(name==='canban_desktop_accounts')return {result:{accountSwitch:false,profiles:[{account:'claude:a',active:true}],pending}};
+      if(name==='canban_desktop_accounts')return {result:{accountSwitch:false,profiles:[{account:'claude:a',active:true}],pending,pendingLaunches:waitingLaunches}};
+      if(name==='canban_cancel_start_session'){waitingLaunches=[];window.cancelledRequest=input.clientRequestId;return {result:{state:'cancelled'}};}
       if(input.type==='cancel'){pending.active=false;return {result:{state:'cancelled'}};}
       if(input.type==='begin-login'){pending={account:input.account,active:true};return {result:{state:'waiting-for-login'}};}
       return {result:{state:'prepared'}};
@@ -67,4 +69,9 @@ test('Desktop waiting and cancellation retain the composer draft with keyboard a
   await accountsPage.getByLabel('Desktop に接続するアカウント').selectOption('claude:c');
   await accountsPage.getByRole('button', { name: '別の Desktop を初回接続', exact: true }).click();
   await accountsPage.waitForFunction(() => document.querySelector('.acct-desktop-actions')?.textContent.includes('Desktop の接続を確認'));
+  await accountsPage.evaluate(()=>window.queueNewLaunch());
+  await accountsPage.getByRole('button',{name:'Desktop の状態を再確認',exact:true}).click();
+  assert.equal(await accountsPage.getByRole('button',{name:'この開始待機を取り消す',exact:true}).count(),1);
+  await accountsPage.getByRole('button',{name:'この開始待機を取り消す',exact:true}).click();
+  assert.equal(await accountsPage.evaluate(()=>window.cancelledRequest),'new-launch');
 });

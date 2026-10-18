@@ -20,6 +20,7 @@ async function json(file) {
 
 // appDir: Claude Desktop's data folder (~/Library/Application Support/Claude).
 export async function claudeEnvironments(appDir, { expectedAccount, dataDir } = {}) {
+  const scopeDir = appDir; // Managed profiles move; the installation/account namespace does not.
   if (expectedAccount && dataDir) {
     const current = await json(path.join(appDir, 'config.json'));
     if (`claude:${current?.lastKnownAccountUuid}` !== expectedAccount) {
@@ -38,7 +39,7 @@ export async function claudeEnvironments(appDir, { expectedAccount, dataDir } = 
   const catalogKnown = !!account && Array.isArray(list);
   const sourceObservation = { status: catalogKnown ? 'known' : 'unknown', observedAt: catalogKnown ? observedAt : null, source: 'claude-session-presets', reason: catalogKnown ? null : 'アカウントまたは環境カタログは未取得です' };
   const metadata = p => ({
-    sourceRef: { provider: 'claude', identityDomain: 'preset-account', scopeId: JSON.stringify([storageScope(appDir), account]), kind: 'environment', nativeId: p.id },
+    sourceRef: { provider: 'claude', identityDomain: 'preset-account', scopeId: JSON.stringify([storageScope(scopeDir), account]), kind: 'environment', nativeId: p.id },
     sourceObservation,
     startCapability: { status: 'unsupported', reason: '環境全体の完全適用経路は未確認です。Claudeで環境を選んで開始してください', nativeEntry: 'claude://code/new' },
     workingLocations: [p.target.cwd, ...(Array.isArray(p.target.additionalFolders) ? p.target.additionalFolders : [])].filter(folder => str(folder)).map((folder, i) => ({

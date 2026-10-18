@@ -79,3 +79,21 @@ test('interrupted work and ambiguous conversation owners never become another ac
   await assert.rejects(f.resolver.resolve(input),/所有者|複数/);
   assert.equal(f.opens.length,0);
 });
+
+test('CLI-only cards retain the official same-native-ID Desktop import path', async t=>{
+  const f=await fixture(t);await fs.unlink(path.join(f.paths.sessions,'a','org',`${sid}.json`));
+  f.source({desktopSessionId:null,desktopAccount:null,account:'claude:a'});
+  const launches=createDesktopLaunches(f.opts);
+  assert.equal((await launches.start(input,{uiAuthorized:true})).state,'opened');
+  assert.deepEqual(f.opens,[`claude://resume?session=${id}`]);
+  assert.match(await fs.readFile(f.sourcePath,'utf8'),/original/);
+});
+
+test('an archived Desktop card can still import its native CLI history in its own account',async t=>{
+  const f=await fixture(t), file=path.join(f.paths.sessions,'a','org',`${sid}.json`);
+  const value=JSON.parse(await fs.readFile(file));await f.write(file,{...value,isArchived:true});f.source({archived:true});
+  const request={...input,account:'claude:a',clientRequestId:'archived-import'};
+  const target=await f.resolver.resolve(request);
+  assert.equal(target.url,`claude://resume?session=${id}`);
+  await assert.rejects(f.resolver.resolve(input),/元のアカウント/);
+});

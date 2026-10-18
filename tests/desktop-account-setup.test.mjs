@@ -74,7 +74,10 @@ test('acceptance requires six observed transitions and explicit history, CLI, dr
   await f.setup.command({ type: 'trial-complete', confirmations: { cliPreserved: true, desktopPreserved: true, draftsPreserved: true, historyPreserved: true, writebackPreserved: true, dockPreserved: true, messagesSentByUser: true } });
   assert.equal((await f.setup.view()).accountSwitch, true);
   f.update();
-  assert.equal((await f.setup.view()).accountSwitch, false);
+  const outdated=await f.setup.view();
+  assert.equal(outdated.accountSwitch, false);
+  assert.equal(outdated.setup.trial.state,'needs-review');
+  assert.equal(outdated.profiles.every(p=>p.status==='needs-verification'),true);
 });
 
 test('a changed build, wrong identity or unobserved login cannot produce a capability receipt', async t => {

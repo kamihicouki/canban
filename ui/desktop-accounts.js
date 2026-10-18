@@ -59,6 +59,26 @@ const desktopAccounts = {
     const response = await bridge.callTool('canban_cancel_start_session', { clientRequestId: request.input.clientRequestId });
     request.result = response.result || response; this.repaint(cardId);
   },
+  async restoreStart(clientRequestId) {
+    const response = await bridge.callTool('canban_get_desktop_launch_draft', { clientRequestId });
+    const saved = response.result;
+    if (!saved?.input || !saved.result) throw new Error('保存した起動要求を確認できません');
+    if (saved.input.operation === 'resume') return openCard(saved.input.cardId);
+    const previous = taskQuickAdd.sessionDraft;
+    if (previous?.startRequest?.clientRequestId === clientRequestId) return taskQuickAdd.open({ mode: 'session' });
+    if (previous?.prompt?.trim() || taskQuickAdd.composer?.hasContent()) throw new Error('作成画面に入力途中の依頼があります。先に確認してから待機要求を開いてください');
+    const input = saved.input;
+    await taskQuickAdd.open({ mode: 'session' });
+    taskQuickAdd.sessionDraft = { ...sessionCreationDefaults(state.board, {}), agent: input.agent, route: 'desktop', account: previous?.account || null, desktopAccount: input.account,
+      cwd: input.cwd || '', hostId: input.hostId || 'local', environmentId: input.environmentId, prompt: '', attachments: { imageIds: input.imageIds || [], skills: input.skills || [] }, startRequest: input, startResult: saved.result };
+    if (input.account) this.selections.set('quick-start', input.account);
+    taskQuickAdd.mount();
+    const restored = taskQuickAdd.composer.restore(input);
+    taskQuickAdd.sessionDraft.prompt = input.prompt;
+    taskQuickAdd.paintSessionState();
+    await restored;
+    taskQuickAdd.paintSessionState();
+  },
 };
 
 function desktopAccountPicker({ key, value = null, onChange = () => {} }) {

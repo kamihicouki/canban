@@ -67,9 +67,9 @@ export async function claudeDesktopRoots(now = Date.now()) {
   const seen = new Set([defReal]);
   if (record) {
     for (const r of await readDesktopProfileRoots({ dataDir: desktopDataDir, appDir: def })) {
-      if (seen.has(r.dir)) { if (r.dir === defReal) roots[0].ownerAccount = r.account.slice('claude:'.length); continue; }
+      if (seen.has(r.dir)) { if (r.dir === defReal) Object.assign(roots[0], { ownerAccount: r.account.slice('claude:'.length), scopeSessionsDir: path.join(defReal, path.basename(sessionsDir)) }); continue; }
       seen.add(r.dir);
-      roots.push({ id: `canban:${r.id}`, dir: r.dir, sessionsDir: r.sessionsDir, default: false, ownerAccount: r.account.slice('claude:'.length), name: r.account.slice('claude:'.length) });
+      roots.push({ id: `canban:${r.id}`, dir: r.dir, sessionsDir: r.sessionsDir, scopeSessionsDir: path.join(defReal, path.basename(sessionsDir)), default: false, ownerAccount: r.account.slice('claude:'.length), name: r.account.slice('claude:'.length) });
     }
   }
   if (config.discover) {
@@ -102,7 +102,7 @@ export async function claudeDesktopFolders() {
       for (const b of await listSubdirs(path.join(r.sessionsDir, a))) {
         const dir = path.join(r.sessionsDir, a, b);
         const real = (await realpath(dir)) || dir;
-        const f = byReal.get(real) || { dir, real, owner: null, org: null, reach: new Set(), orgs: new Map() };
+        const f = byReal.get(real) || { dir, real, owner: null, org: null, reach: new Set(), orgs: new Map(), ...(r.scopeSessionsDir ? { scopeDir: r.scopeSessionsDir } : {}) };
         f.reach.add(a);
         f.orgs.set(b, a);
         if (dir === real) Object.assign(f, { dir, owner: a, org: b });

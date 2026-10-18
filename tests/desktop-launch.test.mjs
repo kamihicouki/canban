@@ -171,3 +171,16 @@ test('reservation contention reports a durable wait instead of an unknown extern
   } finally {await guard.release();}
   assert.equal((await launches.recover())[0].state,'opened');
 });
+
+test('only trusted UI can recover a new launch draft and acknowledge an unknown result',async t=>{
+  const opts=await fixture(t,{open:async()=>{throw Error('uncertain');}}),launches=createDesktopLaunches(opts);
+  const request={...input,clientRequestId:'private-draft'};
+  assert.equal((await launches.start(request)).state,'uncertain');
+  await assert.rejects(launches.draft('private-draft'),/UI/);
+  const recovered=await launches.draft('private-draft',{uiAuthorized:true});
+  assert.equal(recovered.input.prompt,'保持する');assert.deepEqual(recovered.input.imageIds,['image-a']);
+  await assert.rejects(launches.acknowledge('private-draft'),/UI/);
+  await launches.acknowledge('private-draft',{uiAuthorized:true});
+  assert.deepEqual(await launches.pending(),[]);
+  assert.equal((await launches.start(request)).state,'uncertain','acknowledgement must never retry the old external intent');
+});

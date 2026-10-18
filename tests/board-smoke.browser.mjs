@@ -274,6 +274,39 @@ await step('analytics', () => key('a'), 2000);
 await step('analytics off', () => key('a'));
 await step('usage', () => key('u'), 1500);
 await step('usage off', () => key('u'));
+await step('a saved new Desktop start restores its prompt and image before cancellation', async () => {
+  document.querySelector('dialog[open]')?.close();
+  document.querySelector('#quickTaskBtn').click();
+  document.querySelector('[data-create-mode="session"]')?.click();
+  const previous=document.querySelector('.session-prompt');previous.value='';previous.dispatchEvent(new Event('input',{bubbles:true}));
+  document.querySelector('dialog[open]').close();
+  const original=window.openai.callTool;
+  const data='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jK1cAAAAASUVORK5CYII=';
+  const bytes=Uint8Array.from(atob(data),c=>c.charCodeAt(0));
+  const sha=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(x=>x.toString(16).padStart(2,'0')).join('');
+  let cancelled=null;
+  const result={clientRequestId:'recover-new',agent:'claude',account:'claude:restore-b',state:'waiting-for-quit',imageIds:['recover-image']};
+  window.openai.callTool=async(name,args)=>{
+    if(name==='canban_desktop_accounts')return {result:{accountSwitch:false,activeAccount:'claude:restore-a',profiles:[{account:'claude:restore-a',active:true}],pendingLaunches:cancelled?[]:[result]}};
+    if(name==='canban_get_desktop_launch_draft')return {result:{input:{clientRequestId:'recover-new',agent:'claude',route:'desktop',account:'claude:restore-b',cwd:'/work',hostId:'local',prompt:'保存した依頼の本文',imageIds:['recover-image']},result}};
+    if(name==='canban_read_prompt_image')return {result:{id:'recover-image',offset:0,data,size:bytes.length,sha256:sha,mime:'image/png',name:'sample.png',nextOffset:bytes.length,complete:true}};
+    if(name==='canban_cancel_start_session'){cancelled=args.clientRequestId;return {result:{state:'cancelled'}};}
+    return original(name,args);
+  };
+  try {
+    document.querySelector('#accountsBtn').click();
+    for(let i=0;i<40&&![...document.querySelectorAll('.desktop-pending-launch button')].some(b=>b.textContent.includes('依頼と画像を戻す'));i++)await w(100);
+    [...document.querySelectorAll('.desktop-pending-launch button')].find(b=>b.textContent.includes('依頼と画像を戻す')).click();
+    for(let i=0;i<40&&document.querySelector('.session-prompt')?.value!=='保存した依頼の本文';i++)await w(100);
+    const input=document.querySelector('.session-prompt');if(input.value!=='保存した依頼の本文'||!input.readOnly)throw new Error('saved prompt not restored and locked');
+    for(let i=0;i<40&&!document.querySelector('.prompt-image img');i++)await w(100);
+    if(!document.querySelector('.prompt-image img'))throw new Error('saved image IDs were not restored');
+    [...document.querySelectorAll('.task-quick-feedback button')].find(b=>b.textContent==='開始待機を取り消す').click();
+    for(let i=0;i<40&&!cancelled;i++)await w(100);
+    if(cancelled!=='recover-new')throw new Error('cancel did not keep saved request ID');
+    document.querySelector('dialog[open]').close();
+  } finally {window.openai.callTool=original;}
+});
 return { errs, sessionOpened: !!document.querySelector('.th-conv') || true };
 `;
 
@@ -433,9 +466,13 @@ test('the board, the ribbon, the time axis and the card layers run without page 
     for (const view of ['board','timeline']) for (const theme of ['light','dark']) {
       const capture = await cdp('Runtime.evaluate', { expression: `(async()=>{
         document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+        document.querySelector('.popover .close')?.click();
+        if(!document.querySelector('#paneLayer').hidden&&!document.querySelector('#paneLayer').classList.contains('docked'))document.querySelector('.pane-close')?.click();
+        document.activeElement?.blur();
         if(!!document.querySelector('.inbox') !== ${view === 'timeline'})document.dispatchEvent(new KeyboardEvent('keydown',{key:'i',bubbles:true}));
         document.documentElement.dataset.theme=${JSON.stringify(theme)};
         await new Promise(r=>setTimeout(r,300));
+        if(!!document.querySelector('.inbox') !== ${view === 'timeline'})throw new Error('wrong Desktop account screenshot view');
         document.querySelector('#accountsBtn').click();
         for(let i=0;i<40&&!document.querySelector('.acct-desktop-resume');i++)await new Promise(r=>setTimeout(r,100));
         const resume=[...document.querySelectorAll('.acct-desktop-actions button')].find(b=>b.textContent.includes('初回接続を再開'));
@@ -453,9 +490,18 @@ test('the board, the ribbon, the time axis and the card layers run without page 
         for(let i=0;i<40&&!document.querySelector('.th-tool[data-side-tab="details"]');i++)await new Promise(r=>setTimeout(r,100));
         const details=document.querySelector('.th-tool[data-side-tab="details"]');if(details?.getAttribute('aria-pressed')!=='true')details?.click();
         const control=document.querySelector('.desktop-resume-control');if(!control)throw new Error('Desktop account picker absent');
+        for(let parent=control.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
         control.scrollIntoView({block:'nearest'});
         for(let i=0;i<40&&!control.textContent.includes('Claude を開く');i++)await new Promise(r=>setTimeout(r,100));
-        const button=control.querySelector('[data-resume-desktop]');if(!button.textContent.includes('Claude を開く'))throw new Error('selected Desktop name absent');button.scrollIntoView({block:'nearest'});
+        await new Promise(r=>setTimeout(r,400));
+        const visibleControl=document.querySelector('.desktop-resume-control');
+        for(let parent=visibleControl.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
+        const button=visibleControl.querySelector('[data-resume-desktop]');if(!button.textContent.includes('Claude を開く'))throw new Error('selected Desktop name absent');
+        button.scrollIntoView({behavior:'instant',block:'center'});await new Promise(r=>setTimeout(r,200));
+        const buttonRect=button.getBoundingClientRect();if(!button.isConnected||buttonRect.height<1||buttonRect.bottom>innerHeight-60||buttonRect.top<0)throw new Error('Desktop launch action is not visible');
+        visibleControl.querySelector('.desktop-account-picker').click();
+        await new Promise(r=>setTimeout(r,200));
+        if(!document.querySelector('.popover'))throw new Error('Desktop account choices are not visible');
       })()`, awaitPromise:true });
       assert.equal(pickerCapture.result?.exceptionDetails,undefined,JSON.stringify(pickerCapture.result?.exceptionDetails));
       const pickerShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});

@@ -44,10 +44,11 @@ export function createDesktopAccountSetup({ dataDir, appDir, accounts, runtime, 
     const paths = await locations(dataDir, appDir), v = await accounts.view();
     const capabilities = await readDesktopCapabilities(dataDir, { builds: await builds(), platform });
     const setup = await readDesktopJson(path.join(paths.state, 'setup.json')) || {};
+    if (setup.trial && setup.trial.builds?.claude !== capabilities.builds?.claude) setup.trial = { ...setup.trial, state: 'needs-review' };
     const selection = await readDesktopJson(path.join(paths.state, 'selection.json'));
     const activeAccount = await readDesktopIdentity(appDir);
     return { ...v, ...capabilities, activeAccount, lastAccount: v.profiles.some(p => p.account === selection?.account) ? selection.account : null,
-      profiles: v.profiles.map(p => ({ ...p, status: capabilities.accountSwitch ? 'available' : setup.trial && !['cancelled', 'needs-review'].includes(setup.trial.state) ? 'checking' : 'needs-verification' })), setup };
+      profiles: v.profiles.map(p => ({ ...p, status: capabilities.accountSwitch ? 'available' : ['ready','awaiting-observation'].includes(setup.trial?.state) ? 'checking' : 'needs-verification' })), setup };
   }
   async function command(input) {
     if (!input || ![...initial, ...trialCommands, 'cancel-wait'].includes(input.type)) throw desktopError('Desktop の接続操作を確認してください');

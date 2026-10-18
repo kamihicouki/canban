@@ -190,7 +190,7 @@ const desktopLaunches = createDesktopLaunches({
       if (!integrated.opened) return { notOpened: true, state: integrated.code === 'desktop_running' ? 'waiting-for-quit' : 'failed', reason: integrated.reason };
       await rememberDesktopAccount({ dataDir: store.dir, appDir: guestPaths().app, account: input.account });
       await store.markSeen({ cardId: input.cardId });
-      return { url: target.url, exact: true, cwd: target.cwd, desktopAccount: input.account, note: '元の会話ID・履歴・作業先で開きました。続きは Desktop で確認してください。' };
+      return { url: target.url, exact: true, cwd: target.cwd, desktopAccount: input.account, note: target.importCLI ? '同じ CLI 会話IDの履歴を Desktop に取り込みました。続きはアプリで確認してください。' : '元の会話ID・履歴・作業先で開きました。続きは Desktop で確認してください。' };
     }
     const skillPrompt = withSkills(input.prompt, input.skills || []);
     const localImages = promptImages(store.dir, input.imageIds || []);
@@ -925,6 +925,9 @@ const TOOLS = [
   }),
   appTool('canban_acknowledge_desktop_launch', '結果不明の起動をアプリで確認した', { clientRequestId: { type: 'string' }, uiToken: { type: 'string' } }, ['clientRequestId','uiToken'], a => {
     const args = requireLoopUi(a); return desktopLaunches.acknowledge(args.clientRequestId, { uiAuthorized: true });
+  }),
+  appTool('canban_get_desktop_launch_draft', '保存したDesktop開始依頼をUIへ復元する', { clientRequestId: { type: 'string' }, uiToken: { type: 'string' } }, ['clientRequestId','uiToken'], a => {
+    const args = requireLoopUi(a); return desktopLaunches.draft(args.clientRequestId, { uiAuthorized: true });
   }),
   {
     name: 'canban_link_session',

@@ -151,7 +151,8 @@ function showShortcuts() {
   p.classList.add('palette');
   p.querySelector('.close').focus();
 }
-function commandPalette() {
+async function commandPalette() {
+  if (!desktopAccounts.view) await desktopAccounts.refresh().catch(() => null);
   const exchangeCard = selectedExchangeCard();
   const sessionPane = !paneLayer.hidden && focusedPane()?.kind === 'session' && focusedPane()?.d?.session ? focusedPane() : null;
   const b = state.board;
@@ -195,6 +196,12 @@ function commandPalette() {
     { label: 'エージェントで今すぐ始める', run: () => taskQuickAdd.open({ mode: 'session' }) },
     ...(desktopPickerElement() || sessionPane?.id?.startsWith('claude:') ? [{ label: 'Claude Desktop の起動アカウントを選ぶ', run: () => desktopPickerElement(true)?.click(), hint: 'Alt+D' }] : []),
     { label: 'Claude Desktop の接続・保持確認', run: () => desktopAccounts.openSetup() },
+    ...(desktopAccounts.view?.pendingLaunches || []).filter(p => p.agent === 'claude' && p.operation !== 'resume').flatMap(p => [
+      { label: `Desktop の保存した開始依頼: ${accountName(p.account)}`, run: () => desktopAccounts.restoreStart(p.clientRequestId).catch(e => toast(e.message, true)) },
+      { label: `${p.state === 'uncertain' ? 'Desktop で起動結果を確認した' : 'Desktop の開始待機を取り消す'}: ${accountName(p.account)}`, run: async () => {
+        await bridge.callTool(p.state === 'uncertain' ? 'canban_acknowledge_desktop_launch' : 'canban_cancel_start_session', { clientRequestId: p.clientRequestId }); await desktopAccounts.refresh();
+      } },
+    ]),
     ...[['exclude', 'dotのセッションを除く'], ['all', 'dotのセッションを含める'], ['only', 'dotのセッションだけ表示']].map(([dotScope, label]) => ({ label, run: () => setScope({ dotScope }), hint: dotScope === 'only' ? '' : 'Shift+V' })),
     { label: slackUi.visible ? 'Slackタイムラインを隠す' : 'Slackタイムラインを表示', run: () => slackUi.toggle(), hint: 'v' },
     ...((slackUi.selected && slackUi.visible) ? [

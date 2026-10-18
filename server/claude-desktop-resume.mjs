@@ -13,7 +13,8 @@ export function createClaudeDesktopResume({ paths, findSession, check, requests 
     if (input.operation !== 'resume' || input.agent !== 'claude' || !validDesktopAccount(input.account)) fail('Desktop の再開アカウントを選んでください');
     const source = await findSession(input.cardId);
     if (source.agent !== 'claude' || source.host?.local === false) fail('このMacの Claude Desktop 会話を選んでください');
-    if (source.archived || source.desktopAmbiguous || !CLI.test(source.nativeId || '') || !ID.test(source.desktopSessionId || '')) fail('元の Desktop 会話IDと所有者を確認できません。元のアカウントで確認してください');
+    if (source.desktopAmbiguous || !CLI.test(source.nativeId || '') || source.desktopSessionId && !ID.test(source.desktopSessionId)) fail('元の会話IDと所有者を確認できません。元のアカウントで確認してください');
+    if (typeof source.cwd !== 'string' || !source.cwd.startsWith('/') || source.cwd.includes('\0') || source.cwd.length > 4096) fail('元の会話の作業先を確認できません');
     if ((await requests(input.cardId)).some(r => ['queued','starting','running'].includes(r.state))) fail('この会話には待機中または実行中の指示があります。完了または取消後に再開してください');
     const ledgerGuests = guestIndex(paths), matches = [];
     for (const folder of await desktopSessionFolders(paths)) {
@@ -24,14 +25,17 @@ export function createClaudeDesktopResume({ paths, findSession, check, requests 
         const st = await fs.lstat(file);
         if (!st.isFile() || st.isSymbolicLink() || st.size > 1024*1024) continue;
         const record = JSON.parse(await fs.readFile(file,'utf8'));
-        if (record.sessionId === source.desktopSessionId || record.cliSessionId === source.nativeId) matches.push({ ...folder, record });
+        if (source.desktopSessionId && record.sessionId === source.desktopSessionId || record.cliSessionId === source.nativeId) matches.push({ ...folder, record });
       }
     }
-    if (matches.length !== 1) fail('元の会話の所有者が複数あるか、正本が見つかりません');
-    const { record, account, org, profileId } = matches[0], owner = `claude:${account}`;
-    if (record.sessionId !== source.desktopSessionId || record.cliSessionId !== source.nativeId || record.cwd !== source.cwd || source.desktopAccount && source.desktopAccount !== account || record.isArchived) fail('元の会話ID・履歴・作業先・所有者が一致しません');
-    if (owner !== input.account) {
-      if (BUSY_KEYS.some(k => record[k] != null)) fail('作業途中で終了した会話です。元のアカウントで再開・停止してから選び直してください');
+    if (source.desktopSessionId ? matches.length !== 1 : matches.length !== 0) fail('元の会話の所有者が複数あるか、Desktop の記録が変更されています。ボードを再確認してください');
+    const { record, account, org = null, profileId = null } = matches[0] || {};
+    const owner = record ? `claude:${account}` : validDesktopAccount(source.account) ? source.account : null;
+    if (record && (record.sessionId !== source.desktopSessionId || record.cliSessionId !== source.nativeId || record.cwd !== source.cwd || source.desktopAccount && source.desktopAccount !== account)) fail('元の会話ID・履歴・作業先・所有者が一致しません');
+    const archived = !!(source.archived || record?.isArchived), importCLI = !record || archived;
+    if (archived && owner !== input.account) fail('アーカイブ済みの会話は元のアカウントで復元してから、別アカウントで開いてください');
+    if (owner !== input.account || importCLI) {
+      if (record && BUSY_KEYS.some(k => record[k] != null)) fail('作業途中で終了した会話です。元のアカウントで再開・停止してから選び直してください');
       const problem = await check(source);
       if (problem) fail(`${problem}。元のアカウントで作業を止めてから再開してください`);
     }
@@ -46,8 +50,8 @@ export function createClaudeDesktopResume({ paths, findSession, check, requests 
     }
     if (transcripts.length !== 1 || transcripts[0] !== sourcePath) fail('同じ会話IDの CLI 履歴が複数あるか、元の履歴を Desktop から参照できません');
     const st = await fs.stat(sourcePath, { bigint: true });
-    return { operation: 'resume', prepareThread: false, cardId: input.cardId, owner, profileId, org, nativeId: source.nativeId, desktopSessionId: source.desktopSessionId, sourcePath,
-      sourceStamp: `${st.dev}:${st.ino}:${st.size}:${st.mtimeNs}`, cwd: source.cwd, host: { id: 'local', local: true }, url: `claude://code/continue?session=${source.desktopSessionId}` };
+    return { operation: 'resume', prepareThread: false, cardId: input.cardId, owner, profileId, org, nativeId: source.nativeId, desktopSessionId: importCLI ? null : source.desktopSessionId, originalDesktopSessionId: source.desktopSessionId || null, sourcePath,
+      sourceStamp: `${st.dev}:${st.ino}:${st.size}:${st.mtimeNs}`, cwd: source.cwd, host: { id: 'local', local: true }, importCLI, url: importCLI ? `claude://resume?session=${source.nativeId}` : `claude://code/continue?session=${source.desktopSessionId}` };
   }
   return { resolve };
 }

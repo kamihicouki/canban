@@ -254,3 +254,31 @@ test('managed Desktop folders ignore migration duplicates outside the account ow
   assert.equal(folders.filter(f=>f.owner==='b').length,1);
   assert.equal(folders.find(f=>f.owner==='b').dir,path.join(app,'claude-code-sessions','b','org'));
 });
+
+test('managed account environment and group identities survive parking the same profile', async t => {
+  const {createDesktopAccounts}=await import('../server/claude-desktop-accounts.mjs');
+  const {configureDesktopStorage}=await import('../server/accounts.mjs');
+  const {claudeEnvironments}=await import('../server/sources/launch-targets.mjs');
+  const root=await fs.promises.mkdtemp(path.join(os.tmpdir(),'canban-stable-desktop-scope-'));
+  const dataDir=path.join(root,'data'),appDir=path.join(root,'Claude'),cliHome=path.join(root,'cli'),nativeId='aaaaaaaa-0000-4000-8000-000000000001';
+  for(const dir of [dataDir,appDir,path.join(cliHome,'projects','-work')])await fs.promises.mkdir(dir,{recursive:true});
+  const previous=process.env.CANBAN_CLAUDE_DESKTOP_DIR;process.env.CANBAN_CLAUDE_DESKTOP_DIR=path.join(appDir,'claude-code-sessions');
+  t.after(async()=>{configureDesktopStorage(null);resetAccountsForTest();if(previous===undefined)delete process.env.CANBAN_CLAUDE_DESKTOP_DIR;else process.env.CANBAN_CLAUDE_DESKTOP_DIR=previous;await fs.promises.rm(root,{recursive:true,force:true});});
+  configureAccounts({discover:false});configureDesktopStorage(dataDir);
+  await fs.promises.writeFile(path.join(appDir,'config.json'),JSON.stringify({lastKnownAccountUuid:'a'}));
+  const service=createDesktopAccounts({dataDir,appDir,runtime:async()=>({running:false}),backup:async()=>root});
+  await service.command({type:'enroll-current',account:'claude:a'});
+  await service.command({type:'begin-login',account:'claude:b',requestId:'scope-b'});
+  await fs.promises.writeFile(path.join(appDir,'config.json'),JSON.stringify({lastKnownAccountUuid:'b'}));
+  await service.command({type:'finish-login',account:'claude:b'});
+  const folder=path.join(appDir,'claude-code-sessions','b','org');await fs.promises.mkdir(folder,{recursive:true});
+  await fs.promises.writeFile(path.join(folder,'local_test.json'),JSON.stringify({sessionId:'local_test',cliSessionId:nativeId,cwd:'/work',group:{id:'group-1',name:'Work'}}));
+  await fs.promises.writeFile(path.join(cliHome,'projects','-work',`${nativeId}.jsonl`),JSON.stringify({type:'user',cwd:'/work',message:{content:'keep scope'}})+'\n');
+  await fs.promises.writeFile(path.join(appDir,'ccd-session-presets.json'),JSON.stringify({byAccount:{b:{presets:[{id:'env-1',name:'Work',target:{kind:'local',cwd:'/work'}}]}}}));
+  const beforeEnv=(await claudeEnvironments(appDir,{expectedAccount:'claude:b',dataDir})).environments[0].sourceRef;
+  const beforeGroup=(await listClaudeSessions({home:cliHome})).sessions[0].sourceMetadata.claudeGroup.ref;
+  await service.withAccount('claude:a',{allowSwitch:true,requestId:'scope-back-a'},()=>{});
+  const afterEnv=(await claudeEnvironments(appDir,{expectedAccount:'claude:b',dataDir})).environments[0].sourceRef;
+  const afterGroup=(await listClaudeSessions({home:cliHome})).sessions[0].sourceMetadata.claudeGroup.ref;
+  assert.ok(beforeGroup);assert.deepEqual(afterEnv,beforeEnv);assert.deepEqual(afterGroup,beforeGroup);
+});

@@ -219,7 +219,7 @@ async function loadDesktopMeta(dir = claudeDesktopSessionsDir()) {
   // session: owned by the original account, and reachable from the host account too.
   const guests = dir === claudeDesktopSessionsDir() ? guestIndex() : new Map();
   for (const folder of await desktopFolders(dir)) {
-    const sourceScope = storageScope(path.dirname(path.dirname(folder.dir)));
+    const sourceScope = storageScope(folder.scopeDir || path.dirname(path.dirname(folder.dir)));
     for (const f of await listDir(folder.dir)) {
       if (!f.isFile() || !/^local_.*\.json$/.test(f.name)) continue;
       let j = await readMeta(path.join(folder.dir, f.name));

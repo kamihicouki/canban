@@ -385,6 +385,16 @@ function desktopAccountsSection() {
       status.textContent = `${view.pending?.active ? `${accountName(view.pending.account)} の初回接続待ちです。` : active ? `${accountName(active.account)} を使用中。` : view.activeAccount ? `${accountName(view.activeAccount)} を Desktop で使用中・未接続。` : 'Desktop は未接続です。Desktop で現在のログインを確認してください。'} ${view.accountSwitch ? '認証保持の確認済み。' : '通常切替には認証保持の確認が必要です。'} CLI のログインと実行設定は維持します。`;
       controls.replaceChildren();
       controls.append(h('div', { class: 'desktop-profile-statuses' }, view.profiles.map(p => h('div', { text: `${accountName(p.account)} · ${view.accountSwitch ? '利用可能' : ['ready','awaiting-observation'].includes(view.setup?.trial?.state) ? '接続確認中' : '再確認が必要'}` }))));
+      for (const launch of (view.pendingLaunches || []).filter(p => p.agent === 'claude' || p.account?.startsWith('claude:'))) {
+        const pendingAction = async tool => {
+          try { await bridge.callTool(tool, { clientRequestId: launch.clientRequestId }); await refresh(); }
+          catch (e) { status.textContent = e.message; }
+        };
+        controls.append(h('div', { class: 'desktop-pending-launch' },
+          h('div', { text: `${accountName(launch.account)} · ${launch.operation === 'resume' ? '会話の再開' : '新規依頼'} · ${launch.state === 'uncertain' ? '起動結果の確認が必要' : '開始待機中'}` }),
+          h('button', { type: 'button', class: 'btn', text: launch.operation === 'resume' ? '元のカードで確認' : '作成画面へ依頼と画像を戻す', onclick: () => { closePopover(); desktopAccounts.restoreStart(launch.clientRequestId).catch(e => toast(e.message, true)); } }),
+          h('button', { type: 'button', class: 'btn', text: launch.state === 'uncertain' ? 'Desktop で結果を確認した' : 'この開始待機を取り消す', onclick: () => pendingAction(launch.state === 'uncertain' ? 'canban_acknowledge_desktop_launch' : 'canban_cancel_start_session') })));
+      }
       if (view.setup?.pendingCommand) {
         controls.append(h('p', { text: 'Desktop を保存して終了すると自動で続行します。' }), button('終了待ちを取り消す', 'cancel-wait'));
         timer = setTimeout(() => { if (section.isConnected) refresh(); }, 3000); return;
