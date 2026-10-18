@@ -30,6 +30,8 @@ async function openClaudeDesktopLocked({ url, guestSessionId, labelOf, paths, wa
     return { ok: false, opened: true, code: 'desktop_running', placed: 0 };
   }
   if (guestSessionId) {
+    const restored = await restoreGuests({ paths });
+    if (restored.problems?.length) return { ok: false, opened: false, code: 'desktop_guests_left', reason: restored.problems.join('、') };
     const plan = await planGuests({ paths, labelOf });
     if (!plan.ok) return { ok: false, opened: false, code: 'desktop_unavailable', reason: plan.reason };
     if (!plan.guests.some(g => g.sessionId === guestSessionId)) {

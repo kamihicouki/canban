@@ -16,6 +16,7 @@ import { execFile, execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { claudeDesktopSessionsDir, defaultClaudeHome, desktopStorageDirectory } from './accounts.mjs';
 import { desktopConfigPath, readDesktopConfig, planGuestGroups, assignGuestGroups } from './claude-desktop-groups.mjs';
+import { readDesktopProfileRoots } from './claude-desktop-roots.mjs';
 
 // Values that belong to the account the session was created in.
 const ACCOUNT_KEYS = ['remoteMcpServersConfig', 'enabledMcpTools', 'chromePermissionMode', 'chromeAllowedDomains', 'chromeTabGroupId', 'bridgeSessionIds', 'remoteControlAutoEligible', 'steeredByRemoteClient'];
@@ -47,6 +48,20 @@ const writeJsonAtomic = async (file, value) => {
   await fs.rename(tmp, file);
 };
 const listDirs = async dir => (await fs.readdir(dir, { withFileTypes: true }).catch(() => [])).filter(d => d.isDirectory()).map(d => d.name);
+
+// A registered account owns only the records in its own profile. Initial history
+// migration can leave old copies in the standard tree; those are never originals.
+export async function desktopSessionFolders(paths = guestPaths()) {
+  const roots = await readDesktopProfileRoots({ dataDir: paths.dataDir || path.dirname(paths.state), appDir: paths.app });
+  const registered = new Set(roots.map(r => r.account.replace(/^claude:/, '')));
+  const sources = roots.map(r => ({ account: r.account.replace(/^claude:/, ''), base: r.sessionsDir, profileId: r.id }));
+  for (const account of await listDirs(paths.sessions)) if (!registered.has(account)) sources.push({ account, base: paths.sessions });
+  const folders = [];
+  for (const { account, base, profileId } of sources) {
+    for (const org of await listDirs(path.join(base, account))) folders.push({ account, org, dir: path.join(base, account, org), profileId: profileId || null });
+  }
+  return folders;
+}
 // APFS clone: no extra space until either copy changes (falls back to a copy elsewhere).
 const clone = (from, to) => { try { execFileSync('/bin/cp', ['-cRp', from, to]); } catch { execFileSync('/bin/cp', ['-Rp', from, to]); } };
 
@@ -151,15 +166,15 @@ export async function planGuests({ paths = guestPaths(), labelOf = a => a.slice(
   if (!into) return { ok: false, reason: 'Desktop の会話フォルダを確認できません' };
   const byCli = await transcripts(paths.projects);
   const guests = [], skipped = [];
-  for (const account of await listDirs(paths.sessions)) {
+  for (const { account, org, dir, profileId } of await desktopSessionFolders(paths)) {
     if (account === host) continue;
-    for (const org of await listDirs(path.join(paths.sessions, account))) {
-      const dir = path.join(paths.sessions, account, org);
       if ((await fs.lstat(dir)).isSymbolicLink()) continue;
       for (const f of await fs.readdir(dir)) {
         const sessionId = f.replace(/\.json$/, '');
         if (!f.endsWith('.json') || !ID.test(sessionId)) continue;
         const originPath = path.join(dir, f);
+        const stat = await fs.lstat(originPath);
+        if (!stat.isFile() || stat.isSymbolicLink()) { skipped.push({ sessionId, reason: '通常ファイルではない' }); continue; }
         let record;
         try { record = await readJson(originPath); } catch { skipped.push({ sessionId, reason: '読めない' }); continue; }
         if (record.sessionId !== sessionId || !CLI.test(record.cliSessionId || '')) { skipped.push({ sessionId, reason: '形式が違う' }); continue; }
@@ -170,11 +185,14 @@ export async function planGuests({ paths = guestPaths(), labelOf = a => a.slice(
         if (!transcript) { skipped.push({ sessionId, title: record.title, account, reason: transcript === null ? '会話記録が複数ある' : '会話記録がない' }); continue; }
         const guestPath = path.join(into, f);
         if (await exists(guestPath)) { skipped.push({ sessionId, title: record.title, account, reason: '同じ ID の記録が既にある' }); continue; }
-        guests.push({ sessionId, cliSessionId: record.cliSessionId, title: record.title, cwd: record.cwd, account, org, originPath, guestPath, transcript, prefix: `🔗 ${labelOf(account)} · ` });
+        guests.push({ sessionId, cliSessionId: record.cliSessionId, title: record.title, cwd: record.cwd, account, org, profileId, originPath, guestPath, transcript, prefix: `🔗 ${labelOf(account)} · ` });
       }
-    }
   }
-  return { ok: true, host, into, guests, skipped };
+  const unique = guests.filter(g => {
+    if (guests.some(other => other !== g && (other.sessionId === g.sessionId || other.cliSessionId === g.cliSessionId))) { skipped.push({ sessionId: g.sessionId, account: g.account, reason: '会話の所有者が複数ある' }); return false; }
+    return true;
+  });
+  return { ok: true, host, into, guests: unique, skipped };
 }
 
 // Places the guests. Desktop must be stopped; a previous integration must be restored.
@@ -203,7 +221,9 @@ async function placeGuestsLocked({ paths = guestPaths(), labelOf } = {}) {
     ledger.entries.push({ sessionId: g.sessionId, cliSessionId: g.cliSessionId, account: g.account, org: g.org, prefix: g.prefix,
       guestPath: g.guestPath, originPath: g.originPath, originSha: await sha(g.originPath), transcript: g.transcript, backup });
     await writeJsonAtomic(paths.ledger, ledger);
-    await writeJsonAtomic(g.guestPath, { ...record, title: g.prefix + (record.title || '') });
+    const guest = { ...record, title: g.prefix + (record.title || '') };
+    for (const k of ACCOUNT_KEYS) delete guest[k];
+    await writeJsonAtomic(g.guestPath, guest);
   }
   if (!ledger.entries.length) { await fs.unlink(paths.ledger).catch(() => {}); return { ...plan, placed: 0 }; }
   const groups = await placeGroups(paths, ledger, plan.guests);
@@ -239,8 +259,7 @@ async function placeGroups(paths, ledger, guests) {
 const GUEST_TITLE = /^🔗 [^·]{1,80} · /;
 async function tidyOrphansLocked(paths, tracked = new Set()) {
   if (await desktopRunning()) return [];
-  const folders = [];
-  for (const account of await listDirs(paths.sessions)) for (const org of await listDirs(path.join(paths.sessions, account))) folders.push({ account, dir: path.join(paths.sessions, account, org) });
+  const folders = await desktopSessionFolders(paths);
   const tidied = [];
   for (const { account, dir } of folders) {
     for (const f of await fs.readdir(dir).catch(() => [])) {
@@ -289,15 +308,21 @@ async function restoreGuestsLocked({ paths = guestPaths() } = {}) {
   for (const e of ledger.entries) {
     try {
       const guest = await readJson(e.guestPath).catch(() => null);
-      const originChanged = await sha(e.originPath).catch(() => null) !== e.originSha;
+      const originHash = await sha(e.originPath).catch(() => null);
+      const alreadyWritten = e.writebackSha && originHash === e.writebackSha && (!guest || await sha(e.guestPath) === e.guestSha);
+      const originChanged = originHash !== e.originSha && !alreadyWritten;
       if (guest && originChanged) {
         await fs.copyFile(e.guestPath, path.join(e.backup, 'guest-conflict.json'));
-        notes.push(`${e.sessionId}: 統合中に原本が別に更新されたため書き戻さず、ゲストを ${e.backup} に保存しました`);
-      } else if (guest) {
+        problems.push(`${e.sessionId}: 原本とゲストが別々に更新されています。両方を保持しました。元アカウントで内容を確認してください`);
+        continue;
+      } else if (guest && !alreadyWritten) {
         const origin = await readJson(e.originPath);
+        if (guest.sessionId !== e.sessionId || guest.cliSessionId !== e.cliSessionId || guest.cwd !== origin.cwd) throw new Error('ゲストの会話ID・履歴・作業先が変わったため書戻しを停止しました');
         const merged = { ...guest };
         for (const k of ACCOUNT_KEYS) k in origin ? merged[k] = origin[k] : delete merged[k];
         if (typeof guest.title === 'string' && guest.title.startsWith(e.prefix)) merged.title = guest.title.slice(e.prefix.length);
+        e.writebackSha = crypto.createHash('sha256').update(JSON.stringify(merged)).digest('hex'); e.guestSha = await sha(e.guestPath);
+        await writeJsonAtomic(paths.ledger, ledger);
         await writeJsonAtomic(e.originPath, merged);
       } else notes.push(`${e.sessionId}: ゲストは統合中に削除されました。原本は残しました`);
       // Deleting a guest can release (reap) the shared transcript: put it back.

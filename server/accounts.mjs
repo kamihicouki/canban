@@ -67,9 +67,9 @@ export async function claudeDesktopRoots(now = Date.now()) {
   const seen = new Set([defReal]);
   if (record) {
     for (const r of await readDesktopProfileRoots({ dataDir: desktopDataDir, appDir: def })) {
-      if (seen.has(r.dir)) continue;
+      if (seen.has(r.dir)) { if (r.dir === defReal) roots[0].ownerAccount = r.account.slice('claude:'.length); continue; }
       seen.add(r.dir);
-      roots.push({ id: `canban:${r.id}`, dir: r.dir, sessionsDir: r.sessionsDir, default: false, name: r.account.slice('claude:'.length) });
+      roots.push({ id: `canban:${r.id}`, dir: r.dir, sessionsDir: r.sessionsDir, default: false, ownerAccount: r.account.slice('claude:'.length), name: r.account.slice('claude:'.length) });
     }
   }
   if (config.discover) {
@@ -95,8 +95,10 @@ export async function claudeDesktopRoots(now = Date.now()) {
 // owner: the account whose folder it really is; reach: accounts that see it (links).
 export async function claudeDesktopFolders() {
   const byReal = new Map();
-  for (const r of await claudeDesktopRoots()) {
+  const roots = await claudeDesktopRoots(), registered = new Set(roots.map(r => r.ownerAccount).filter(Boolean));
+  for (const r of roots) {
     for (const a of await listSubdirs(r.sessionsDir)) {
+      if (registered.has(a) && r.ownerAccount !== a || r.ownerAccount && !r.default && r.ownerAccount !== a) continue;
       for (const b of await listSubdirs(path.join(r.sessionsDir, a))) {
         const dir = path.join(r.sessionsDir, a, b);
         const real = (await realpath(dir)) || dir;

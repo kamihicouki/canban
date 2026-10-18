@@ -231,3 +231,26 @@ test('account marks and header visibility are stored and validated', async () =>
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('managed Desktop folders ignore migration duplicates outside the account own profile', async t => {
+  const { createDesktopAccounts } = await import('../server/claude-desktop-accounts.mjs');
+  const { configureDesktopStorage, claudeDesktopFolders, resetAccountsForTest } = await import('../server/accounts.mjs');
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'canban-canonical-folders-'));
+  t.after(async () => { resetAccountsForTest(); configureDesktopStorage(null); await fs.promises.rm(root, {recursive:true,force:true}); });
+  const app = path.join(root,'Claude'), dataDir = path.join(root,'data');
+  await fs.promises.mkdir(dataDir); await fs.promises.mkdir(app);
+  const prev = process.env.CANBAN_CLAUDE_DESKTOP_DIR;
+  process.env.CANBAN_CLAUDE_DESKTOP_DIR = path.join(app,'claude-code-sessions');
+  t.after(() => { if (prev === undefined) delete process.env.CANBAN_CLAUDE_DESKTOP_DIR; else process.env.CANBAN_CLAUDE_DESKTOP_DIR = prev; });
+  for (const account of ['a','b']) await fs.promises.mkdir(path.join(app,'claude-code-sessions',account,'org'), {recursive:true});
+  await fs.promises.writeFile(path.join(app,'config.json'), JSON.stringify({lastKnownAccountUuid:'a'}));
+  configureDesktopStorage(dataDir);
+  const service=createDesktopAccounts({dataDir,appDir:app,runtime:async()=>({running:false}),backup:async()=>root});
+  await service.command({type:'enroll-current',account:'claude:a'});
+  const b=await service.command({type:'begin-login',account:'claude:b',requestId:'canonical-b'});
+  await fs.promises.writeFile(path.join(app,'config.json'), JSON.stringify({lastKnownAccountUuid:'b'}));
+  await service.command({type:'finish-login',account:'claude:b'});
+  const folders=await claudeDesktopFolders();
+  assert.equal(folders.filter(f=>f.owner==='b').length,1);
+  assert.equal(folders.find(f=>f.owner==='b').dir,path.join(app,'claude-code-sessions','b','org'));
+});
