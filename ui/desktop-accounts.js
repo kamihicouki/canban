@@ -7,6 +7,7 @@ const desktopAccounts = {
       for (const result of this.view.pendingLaunches || []) if (result.operation === 'resume' && !this.resumes.has(result.cardId)) {
         this.selections.set(result.cardId, result.account);
         this.resumes.set(result.cardId, { input: { cardId: result.cardId, route: 'desktop', desktopAccount: result.account, clientRequestId: result.clientRequestId, allowDesktopSwitch: true }, result });
+        this.repaint(result.cardId);
       }
       return this.view;
     }).finally(() => { this.pending = null; });
