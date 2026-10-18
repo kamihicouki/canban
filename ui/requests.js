@@ -33,13 +33,18 @@ function paintChoices(f) {
   const box = f?.pane.el.querySelector('.send-section .cx-choices');
   if (!box) return;
   const choices = f.status === 'running' || f.signals?.wait ? [] : choiceModel.parse(f.pane.lastText);
-  const changed = JSON.stringify(f.pane.choices || []) !== JSON.stringify(choices);
+  const key = JSON.stringify(choices);
+  const changed = JSON.stringify(f.pane.choices || []) !== key;
   f.pane.choices = choices;
-  box.hidden = !choices.length;
-  box.replaceChildren(...(choices.length ? [h('span', { class: 'cx-choices-label', text: '答える' }),
-    ...choices.map((c, i) => h('button', { type: 'button', class: `cx-choice${c.recommended ? ' rec' : ''}`, title: `入力欄に「${c.reply}」を入れる${i < 9 ? `（Alt+${i + 1}）` : ''}`, onclick: () => fillChoice(f.pane, c) },
-      h('b', { text: c.key }), h('span', { class: 'cx-choice-t', text: c.title }), c.recommended ? h('span', { class: 'cx-rec', text: '推奨' }) : null,
-      i < 9 ? keycap(`Alt+${i + 1}`) : null))] : []));
+  // Retain focused buttons on no-op updates, but render into a newly built composer.
+  if (box._choiceKey !== key) {
+    box.hidden = !choices.length;
+    box.replaceChildren(...(choices.length ? [h('span', { class: 'cx-choices-label', text: '答える' }),
+      ...choices.map((c, i) => h('button', { type: 'button', class: `cx-choice${c.recommended ? ' rec' : ''}`, title: `入力欄に「${c.reply}」を入れる${i < 9 ? `（Alt+${i + 1}）` : ''}`, onclick: () => fillChoice(f.pane, c) },
+        h('b', { text: c.key }), h('span', { class: 'cx-choice-t', text: c.title }), c.recommended ? h('span', { class: 'cx-rec', text: '推奨' }) : null,
+        i < 9 ? keycap(`Alt+${i + 1}`) : null))] : []));
+    box._choiceKey = key;
+  }
   if (changed) {
     document.querySelector('.popover.palette')?.refreshChoices?.();
     refreshShortcutHints();

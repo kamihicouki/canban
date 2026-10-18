@@ -12,7 +12,8 @@ function fixture() {
   const node = (tag, props = {}) => ({ ...props, childNodes: [], childElementCount: 0,
     addEventListener() {}, append(...children) { this.childNodes.push(...children); },
     replaceChildren(...children) { this.childNodes = children; }, querySelector: () => null });
-  const box = node('div'), pane = { el: { querySelector: selector => selector.includes('.cx-choices') ? box : null } };
+  let box = node('div');
+  const pane = { el: { querySelector: selector => selector.includes('.cx-choices') ? box : null } };
   const live = { feeds: new Map() };
   const api = vm.runInNewContext(read('message-preview.js') + render + update + choices + '\n({renderFeed,applyFeed,paintChoices})', {
     document: { querySelector: () => null }, refreshShortcutHints() {}, h: node, live, keycap: () => [], queueMicrotask: fn => fn(), editSummary: () => ({ el: node('div') }),
@@ -22,7 +23,10 @@ function fixture() {
   return {
     open(items, status = 'idle', preview = '') { api.renderFeed({ session: { id: 'fixture', status, preview }, feed: { items, offset: 0, size: 1 } }, pane); return live.feeds.get('fixture'); },
     update(f, items, status) { api.applyFeed(f, { items, status, offset: 1, size: 2 }); },
-    replies: () => Array.from(pane.choices || [], c => c.reply), box,
+    replies: () => Array.from(pane.choices || [], c => c.reply),
+    get box() { return box; },
+    replaceBox() { box = node('div'); },
+    repaint(feed) { api.paintChoices(feed); },
   };
 }
 const question = { k: 'assistant', text: 'この方針で進めてよいですか？' }, answer = { k: 'user', text: 'はい、お願いします。' };
@@ -46,4 +50,17 @@ test('tool results and turn markers do not consume an unanswered question', () =
 test('a preview without a question in the fetched conversation cannot offer an answer', () => {
   const f = fixture(); f.open([], 'idle', question.text); assert.deepEqual(f.replies(), []);
   f.open([answer], 'idle', question.text); assert.deepEqual(f.replies(), []);
+});
+test('unchanged answer choices retain their button nodes on live updates', () => {
+  const f = fixture(), feed = f.open([question]), button = f.box.childNodes[1];
+  f.update(feed, [{ k: 'commentary', text: '補足が届きました' }]);
+  assert.equal(f.box.childNodes[1], button);
+  f.update(feed, [], 'idle');
+  assert.equal(f.box.childNodes[1], button);
+});
+test('a rebuilt composer renders unchanged choices into its new box', () => {
+  const f = fixture(), feed = f.open([question]);
+  f.replaceBox(); f.repaint(feed);
+  assert.equal(f.box.hidden, false);
+  assert.equal(f.box.childNodes.length, 3);
 });
