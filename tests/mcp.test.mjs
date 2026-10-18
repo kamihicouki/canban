@@ -26,7 +26,7 @@ const call = async (name, args = {}) => (await rpc('tools/call', { name, argumen
 test('UI loop confirmation rejects ordinary model calls and accepts the rendered UI capability', async () => {
   const taskId = (await call('canban_create_task', { title: 'Loop confirmation fixture' })).structuredContent.cardId;
   const args = { taskId, expectedRevision: 0, commandId: 'ui-config', command: { type: 'configure', goal: '確認する', criteria: ['根拠'] } };
-  for (const uiToken of [undefined, 'forged-token']) {
+  for (const uiToken of [undefined, '', 'forged-token', 'f'.repeat(64)]) {
     const denied = await call('canban_review_loop', { ...args, uiToken });
     assert.equal(denied.isError, true); assert.match(denied.content[0].text, /ボードUI/);
   }
