@@ -9,6 +9,8 @@ const desktopAccounts = {
         this.resumes.set(result.cardId, { input: { cardId: result.cardId, route: 'desktop', desktopAccount: result.account, clientRequestId: result.clientRequestId, allowDesktopSwitch: true }, result });
         this.repaint(result.cardId);
       }
+      document.querySelectorAll('.desktop-account-field').forEach(el => el.paintDesktopAccount?.());
+      document.querySelectorAll('[data-desktop-resume-card]').forEach(el => el.paintResume?.());
       return this.view;
     }).finally(() => { this.pending = null; });
     return this.pending;
@@ -91,14 +93,17 @@ function desktopAccountPicker({ key, value = null, onChange = () => {} }) {
   const button = pickerButton({ title: 'Desktop の起動アカウント', value: desktopAccounts.selected(key), stack: false, items, onChange: choose, placeholder: 'アカウント名で検索' });
   button.classList.add('desktop-account-picker');
   const status = h('span', { class: 'muted', role: 'status' });
+  const current = h('span', { class: 'muted desktop-current-account', role: 'status' });
   const setup = h('button', { type: 'button', class: 'link-btn', text: 'Desktop の接続・保持確認', onclick: () => desktopAccounts.openSetup() });
-  const root = h('div', { class: 'desktop-account-field' }, h('div', { class: 'field-label' }, 'Desktop の起動アカウント', ...keycap('Alt+D')), button, status, setup);
+  const root = h('div', { class: 'desktop-account-field' }, h('div', { class: 'field-label' }, 'Desktop の起動アカウント', ...keycap('Alt+D')), button, current, status, setup);
   function paint() {
     const account = desktopAccounts.selected(key);
     const problem = desktopAccounts.problem(account);
     button.value = account; button.repaint(); status.textContent = problem || ''; status.hidden = !problem;
+    current.textContent = desktopAccounts.view?.activeAccount ? `Desktop の現在のアカウント: ${accountName(desktopAccounts.view.activeAccount)}` : 'Desktop の現在のアカウントを確認中';
     setup.hidden = !problem;
   }
+  root.paintDesktopAccount = paint;
   const click = button.onclick;
   button.onclick = async () => { try { await desktopAccounts.refresh(); paint(); click(); } catch (e) { toast(e.message, true); } };
   desktopAccounts.refresh().then(() => { if (!desktopAccounts.selections.has(key)) { const account = desktopAccounts.defaultAccount(); if (account) { desktopAccounts.selections.set(key, account); onChange(account, { initial: true }); } } paint(); }).catch(() => { status.textContent = 'Desktop の接続を確認できません'; });
@@ -115,8 +120,11 @@ function desktopResumeControl(cardId) {
     clearTimeout(timer);
     const request = desktopAccounts.resumes.get(cardId), result = request?.result, account = request?.input.desktopAccount || desktopAccounts.selected(cardId);
     const waiting = ['prepared','waiting-for-quit','waiting-for-login','opening'].includes(result?.state);
-    launch.textContent = waiting ? '再開結果を確認' : `${account ? accountName(account) : 'アカウントを選択'} で Claude を開く`;
-    launch.disabled = !!request?.submitting || result?.state === 'uncertain';
+    const problem = desktopAccounts.problem(account);
+    const connected = desktopAccounts.view?.profiles?.some(p => p.account === account);
+    launch.textContent = waiting ? '再開結果を確認' : problem ? `${account ? accountName(account) : 'アカウント'}：${connected ? '保持確認が必要' : '接続確認が必要'}` : `${accountName(account)} で Claude を開く`;
+    launch.title = waiting ? result?.reason || '保存した再開要求の結果を確認します' : problem || '';
+    launch.disabled = !!request?.submitting || result?.state === 'uncertain' || !waiting && !!problem;
     field.querySelector('.desktop-account-picker').disabled = waiting || !!request?.submitting;
     feedback.replaceChildren(...[h('span', { text: result?.reason || result?.note || (result?.state === 'cancelled' ? '再開待機を取り消しました。選択と下書きは保持しています。' : '') }),
       waiting ? h('button', { type: 'button', class: 'btn', text: '再開待機を取り消す', onclick: () => desktopAccounts.cancelResume(cardId).catch(e => toast(e.message, true)) }) : null,
@@ -139,3 +147,7 @@ function desktopPickerElement(reveal = false) {
   if (reveal && pane?.id?.startsWith('claude:') && !pane.el.querySelector('.desktop-account-picker') && pane.detailNodes) openThreadSide(pane, 'details');
   return pane?.el.querySelector('.desktop-account-picker');
 }
+
+window.addEventListener('focus', () => {
+  if ([...document.querySelectorAll('.desktop-account-field')].some(el => el.getClientRects().length)) desktopAccounts.refresh().catch(() => {});
+});

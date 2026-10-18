@@ -8,6 +8,7 @@ import { backupDesktopProfiles } from '../server/desktop-backup.mjs';
 import { createDesktopLaunches } from '../server/desktop-launch.mjs';
 import { openClaudeDesktop } from '../server/claude-desktop-open.mjs';
 import { restoreGuests, setGuestRunningCheck } from '../server/claude-desktop-guests.mjs';
+import { Store } from '../server/store.mjs';
 
 const id = 'aaaaaaaa-0000-4000-8000-000000000001', sid = 'local_original';
 async function fixture(t) {
@@ -59,6 +60,33 @@ test('cancelled resume never switches or opens after quit',async t=>{
   await launches.start(input,{uiAuthorized:true});await launches.cancel(input.clientRequestId,{uiAuthorized:true});
   f.stop();await launches.recover();assert.equal(f.opens.length,0);
   assert.equal((await f.accounts.view()).profiles.find(p=>p.active).account,'claude:a');
+});
+
+test('a linked task retains its original session across another account turn, writeback and return',async t=>{
+  const f=await fixture(t), store=new Store(f.dataDir), sessionId=`claude:${id}`;
+  const task=await store.createTask({title:'cross-account verification',description:'Keep the original conversation'});
+  const other=await store.createTask({title:'unrelated task'});
+  await store.linkSession({taskId:task.cardId,sessionId});
+  await store.linkSession({taskId:other.cardId,sessionId:'claude:unrelated'});
+  const before=(await store.load()).cards;
+  const launches=createDesktopLaunches(f.opts);
+  assert.equal((await launches.start(input,{uiAuthorized:true})).state,'opened');
+  const guestFile=path.join(f.paths.sessions,'b','org',`${sid}.json`);
+  const guest=JSON.parse(await fs.readFile(guestFile));
+  await f.write(guestFile,{...guest,completedTurns:2,lastAssistantUuid:'guest-progress'});
+  await fs.appendFile(f.sourcePath,JSON.stringify({type:'assistant',message:{content:'cross-account progress'}})+'\n');
+  f.stop();await restoreGuests({paths:f.paths});
+  await f.accounts.withAccount('claude:a',{allowSwitch:true,requestId:'return-after-task'},()=>{});
+  const original=JSON.parse(await fs.readFile(path.join(f.paths.sessions,'a','org',`${sid}.json`)));
+  assert.equal(original.completedTurns,2);assert.equal(original.lastAssistantUuid,'guest-progress');
+  assert.equal(original.cliSessionId,id);assert.equal(original.cwd,'/work');
+  assert.equal((await launches.start({...input,account:'claude:a',clientRequestId:'task-return'},{uiAuthorized:true})).state,'opened');
+  assert.deepEqual(f.opens,[`claude://code/continue?session=${sid}`,`claude://code/continue?session=${sid}`]);
+  const after=(await new Store(f.dataDir).load()).cards;
+  assert.deepEqual(after[task.cardId],before[task.cardId]);
+  assert.deepEqual(after[other.cardId],before[other.cardId]);
+  assert.deepEqual(after[task.cardId].links,[sessionId]);
+  assert.match(await fs.readFile(f.sourcePath,'utf8'),/cross-account progress/);
 });
 
 test('a changed transcript reference or pending CLI request prevents the external open',async t=>{

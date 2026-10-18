@@ -679,6 +679,10 @@ function renderPane(p, d) {
     return h('button', { class: 'seg-btn', disabled: !ok, title: ok ? `${term.label} で${label}` : `${term ? term.label : 'ターミナル'}では未対応`, text: label,
       onclick: () => resume(s.id, { route: 'terminal', target }) });
   };
+  const managedDesktop = s.agent === 'claude' && s.host?.local !== false;
+  // This snapshot describes the old owner-based route. The shared picker reads
+  // the selected Desktop account and its current connection state instead.
+  const desktopNote = managedDesktop && L.desktop?.accountMismatch ? null : L.desktop?.note;
   const resumeBox = s.sourceKind === 'codex-cloud' ? h('div', { class: 'resume-box' },
     h('button', { class: 'btn-primary resume-main', 'data-pane-key': 'o', type: 'button', title: L.desktop.url, onclick: () => resume(s.id, { route: 'desktop' }) }, h('span', { html: picon('free', 14) }), 'Codexで開く', ...keycap('o')),
     h('div', { class: 'muted', text: d.dispatch.unavailableReason })) : h('div', { class: 'resume-box' },
@@ -689,10 +693,10 @@ function renderPane(p, d) {
     h('button', { class: 'btn-primary resume-main', 'data-pane-key': 'o', title: `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`, onclick: (e) => resume(s.id, optsFromEvent(e)) },
       h('span', { text: '▶ 再開' }), ...keycap('o')),
     h('div', { class: 'field-label', text: 'デスクトップアプリ' }),
-    s.agent === 'claude' && s.host?.local !== false ? desktopResumeControl(s.id) : L.desktop
+    managedDesktop ? desktopResumeControl(s.id) : L.desktop
       ? h('button', { class: 'side-btn', 'data-resume-desktop': '', text: `↗ ${L.desktop.label}`, title: L.desktop.url, onclick: () => resume(s.id, { route: 'desktop' }) })
       : h('div', { class: 'muted', text: s.host ? 'リモートのセッションはターミナルで再開します' : 'このセッションはデスクトップアプリでは開けません' }),
-    L.desktop && L.desktop.note ? h('div', { class: 'muted', text: `${L.desktop.accountMismatch ? '⚠ ' : ''}${L.desktop.note}` }) : null,
+    desktopNote ? h('div', { class: 'muted', text: `${L.desktop.accountMismatch ? '⚠ ' : ''}${desktopNote}` }) : null,
     h('div', { class: 'field-label', text: `ターミナル${term ? `（${term.label}）` : ''}` }),
     term ? h('div', { class: 'seg-row' }, targetBtn('new-window', '新規ウィンドウ'), targetBtn('new-tab', '新規タブ'), targetBtn('split', '分割'), targetBtn('current', '既存ウィンドウ'))
       : h('div', { class: 'muted', text: '対応ターミナルが見つかりません' }),

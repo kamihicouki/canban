@@ -274,6 +274,29 @@ await step('analytics', () => key('a'), 2000);
 await step('analytics off', () => key('a'));
 await step('usage', () => key('u'), 1500);
 await step('usage off', () => key('u'));
+await step('Claude Desktop account selection owns its current-account explanation', async () => {
+  document.querySelector('.pane-close')?.click();
+  const tool=window.openai.callTool;
+  window.openai.callTool=async(name,args)=>{
+    const response=await tool(name,args);
+    if(name==='canban_get_session'&&args.cardId==='claude:c2'){
+      const detail=response.structuredContent||response.result;
+      if(!detail?.launch?.desktop)throw new Error('Desktop launch fixture missing');
+      detail.launch.desktop.note='fixture: outdated account mismatch';
+      detail.launch.desktop.accountMismatch={session:'claude:a',active:'claude:old'};
+    }
+    return response;
+  };
+  try{
+    document.querySelector('[data-card-id="claude:c2"]').click();
+    for(let i=0;i<40&&!document.querySelector('.th-tool[data-side-tab="details"]');i++)await w(100);
+    const details=document.querySelector('.th-tool[data-side-tab="details"]');if(details?.getAttribute('aria-pressed')!=='true')details?.click();
+    for(let i=0;i<40&&!document.querySelector('.desktop-resume-control');i++)await w(100);
+    const pane=document.querySelector('.desktop-resume-control')?.closest('.pane');
+    if(!pane)throw new Error('managed Desktop account control missing');
+    if(pane.textContent.includes('fixture: outdated account mismatch'))throw new Error('legacy account warning overrides the selected Desktop account');
+  }finally{window.openai.callTool=tool;document.querySelector('.pane-close')?.click();}
+});
 await step('a saved new Desktop start restores its prompt and image before cancellation', async () => {
   document.querySelector('dialog[open]')?.close();
   document.querySelector('#quickTaskBtn').click();
@@ -456,12 +479,17 @@ test('the board, the ribbon, the time axis and the card layers run without page 
   }
   if (process.env.CANBAN_DESKTOP_ACCOUNT_SHOTS) {
     const dir = path.resolve(process.env.CANBAN_DESKTOP_ACCOUNT_SHOTS); fs.mkdirSync(dir, { recursive: true });
-    const fixture = await cdp('Runtime.evaluate', { expression: `{
+    const fixture = await cdp('Runtime.evaluate', { expression: `(async()=>{
       const original = window.openai.callTool;
+      const response=await original('canban_desktop_accounts',{});
+      const payload=response.structuredContent||response.result||response;
+      const current=(payload.result||payload).activeAccount||'claude:account-a';
+      const profiles=[...new Set([current,'claude:a','claude:account-a'])].map(account=>({account,active:account===current}));
+      window.desktopShotView={accountSwitch:true,activeAccount:current,lastAccount:current,profiles,pending:{account:'claude:account-b',active:false}};
       window.openai.callTool = (name,args) => name === 'canban_desktop_accounts'
-        ? Promise.resolve({result:{accountSwitch:true,profiles:[{account:'claude:account-a',active:true}],pending:{account:'claude:account-b',active:false}}})
+        ? Promise.resolve({result:window.desktopShotView})
         : original(name,args);
-    }` });
+    })()`,awaitPromise:true });
     assert.equal(fixture.result?.exceptionDetails, undefined);
     for (const view of ['board','timeline']) for (const theme of ['light','dark']) {
       const capture = await cdp('Runtime.evaluate', { expression: `(async()=>{
@@ -492,6 +520,11 @@ test('the board, the ribbon, the time axis and the card layers run without page 
         const control=document.querySelector('.desktop-resume-control');if(!control)throw new Error('Desktop account picker absent');
         for(let parent=control.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
         control.scrollIntoView({block:'nearest'});
+        control.querySelector('.desktop-account-picker').click();
+        for(let i=0;i<40&&!document.querySelector('input[aria-label="Desktop の起動アカウントを絞り込み"]');i++)await new Promise(r=>setTimeout(r,100));
+        const search=document.querySelector('input[aria-label="Desktop の起動アカウントを絞り込み"]');
+        search.value='claude:account-a';search.dispatchEvent(new Event('input',{bubbles:true}));
+        document.querySelector('.popover .picker-row')?.click();
         for(let i=0;i<40&&!control.textContent.includes('Claude を開く');i++)await new Promise(r=>setTimeout(r,100));
         await new Promise(r=>setTimeout(r,400));
         const visibleControl=document.querySelector('.desktop-resume-control');
@@ -506,6 +539,18 @@ test('the board, the ribbon, the time axis and the card layers run without page 
       assert.equal(pickerCapture.result?.exceptionDetails,undefined,JSON.stringify(pickerCapture.result?.exceptionDetails));
       const pickerShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
       fs.writeFileSync(path.join(dir,`${view}-${theme}-desktop-picker.png`),Buffer.from(pickerShot.result.data,'base64'));
+      const unverifiedCapture=await cdp('Runtime.evaluate',{expression:`(async()=>{
+        document.querySelector('.popover .close')?.click();window.desktopShotView.accountSwitch=false;
+        window.dispatchEvent(new Event('focus'));await new Promise(r=>setTimeout(r,300));
+        const control=document.querySelector('.desktop-resume-control'),button=control.querySelector('[data-resume-desktop]');
+        button.scrollIntoView({behavior:'instant',block:'center'});
+        if(!button.disabled||!button.textContent.includes('保持確認が必要'))throw new Error('unverified Desktop launch is misleading');
+        if(!control.textContent.includes('Desktop の現在のアカウント:'))throw new Error('current Desktop account is absent');
+      })()`,awaitPromise:true});
+      assert.equal(unverifiedCapture.result?.exceptionDetails,undefined,JSON.stringify(unverifiedCapture.result?.exceptionDetails));
+      const unverifiedShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+      fs.writeFileSync(path.join(dir,`${view}-${theme}-desktop-unverified.png`),Buffer.from(unverifiedShot.result.data,'base64'));
+      await cdp('Runtime.evaluate',{expression:`window.desktopShotView.accountSwitch=true;window.dispatchEvent(new Event('focus'));`});
     }
   }
   ws.close();

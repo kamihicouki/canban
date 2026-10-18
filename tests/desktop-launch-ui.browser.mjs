@@ -44,5 +44,23 @@ test('Desktop picker is searchable inside a dialog, independent of CLI, and reta
   await page.waitForFunction(()=>document.querySelector('#resume').textContent.includes('終了待ちを復元'));
   await page.getByRole('button',{name:'再開待機を取り消す',exact:true}).click();
   assert.equal(await page.evaluate(()=>fixture.calls.filter(c=>c.name==='canban_cancel_start_session').at(-1).args.clientRequestId),'persisted-resume');
+  await page.evaluate(async()=>{
+    fixture.view.accountSwitch=false;fixture.view.pendingLaunches=[];
+    desktopAccounts.resumes.clear();
+    document.querySelector('#resume').replaceChildren(desktopResumeControl('claude:verification-required'));
+    await desktopAccounts.refresh();
+  });
+  const gatedLaunch=page.locator('#resume [data-resume-desktop]');
+  await page.waitForFunction(()=>document.querySelector('#resume [data-resume-desktop]').textContent.includes('B'));
+  assert.equal(await gatedLaunch.isEnabled(),false,'an unverified account switch must not promise to open Desktop');
+  assert.match(await gatedLaunch.innerText(),/保持確認/);
+  assert.match(await page.locator('#resume').innerText(),/Desktop の現在のアカウント: A/);
+  await page.getByRole('button',{name:'Desktop の接続・保持確認',exact:true}).click();
+  assert.equal(await page.evaluate(()=>window.setupOpened),true);
+  await page.evaluate(()=>{fixture.view.activeAccount='claude:b';window.dispatchEvent(new Event('focus'));});
+  await page.waitForFunction(()=>document.querySelector('#resume').textContent.includes('Desktop の現在のアカウント: B'));
+  assert.equal(await gatedLaunch.isEnabled(),true,'returning from Desktop refreshes availability without changing the selection');
+  assert.match(await gatedLaunch.innerText(),/B で Claude を開く/);
+  assert.equal(await page.evaluate(()=>fixture.calls.filter(c=>c.name==='canban_open_session').length),1,'refreshing account status never launches');
   assert.deepEqual(errors,[]);
 });
