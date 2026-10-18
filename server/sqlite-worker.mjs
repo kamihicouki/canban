@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { parentPort, workerData } from 'node:worker_threads';
+import { channel } from 'node:diagnostics_channel';
 import { retrySqliteBusy as retry } from './sqlite-retry.mjs';
 import { openDatabase, db, revision, leaseAcquire, transaction, bump, setFence, currentFence, writeBoard } from './sqlite-backend.mjs';
 import { Store, defaultState } from './store.mjs';
@@ -30,9 +31,12 @@ const system = {
   auxiliaryPut: (key,value) => transaction(() => { db().prepare('INSERT INTO auxiliary VALUES(?,?) ON CONFLICT(key) DO UPDATE SET payload=excluded.payload').run(key,JSON.stringify(value)); }, { fence: currentFence }),
 };
 let queue = Promise.resolve();
+const diagnostics = channel('canban.sqlite.fixture.operation');
 parentPort.on('message', (message) => {
   queue = queue.then(async () => {
     const { id,target,method,args,fence } = message;
+    const kind = target === 'board' && method === 'moveCard' ? 'write' : target === 'system' && method === 'close' ? 'close' : 'other';
+    if (diagnostics.hasSubscribers) diagnostics.publish({ phase: 'begin', kind });
     try {
       setFence(fence || null);
       const object = { board, requests, system, slack }[target];
@@ -40,6 +44,6 @@ parentPort.on('message', (message) => {
       const value = await retry(() => object[method](...args));
       parentPort.postMessage({ id,value });
     } catch (error) { parentPort.postMessage({ id,error: { message: error.message,code: error.code,busyElapsedMs: error.busyElapsedMs } }); }
-    finally { setFence(null); }
+    finally { setFence(null); if (diagnostics.hasSubscribers) diagnostics.publish({ phase: 'end', kind }); }
   });
 });

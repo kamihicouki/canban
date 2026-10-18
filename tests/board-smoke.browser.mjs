@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { makeFixtures } from './helpers.mjs';
 
 const chromeBin = process.env.CANBAN_BROWSER_EXECUTABLE || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -21,12 +22,89 @@ const w = (t = 400) => new Promise((r) => setTimeout(r, t));
 const key = (k, o = {}) => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, ...o }));
 const errs = [];
 const step = async (name, fn, t = 500) => { try { await fn(); } catch (e) { errs.push(name + ': ' + e.message); } await w(t); };
+await step('create task or direct session', async () => {
+  const tasks = async () => {
+    const packet = await fetch('/rpc', { method: 'POST', body: JSON.stringify({ name: 'canban_get_board', arguments: { days: 0 } }) }).then(r => r.json());
+    return packet.result.structuredContent.lists.flatMap(l => l.cards).filter(c => c.kind === 'task').length;
+  };
+  const fill = (selector, value) => { const el = document.querySelector(selector); if (!el) throw new Error('missing ' + selector); el.value = value; el.dispatchEvent(new Event('input', { bubbles: true })); };
+  const before = await tasks();
+  document.querySelector('#quickTaskBtn').click();
+  try {
+    const dialog = document.querySelector('.task-quick-dialog');
+    if (!dialog.querySelector('[data-create-mode="session"]')) throw new Error('direct session choice missing');
+    if (!dialog.querySelector('textarea').getBoundingClientRect().height) throw new Error('task description hidden');
+    fill('.task-title', '作成UIの確認');
+    document.querySelector('[data-create-mode="session"]').click();
+    if (document.querySelectorAll('.session-destination input').length !== 4) throw new Error('agent destinations missing');
+    fill('.session-prompt', 'README の構成を確認してください');
+    fill('.session-cwd', '/r/web');
+    for (const destination of ['claude-desktop', 'codex-terminal', 'claude-terminal', 'codex-desktop']) {
+      document.querySelector('input[value="' + destination + '"]').click();
+      if (!document.activeElement.matches('input[name="session-destination"]:checked')) throw new Error('destination change lost keyboard focus');
+      if (!document.querySelector('.session-prompt').value.includes('README')) throw new Error('destination change lost request');
+    }
+    document.querySelector('.session-prompt').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, isComposing: true, bubbles: true }));
+    if (!document.querySelector('.task-quick-feedback').hidden) throw new Error('IME Enter started a session');
+    document.querySelector('[data-create-mode="task"]').click();
+    if (document.querySelector('.task-title').value !== '作成UIの確認') throw new Error('task draft lost');
+    document.querySelector('[data-create-mode="session"]').click();
+    if (!document.querySelector('.session-prompt').value.includes('README')) throw new Error('session draft lost');
+    for (let i = 0; i < 40 && document.querySelector('.task-quick-actions .btn-primary').disabled; i++) await w(100);
+    if (document.querySelector('.task-quick-actions .btn-primary').disabled) throw new Error('desktop targets not ready');
+    document.querySelector('.session-prompt').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
+    for (let i = 0; i < 40 && !document.querySelector('.task-quick-feedback').textContent.includes('新規画面'); i++) await w(100);
+    if (!document.querySelector('.task-quick-feedback').textContent.includes('新規画面')) throw new Error('desktop opening result missing: ' + document.querySelector('.task-quick-feedback').textContent);
+    if (await tasks() !== before) throw new Error('direct start created a task');
+    document.querySelector('.task-quick-head button').click();
+    document.querySelector('#quickTaskBtn').click();
+    if (!document.querySelector('.session-prompt').value.includes('README')) throw new Error('closed session draft lost');
+    document.querySelector('[data-create-mode="task"]').click();
+    document.querySelector('.task-quick-actions .btn-primary').click();
+    for (let i = 0; i < 40 && await tasks() === before; i++) await w(100);
+    if (await tasks() !== before + 1) throw new Error('task creation failed');
+  } finally { document.querySelector('.task-quick-dialog')?.close(); }
+}, 300);
 await step('today', () => document.querySelector('.rb-day.is-today').click());
 await step('esc', () => key('Escape'));
 for (const k of ['live', 'fresh', 'active', 'dormant']) await step('phase ' + k, () => document.querySelector('.rb-phase.life-' + k).click(), 150);
 await step('period 7', () => [...document.querySelectorAll('.rb-period button')].find((b) => b.textContent === '7日').click(), 1200);
 await step('period all', () => [...document.querySelectorAll('.rb-period button')].find((b) => b.textContent === '全期間').click(), 1200);
 await step('fold', () => document.querySelector('.fold-head')?.click());
+  await step('exchanges open', async () => {
+    const button = document.querySelector('[data-card-id="codex:t1"] .exchange-pill');
+    const count = button.querySelector('.exchange-count');
+    if (!count || count.clientWidth < count.scrollWidth) throw new Error('card exchange count clipped');
+    button.click();
+    for (let i = 0; i < 40 && !document.querySelector('.exchange-history .exchange-event'); i++) await w(100);
+    if (!document.querySelector('.exchange-history .exchange-event')) throw new Error('message history missing');
+    if (!document.querySelector('.exchange-popover .close .keycap')) throw new Error('Esc key hint missing');
+    if (!document.querySelector('.exchange-history').textContent.includes('サブエージェント')) throw new Error('agent provenance missing');
+  });
+  await step('exchanges counterpart view', () => {
+    document.querySelector('[data-exchange-mode="peer"]').click();
+    const groups = document.querySelectorAll('.exchange-group');
+    if (groups.length !== 2) throw new Error('counterpart grouping lost a peer');
+    if (document.querySelectorAll('.exchange-event').length !== 4) throw new Error('repeat message lost');
+    groups[0].querySelector('summary').click();
+  });
+  await step('exchanges chronology', () => {
+    document.querySelector('[data-exchange-mode="timeline"]').click();
+    if (document.querySelectorAll('.exchange-event').length !== 4) throw new Error('switch lost history');
+  });
+  await step('exchanges esc', () => { key('Escape'); if (document.querySelector('.exchange-popover')) throw new Error('popup stayed open'); });
+  await step('exchanges keyboard', async () => {
+    document.querySelector('.rb-phase.life-fresh').click();
+    const lens = document.querySelector('#board');
+    if (!lens.classList.contains('lens-on')) throw new Error('time highlight missing before popup');
+    document.querySelector('[data-card-id="codex:t1"]').focus();
+    key('M', { shiftKey: true }); await w(500);
+    if (!document.querySelector('.exchange-popover')) throw new Error('Shift+M did not open popup');
+    if (!document.activeElement.closest('.exchange-popover')) throw new Error('keyboard focus stayed outside popup');
+    key('Escape');
+    if (!lens.classList.contains('lens-on')) throw new Error('Esc also cleared the time highlight');
+    key('Escape');
+  });
 await step('lanes', () => [...document.querySelectorAll('.side-sec-lanes button')].find((b) => b.textContent === 'AI Apps').click(), 1000);
 await step('lanes off', () => [...document.querySelectorAll('.side-sec-lanes button')].find((b) => b.textContent === 'なし').click(), 1000);
 await step('theme', () => document.querySelector('[data-look]').click());
@@ -34,9 +112,102 @@ await step('esc', () => key('Escape'));
 await step('palette', () => key('k', { metaKey: true }));
 await step('esc', () => key('Escape'));
 await step('time axis', () => key('i'), 1000);
-await step('row', () => document.querySelector('.irow')?.click(), 1500);
+await step('row', () => document.querySelector('.irow[data-card-id="codex:t1"]').click(), 1500);
+await step('conversation labels and draft', async () => {
+  const pane = document.querySelector('.pane[data-kind="session"]');
+  if (!pane) throw new Error('selected session did not open');
+  const original = pane.querySelector('.fi-user .fi-content .raw');
+  if (original?.textContent !== 'ログインを直して') throw new Error('original prompt changed: ' + JSON.stringify(original?.textContent));
+  const stamp = pane.querySelector('.fi-user time');
+  if (stamp?.getAttribute('datetime') !== '2026-09-20T00:00:01.000Z') throw new Error('message timestamp changed');
+  if (!pane.querySelector('.fi-asst .fi-who')?.textContent.includes('Codex')) throw new Error('assistant speaker missing');
+  const input = pane.querySelector('.send-box textarea');
+  if (!input) throw new Error('composer unavailable');
+  input.value = '未送信の下書き';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  const feed = pane.querySelector('.feed');
+  feed.scrollTop = 0;
+  const before = feed.scrollTop;
+  pane.querySelector('[data-side-tab="details"]').click();
+  pane.querySelector('[data-side-tab="details"]').click();
+  await w(100);
+  if (feed.scrollTop !== before) throw new Error('details changed reading position');
+  document.querySelector('.irow[data-card-id="codex:t1"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await w(400);
+  document.querySelector('.pane-close').click();
+  await w(400);
+  const restored = document.querySelector('.pane[data-kind="session"] .send-box textarea');
+  if (restored?.value !== '未送信の下書き') throw new Error('draft lost when returning to timeline');
+  restored.value = '';
+  restored.dispatchEvent(new Event('input', { bubbles: true }));
+});
+await step('timeline exchanges keyboard', async () => {
+  document.querySelector('.irow[data-card-id="codex:t1"]').focus();
+  key('M', { shiftKey: true }); await w(500);
+  if (!document.querySelector('.exchange-popover')) throw new Error('timeline Shift+M did not open popup');
+  key('Escape');
+  if (!document.querySelector('#paneLayer').classList.contains('docked')) throw new Error('Esc closed the docked card');
+});
 await step('board', () => key('i'), 800);
 await step('session', () => document.querySelector('.card.face:not(.task)').click(), 3000);
+await step('relationship card views, cycles, history and drafts', async () => {
+  const rootCard = document.querySelector('.card[data-card-id="codex:t1"]');
+  rootCard.click();
+  for(let i=0;i<40&&!document.querySelector('.pane[data-card-id="codex:t1"] .exchange-touchpoint');i++) await w(100);
+  const root = document.querySelector('.pane[data-card-id="codex:t1"]');
+  if(!root.querySelector('.th-meta .exchange-pill')) throw new Error('detail message entry missing');
+  if([...root.querySelectorAll('.fi-user .fi-content')].some(el=>el.textContent.includes('<codex_delegation>'))) throw new Error('delivery metadata leaked into conversation');
+  if([...root.querySelectorAll('.fi-user .fi-content')].some(el=>el.textContent==='メッセージ s1')) throw new Error('delivery repeated outside the contact');
+  const input = root.querySelector('.send-box textarea');
+  input.value = '循環しても残る下書き'; input.dispatchEvent(new Event('input', {bubbles:true}));
+  root.querySelector('.feed').scrollTop = 0;
+  const received = [...root.querySelectorAll('.exchange-touchpoint')].find(el => el.textContent.includes('メッセージ s1'))?.querySelector('button');
+  if (!received || received.disabled) throw new Error('available incoming touchpoint missing');
+  received.click();
+  for(let i=0;i<40&&!document.querySelector('.pane[data-card-id="codex:t2"] .exchange-touchpoint');i++) await w(100);
+  const first = [...document.querySelectorAll('.pane-row > .pane')].map(el=>el.dataset.cardId);
+  if (first.join() !== 'codex:t2,codex:t1') throw new Error('incoming peer did not open left: '+first);
+  for (const view of ['spread', 'center', 'stack']) {
+    const button = document.querySelector('[data-exchange-view="'+view+'"]:is(button)');
+    button.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true})); button.click();
+    if(document.querySelector('#paneLayer').hidden) throw new Error('view control closed the layer');
+    if(document.querySelector('#paneLayer').dataset.exchangeView!==view) throw new Error('view did not change');
+  }
+  const peek = document.querySelector('.exchange-stack-peek');
+  if (peek) {
+    peek.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true})); peek.click(); await w(100);
+    if(document.querySelector('#paneLayer').hidden) throw new Error('stack peek closed the layer');
+    document.querySelector('[aria-label="前に見ていたカードへ戻る"]').click(); await w(100);
+  }
+  for(let i=0;i<8;i++) {
+    const active = document.querySelector('.pane[data-trail-active="true"]');
+    const next = active.querySelector('.exchange-touchpoint-peer:not(:disabled)');
+    if(!next) throw new Error('cycle touchpoint unavailable');
+    const sent = next.closest('.exchange-touchpoint').classList.contains('is-sent');
+    const sourceId = active.dataset.cardId;
+    next.click(); await w(100);
+    const shown = [...document.querySelectorAll('.pane-row > .pane')].map(el=>el.dataset.cardId);
+    const peerId = document.querySelector('.pane[data-trail-active="true"]').dataset.cardId;
+    if ((shown.indexOf(peerId) > shown.indexOf(sourceId)) !== sent) throw new Error('event direction did not match side');
+  }
+  if(document.querySelectorAll('.exchange-trail-path button').length!==10) throw new Error('cycle added unexpected visits');
+  if(document.querySelectorAll('.pane-row > .pane').length!==2) throw new Error('revisit duplicated feed DOM');
+  if(root.querySelector('.send-box textarea').value!=='循環しても残る下書き') throw new Error('cycle lost draft');
+  const before = document.querySelector('.exchange-trail-path [aria-current="step"]').dataset.exchangeVisit;
+  document.querySelector('.pane[data-trail-active="true"]').focus(); key('Escape'); await w(100);
+  if(document.querySelector('.exchange-trail-path [aria-current="step"]').dataset.exchangeVisit===before) throw new Error('Esc did not return one visit');
+  document.querySelector('[aria-label="次に見ていたカードへ進む"]').click(); await w(100);
+  if(document.querySelector('.exchange-trail-path [aria-current="step"]').dataset.exchangeVisit!==before) throw new Error('forward did not restore visit');
+  document.querySelector('.exchange-trail-path button[data-exchange-visit="v0"]').click(); await w(100);
+  if(root.querySelector('.send-box textarea').value!=='循環しても残る下書き') throw new Error('origin lost draft');
+  if(root.querySelector('.feed').scrollTop !== 0) throw new Error('origin lost reading position');
+  const mode = root.dataset.mode;
+  key('2',{shiftKey:true,code:'Digit2'});
+  if(root.dataset.mode!==mode || document.querySelector('#paneLayer').dataset.exchangeView!=='center') throw new Error('view shortcut also changed conversation mode');
+  input.value=''; input.dispatchEvent(new Event('input',{bubbles:true}));
+  root.querySelector('.pane-close').click();
+  rootCard.click(); await w(500);
+});
 await step('details', () => key('d'));
 await step('changes', () => key('f'), 1200);
 await step('esc', () => key('Escape'), 600);
@@ -47,8 +218,21 @@ await step('usage off', () => key('u'));
 return { errs, sessionOpened: !!document.querySelector('.th-conv') || true };
 `;
 
-test('the board, the ribbon, the time axis and the card layers run without page errors', { skip: !fs.existsSync(chromeBin) && 'no Chrome' }, async (t) => {
+test('the board, the ribbon, the time axis and the card layers run without page errors', { timeout: 120000, skip: !fs.existsSync(chromeBin) && 'no Chrome' }, async (t) => {
   const fx = makeFixtures();
+  const edgeDb = new DatabaseSync(path.join(fx.codexHome, 'state_5.sqlite'));
+  edgeDb.exec("CREATE TABLE thread_spawn_edges (parent_thread_id TEXT, child_thread_id TEXT); INSERT INTO thread_spawn_edges VALUES ('t1','t2')");
+  edgeDb.prepare("UPDATE threads SET title='リリースの確認', name='リリースの確認', updated_at_ms=? WHERE id='t1'").run(Date.now() - 120000);
+  const peerRollout = path.join(fx.codexHome, 'sessions', 'rollout-peer.jsonl');
+  fs.writeFileSync(peerRollout, JSON.stringify({ timestamp: '2026-10-14T01:44:00Z', type: 'event_msg', payload: { type: 'item_completed', item: { type: 'UserMessage', id: 'peer-request', content: [{type:'text',text:'<codex_delegation><source_thread_id>t1</source_thread_id><input>レビューしてください</input></codex_delegation>'}] } } })+'\n');
+  edgeDb.prepare("UPDATE threads SET title='検証', name='検証', rollout_path=? WHERE id='t2'").run(peerRollout);
+  edgeDb.close();
+  for (const [source, id, minute] of [['peer-x', 'x1', 40], ['t2', 's1', 45], ['peer-x', 'x2', 48]]) {
+    const envelope = `<codex_delegation><source_thread_id>${source}</source_thread_id><input>メッセージ ${id}</input></codex_delegation>`;
+    const item = id === 'x2' ? { type: 'FunctionCallOutput', id, namespace: 'codex_app', name: 'send_message_to_thread', output: envelope }
+      : { type: 'UserMessage', id, content: [{ type: 'text', text: envelope }] };
+    fs.appendFileSync(fx.rollout, JSON.stringify({ timestamp: `2026-10-14T01:${minute}:00Z`, type: 'event_msg', payload: { type: 'item_completed', item } }) + '\n');
+  }
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-smoke-'));
   const port = 4700 + Math.floor(Math.random() * 200);
   const host = spawn(process.execPath, ['tests/dev-host.mjs', String(port)], { cwd: root, stdio: 'ignore',
@@ -83,8 +267,71 @@ test('the board, the ribbon, the time axis and the card layers run without page 
     await sleep(250);
   }
   const r = await cdp('Runtime.evaluate', { expression: `(async () => { ${WALK} })()`, awaitPromise: true, returnByValue: true });
-  ws.close();
   assert.equal(r.result?.exceptionDetails, undefined, JSON.stringify(r.result?.exceptionDetails));
   assert.deepEqual(r.result.result.value.errs, []);
+  const openLive = await cdp('Runtime.evaluate', { expression: `(async()=>{document.querySelector('.card[data-card-id="codex:t1"]').click();for(let i=0;i<40&&!document.querySelector('.pane[data-card-id="codex:t1"] .exchange-touchpoint');i++)await new Promise(r=>setTimeout(r,100));return !!document.querySelector('.pane[data-card-id="codex:t1"] .exchange-touchpoint')})()`, awaitPromise:true, returnByValue:true });
+  assert.equal(openLive.result?.result?.value,true,'open existing card before live receipt');
+  fs.appendFileSync(fx.rollout, JSON.stringify({timestamp:new Date().toISOString(),type:'event_msg',payload:{type:'item_completed',item:{type:'UserMessage',id:'live-receipt',content:[{type:'text',text:'<codex_delegation><source_thread_id>t2</source_thread_id><input>開いたまま届いた結果</input></codex_delegation>'}]}}})+'\n');
+  const liveReceipt = await cdp('Runtime.evaluate', { expression: `(async()=>{for(let i=0;i<100;i++){if([...document.querySelectorAll('.pane[data-card-id="codex:t1"] .exchange-touchpoint')].some(el=>el.textContent.includes('開いたまま届いた結果')))return true;await new Promise(r=>setTimeout(r,100));}return false;})()`, awaitPromise:true, returnByValue:true });
+  assert.equal(liveReceipt.result?.result?.value,true,'live receipt adds a contact without reopening');
+  const closeLive = await cdp('Runtime.evaluate', {expression:`document.querySelector('.pane-close')?.click()`,returnByValue:true});
+  assert.equal(closeLive.result?.exceptionDetails,undefined);
+
   assert.deepEqual(pageErrors.filter((e) => !/ResizeObserver/.test(e)), []);
+  if (process.env.CANBAN_SMOKE_SHOTS) {
+    const dir = path.resolve(process.env.CANBAN_SMOKE_SHOTS);
+    fs.mkdirSync(dir, { recursive: true });
+    for (const layout of ['board', 'timeline']) for (const theme of ['light', 'dark']) for (const mode of ['timeline', 'peer']) {
+      const capture = await cdp('Runtime.evaluate', { expression: `(async()=>{
+        document.querySelector('.exchange-popover .close')?.click();
+        if(!document.querySelector('#paneLayer').classList.contains('docked'))document.querySelector('.pane-close')?.click();
+        await new Promise(r=>setTimeout(r,200));
+        if(!document.querySelector('#paneLayer').hidden&&!document.querySelector('#paneLayer').classList.contains('docked'))throw new Error('sheet still overlays the board');
+        if (!!document.querySelector('.inbox') !== ${layout === 'timeline'}) document.dispatchEvent(new KeyboardEvent('keydown',{key:'i',bubbles:true}));
+        await new Promise(r=>setTimeout(r,400));
+        if(!!document.querySelector('.inbox') !== ${layout === 'timeline'})throw new Error('wrong board view');
+        document.documentElement.dataset.theme=${JSON.stringify(theme)};
+        for(const b of document.querySelectorAll('.fold-head[aria-expanded="false"]')) b.click();
+        const button=document.querySelector('[data-card-id="codex:t1"] .exchange-pill');
+        const card=button?.closest('.card'),time=card?.querySelector('.ffoot .ftime');
+        if(time&&time.getBoundingClientRect().right>card.getBoundingClientRect().right)throw new Error('card time clipped by exchange badge');
+        if(!button)throw new Error('exchange button missing in ${layout}');button.click();
+        for(let i=0;i<40&&!document.querySelector('.exchange-event');i++)await new Promise(r=>setTimeout(r,100));
+        if(!document.querySelector('.exchange-event'))throw new Error('history not loaded');
+        document.querySelector('[data-exchange-mode="${mode}"]').click();
+        return true;
+      })()`, awaitPromise: true, returnByValue: true });
+      assert.equal(capture.result.exceptionDetails, undefined, JSON.stringify(capture.result.exceptionDetails));
+      const shot = await cdp('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(path.join(dir, `${layout}-${theme}-${mode}.png`), Buffer.from(shot.result.data, 'base64'));
+    }
+  }
+  if (process.env.CANBAN_CREATION_SHOTS) {
+    const dir = path.resolve(process.env.CANBAN_CREATION_SHOTS);
+    fs.mkdirSync(dir, { recursive: true });
+    for (const view of ['board', 'timeline']) for (const theme of ['light', 'dark']) for (const mode of ['task', 'session']) {
+      const capture = await cdp('Runtime.evaluate', { expression: `(async()=>{
+        document.querySelector('.task-quick-dialog')?.close();
+        document.querySelector('.exchange-popover .close')?.click();
+        if(!document.querySelector('#paneLayer').hidden && !document.querySelector('#paneLayer').classList.contains('docked')) document.querySelector('.pane-close')?.click();
+        if (!!document.querySelector('.inbox') !== ${view === 'timeline'}) document.dispatchEvent(new KeyboardEvent('keydown',{key:'i',bubbles:true}));
+        await new Promise(r=>setTimeout(r,400));
+        document.documentElement.dataset.theme=${JSON.stringify(theme)};
+        document.querySelector('#quickTaskBtn').click();
+        document.querySelector('[data-create-mode="${mode}"]').click();
+        document.querySelector('.session-new-request:not([hidden])')?.click();
+        for (const [selector,value] of ${JSON.stringify(mode === 'task' ? [['.task-title','リリース前の確認'],['.task-description','変更内容を確認して、公開前のチェック項目をまとめる。']] : [['.session-prompt','READMEの構成を確認して、改善点をまとめてください。'],['.session-cwd','/work/canban']])}) {
+          const el=document.querySelector(selector); el.value=value; el.dispatchEvent(new Event('input',{bubbles:true}));
+        }
+        const dialog=document.querySelector('.task-quick-dialog'); dialog.scrollTop=0;
+        const rect=dialog.getBoundingClientRect(), action=dialog.querySelector('.btn-primary').getBoundingClientRect();
+        if(rect.top<(document.querySelector('.topbar')?.getBoundingClientRect().bottom || 40)-1 || rect.bottom>innerHeight || action.bottom>rect.bottom || dialog.scrollWidth>dialog.clientWidth+1) throw new Error('creation controls overflow at 1280x800: '+JSON.stringify({rect:rect.toJSON(),action:action.toJSON(),scrollWidth:dialog.scrollWidth,clientWidth:dialog.clientWidth}));
+        if(!!document.querySelector('.inbox') !== ${view === 'timeline'}) throw new Error('wrong screenshot view');
+      })()`, awaitPromise:true, returnByValue:true });
+      const shot=await cdp('Page.captureScreenshot',{format:'png'});
+      fs.writeFileSync(path.join(dir,`${view}-${theme}-${mode}.png`),Buffer.from(shot.result.data,'base64'));
+      assert.equal(capture.result.exceptionDetails, undefined, JSON.stringify(capture.result.exceptionDetails));
+    }
+  }
+  ws.close();
 });

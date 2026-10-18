@@ -1,0 +1,21 @@
+{
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "readings": [
+    {
+      "theme": "light",
+      "afterRefresh": 100,
+      "afterReselect": 100,
+      "afterReturn": 100
+    },
+    {
+      "theme": "dark",
+      "afterRefresh": 100,
+      "afterReselect": 100,
+      "afterReturn": 100
+    }
+  ],
+  "pageErrors": []
+}

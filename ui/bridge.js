@@ -121,7 +121,7 @@ const bridge = (() => {
   }
 
   async function callTool(name, args = {}) {
-    if (['canban_review_loop', 'canban_send_loop'].includes(name)) args = { ...args, uiToken: '__CANBAN_UI_TOKEN__' };
+    if (['canban_review_loop', 'canban_send_loop'].includes(name) || name.startsWith('canban_terminal_')) args = { ...args, uiToken: '__CANBAN_UI_TOKEN__' };
     let res;
     const t0 = performance.now();
     const pending = !!hooks.pending?.();
@@ -138,6 +138,8 @@ const bridge = (() => {
   }
 
   function openLink(url) {
+    // Claude Desktop is opened only by the server (claude-desktop-open.mjs), which merges every account's sessions.
+    if (/^claude:/i.test(String(url))) return Promise.reject(new Error('Claude Desktop は「開く」から開いてください'));
     if (!openai() && /^https?:/i.test(url) && hooks.linkBrowser?.()) return callTool('canban_open_external', { url });
     if (openai() && window.openai.openExternal) return window.openai.openExternal({ href: url });
     if (isChromeExtension()) return chrome.tabs.create({ url });

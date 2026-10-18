@@ -296,8 +296,17 @@ test('canban_watch over stdio: patches the card and streams the open session', a
     const meta = path.join(fx.desktopDir, 'a', 'b', 'local_2.json');
     const m = JSON.parse(fs.readFileSync(meta, 'utf8'));
     await call('canban_get_board'); // index the sessions (desktop titles) for the watcher
-    await new Promise((r2) => setTimeout(r2, 300)); // let the board load's own writes arrive
-    const since = (await call('canban_watch', { since: afterBoard.seq, timeoutMs: 0 })).seq;
+    // Drain the board load's own DB notifications before testing a metadata-only edit.
+    // Include the 2s DB polling fallback and coalescing, even if macOS file events lag.
+    let settled = await call('canban_watch', { since: afterBoard.seq, timeoutMs: 0 });
+    const settleBy = Date.now() + 10000;
+    for (;;) {
+      const next = await call('canban_watch', { since: settled.seq, timeoutMs: 2500 });
+      if (next.seq === settled.seq) break;
+      assert.ok(Date.now() < settleBy, 'board notifications must settle before the metadata edit');
+      settled = next;
+    }
+    const since = settled.seq;
     const w2 = call('canban_watch', { since, timeoutMs: 1500 });
     await new Promise((r2) => setTimeout(r2, 100));
     fs.writeFileSync(meta, JSON.stringify({ ...m, lastActivityAt: String(Date.now()) }));

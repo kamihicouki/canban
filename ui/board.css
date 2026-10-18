@@ -186,7 +186,7 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .live-badge.on::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--c-green); }
 .feed-wrap { position: relative; margin-bottom: 8px; }
 .feed { max-height: min(460px, 55vh); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 8px; background: var(--modal-panel); font-size: 13px; }
-.fi { white-space: pre-wrap; word-break: break-word; line-height: 19px; }
+.fi { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
 .fi-user { align-self: flex-end; max-width: 88%; background: var(--chat-human-bg); color: var(--card-fg); border-radius: 12px 12px 3px 12px; padding: 12px 16px; }
 .fi-asst { align-self: flex-start; max-width: 92%; padding: 12px 16px; background: var(--chat-agent-bg); border-radius: 12px 12px 12px 3px; }
 .fi-who { font-size: 11px; font-weight: 650; color: var(--list-muted); margin-bottom: 6px; }
@@ -264,8 +264,6 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .card-composer { padding: 0; background: none; }
 .title-input { width: calc(100% - 40px); font-size: 20px; font-weight: 700; border: 0; background: transparent; color: inherit; padding: 2px 4px; border-radius: 4px; }
 .title-input:focus { background: var(--input-bg); outline: 2px solid var(--focus); }
-.start-grid { display: grid; grid-template-columns: 140px 1fr; gap: 6px; margin-bottom: 6px; }
-.start-grid input, .start-grid .start-account { grid-column: 1 / -1; }
 .sub-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 6px 8px; border-radius: 6px; background: var(--modal-panel); margin-bottom: 4px; font-size: 13px; }
 .link-btn { color: var(--accent); text-align: left; }
 .link-btn:hover { text-decoration: underline; }
@@ -479,12 +477,35 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
 .icon-btn.rel { position: relative; }
 /* the assistant's text: raw (text, digest) or rendered (preview) */
 .fi-asst .md { display: none; white-space: normal; }
-.fi-asst .md p { margin: .3em 0; } .fi-asst .md ul { margin: .3em 0; padding-left: 1.3em; }
-.fi-asst .md pre { margin: .4em 0; padding: 6px 8px; border-radius: 6px; background: var(--btn-subtle); white-space: pre-wrap; font-size: .9em; line-height: 1.45; overflow-x: auto; }
+.fi-asst .md p { margin: .75em 0; } .fi-asst .md ul, .fi-asst .md ol { margin: .75em 0; padding-left: 1.5em; }
+.fi-asst .md li + li { margin-top: .25em; }
+.fi-asst .md > :first-child { margin-top: 0; } .fi-asst .md > :last-child { margin-bottom: 0; }
+.fi-asst .md pre { margin: .75em 0; padding: 12px 14px; border-radius: 8px; background: var(--btn-subtle); white-space: pre-wrap; font-size: .875em; line-height: 1.6; overflow-x: auto; }
 .fi-asst .md code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; background: var(--btn-subtle); padding: 0 4px; border-radius: 3px; }
-.fi-asst .md pre code { background: none; padding: 0; }
+.fi-asst .md pre code { background: none; padding: 0; font-size: inherit; }
+.fi .md .md-table { margin: .75em 0; overflow-x: auto; }
+.fi .md table { border-collapse: collapse; font-size: .92em; line-height: 1.5; min-width: 60%; }
+.fi .md th, .fi .md td { border: 1px solid var(--btn-subtle-hover); padding: 6px 10px; text-align: left; vertical-align: top; }
+.fi .md th { background: var(--btn-subtle); font-weight: 700; }
+.fi .md hr { border: 0; border-top: 1px solid var(--btn-subtle-hover); margin: 1em 0; }
 .pane[data-mode="preview"] .fi-asst .raw { display: none; }
 .pane[data-mode="preview"] .fi-asst .md { display: block; }
+/* what the person wrote: the words, and app-attached blocks as chips (テキスト shows it as sent) */
+.fi-user .md { display: none; white-space: normal; }
+.pane:is([data-mode="preview"], [data-mode="digest"]) .fi-user .raw { display: none; }
+.pane:is([data-mode="preview"], [data-mode="digest"]) .fi-user .md { display: block; }
+.fi-user .md-body p { margin: .5em 0; } .fi-user .md-body > :first-child { margin-top: 0; } .fi-user .md-body > :last-child { margin-bottom: 0; }
+.fi-user .md-body :is(ul, ol) { margin: .5em 0; padding-left: 1.4em; }
+.fi-user .md-body code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; background: var(--btn-subtle); padding: 0 4px; border-radius: 3px; }
+.fi-user .md-body pre { margin: .5em 0; padding: 10px 12px; border-radius: 8px; background: var(--btn-subtle); white-space: pre-wrap; font-size: .875em; }
+.fi .md a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.msg-context { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.md-body + .msg-context { padding-top: 8px; border-top: 1px solid var(--btn-subtle); }
+.msg-ctx > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 12px; background: var(--btn-subtle); color: var(--card-muted); font-size: 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-ctx > summary::-webkit-details-marker { display: none; }
+.msg-ctx > summary:hover { background: var(--btn-subtle-hover); color: var(--card-fg); }
+.msg-ctx[open] { flex-basis: 100%; }
+.msg-ctx pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--btn-subtle); font-size: 11.5px; line-height: 1.55; white-space: pre-wrap; color: var(--card-muted); max-height: 240px; overflow: auto; }
 /* 要点: only what was said, shortened */
 .pane[data-mode="digest"] .fi-tool, .pane[data-mode="digest"] .fi-think, .pane[data-mode="digest"] .fi-note { display: none; }
 .pane[data-mode="digest"] .fi-asst .raw { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }

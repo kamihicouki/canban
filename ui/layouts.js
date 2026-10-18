@@ -84,7 +84,7 @@ function setLayout(id) {
 
 // Called after every board render and page change.
 function paintLayoutChrome() {
-  for (const key of ['rail', 'dock', 'tabs', 'hud']) if (layoutParts[key]) layoutParts[key].inert = !paneLayer.hidden;
+  for (const key of ['rail', 'dock', 'tabs', 'hud']) if (layoutParts[key]) layoutParts[key].inert = overlayOpen();
   for (const button of $$('[data-place=slackTimeline]')) button.setAttribute('aria-pressed', String(slackUi.visible));
   const here = currentPlace();
   for (const b of $$('[data-place]')) b.setAttribute('aria-current', String(b.dataset.place === here));

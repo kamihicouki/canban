@@ -19,7 +19,8 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => ap
 function sharedUiSnapshot() {
   return {
     slackVisible: slackUi.visible, filters: { ...state.filters }, themePref: state.themePref, layout: state.layoutSaved, boardView: state.view, sidebar: state.sideOpen, workspacePage: workspace.page,
-    paneGlobal: { ...paneGlobal }, cardWidths: { ...cardWidths }, cardHeights: { ...cardHeights }, collapsedLanes: [...collapsedLanes],
+    exchangeTrailView: typeof exchangeTrailView === 'string' ? exchangeTrailView : 'center',
+    paneGlobal: { ...paneGlobal }, cardWidths: { ...cardWidths }, cardHeights: { ...cardHeights }, collapsedLanes: [...collapsedLanes], keyGuide: { ...keyGuidePlace },
   };
 }
 
@@ -43,8 +44,10 @@ function adoptSharedUi(record) {
     }
     if (value.boardView === 'board' || value.boardView === 'timeline') state.view = value.boardView;
     if (value.paneGlobal && typeof value.paneGlobal === 'object') Object.assign(paneGlobal, { mode: oneOf(value.paneGlobal.mode, PANE_MODES, PANE_DEF.mode) });
+    if (['spread', 'center', 'stack'].includes(value.exchangeTrailView)) { exchangeTrailView = value.exchangeTrailView; paintExchangeTrail(); }
     if (value.cardWidths) Object.assign(cardWidths, normalizeCardWidths(value.cardWidths));
     if (value.cardHeights) Object.assign(cardHeights, normalizeCardHeights(value.cardHeights));
+    if (Object.hasOwn(value, 'keyGuide')) keyGuidePlace = normalizeKeyGuide(value.keyGuide);
     if (Array.isArray(value.collapsedLanes)) {
       collapsedLanes.clear();
       for (const name of value.collapsedLanes) if (typeof name === 'string') collapsedLanes.add(name);
@@ -75,7 +78,7 @@ async function applySharedUi(record, { redraw = true } = {}) {
   try { adopted = adoptSharedUi(record); }
   finally { sharedUi.applying = wasApplying; }
   if (!adopted) return;
-  applyCardWidths(); layoutCardBoard(); panes.forEach(applyPaneAttrs); paintPaneBar();
+  applyCardWidths(); placeKeyGuide(); panes.forEach(applyPaneAttrs); paintPaneBar();
   if (redraw) {
     const after = sharedUiSnapshot();
     const layoutOnly = before.layout !== after.layout && Object.keys(before).every(key => key === 'layout' || JSON.stringify(before[key]) === JSON.stringify(after[key]));

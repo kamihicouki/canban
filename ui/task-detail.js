@@ -100,10 +100,23 @@ async function loadTask(p, found) {
   const prompt = h('textarea', { class: 'note', 'aria-label': '依頼文' });
   prompt.value = taskRequestText(card.title, card.description, card.note);
   prompt.defaultValue = prompt.value;
-  const composer = promptComposer(prompt, { key: `start:${cardId}`, context: () => ({ agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim() }), submit: () => start() });
+  const startButtons = [];
+  // Codex-style: the round button starts on the default route; ⋯ picks the other route explicitly.
+  const routeMenu = (anchor) => popover(anchor, '開始する場所', h('div', {},
+    h('button', { class: 'menu-item', text: 'デスクトップアプリで開始', onclick: () => { closePopover(); start({ route: 'desktop' }); } }),
+    h('button', { class: 'menu-item', text: 'ターミナルで開始', onclick: () => { closePopover(); start({ route: 'terminal' }); } })), { width: 220 });
+  startButtons.push(h('button', { class: 'cx-ico', type: 'button', title: '開始する場所を選ぶ', 'aria-label': '開始する場所を選ぶ', html: picon('more', 16), onclick: e => routeMenu(e.currentTarget) }),
+    h('button', { class: 'send-round', type: 'button', title: `${routeLabel(b.settings.launch.route, { desktop: true })}で開始（⌘Enter）\n${shortcutHelp()}`, 'aria-label': '開始', html: picon('send', 15), onclick: e => start(optsFromEvent(e)) }));
+  const importButton = h('button', { class: 'cx-ico', type: 'button', title: '説明・メモを依頼文に取り込む', 'aria-label': '説明・メモを依頼文に取り込む', html: picon('undo', 16), onclick: () => {
+    if (prompt.value !== prompt.defaultValue && prompt.value.trim()) return toast('入力中の依頼文があります。先に内容を確認してください', true);
+    prompt.value = taskRequestText(title.value, desc.value, memo.value);
+    prompt.dispatchEvent(new Event('input', { bubbles: true }));
+  } });
+  const composer = promptComposer(prompt, { key: `start:${cardId}`, context: () => ({ agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim() }), submit: () => start(),
+    placeholder: 'このタスクで何をしてほしいですか？', leading: [importButton], actions: startButtons, place: [agentSel, hostSel, acctSel, cwd, dl],
+    keys: [keyHint(['⌘', 'Enter'], '開始'), keyHint(['$'], 'スキル'), h('span', { text: 'デスクトップで開始すると、依頼文に画像の参照を含めます' })] });
   agentSel.addEventListener('change', () => composer.contextChanged());
   cwd.addEventListener('change', () => composer.contextChanged());
-  const startButtons = [];
   const start = async (opts = {}) => {
     if (composer.draft.sending) return;
     try {
@@ -120,9 +133,6 @@ async function loadTask(p, found) {
       composer.setSending(false); startButtons.forEach(b => { b.disabled = false; });
     }
   };
-  startButtons.push(h('button', { class: 'btn-primary', title: shortcutHelp(), text: `▶ 開始（${routeLabel(b.settings.launch.route, { desktop: true })}）`, onclick: e => start(optsFromEvent(e)) }),
-    h('button', { class: 'btn', text: 'デスクトップで', onclick: () => start({ route: 'desktop' }) }),
-    h('button', { class: 'btn', text: 'ターミナルで', onclick: () => start({ route: 'terminal' }) }));
 
   const prio = h('select', { class: 'text-input', 'aria-label': '優先度' },
     h('option', { value: '', text: '未設定' }), h('option', { value: 'high', text: '高' }), h('option', { value: 'medium', text: '中' }), h('option', { value: 'low', text: '低' }));
@@ -140,15 +150,7 @@ async function loadTask(p, found) {
     conv: { title: '説明', nodes: [desc], hint: '説明は Canban に保存します。新しいセッションの依頼文にも使います。' },
     memo: { title: 'メモ', nodes: [memo] },
     related: { title: taskRelatedTitle(card), extra: taskLinkButton(cardId), nodes: taskRelatedNodes(card), hint: 'ホームのセッションをこのカードへドラッグして紐付けることもできます。' },
-    send: { title: '新しいセッションを開始', extra: h('span', {}, ...keycap('i'), ' ', ...keycap('Alt+a')), nodes: [h('div', { class: 'start-grid' }, agentSel, hostSel, acctSel, cwd, dl),
-      h('button', { class: 'btn', text: '説明・メモを依頼文に取り込む', onclick: () => {
-        if (prompt.value !== prompt.defaultValue && prompt.value.trim()) return toast('入力中の依頼文があります。先に内容を確認してください', true);
-        prompt.value = taskRequestText(title.value, desc.value, memo.value);
-        prompt.dispatchEvent(new Event('input', { bubbles: true }));
-      } }), composer.root,
-      h('div', { class: 'muted', text: 'デスクトップで開始すると、依頼文に画像の参照を含めます。' }),
-      h('div', { class: 'row', style: { marginTop: '8px', flexWrap: 'wrap' } },
-        ...startButtons)], hint: '開始したセッションは、AI App・マシン・フォルダ・依頼文が一致すると自動でこのカードに紐付きます。' },
+    send: { title: '新しいセッションを開始', extra: h('span', {}, ...keycap('i'), ' ', ...keycap('Alt+a')), nodes: [h('div', { class: 'send-box' }, composer.root)], hint: '開始したセッションは、AI App・マシン・フォルダ・依頼文が一致すると自動でこのカードに紐付きます。' },
     add: { nodes: [taskQuickAdd.summary(card),
       h('button', { class: 'side-btn', text: '所属を変更', onclick: () => taskQuickAdd.edit(card, list) }), h('button', { class: 'side-btn', 'data-pane-key': 'l', onclick: e => labelPicker(e.currentTarget, cardId, labelState, () => {}) }, h('span', { html: picon('tag', 14) }), ' ラベル', keycap('l')),
       h('button', { class: 'side-btn', 'data-pane-key': 'g', onclick: e => directoryPicker(e.currentTarget, card, { cwd: cwd.value.trim() || null, after: () => openCard(cardId) }) }, h('span', { html: picon('folder', 14) }), ` ${T.category}: ${card.directory?.name || 'カテゴリ無し'}`, keycap('g'))] },

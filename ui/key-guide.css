@@ -1,0 +1,32 @@
+/* The key guide (key-guide.js): one panel for the board, the 時間軸 and an open card, docked where the user put it.
+   It floats over the stage like a hover and takes no room, so showing or hiding it never moves a card. */
+.key-guide { position: fixed; z-index: 850; width: 200px; display: flex; flex-direction: column; border-radius: 10px; overflow: hidden;
+  background: color-mix(in srgb, var(--modal-bg) 94%, transparent); color: var(--list-fg); box-shadow: var(--lift-shadow); backdrop-filter: blur(6px); }
+.key-guide[hidden] { display: none; }
+.kg-head { flex: none; display: flex; align-items: center; gap: 6px; padding: 4px 4px 2px 6px; cursor: grab; user-select: none; touch-action: none;
+  font: 700 11px/18px system-ui, sans-serif; letter-spacing: .03em; color: var(--list-muted); border-radius: 8px; }
+.kg-head:active { cursor: grabbing; }
+.kg-grip { display: grid; place-items: center; min-width: 22px; min-height: 22px; opacity: .7; }
+.kg-title { flex: 1; white-space: nowrap; }
+.kg-fold { width: 22px; height: 22px; border-radius: 5px; font-size: 14px; line-height: 22px; color: var(--list-muted); flex: none; }
+.kg-fold:hover { background: var(--btn-subtle-hover); color: var(--list-fg); }
+.kg-keys { flex-direction: column; align-items: flex-start; flex-wrap: nowrap; gap: 5px; padding: 2px 12px 10px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.kg-keys .shortcut-hint { width: 100%; align-items: start; white-space: normal; line-height: 18px; }
+.kg-keys .shortcut-hint kbd { flex: none; margin-top: 1px; }
+.kg-keys .shortcut-hint > span { min-width: 0; overflow-wrap: anywhere; }
+/* Along the foot: one or two lines, the title shrinks to its grip. */
+.key-guide[data-dock="bottom"] { width: max-content; flex-direction: row; align-items: center; border-radius: 8px; }
+.key-guide[data-dock="bottom"] .kg-head { padding: 2px 2px 2px 6px; }
+.key-guide[data-dock="bottom"] .kg-title { display: none; }
+.key-guide[data-dock="bottom"] .kg-keys { flex-direction: row; flex-wrap: wrap; gap: 2px 12px; padding: 3px 10px 3px 4px; }
+.key-guide[data-dock="bottom"] .kg-keys .shortcut-hint { width: auto; white-space: nowrap; }
+.key-guide[data-min="true"] { width: max-content; }
+.key-guide[data-min="true"] .kg-keys { display: none; }
+.key-guide[data-min="true"] .kg-title { display: inline; }
+.key-guide.dragging { z-index: 1200; opacity: .92; box-shadow: var(--lift-shadow), 0 0 0 2px var(--focus); }
+.kg-zones { position: fixed; inset: 0; z-index: 1150; pointer-events: none; }
+.kg-zones[hidden] { display: none; }
+.kg-zone { position: fixed; display: grid; place-items: center; border: 2px dashed var(--on-board-dim); border-radius: 10px;
+  background: color-mix(in srgb, var(--on-board) 12%, transparent); color: var(--on-board); font-size: 12px; font-weight: 700; }
+.kg-zone.hot { border-style: solid; border-color: var(--focus); background: color-mix(in srgb, var(--focus) 40%, transparent); }
+@media (prefers-reduced-motion: reduce) { .key-guide { backdrop-filter: none; } }

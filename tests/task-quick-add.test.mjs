@@ -9,8 +9,31 @@ import { matchesTask, normalizeFilters } from '../server/board.mjs';
 import { effectiveTaskContext } from '../server/task-context.mjs';
 import { boardHtml } from '../server/ui.mjs';
 
-const model = new vm.Script(fs.readFileSync(new URL('../ui/task-quick-add-model.js', import.meta.url), 'utf8') + '\n({taskCreationDefaults, taskLaneCreation, saveQuickTaskDraft})').runInNewContext();
+const model = new vm.Script(fs.readFileSync(new URL('../ui/task-quick-add-model.js', import.meta.url), 'utf8') + '\n({taskCreationDefaults, taskLaneCreation, saveQuickTaskDraft, sessionCreationDefaults, saveQuickSessionDraft})').runInNewContext();
 const plain = value => JSON.parse(JSON.stringify(value));
+
+test('direct creation inherits the chosen agent and host but never guesses a work folder', () => {
+  const draft = model.sessionCreationDefaults({ settings: { launch: { route: 'terminal', terminal: 'iterm', target: 'new-tab' } } }, { agent: 'claude', host: 'box', account: 'codex:other', folder: 'app' });
+  assert.deepEqual(plain(draft), { agent: 'claude', route: 'terminal', terminal: 'iterm', target: 'new-tab', hostId: 'box', cwd: '', prompt: '', account: null });
+});
+
+test('a lost direct-start response rechecks the original request and never creates a task', async () => {
+  const draft = { ...plain(model.sessionCreationDefaults({}, {})), prompt: '確認する', cwd: '/work' };
+  const seen = [];
+  const io = { newRequestId: () => 'session-request', refresh: async () => {}, callTool: async (name, args) => {
+    seen.push({ name, args }); throw new Error('応答の切断');
+  } };
+  await assert.rejects(model.saveQuickSessionDraft(draft, io), /応答の切断/);
+  draft.prompt = '編集中の別の依頼';
+  io.callTool = async (name, args) => { seen.push({ name, args }); return { state: 'opened', route: 'desktop', note: 'アプリで送信してください' }; };
+  const saved = await model.saveQuickSessionDraft(draft, io);
+  assert.equal(saved.result.state, 'opened');
+  assert.equal(draft.prompt, '編集中の別の依頼');
+  assert.deepEqual(plain(seen), [
+    { name: 'canban_start_session', args: { agent: 'codex', route: 'desktop', terminal: 'terminal', target: 'new-window', hostId: 'local', cwd: '/work', prompt: '確認する', account: null, clientRequestId: 'session-request' } },
+    { name: 'canban_start_session', args: { agent: 'codex', route: 'desktop', terminal: 'terminal', target: 'new-window', hostId: 'local', cwd: '/work', prompt: '確認する', account: null, clientRequestId: 'session-request' } },
+  ]);
+});
 
 test('real lane construction keeps stable attribute IDs even when display names collide', () => {
   const source = boardHtml();
@@ -167,4 +190,72 @@ test('invalid attributes never leave partially created tasks', async () => {
   const task = await store.createTask({ title: '分類なし', directory: '__none', labels: [], context: { section: null, project: null } });
   assert.equal(task.directoryId, '__none');
   assert.deepEqual(task.context, { section: null, project: null });
+});
+
+test('desktop starts use the app lists: a Claude environment, a Codex project and cloud', () => {
+  const m = new vm.Script(fs.readFileSync(new URL('../ui/task-quick-add-model.js', import.meta.url), 'utf8') + '\n({applySessionTargetDefaults, sessionStartRequest, sessionHostId, sessionUsesFolder})').runInNewContext();
+  const targets = { claude: { environments: [{ id: 'env-a', name: 'canban', kind: 'local', cwd: '/r/canban' }, { id: 'env-b', name: 'ff', kind: 'ssh', cwd: '/home/u/ff', sshHost: 'box' }] },
+    codex: { projects: [{ id: 'p-local', name: 'canban', hostId: 'local', root: '/r/canban' }, { id: 'p-remote', name: 'ff', hostId: 'remote-ssh-discovered:box', root: '/home/u/ff' }],
+      cloudEnvironments: [{ id: 'asenvcfg_1', name: 'ff' }, { id: 'asenvcfg_2', name: 'Canban' }] } };
+  const base = { route: 'desktop', terminal: 'terminal', target: 'new-window', hostId: 'local', cwd: '', prompt: ' 直して ', account: null };
+  const claude = m.applySessionTargetDefaults({ ...base, agent: 'claude' }, targets);
+  assert.equal(claude.environmentId, 'env-a');
+  assert.deepEqual(plain(m.sessionStartRequest(claude)), { agent: 'claude', route: 'desktop', terminal: 'terminal', target: 'new-window', cwd: '', prompt: '直して', account: null, environmentId: 'env-a' });
+  claude.environmentId = 'env-b';
+  assert.equal(m.sessionHostId(claude, targets), 'box');
+  const codex = m.applySessionTargetDefaults({ ...base, agent: 'codex' }, targets);
+  assert.equal(codex.projectId, 'p-local');
+  assert.equal(m.sessionStartRequest(codex).projectId, 'p-local');
+  codex.runOn = 'cloud'; m.applySessionTargetDefaults(codex, targets);
+  assert.equal(codex.cloudEnvironment, 'asenvcfg_2', 'the cloud environment named like the project');
+  assert.deepEqual(plain(m.sessionStartRequest(codex)), { agent: 'codex', route: 'desktop', terminal: 'terminal', target: 'new-window', cwd: '', prompt: '直して', account: null, projectId: 'p-local', runOn: 'cloud', cloudEnvironment: 'asenvcfg_2' });
+  const typed = m.applySessionTargetDefaults({ ...base, agent: 'codex', cwd: '/typed' }, targets);
+  assert.equal(typed.projectId, '__folder', 'a typed folder is kept');
+  assert.equal(m.sessionStartRequest(typed).cwd, '/typed');
+  assert.ok(m.sessionUsesFolder({ ...base, agent: 'claude' }), 'without the lists the folder field stays');
+  const attached = m.sessionStartRequest({ ...typed, attachments: { imageIds: ['img-1'], skills: [{ name: 'demo', path: '/s/demo/SKILL.md' }] } });
+  assert.deepEqual(plain(attached.imageIds), ['img-1'], 'composer images ride along with the start request');
+  assert.equal(attached.skills[0].name, 'demo');
+  assert.equal(m.sessionStartRequest(typed).imageIds, undefined);
+});
+
+test('desktop creation waits visibly for targets without losing the request', async () => {
+  let resolveTargets;
+  const pending = new Promise(resolve => { resolveTargets = resolve; });
+  const calls = [];
+  let failTargets = false;
+  const dialog = new vm.Script(fs.readFileSync(new URL('../ui/task-quick-add.js', import.meta.url), 'utf8') + '\n taskQuickAdd').runInNewContext({
+    bridge: { callTool: name => { calls.push(name); return failTargets ? Promise.reject(new Error('取得失敗')) : pending; } },
+    sessionRunsInCloud: () => false,
+  });
+  const label = { textContent: '' };
+  dialog.sessionDraft = { agent: 'codex', route: 'desktop', prompt: '保持する未送信の依頼' };
+  dialog.form = { querySelectorAll: () => [], querySelector: () => ({ value: dialog.sessionDraft.prompt }) };
+  dialog.primary = { disabled: false, querySelector: () => label };
+  dialog.feedback = { hidden: true, classList: { remove() {} }, textContent: '' };
+  const loading = dialog.loadTargets();
+  dialog.paintSessionState();
+  assert.equal(dialog.primary.disabled, true);
+  assert.match(label.textContent, /読み込み中/);
+  dialog.sessionDraft.route = 'terminal';
+  dialog.paintSessionState();
+  assert.equal(dialog.primary.disabled, false, 'CLI starts do not need desktop targets');
+  dialog.sessionDraft.route = 'desktop';
+  dialog.paintSessionState();
+  await dialog.submitSession();
+  assert.equal(dialog.feedback.hidden, false);
+  assert.match(dialog.feedback.textContent, /読み込み中/);
+  assert.deepEqual(calls, ['canban_launch_targets'], 'an early shortcut must not start a session');
+  resolveTargets({ claude: { environments: [] }, codex: { projects: [], cloudEnvironments: [] } });
+  await loading;
+  dialog.paintSessionState();
+  assert.equal(dialog.primary.disabled, false);
+  assert.equal(label.textContent, 'Codexを開く');
+  assert.equal(dialog.sessionDraft.prompt, '保持する未送信の依頼');
+  failTargets = true;
+  await dialog.loadTargets();
+  assert.equal(dialog.targets.failed, true);
+  dialog.paintSessionState();
+  assert.equal(dialog.primary.disabled, false, 'a failed lookup keeps the existing manual-folder fallback');
+  assert.equal(dialog.sessionDraft.prompt, '保持する未送信の依頼');
 });

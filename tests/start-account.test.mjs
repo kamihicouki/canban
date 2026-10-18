@@ -28,12 +28,14 @@ afterEach(async () => {
   resetAccountsForTest(); await fs.rm(root, { recursive: true, force: true });
 });
 
-test('a new Claude Desktop session starts in the chosen account\'s signed-in profile', { skip: process.platform !== 'darwin' }, async () => {
-  const as = await startAccount({ agent: 'claude', account: 'claude:second', host: { local: true }, route: 'desktop' });
+test('a new Claude Desktop session opens only in the signed-in account; another account is not switched to', { skip: process.platform !== 'darwin' }, async () => {
+  const as = await startAccount({ agent: 'claude', account: 'claude:first', host: { local: true }, route: 'desktop' });
   let profileWhenOpened = null;
   await as.open(async () => { profileWhenOpened = JSON.parse(await fs.readFile(path.join(app, 'config.json'))).lastKnownAccountUuid; });
-  assert.equal(profileWhenOpened, 'second');
-  assert.equal(as.account, 'claude:second');
+  assert.equal(profileWhenOpened, 'first');
+  const other = await startAccount({ agent: 'claude', account: 'claude:second', host: { local: true }, route: 'desktop' });
+  await assert.rejects(other.open(async () => {}), /ログインを切り替える/);
+  assert.equal(await fs.realpath(app), await fs.realpath(first));
 });
 
 test('a running Desktop on another profile is not switched and the error names the account', { skip: process.platform !== 'darwin' }, async () => {
@@ -57,5 +59,5 @@ test('accounts are named with their AI App, and the CLI prefix goes before the b
   assert.equal(accountName('codex:abcdef123456'), 'Codex · abcdef12');
   assert.equal(accountName('claude:x', { 'claude:x': 'me@example.com' }), 'Claude · me@example.com');
   assert.equal(accountName(null), 'アカウント不明');
-  assert.equal(newSessionCommand('codex', { cwd: '/w', prompt: 'x', prefix: 'env CODEX_HOME=/h ' }), 'cd /w 2>/dev/null; env CODEX_HOME=/h codex x');
+  assert.equal(newSessionCommand('codex', { cwd: '/w', prompt: 'x', prefix: 'env CODEX_HOME=/h ' }), 'cd /w && env CODEX_HOME=/h codex x');
 });

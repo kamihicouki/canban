@@ -44,6 +44,8 @@ function feedPush(f, it) {
   if (it.k === 'user') f.turnStart = Date.parse(it.at) || Date.now();
   const el = feedItem(it, f);
   if (!el) return null;
+  if (it.at) el.dataset.feedAt = it.at;
+  if (it.k === 'user' && exchangeModel.delivery(it.text)) el.exchangeDelivery = it.text;
   if (it.k === 'tool' || it.k === 'thinking') {
     let g = f.list.lastElementChild;
     if (g?.classList.contains('fi-edits')) g = g.previousElementSibling;
@@ -67,7 +69,7 @@ function endTurn(f, it) {
   // Above the last reply of the turn, like the agent apps; with no reply, at the end.
   let anchor = null;
   for (let el = f.list.lastElementChild; el; el = el.previousElementSibling) {
-    if (el.classList.contains('fi-user')) break;
+    if (el.classList.contains('fi-user') || el.classList.contains('exchange-touchpoint')) break;
     if (el.classList.contains('fi-asst')) anchor = el;
     if (el.classList.contains('work-div')) { anchor = null; break; }
   }
@@ -124,8 +126,13 @@ function editSummary(f) {
 }
 
 // ---- the thread layout ----
-const SIDE_TABS = [['changes', '変更', 'diff', 'f'], ['details', '詳細', 'panel', 'd']];
-function sideTabOf(p) { return p.sideTab === undefined ? store.get('threadSide', null) : p.sideTab; }
+const SIDE_TABS = [['changes', '変更', 'diff', 'f'], ['terminal', 'ターミナル', 'terminal', 't'], ['details', '詳細', 'panel', 'd']];
+// The terminal is only for this machine's sessions; a remembered terminal tab shows nothing elsewhere.
+function sideTabOf(p) {
+  const tab = p.sideTab === undefined ? store.get('threadSide', null) : p.sideTab;
+  return tab === 'terminal' && !terminalAvailable(p) ? null : tab;
+}
+const terminalAvailable = (p) => p?.kind === 'session' && !!p.d?.session && !p.d.session.host;
 function openThreadSide(p, tab) {
   p.sideTab = tab || null;
   store.set('threadSide', p.sideTab);
@@ -142,6 +149,7 @@ function paintThreadSide(p) {
   for (const [id] of SIDE_TABS) { $$(`[data-side-tab="${id}"]`, p.el).forEach((b) => b.setAttribute('aria-pressed', String(shown === id))); }
   const body = $('.th-side-b', side);
   if (shown === 'changes') { body.replaceChildren(renderChangesPanel(p)); }
+  else if (shown === 'terminal') { body.replaceChildren(terminalPanel(p)); }
   else if (shown === 'details') { body.replaceChildren(...(p.detailNodes || [])); }
   else body.replaceChildren();
   refreshShortcutHints();
@@ -167,6 +175,7 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
   const sig = s.signals, git = d.git;
   const chips = [
     dotPill(s),
+    exchangePill({ ...s, kind: 'session', exchanges: p.exchangeData?.summary || (findCard(s.id)?.link || findCard(s.id)?.card)?.exchanges || { sent: 0, received: 0, total: 0 } }),
     dirPill(card.directory || { name: 'カテゴリ無し' }),
     git ? gitPill(git, s.branch) : s.branch ? h('span', { class: 'ellipsis', title: s.branch, text: `⎇ ${s.branch}` }) : null,
     d.pr ? prPill(d.pr) : null,
@@ -179,14 +188,15 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
   ].filter(Boolean);
   const head = h('div', { class: 'th-head' }, secs.breadcrumb.nodes[0], h('span', { class: 'grow' }),
     !s.host ? h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'changes', title: '作業フォルダの変更を右に開く・閉じる（f）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'f', onclick: () => toggleThreadSide(p, 'changes') }, h('span', { html: picon('diff', 14) }), '変更', h('span', { class: 'th-diffstat' }), ...keycap('f')) : null,
+    !s.host ? h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'terminal', title: 'プロジェクトのルートで開くターミナルを右に開く・閉じる（t）', 'aria-pressed': 'false', 'aria-keyshortcuts': 't', onclick: () => toggleThreadSide(p, 'terminal') }, h('span', { html: picon('terminal', 14) }), 'ターミナル', ...keycap('t')) : null,
     h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'details', title: '属性・メモ・再開などを右に開く・閉じる（d）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'd', onclick: () => toggleThreadSide(p, 'details') }, h('span', { html: picon('panel', 14) }), '詳細', ...keycap('d')),
     h('span', { class: 'ph-btns card-actions' }));
-  const title = h('div', { class: 'th-title' }, secs.status.nodes[0], secs.title.nodes[0]);
+  const title = h('div', { class: 'th-title' }, secs.title.nodes[0]);
   const main = h('div', { class: 'th-main' },
     h('div', { class: 'th-conv', 'data-sec': 'conv' }, ...secs.conv.nodes),
     // Slack material sits beside the input it feeds (「依頼文に追加」), not in the details panel.
     h('div', { class: 'th-dock', 'data-sec': 'send' }, secs.slack ? h('details', { class: 'th-attach', 'data-sec': 'slack' }, h('summary', {}, h('span', { html: picon('message', 13) }), `Slack資料（${card.slackRefs.length}）`), ...secs.slack.nodes) : null, ...secs.send.nodes));
-  el.replaceChildren(...[head, threadStrip(p, d), title].filter(Boolean), h('div', { class: 'th-meta' }, ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('session'));
+  el.replaceChildren(...[head, threadStrip(p, d), title].filter(Boolean), h('div', { class: 'th-meta' }, secs.status.nodes[0], ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('session'));
   paintThreadStat(p, git);
   paintThreadSide(p);
 }
@@ -203,7 +213,7 @@ function renderTaskThreadPane(p, card, secs) {
   p.detailNodes = order.filter(([id]) => secs[id]).map(([id, open]) => detailSection(id, secs[id].title ?? secTitle(id), secs[id].nodes, { open, extra: secs[id].extra }));
   const labels = card.labels.map((id) => state.board.labels.find((l) => l.id === id)).filter(Boolean);
   const chips = [
-    faceWho('task'), dirPill(card.directory || { name: 'カテゴリ無し' }),
+    dirPill(card.directory || { name: 'カテゴリ無し' }),
     ...labels.map((l) => h('span', { class: 'th-label', title: 'ラベル' }, h('i', { style: { background: colorVar(l.color) } }), l.name)),
     card.priority ? h('span', { class: `pill prio-${card.priority}`, text: { high: '優先度 高', medium: '優先度 中', low: '優先度 低' }[card.priority] }) : null,
     card.due ? h('span', { class: `pill${Date.parse(card.due) < Date.now() - DAY_MS ? ' due-over' : ''}`, text: `期限 ${new Date(card.due).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}` }) : null,
@@ -214,7 +224,7 @@ function renderTaskThreadPane(p, card, secs) {
   const head = h('div', { class: 'th-head' }, secs.breadcrumb.nodes[0], h('span', { class: 'grow' }),
     h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'details', title: '属性・メモ・削除を右に開く・閉じる（d）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'd', onclick: () => toggleThreadSide(p, 'details') }, h('span', { html: picon('panel', 14) }), '詳細', ...keycap('d')),
     h('span', { class: 'ph-btns card-actions' }));
-  const title = h('div', { class: 'th-title' }, secs.status.nodes[0], secs.title.nodes[0]);
+  const title = h('div', { class: 'th-title' }, secs.title.nodes[0]);
   const main = h('div', { class: 'th-main' },
     h('div', { class: 'th-conv th-task' },
       taskSection('conv', '説明', null, secs.conv.nodes),
@@ -222,7 +232,7 @@ function renderTaskThreadPane(p, card, secs) {
       loopComponent(card, { compact: true }),
       taskSection('related', secs.related.title, secs.related.extra, secs.related.nodes)),
     h('div', { class: 'th-dock', 'data-sec': 'send' }, h('div', { class: 'th-sec-t' }, secs.send.title, secs.send.extra || null), ...secs.send.nodes));
-  p.el.replaceChildren(head, title, h('div', { class: 'th-meta' }, ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('task'));
+  p.el.replaceChildren(head, title, h('div', { class: 'th-meta' }, secs.status.nodes[0], ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('task'));
   paintThreadSide(p);
 }
 

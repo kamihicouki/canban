@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>時間軸とキーの案内 — 提案プレビュー</title>
+<style>
+:root {
+  --board-bg: #0079bf; --board-bg-2: #5067c5;
+  --header-bg: rgba(0,0,0,.24); --header-fg: #fff; --header-dim: rgba(255,255,255,.78); --header-btn: rgba(255,255,255,.2); --header-btn-hover: rgba(255,255,255,.32);
+  --side-bg: rgba(0,0,0,.24); --side-active: rgba(255,255,255,.26);
+  --on-board: #fff; --on-board-dim: rgba(255,255,255,.85);
+  --pressed-bg: #fff; --pressed-fg: #0c66e4;
+  --tone-run: #216e4e; --tone-run-bg: #dcfff1; --tone-wait: #7f5f01; --tone-wait-bg: #fff7d6; --tone-done: #0055cc; --tone-done-bg: #e9f2ff; --tone-err: #ae2e24;
+  --ag-codex: #0a7c62; --ag-codex-bg: #dff5ee; --ag-claude: #a8462a; --ag-claude-bg: #fdeee8; --ag-task: #5e4db2; --ag-task-bg: #f3f0ff;
+  --list-bg: #f1f2f4; --list-fg: #172b4d; --list-muted: #44546f;
+  --card-bg: #fff; --card-fg: #24272b; --card-muted: #59616c;
+  --chat-human-bg: #e9f2ff; --chat-agent-bg: #f1f2f4;
+  --reading-size: 1rem; --reading-leading: 1.8; --reading-width: 42rem;
+  --card-shadow: 0 1px 1px #091e4240, 0 0 1px #091e424f;
+  --lift-shadow: 0 8px 24px rgba(9,30,66,.25), 0 0 1px rgba(9,30,66,.5);
+  --btn-subtle: rgba(9,30,66,.06); --btn-subtle-hover: rgba(9,30,66,.14);
+  --input-border: #8590a2; --overlay: rgba(0,0,0,.64);
+  --accent: #0c66e4; --focus: #388bff; --warn-bg: #fff7d6; --warn-fg: #7f5f01;
+  --txt-bg: #f7f8f9; --code-bg: rgba(9,30,66,.07);
+  --ann: #e2483d;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --board-bg: #1d2125; --board-bg-2: #0b2a4a;
+  --header-bg: rgba(0,0,0,.35); --header-dim: rgba(255,255,255,.7); --header-btn: rgba(255,255,255,.12); --header-btn-hover: rgba(255,255,255,.2);
+  --side-bg: rgba(0,0,0,.32); --side-active: rgba(255,255,255,.18);
+  --pressed-bg: #dee4ea; --pressed-fg: #1d2125;
+  --tone-run: #7ee2b8; --tone-run-bg: #164b35; --tone-wait: #f5cd47; --tone-wait-bg: #533f04; --tone-done: #85b8ff; --tone-done-bg: #09326c;
+  --ag-codex: #6cd4b6; --ag-codex-bg: #0f3a30; --ag-claude: #f0a281; --ag-claude-bg: #4a2617; --ag-task: #b8acf6; --ag-task-bg: #352c63;
+  --list-bg: #101204; --list-fg: #b6c2cf; --list-muted: #8c9bab;
+  --card-bg: #22272b; --card-fg: #e3e6eb; --card-muted: #a9b2bd;
+  --chat-human-bg: #09326c; --chat-agent-bg: #282e33;
+  --card-shadow: 0 1px 1px #03040480, 0 0 1px #03040480;
+  --lift-shadow: 0 8px 24px rgba(0,0,0,.5), 0 0 1px rgba(0,0,0,.7);
+  --btn-subtle: rgba(161,189,217,.08); --btn-subtle-hover: rgba(166,197,226,.16);
+  --input-border: #738496; --overlay: rgba(0,0,0,.72);
+  --accent: #579dff; --warn-bg: #533f04; --warn-fg: #f5cd47;
+  --txt-bg: #1d2125; --code-bg: rgba(161,189,217,.12);
+  --ann: #ff7a70;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { font: .875rem/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif; color: var(--list-fg);
+  background: linear-gradient(135deg, var(--board-bg), var(--board-bg-2)); display: flex; flex-direction: column; overflow: hidden; }
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
+kbd { font: 11px/16px ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px solid currentColor; border-radius: 3px; padding: 0 4px; opacity: .85; white-space: nowrap; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+/* proposal controls (not part of the app) */
+.demo { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: #172b4d; color: #fff; font-size: 12px; flex: none; flex-wrap: wrap; }
+.demo b { font-weight: 700; margin-right: 4px; }
+.seg { display: inline-flex; background: rgba(255,255,255,.12); border-radius: 6px; padding: 2px; }
+.seg button { padding: 3px 10px; border-radius: 4px; color: #fff; }
+.seg button[aria-pressed="true"] { background: #fff; color: #172b4d; font-weight: 700; }
+.demo .sp { flex: 1; }
+.demo .tip { opacity: .75; }
+
+/* app bar */
+.appbar { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 12px; background: var(--header-bg); color: var(--header-fg); flex: none; }
+.logo { display: flex; align-items: center; gap: 6px; font-weight: 800; font-size: 17px; }
+.logo i { width: 24px; height: 24px; border-radius: 5px; background: #fff; display: inline-block; position: relative; }
+.logo i::before { content: ""; position: absolute; left: 5px; top: 5px; width: 3px; height: 13px; background: #0c66e4; box-shadow: 5px 0 0 #0c66e4; }
+.hbtn { padding: 5px 10px; border-radius: 4px; background: var(--header-btn); color: var(--header-fg); font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+.hbtn:hover { background: var(--header-btn-hover); }
+.hbtn[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-fg); font-weight: 700; }
+.vswitch { display: inline-flex; gap: 2px; background: var(--header-btn); border-radius: 5px; padding: 2px; }
+.vswitch .hbtn { background: none; }
+.vswitch .hbtn[aria-pressed="true"] { background: var(--pressed-bg); }
+.search { width: 260px; padding: 5px 10px; border-radius: 4px; background: var(--header-btn); color: var(--header-dim); font-size: 13px; display: flex; justify-content: space-between; }
+.appbar .grow { flex: 1; }
+
+/* stage */
+.stage { flex: 1; min-height: 0; display: flex; position: relative; }
+.wside { width: 200px; flex: none; background: var(--side-bg); color: var(--on-board); padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; overflow: hidden; }
+.wside h5 { margin: 12px 8px 4px; font-size: 11px; letter-spacing: .05em; color: var(--on-board-dim); opacity: .85; }
+.wside a { display: flex; justify-content: space-between; padding: 6px 8px; border-radius: 5px; color: inherit; text-decoration: none; }
+.wside a.on { background: var(--side-active); font-weight: 700; }
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 8px 12px 12px; gap: 8px; position: relative; }
+.band { display: flex; align-items: center; gap: 12px; height: 34px; padding: 0 10px; border-radius: 8px; background: rgba(0,0,0,.14); color: var(--on-board); font-size: 12px; flex: none; }
+.band span { display: inline-flex; gap: 4px; align-items: center; }
+.band .bars { flex: 1; height: 18px; display: flex; align-items: flex-end; gap: 3px; }
+.band .bars i { flex: 1; background: rgba(255,255,255,.35); border-radius: 2px 2px 0 0; }
+.view { flex: 1; min-height: 0; display: flex; gap: 12px; position: relative; }
+
+/* board */
+.lists { display: flex; gap: 12px; align-items: flex-start; overflow: hidden; }
+.list { width: 272px; flex: none; background: var(--list-bg); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--card-shadow); }
+.list h3 { margin: 4px 6px; font-size: 14px; }
+.bcard { background: var(--card-bg); color: var(--card-fg); border-radius: 8px; padding: 8px 10px; box-shadow: var(--card-shadow); font-size: 13px; }
+.bcard b { display: block; font-size: 14.5px; line-height: 1.4; }
+.bcard .m { font-size: 12px; color: var(--card-muted); margin-top: 4px; display: flex; gap: 6px; }
+.bcard.sel { outline: 2px solid var(--focus); }
+
+/* glyphs, pills */
+.glyph { width: 14px; height: 14px; border-radius: 50%; flex: none; display: inline-block; border: 2px solid currentColor; }
+.g-done { color: var(--tone-done); background: var(--tone-done); box-shadow: inset 0 0 0 2px var(--card-bg); }
+.g-run { color: var(--tone-run); border-right-color: transparent; animation: spin 1s linear infinite; }
+.g-wait { color: var(--tone-wait); background: var(--tone-wait); animation: blink 1.2s ease-in-out infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes blink { 50% { opacity: .35; } }
+.who { font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: 3px; line-height: 18px; }
+.who.codex { color: var(--ag-codex); background: var(--ag-codex-bg); }
+.who.claude { color: var(--ag-claude); background: var(--ag-claude-bg); }
+.who.task { color: var(--ag-task); background: var(--ag-task-bg); }
+.pill { font-size: 12px; padding: 0 7px; border-radius: 10px; background: var(--btn-subtle); line-height: 20px; white-space: nowrap; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+
+/* timeline list */
+.tl-side { width: var(--side-w, 340px); flex: none; min-height: 0; display: flex; flex-direction: column; background: var(--list-bg); border-radius: 12px; box-shadow: var(--card-shadow); }
+.tl-list { flex: 1; overflow-y: auto; padding: 2px 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+.tl-gh { display: flex; align-items: center; gap: 6px; padding: 12px 8px 4px; font-size: 12px; font-weight: 700; letter-spacing: .03em; color: var(--list-muted); position: sticky; top: 0; background: var(--list-bg); z-index: 1; }
+.tl-gh .n { font-weight: 400; }
+.irow { display: flex; gap: 10px; padding: 8px; border-radius: 10px; cursor: pointer; align-items: flex-start; color: var(--list-fg); }
+.irow:hover { background: var(--btn-subtle); }
+.irow[aria-selected="true"] { background: var(--card-bg); box-shadow: var(--card-shadow); color: var(--card-fg); }
+.irow .glyph { margin-top: 4px; }
+.irow .t { font-size: .9375rem; font-weight: 600; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.irow .s { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--list-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; }
+.irow .tm { margin-left: auto; flex: none; font-size: 11.5px; color: var(--list-muted); margin-top: 3px; }
+.splitter { width: 8px; margin: 0 -10px 0 -2px; cursor: col-resize; flex: none; border-radius: 4px; position: relative; z-index: 2; }
+.splitter:hover, .splitter.drag { background: rgba(255,255,255,.35); }
+
+/* the card pane (proposal) */
+.cpane { flex: 1; min-width: 0; min-height: 0; display: flex; background: var(--card-bg); color: var(--card-fg); border-radius: 12px; box-shadow: var(--card-shadow); overflow: hidden; }
+.cpane-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ch { display: flex; align-items: flex-start; gap: 10px; padding: 16px 20px 4px; }
+.ch .glyph { margin-top: 6px; }
+.ch h2 { margin: 0; font-size: 20px; line-height: 1.4; flex: 1; min-width: 0; }
+.ctools { display: flex; gap: 6px; align-items: center; flex: none; }
+.tbtn { white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; padding: 4px 8px; border-radius: 5px; background: var(--btn-subtle); font-size: 12.5px; }
+.tbtn:hover { background: var(--btn-subtle-hover); }
+.tbtn[aria-pressed="true"] { background: var(--card-fg); color: var(--card-bg); }
+.tseg { display: inline-flex; background: var(--btn-subtle); border-radius: 6px; padding: 2px; }
+.tseg button { white-space: nowrap; padding: 2px 8px; border-radius: 4px; font-size: 12.5px; display: inline-flex; gap: 5px; align-items: center; }
+.tseg button[aria-pressed="true"] { background: var(--card-bg); box-shadow: var(--card-shadow); font-weight: 700; }
+.cmeta { display: flex; align-items: center; gap: 8px; padding: 2px 20px 12px 44px; font-size: 12.5px; color: var(--card-muted); border-bottom: 1px solid var(--btn-subtle); flex-wrap: wrap; row-gap: 6px; min-width: 0; }
+.cmeta .tools { flex: none; margin-left: auto; display: inline-flex; gap: 6px; align-items: center; }
+.cmeta .tm { margin-left: auto; }
+.feed { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 20px max(24px, calc((100% - var(--reading-width)) / 2)) 24px; display: flex; flex-direction: column; gap: 22px; font-size: var(--reading-size); line-height: var(--reading-leading); }
+.gist { border: 1px solid var(--btn-subtle-hover); border-left: 4px solid var(--tone-done); border-radius: 8px; padding: 12px 16px; background: var(--txt-bg); font-size: 15px; line-height: 1.7; }
+.gist h4 { margin: 0 0 6px; font-size: 12px; letter-spacing: .04em; color: var(--card-muted); display: flex; gap: 8px; align-items: center; }
+.gist dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; }
+.gist dt { font-weight: 700; font-size: 13px; color: var(--card-muted); padding-top: 2px; }
+.gist dd { margin: 0; }
+.day { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--card-muted); }
+.day::before, .day::after { content: ""; flex: 1; height: 1px; background: var(--btn-subtle-hover); }
+.auto { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; background: var(--btn-subtle); font-size: 13px; color: var(--card-muted); cursor: pointer; line-height: 1.5; }
+.auto b { color: var(--card-fg); font-weight: 600; }
+.auto .grow { flex: 1; }
+.auto-body { display: none; font-size: 13px; line-height: 1.7; padding: 10px 14px; border-radius: 8px; background: var(--btn-subtle); color: var(--card-muted); margin-top: -16px; white-space: pre-wrap; }
+.auto[aria-expanded="true"] + .auto-body { display: block; }
+.msg-who { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--card-muted); margin-bottom: 4px; line-height: 1.4; }
+.amsg p { margin: 0 0 12px; }
+.amsg p:last-child { margin-bottom: 0; }
+.amsg ul { margin: 0 0 12px; padding-left: 1.3em; }
+.amsg code { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.amsg .more { font-size: 13px; color: var(--accent); }
+.hmsg { align-self: flex-end; max-width: 80%; background: var(--chat-human-bg); border-radius: 14px 14px 4px 14px; padding: 8px 14px; }
+.hmsg .msg-who { justify-content: flex-end; }
+.dock { flex: none; padding: 8px max(24px, calc((100% - var(--reading-width)) / 2)) 14px; border-top: 1px solid var(--btn-subtle); }
+.composer { border: 1px solid var(--input-border); border-radius: 10px; padding: 10px 12px; font-size: 15px; color: var(--card-muted); display: flex; align-items: center; gap: 8px; }
+.composer .grow { flex: 1; }
+.dock-foot { display: flex; gap: 12px; font-size: 11.5px; color: var(--card-muted); margin-top: 6px; }
+.detail { width: 260px; flex: none; border-left: 1px solid var(--btn-subtle); padding: 16px; font-size: 13px; display: none; flex-direction: column; gap: 14px; overflow: auto; background: var(--txt-bg); }
+.cpane.with-detail .detail { display: flex; }
+.detail h5 { margin: 0 0 4px; font-size: 11px; letter-spacing: .05em; color: var(--card-muted); }
+.detail .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+/* current (for comparison) */
+.old .cpane-main { }
+.old .ch h2 { font-size: 15px; }
+.old .feed { gap: 10px; font-size: 13px; line-height: 1.7; padding: 0 22%; }
+.old .omsg { background: var(--chat-agent-bg); border-radius: 6px; padding: 10px 12px; overflow-wrap: anywhere; }
+.old .omsg.h { background: var(--chat-human-bg); }
+.old .omsg small { display: block; color: var(--card-muted); font-size: 11px; }
+
+/* overlay (card opened) */
+.scrim { position: absolute; inset: 0; background: var(--overlay); display: flex; justify-content: center; padding: 16px 0; z-index: 5; }
+.scrim .cpane { flex: none; width: min(760px, 64%); }
+
+/* the key guide — one component on every screen */
+.keyguide { position: absolute; z-index: 20; background: color-mix(in srgb, var(--card-bg) 94%, transparent); color: var(--card-fg); border-radius: 10px; box-shadow: var(--lift-shadow); font-size: 12px; backdrop-filter: blur(6px); transition: box-shadow .15s; }
+.keyguide.dragging { opacity: .9; transition: none; box-shadow: 0 16px 40px rgba(0,0,0,.35); }
+.kg-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px 4px 6px; cursor: grab; user-select: none; font-weight: 700; font-size: 11px; letter-spacing: .03em; color: var(--card-muted); }
+.kg-head:active { cursor: grabbing; }
+.kg-grip { width: 10px; height: 14px; background-image: radial-gradient(currentColor 1.2px, transparent 1.3px); background-size: 5px 5px; opacity: .7; }
+.kg-head .grow { flex: 1; }
+.kg-head button { width: 20px; height: 20px; border-radius: 4px; color: var(--card-muted); font-size: 13px; line-height: 20px; }
+.kg-head button:hover { background: var(--btn-subtle-hover); }
+.kg-body { padding: 0 10px 10px; display: flex; flex-direction: column; gap: 3px; }
+.kg-sec { font-size: 10.5px; font-weight: 700; color: var(--card-muted); margin: 6px 0 2px; letter-spacing: .04em; }
+.kg-sec:first-child { margin-top: 0; }
+.kg-k { display: flex; gap: 8px; align-items: baseline; line-height: 18px; }
+.kg-k kbd { min-width: 22px; text-align: center; }
+.kg-k.off { opacity: .4; }
+/* docks */
+.keyguide[data-dock="tr"] { top: 8px; right: 8px; width: 210px; }
+.keyguide[data-dock="br"] { bottom: 8px; right: 8px; width: 210px; }
+.keyguide[data-dock="bl"] { bottom: 8px; left: 8px; width: 210px; }
+.keyguide[data-dock="bottom"] { left: 50%; transform: translateX(-50%); bottom: 6px; max-width: calc(100% - 16px); }
+.keyguide[data-dock="bottom"] { display: flex; align-items: center; border-radius: 8px; }
+.keyguide[data-dock="bottom"] .kg-head { padding: 4px 4px 4px 6px; }
+.keyguide[data-dock="bottom"] .kg-head .lbl, .keyguide[data-dock="bottom"] .kg-sec { display: none; }
+.keyguide[data-dock="bottom"] .kg-body { flex-direction: row; flex-wrap: wrap; gap: 2px 12px; padding: 4px 10px 4px 2px; }
+.keyguide[data-min="true"] .kg-body { display: none; }
+.keyguide[data-min="true"] { width: auto; }
+.keyguide[data-min="true"] .kg-head .lbl::after { content: "（?で一覧）"; font-weight: 400; }
+.dropzones { position: absolute; inset: 0; z-index: 19; pointer-events: none; display: none; }
+.dropzones.on { display: block; }
+.dz { position: absolute; border: 2px dashed rgba(255,255,255,.75); border-radius: 10px; background: rgba(255,255,255,.12); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 700; text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+.dz.hot { background: rgba(56,139,255,.45); border-style: solid; }
+.dz[data-dock="tr"] { top: 8px; right: 8px; width: 210px; height: 150px; }
+.dz[data-dock="br"] { bottom: 8px; right: 8px; width: 210px; height: 150px; }
+.dz[data-dock="bl"] { bottom: 8px; left: 8px; width: 210px; height: 150px; }
+.dz[data-dock="bottom"] { bottom: 8px; left: 240px; right: 240px; height: 36px; }
+
+/* the guide pushes the board aside instead of covering it (like the 管理パネル) */
+.stage[data-kg="tr"] .main, .stage[data-kg="br"] .main { padding-right: 230px; }
+.stage[data-kg="bottom"] .main { padding-bottom: 40px; }
+.stage[data-kg="bl"] .wside { padding-bottom: 260px; }
+.keyguide[data-dock="bl"] { width: 184px; }
+/* annotations */
+.ann { display: none; position: absolute; z-index: 30; min-width: 22px; height: 22px; border-radius: 11px; padding: 0 6px; background: var(--ann); color: #fff; font: 700 12px/22px system-ui, sans-serif; text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,.3); pointer-events: none; }
+body.show-ann .ann { display: block; }
+.rel { position: relative; }
+.notes { position: absolute; z-index: 40; left: 12px; bottom: 12px; width: 380px; max-height: calc(100% - 24px); overflow: auto; background: var(--card-bg); color: var(--card-fg); border-radius: 12px; box-shadow: var(--lift-shadow); padding: 14px 16px; font-size: 13px; line-height: 1.65; display: none; }
+body.show-ann .notes { display: block; }
+.notes h3 { margin: 0 0 8px; font-size: 15px; }
+.notes ol { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.notes li { display: flex; gap: 8px; }
+.notes li > span:first-child { flex: none; width: 22px; height: 22px; border-radius: 11px; background: var(--ann); color: #fff; font-weight: 700; font-size: 12px; text-align: center; line-height: 22px; }
+.notes .close { position: absolute; top: 8px; right: 10px; font-size: 16px; color: var(--card-muted); }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body class="show-ann">
+<div class="demo" role="toolbar" aria-label="プレビューの切り替え">
+  <b>提案プレビュー</b>
+  <span class="seg" id="segVer"><button data-ver="new" aria-pressed="true">提案</button><button data-ver="old" aria-pressed="false">現状</button></span>
+  <span class="seg" id="segView"><button data-view="timeline" aria-pressed="true">時間軸</button><button data-view="board" aria-pressed="false">ボード</button><button data-view="overlay" aria-pressed="false">カードを開いた状態</button></span>
+  <span class="seg" id="segTheme"><button data-theme="light" aria-pressed="true">ライト</button><button data-theme="dark" aria-pressed="false">ダーク</button></span>
+  <button class="seg" id="annBtn" style="padding:3px 10px;color:#fff">注釈 表示/非表示</button>
+  <span class="sp"></span>
+  <span class="tip">「キーの案内」の見出しをドラッグ → 右上・右下・左下・下端の帯 に吸着。位置は全画面で共通</span>
+</div>
+
+<header class="appbar">
+  <span class="logo"><i></i>canban</span>
+  <span style="font-weight:700">すべてのセッション ▾</span>
+  <span class="vswitch"><button class="hbtn" data-view="board" aria-pressed="false">ボード</button><button class="hbtn" data-view="timeline" aria-pressed="true">時間軸</button></span>
+  <span class="search"><span>検索・コマンド</span><span><kbd>/</kbd> <kbd>⌘K</kbd></span></span>
+  <button class="hbtn">＋ 作成 <kbd>c</kbd></button>
+  <span class="hbtn" aria-pressed="true">完了 ✕</span>
+  <span class="grow"></span>
+  <span class="hbtn">● 3　● 56</span>
+</header>
+
+<div class="stage" id="stage">
+  <nav class="wside" aria-label="ワークスペース">
+    <h5>ビュー</h5><a class="on" href="#">すべてのセッション</a>
+    <h5>状態</h5><a href="#">実行中 <span>3</span></a><a href="#">入力待ち <span>1</span></a><a class="on" href="#">完了 <span>56</span></a><a href="#">待機 <span>1891</span></a>
+    <h5>カテゴリ</h5><a href="#">beprice-public <span>75</span></a><a href="#">pair-match <span>130</span></a><a href="#">web-scrape <span>4</span></a><a href="#">refun-web <span>14</span></a><a href="#">field-finder <span>120</span></a>
+  </nav>
+  <div class="main" id="main">
+    <div class="band"><span>● 動いている 0</span><span>● 新しい 56</span><span>● 今週 0</span><span>● 休眠中 0</span><span class="bars"><i style="height:20%"></i><i style="height:35%"></i><i style="height:15%"></i><i style="height:60%"></i><i style="height:40%"></i><i style="height:25%"></i><i style="height:90%"></i></span><span>7日 · 30日 · 90日 · <b>全期間</b></span></div>
+    <div class="view" id="view"></div>
+  </div>
+  <div class="dropzones" id="dz">
+    <div class="dz" data-dock="tr">右上</div><div class="dz" data-dock="br">右下</div><div class="dz" data-dock="bl">左下</div><div class="dz" data-dock="bottom">下端の帯</div>
+  </div>
+  <aside class="keyguide" id="kg" data-dock="tr" aria-label="キーの案内">
+    <div class="kg-head" id="kgHead" tabindex="0" title="ドラッグで移動（矢印キーでも移動）"><span class="kg-grip"></span><span class="lbl">キーの案内</span><span class="grow"></span><button id="kgMin" title="畳む / 開く" aria-label="畳む">–</button></div>
+    <div class="kg-body" id="kgBody"></div>
+    <span class="ann" style="top:-10px;left:-10px">5</span>
+  </aside>
+  <section class="notes" id="notes" aria-label="提案のポイント">
+    <button class="close" id="notesClose" aria-label="注釈を閉じる">✕</button>
+    <h3>提案のポイント</h3>
+    <ol>
+      <li><span>1</span><span><b>右側は「カードそのもの」。</b>別のプレビュー部品をやめ、カード詳細（スレッド型）を時間軸の右にそのまま開く。見出し・属性の1行・会話・入力欄・詳細パネル <kbd>d</kbd> がオーバーレイと同じ。<kbd>Enter</kbd> は「大きく開く」（オーバーレイ）に。</span></li>
+      <li><span>2</span><span><b>まず要点。</b>表示の <kbd>1</kbd> テキスト / <kbd>2</kbd> プレビュー / <kbd>3</kbd> 要点 をここでも使え、先頭に「結果・確認済み・残り」を出す。長い報告を全部読まなくても状況がわかる。</span></li>
+      <li><span>3</span><span><b>自動化の指示は1行に畳む。</b>heartbeat のような長い定型の指示（XMLタグ込み）は「⚡ 自動化の指示」として畳み、押すと展開。人の発言は右寄せの吹き出し、エージェントは枠なしの本文で、誰の発言かが一目でわかる。</span></li>
+      <li><span>4</span><span><b>読みやすい本文。</b>16px・行間1.8・本文幅42remを守り、パス・ハッシュはコード体で折り返す。日付の区切りを入れる。左右の余白に本文が押し込まれない。</span></li>
+      <li><span>5</span><span><b>キーの案内は全画面で1部品・1か所。</b>置いた場所の分だけボードを押し出し、カードを覆わない。ボード・時間軸・カードを開いた状態のどれでも同じ「キーの案内」を同じ位置に出す。中身だけが文脈で変わる。見出しをドラッグして 右上・右下・左下・下端の帯 に移せ、位置は共有 UI 状態に保存（矢印キーでも移動、– で畳む）。</span></li>
+      <li><span>6</span><span><b>一覧の幅もドラッグで。</b>時間軸の一覧と右のカードの境目をドラッグして幅を変えられる（カードの幅と同じく保存）。</span></li>
+    </ol>
+  </section>
+</div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const store = { get(k, d) { try { return JSON.parse(localStorage.getItem('canban-proto-' + k)) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem('canban-proto-' + k, JSON.stringify(v)); } catch {} } };
+const S = { ver: 'new', view: 'timeline', sel: 'cws', detail: false, mode: 3, dock: store.get('dock', 'tr'), min: store.get('min', false), sideW: store.get('sideW', 340) };
+
+const ROWS = [
+  ['今日', [
+    ['cws', 'done', 'codex', 'Chrome Web Storeへ公開', 'canban', '6分前'],
+    ['cdx', 'done', 'codex', 'Codex 全環境 3時間更新', 'main', '6分前'],
+    ['ghb', 'done', 'codex', 'GitHubをoriginに設定', 'codex/f3-main-dok…', '13分前'],
+    ['dsh', 'done', 'codex', 'Daily Scrape Health', 'codex/hello-login', '19分前'],
+    ['rfj', 'done', 'codex', 'RefunJPのTrelloカードを毎日巡行', 'master', '19分前'],
+    ['agm', 'done', 'claude', 'Codex AGENTS.md ConoHa同期（日次・Luna Low）', 'main', '19分前'],
+    ['prc', 'done', 'codex', 'カート内の価格をウォッチしてほしいです。そして最安値のタイミングで…', 'yahoo-shopping-wa…', '19分前'],
+  ]],
+  ['昨日', [
+    ['mtg', 'done', 'task', 'Codexミーティング連携を追加', '2 セッション', '1日前'],
+    ['prv', 'done', 'codex', 'Preview環境を定期監視', 'pair-match', '1日前'],
+    ['tgm', 'done', 'claude', 'Telegram通知時刻を見直す', 'codex/f3-main-dok…', '1日前'],
+  ]],
+];
+
+function row([id, st, who, t, s, tm]) {
+  return `<div class="irow" role="option" tabindex="0" data-id="${id}" aria-selected="${S.sel === id}">
+    <span class="glyph g-${st}"></span>
+    <div style="flex:1;min-width:0"><div class="t">${t}</div><div class="s"><span class="who ${who}">${who === 'task' ? 'タスク' : who === 'codex' ? 'Codex' : 'Claude'}</span><span>${s}</span></div></div>
+    <span class="tm">${tm}</span></div>`;
+}
+const listHTML = () => `<div class="tl-list" role="listbox">${ROWS.map(([g, rs]) => `<div class="tl-gh">${g} <span class="n">${rs.length}</span></div>${rs.map(row).join('')}`).join('')}</div>`;
+
+const GIST = `<section class="gist rel"><h4>要点 <span class="pill">最新の報告から</span></h4><dl>
+  <dt>結果</dt><dd>0.16.0 は Chrome Web Store で<b>審査待ち</b>。再アップロード・再申請は不要。</dd>
+  <dt>確認済み</dt><dd>main <code class="mono">708c09f</code> に統合、test・package の run 成功、ZIP の SHA256 を記録。</dd>
+  <dt>残り</dt><dd>ストアからの install と Native Messaging 接続は<b>本人確認待ち</b>（自動では行わない）。</dd>
+</dl><span class="ann" style="top:-10px;left:-10px">2</span></section>`;
+
+function feedNew() {
+  const gist = S.mode === 3 ? GIST : '';
+  const agentLong = S.mode === 1
+    ? `<div class="amsg" style="font-family:ui-monospace,Menlo,monospace;font-size:13.5px;white-space:pre-wrap;line-height:1.7">Canban の Chrome Web Store 公開 0.16.0 の受け入れ確認を完了しました。\n\n- 2026-10-02 13:40 JST の heartbeat で HTTPS 公開URL を確認\n- version 0.16.0・提供元 KamiHicouki・更新日 2026年10月2日\n- サイズ 127KiB を readback 済み</div>`
+    : `<div class="amsg">
+        <p>Chrome Web Store 公開 <b>0.16.0</b> の受け入れ確認を完了しました。公開ページの HTTPS 読み取りで、次を確認しています。</p>
+        <ul><li>version 0.16.0・提供元 KamiHicouki・更新日 2026年10月2日・サイズ 127KiB</li>
+        <li>証跡: <code>/tmp/canban-cws-public-0.16.0.jpg</code></li></ul>
+        <p>一般公開は審査待ちで、申請待ちではありません。再アップロード・再申請・公開操作・既読メールの確認は不要です。</p>
+        <p>残るのはストアからの install、ストアIDでの Native Messaging 接続、基本操作、Codex/Claude 同期の本人確認です。同じ確認依頼は繰り返さず、新しい本人の結果を待ちます。</p>
+        <p class="more">続きを表示（4段落）</p>
+      </div>`;
+  return `${gist}
+  <div class="day">10月14日（火）</div>
+  <div><div class="auto rel" role="button" tabindex="0" aria-expanded="false"><span>⚡</span><span><b>自動化の指示</b>　heartbeat · canban-main-chrome-web-store</span><span class="grow"></span><span>15:05</span><span>▸</span><span class="ann" style="top:-10px;left:-10px">3</span></div>
+  <div class="auto-body">&lt;heartbeat&gt;
+&lt;automation_id&gt;canban-main-chrome-web-store&lt;/automation_id&gt;
+&lt;current_time_iso&gt;2026-10-14T06:05:20.847Z&lt;/current_time_iso&gt;
+&lt;instructions&gt;
+Canban の Chrome Web Store 公開0.16.0の受け入れ確認を完了してください。他チャットへのメッセージ送信は禁止。…
+&lt;/instructions&gt;</div></div>
+  <div><div class="msg-who"><span class="who codex">Codex</span><span>15:06</span></div>${agentLong}</div>
+  <div class="hmsg"><div class="msg-who"><span>あなた</span><span>15:09</span></div>公開ページの HTTPS 読み取りは別対象として続けて大丈夫？</div>
+  <div class="rel"><div class="msg-who"><span class="who codex">Codex</span><span>15:10</span></div><div class="amsg">
+    <p>はい。公開ページの HTTPS 読み取りは chrome-extension:// への CUA アクセスとは別対象なので、引き続き可能です。拡張の管理画面と <code>chrome-extension://kmnkdbmckholannmfhjfmceofmjdbndh</code> への接続は行いません。</p>
+    <p>検証済みの ZIP は <code>/Users/d/.codex/worktrees/chrome-web-store-latest/canban/dist/canban-web-store.zip</code>（0.16.0、SHA256 <code>43c4…f11b</code>）です。</p>
+  </div><span class="ann" style="top:-10px;left:-30px">4</span></div>`;
+}
+
+function cpane({ big = false } = {}) {
+  return `<section class="cpane rel ${S.detail ? 'with-detail' : ''}" aria-label="カード">
+  <div class="cpane-main">
+    <div class="ch"><span class="glyph g-done"></span><h2>Chrome Web Storeへ公開</h2>
+      <div class="ctools">
+        ${big ? '<button class="tbtn" id="closeBig">閉じる <kbd>Esc</kbd></button>' : '<button class="tbtn" id="openBig" title="オーバーレイで大きく開く">⤢ 大きく開く <kbd>Enter</kbd></button>'}
+      </div></div>
+    <div class="cmeta"><span class="who codex">Codex</span><span class="pill">canban</span><span class="mono">main</span><span class="pill" style="color:var(--tone-done);background:var(--tone-done-bg)">完了</span><span>⚡ 自動化</span><span>6分前</span><span class="tools">
+      <span class="tseg"><button data-mode="1" aria-pressed="${S.mode === 1}">テキスト <kbd>1</kbd></button><button data-mode="2" aria-pressed="${S.mode === 2}">プレビュー <kbd>2</kbd></button><button data-mode="3" aria-pressed="${S.mode === 3}">要点 <kbd>3</kbd></button></span>
+      <button class="tbtn" id="detailBtn" aria-pressed="${S.detail}">詳細 <kbd>d</kbd></button></span>
+    </div>
+    <div class="feed" id="feed">${feedNew()}</div>
+    <div class="dock"><div class="composer"><span class="grow">このセッションに返信…</span><kbd>⌘Enter</kbd></div>
+      <div class="dock-foot"><span><kbd>r</kbd> 返信へ</span><span><kbd>⌥Enter</kbd> キューに追加</span><span><kbd>$</kbd> スキル</span></div></div>
+  </div>
+  <aside class="detail" aria-label="詳細パネル">
+    <div><h5>エージェント</h5><div class="row"><span class="who codex">Codex</span> codex-main（このMac）</div></div>
+    <div><h5>カテゴリ・リスト</h5><div class="row"><span class="pill">canban</span><span class="pill">完了</span></div></div>
+    <div><h5>ブランチ</h5><div class="mono">main</div></div>
+    <div><h5>自動化</h5><div>canban-main-chrome-web-store<br><span style="color:var(--card-muted)">毎時 05分</span></div></div>
+    <div><h5>ラベル</h5><div class="row"><span class="pill">公開</span><span class="pill">Chrome</span></div></div>
+    <div><h5>作業フォルダ</h5><div class="mono" style="overflow-wrap:anywhere">~/.codex/worktrees/chrome-web-store-latest/canban</div></div>
+  </aside>
+  ${big ? '' : '<span class="ann" style="top:-10px;left:-10px">1</span>'}
+</section>`;
+}
+
+function oldPane() {
+  return `<section class="cpane old"><div class="cpane-main">
+    <div class="ch" style="padding:12px 16px 4px"><span class="glyph g-done" style="margin-top:3px"></span><h2>Chrome Web Storeへ公開</h2><button class="tbtn">カードを開く <kbd>Enter</kbd></button></div>
+    <div class="cmeta" style="padding-left:16px"><span class="who codex">Codex</span><span class="pill">canban</span><span class="mono">main</span><span class="tm">6分前</span></div>
+    <div class="feed">
+      <div class="omsg">… main708c09fc8da12b2c93da030a2a3bd4c009a534aaに統合済み。test run36902135244のUbuntu/macOS×Node22/24全成功、package run36902135240成功、deployはmain push条件により未実行。検証済み申請ZIP /Users/d/.codex/worktrees/chrome-web-store-latest/canban/dist/canban-web-store.zip は0.16.0、SHA25643c4a45871f291510ff1b…</div>
+      <div class="omsg h"><small>あなた</small>&lt;heartbeat&gt;<br><br>&lt;automation_id&gt;canban-main-chrome-web-store&lt;/automation_id&gt;<br><br>&lt;current_time_iso&gt;2026-10-14T06:05:20.847Z&lt;/current_time_iso&gt;<br><br>&lt;instructions&gt;<br><br>Canban の Chrome Web Store 公開0.16.0の受け入れ確認を完了してください。他チャットへのメッセージ送信は禁止。ユーザーは最新origin/mainの公開を許可済み。2026-10-02 13:40 JSTのheartbeatで、HTTPS公開URL https://chromewebstore.google.com/detail/canban/kmnkdbmckholannmfhjfmceofmjdbndh にCanban・version0.16.0・提供元KamiHicouki・更新日2026年10月2日・サイズ127KiBをreadback済み。証拠 /tmp/canban-cws-public-0.16.0.jpg。0.16.0の一般公開は確認済みで、申請待ち・審査待ちではありません。再アップロード・再申請・公開操作・既読メール確認は不要。…</div>
+      <div class="omsg">… main708c09fc8da12b2c93da030a2a3bd4c009a534aaに統合済み。test run36902135244のUbuntu/macOS×Node22/24全成功 …</div>
+    </div>
+    <div class="dock" style="border:0"><div class="composer" style="font-size:13px;padding:6px 10px">このセッションに返信</div><div class="dock-foot"><span><kbd>Enter</kbd> 送信</span><span><kbd>Esc</kbd> 閉じる</span></div></div>
+  </div></section>`;
+}
+
+function boardHTML() {
+  const card = (t, who, m, sel) => `<div class="bcard ${sel ? 'sel' : ''}"><b>${t}</b><div class="m"><span class="who ${who}">${who === 'codex' ? 'Codex' : 'Claude'}</span><span>${m}</span></div></div>`;
+  return `<div class="lists">
+    <div class="list"><h3>完了</h3>${card('Chrome Web Storeへ公開', 'codex', 'canban · 6分前', true)}${card('Codex 全環境 3時間更新', 'codex', 'main · 6分前')}${card('GitHubをoriginに設定', 'codex', '13分前')}</div>
+    <div class="list"><h3>実行中</h3>${card('Daily Scrape Health', 'codex', 'web-scrape · 実行中')}${card('Telegram通知時刻を見直す', 'claude', 'hermes · 1日前')}</div>
+    <div class="list"><h3>入力待ち</h3>${card('RefunJPのTrelloカードを毎日巡行', 'codex', 'refun-web · 19分前')}</div>
+  </div>`;
+}
+
+// key guide content per context (proposal). Same component everywhere; only the entries change.
+function keys() {
+  const G = [['?', 'キー一覧'], ['⌘K', 'コマンド']];
+  if (S.view === 'overlay') return [['このカード', [['j / k', '次 / 前のカード'], ['1 2 3', 'テキスト / プレビュー / 要点'], ['d', '詳細パネル'], ['i', '指示欄'], ['z', 'アーカイブ']]], ['全体', [...G, ['Esc', '閉じる']]]];
+  if (S.view === 'board') return [['カード', [['j / k', 'カード選択'], ['Enter', '開く'], ['Space', 'その場で返信'], ['l / m', 'ラベル / 移動']]], ['全体', [['/', '検索'], ['c', 'タスク追加'], ['i', '時間軸へ'], ['b', 'ナビゲーション'], ...G]]];
+  return [['このカード', [['j / k', '次 / 前'], ['Enter', '大きく開く'], ['r', '返信'], ['1 2 3', 'テキスト / プレビュー / 要点'], ['d', '詳細パネル'], ['l / m', 'ラベル / 移動']]], ['全体', [['/', '検索'], ['i', 'ボードへ'], ...G]]];
+}
+function renderKeys() {
+  const kg = $('#kg');
+  kg.dataset.dock = S.dock; kg.dataset.min = String(S.min);
+  $('#stage').dataset.kg = S.ver === 'old' || S.min ? '' : S.dock;
+  $('#kgMin').textContent = S.min ? '+' : '–';
+  $('#kgBody').innerHTML = keys().map(([sec, ks]) => `<div class="kg-sec">${sec}</div>${ks.map(([k, v]) => `<div class="kg-k"><kbd>${k}</kbd><span>${v}</span></div>`).join('')}`).join('');
+}
+
+function render() {
+  document.documentElement.dataset.theme = S.theme || 'light';
+  const v = $('#view');
+  $$('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === S.view || (S.view === 'overlay' && b.closest('.appbar') && b.dataset.view === 'board'))));
+  $$('#segVer button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.ver === S.ver)));
+  if (S.view === 'board' || S.view === 'overlay') {
+    v.innerHTML = boardHTML() + (S.view === 'overlay' ? `<div class="scrim" id="scrim">${cpane({ big: true })}</div>` : '');
+  } else {
+    v.style.setProperty('--side-w', S.sideW + 'px');
+    v.innerHTML = `<aside class="tl-side">${listHTML()}</aside>${S.ver === 'new' ? '<div class="splitter rel" id="split" title="ドラッグで一覧の幅を変更"><span class="ann" style="top:45%;left:-7px">6</span></div>' : ''}${S.ver === 'new' ? cpane() : oldPane()}`;
+  }
+  // the old key strip lives bottom-right on the board and on the right margin of the card board;
+  // the proposal shows one guide in one place.
+  $('#kg').hidden = S.ver === 'old';
+  $('#oldStrip')?.remove();
+  if (S.ver === 'old') {
+    const strip = document.createElement('div');
+    strip.id = 'oldStrip';
+    strip.style.cssText = S.view === 'overlay'
+      ? 'position:absolute;top:8px;right:8px;width:200px;z-index:20;padding:10px 12px;border-radius:10px;background:var(--card-bg);color:var(--card-fg);font-size:11px;line-height:20px;box-shadow:var(--card-shadow)'
+      : 'position:absolute;right:12px;bottom:4px;z-index:20;padding:2px 8px;border-radius:4px;color:var(--on-board);font-size:11px;background:color-mix(in srgb,var(--board-bg) 90%,transparent)';
+    strip.innerHTML = S.view === 'overlay'
+      ? '<b style="color:var(--card-muted)">キーの案内</b><br><kbd>k</kbd> 前のカード<br><kbd>j</kbd> 次のカード<br><kbd>⇧←</kbd> 左のリストへ<br><kbd>1</kbd> テキスト <kbd>2</kbd> プレビュー <kbd>3</kbd> 要点<br><kbd>Esc</kbd> 閉じる'
+      : '<kbd>j / k</kbd> カード選択　<kbd>/</kbd> 検索　<kbd>c</kbd> タスク追加　<kbd>i</kbd> ' + (S.view === 'timeline' ? 'ボード' : '時間軸') + '　<kbd>b</kbd> ナビゲーション　<kbd>a / u</kbd> 分析 / Usage　<kbd>r</kbd> 更新　<kbd>?</kbd> キー一覧　<kbd>⌘K</kbd> コマンド';
+    $('#stage').append(strip);
+  }
+  document.body.classList.toggle('show-ann', S.ann !== false && S.ver === 'new');
+  renderKeys();
+}
+
+// interactions
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('button, .irow, .auto');
+  if (!t) return;
+  if (t.dataset.ver) { S.ver = t.dataset.ver; render(); }
+  else if (t.dataset.view) { S.view = t.dataset.view; render(); }
+  else if (t.dataset.theme) { S.theme = t.dataset.theme; $$('#segTheme button').forEach(b => b.setAttribute('aria-pressed', String(b === t))); render(); }
+  else if (t.dataset.mode) { S.mode = +t.dataset.mode; render(); }
+  else if (t.id === 'detailBtn') { S.detail = !S.detail; render(); }
+  else if (t.id === 'openBig') { S.view = 'overlay'; render(); }
+  else if (t.id === 'closeBig') { S.view = 'timeline'; render(); }
+  else if (t.id === 'annBtn') { S.ann = S.ann === false; render(); }
+  else if (t.id === 'notesClose') { S.ann = false; render(); }
+  else if (t.id === 'kgMin') { S.min = !S.min; store.set('min', S.min); renderKeys(); }
+  else if (t.classList.contains('irow')) { S.sel = t.dataset.id; $$('.irow').forEach(r => r.setAttribute('aria-selected', String(r === t))); }
+  else if (t.classList.contains('auto')) { t.setAttribute('aria-expanded', String(t.getAttribute('aria-expanded') !== 'true')); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.target.closest('input, textarea')) return;
+  const k = e.key;
+  if (k === 'Escape' && S.view === 'overlay') { S.view = 'timeline'; render(); }
+  else if (k === 'Enter' && S.view === 'timeline' && e.target.classList?.contains('irow')) { S.view = 'overlay'; render(); }
+  else if ('123'.includes(k) && k.length === 1 && S.view !== 'board' && S.ver === 'new') { S.mode = +k; render(); }
+  else if (k === 'd' && S.view !== 'board' && S.ver === 'new') { S.detail = !S.detail; render(); }
+  else if (k === 'i' && S.view !== 'overlay') { S.view = S.view === 'board' ? 'timeline' : 'board'; render(); }
+  else if ((k === 'j' || k === 'k') && S.view === 'timeline') {
+    const rows = $$('.irow'), i = rows.findIndex(r => r.dataset.id === S.sel), n = rows[Math.max(0, Math.min(rows.length - 1, i + (k === 'j' ? 1 : -1)))];
+    if (n) { S.sel = n.dataset.id; rows.forEach(r => r.setAttribute('aria-selected', String(r === n))); n.focus(); }
+  }
+});
+
+// drag the key guide to one of the docks
+const ORDER = ['tr', 'br', 'bottom', 'bl'];
+function nearestDock(x, y) {
+  const r = $('#stage').getBoundingClientRect();
+  const px = (x - r.left) / r.width, py = (y - r.top) / r.height;
+  if (py > .82 && px > .3 && px < .7) return 'bottom';
+  if (py < .5) return 'tr';
+  return px < .5 ? 'bl' : 'br';
+}
+$('#kgHead').addEventListener('pointerdown', (e) => {
+  if (e.target.closest('button')) return;
+  const kg = $('#kg'), stage = $('#stage').getBoundingClientRect(), box = kg.getBoundingClientRect();
+  const dx = e.clientX - box.left, dy = e.clientY - box.top;
+  kg.setPointerCapture(e.pointerId);
+  kg.classList.add('dragging'); $('#dz').classList.add('on');
+  const w = box.width;
+  Object.assign(kg.style, { width: w + 'px', transform: 'none', right: 'auto', bottom: 'auto' });
+  const move = (ev) => {
+    kg.style.left = (ev.clientX - stage.left - dx) + 'px'; kg.style.top = (ev.clientY - stage.top - dy) + 'px';
+    const d = nearestDock(ev.clientX, ev.clientY);
+    $$('.dz').forEach(z => z.classList.toggle('hot', z.dataset.dock === d));
+  };
+  const up = (ev) => {
+    kg.removeEventListener('pointermove', move); kg.removeEventListener('pointerup', up);
+    kg.classList.remove('dragging'); $('#dz').classList.remove('on');
+    kg.removeAttribute('style');
+    S.dock = nearestDock(ev.clientX, ev.clientY); store.set('dock', S.dock); renderKeys();
+  };
+  kg.addEventListener('pointermove', move); kg.addEventListener('pointerup', up);
+});
+$('#kgHead').addEventListener('keydown', (e) => {
+  const map = { ArrowUp: 'tr', ArrowRight: S.dock === 'bl' ? 'bottom' : 'br', ArrowDown: S.dock === 'tr' ? 'br' : 'bottom', ArrowLeft: S.dock === 'br' ? 'bottom' : 'bl' };
+  if (map[e.key]) { e.preventDefault(); e.stopPropagation(); S.dock = map[e.key]; store.set('dock', S.dock); renderKeys(); }
+});
+
+// resize the timeline list
+document.addEventListener('pointerdown', (e) => {
+  const sp = e.target.closest('#split');
+  if (!sp) return;
+  const side = $('.tl-side'), x0 = e.clientX, w0 = side.getBoundingClientRect().width;
+  sp.setPointerCapture(e.pointerId); sp.classList.add('drag');
+  const move = (ev) => { S.sideW = Math.max(260, Math.min(520, w0 + ev.clientX - x0)); $('#view').style.setProperty('--side-w', S.sideW + 'px'); };
+  const up = () => { sp.classList.remove('drag'); store.set('sideW', S.sideW); sp.removeEventListener('pointermove', move); sp.removeEventListener('pointerup', up); };
+  sp.addEventListener('pointermove', move); sp.addEventListener('pointerup', up);
+});
+render();
+</script>
+</body>
+</html>

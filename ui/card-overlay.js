@@ -1,7 +1,7 @@
 // Part of board.html: included into its script by server/ui.mjs and shares its scope.
 // Only a press that starts and ends on the backdrop closes the card, and not the same press that just closed a popover.
 let backdropDown = false;
-const onBackdrop = (e) => !e.target.closest('.pane, .pane-bar, .popover, .shortcut-map');
+const onBackdrop = (e) => !paneDocked() && !e.target.closest('.pane, .pane-bar, .exchange-trail-bar, .exchange-stack-peek, .popover');
 paneLayer.addEventListener('pointerdown', e => { backdropDown = onBackdrop(e) && Date.now() - popoverClosedAt > 300; });
 paneLayer.addEventListener('click', e => { if (backdropDown && onBackdrop(e)) closeCards(); backdropDown = false; });
 document.body.append(paneLayer);
@@ -12,9 +12,17 @@ let restoringPanes = false, cardReturn = null;
 const KIND_LABEL = { session: 'セッションカード', task: T.taskCard };
 
 // The layer starts under the header and the board bar, which stay in view and in reach (as with the drawer).
+// Docked, it lies exactly over the 時間軸's right side (.inbox-main), which only keeps its place.
 function paneMetrics() {
   if (paneLayer.hidden) return;
-  paneLayer.style.top = `${Math.max(0, Math.round($('.stage')?.getBoundingClientRect().top ?? 0))}px`;
+  const s = paneLayer.style;
+  if (paneDocked()) {
+    const r = $('#board .inbox-main')?.getBoundingClientRect();
+    s.visibility = r?.width && r.height ? '' : 'hidden';
+    if (r) Object.assign(s, { top: `${Math.round(r.top)}px`, left: `${Math.round(r.left)}px`, width: `${Math.round(r.width)}px`, height: `${Math.round(r.height)}px` });
+  } else {
+    Object.assign(s, { visibility: '', left: '', width: '', height: '', top: `${Math.max(0, Math.round($('.stage')?.getBoundingClientRect().top ?? 0))}px` });
+  }
   layoutCardBoard();
 }
 new ResizeObserver(paneMetrics).observe(paneStage);
@@ -25,7 +33,10 @@ const cardSizeObserver = new ResizeObserver(entries => {
     const p = panes.find(p => p.el === target), feed = p && live.feeds.get(p.id);
     const following = feed && atFeedEnd(feed.list);
     target.style.setProperty('--card-visible-height', `${Math.round(contentRect.height)}px`);
-    if (following) requestAnimationFrame(() => { if (target.isConnected && live.feeds.get(p.id) === feed) scrollFeedToEnd(feed); });
+    const scrollTop = feed?.list.scrollTop;
+    if (following) requestAnimationFrame(() => {
+      if (target.isConnected && live.feeds.get(p.id) === feed && feed.list.scrollTop === scrollTop) scrollFeedToEnd(feed);
+    });
   }
 });
 const applyCardWidths = () => { for (const kind of CARD_KINDS) { paneLayer.style.setProperty(`--w-${kind}`, `${cardWidths[kind]}px`); paneLayer.style.setProperty(`--h-${kind}`, `${cardHeights[kind]}px`); } };
@@ -40,12 +51,15 @@ function buildPaneBar() {
   const mode = h('div', { class: 'seg', role: 'group', 'aria-label': '会話の表示' },
     ...PANE_MODES.map(([v, t], i) => h('button', { type: 'button', 'data-v': v, 'aria-pressed': 'false', 'aria-keyshortcuts': String(i + 1), onclick: () => setPaneMode(v) }, t, ' ', ...keycap(String(i + 1)))));
   paneBar.append(h('span', { class: 'pb-title' }), mode,
-    h('button', { class: 'hbtn pb-reset', type: 'button', title: '開いている種類のカードの幅と高さを既定に戻します', onclick: resetCardLayout }, 'サイズを初期化'));
+    h('button', { class: 'hbtn pb-reset', type: 'button', title: '開いている種類のカードの幅と高さを既定に戻します', onclick: resetCardLayout }, 'サイズを初期化'),
+    h('button', { class: 'hbtn pb-expand', type: 'button', title: 'カードをボードの上に大きく開く（Enter）', onclick: expandCards }, h('span', { html: picon('expand', 14) }), '大きく開く ', ...keycap('Enter')));
 }
 function paintPaneBar() {
   const view = panes[0]?.kind === 'view';
   $('.pb-title', paneBar).textContent = !panes[0] || view ? '' : panes[0].kind === 'task' && panes.length > 1 ? `${T.taskCard}と紐付いたセッション ${panes.length - 1} 件` : KIND_LABEL[panes[0].kind];
   for (const el of $$('.seg, .pb-reset', paneBar)) el.hidden = view; // a sheet has no conversation, no card layout and no neighbour to step to
+  $('.pb-reset', paneBar).hidden ||= paneDocked(); // docked, the 時間軸 decides the size
+  $('.pb-expand', paneBar).hidden = !paneDocked();
   $$('button[data-v]', paneBar).forEach((b) => b.setAttribute('aria-pressed', String(paneGlobal.mode === b.dataset.v)));
   refreshShortcutHints();
 }
@@ -56,10 +70,18 @@ function setPaneMode(mode) {
 }
 
 // ---- showing and hiding ----
+function restorePaneReading(p) {
+  const reading = p.reading, feed = $('.feed', p.el);
+  if (reading && feed) feed.scrollTop = reading.following ? feed.scrollHeight : reading.top;
+  delete p.reading;
+}
 function detachPane(p) {
+  const feed = $('.feed', p.el);
+  if (feed) p.reading = { top: feed.scrollTop, following: atFeedEnd(feed) };
   const i = panes.indexOf(p);
   if (i >= 0) panes.splice(i, 1);
   clearInterval(p.el._reqTimer);
+  clearTimeout(p.exchangeRefreshTimer); p.exchangeRefreshTimer = null;
   live.feeds.delete(p.id);
   cardSizeObserver.unobserve(p.el);
   p.el.remove();
@@ -79,31 +101,69 @@ function newPane(id) {
   return p;
 }
 // The cards on the layer become exactly `ids`; cards that stay keep their DOM and drafts.
-function showCards(ids) {
+// `dock` docks the layer on the 時間軸 (true) or floats it over the board (false); left out, it stays as it is.
+function showCards(ids, { dock } = {}) {
   closePopover();
+  if (!paintingExchangeTrail && exchangeTrail) endExchangeTrail();
   const wasHidden = paneLayer.hidden;
-  if (wasHidden) cardReturn = document.activeElement?.closest?.('.card') || document.activeElement;
+  if (wasHidden || dock !== undefined) paneLayer.classList.toggle('docked', !!dock && !!$('#board .inbox-main'));
+  if (wasHidden && !paneDocked()) cardReturn = document.activeElement?.closest?.('.card') || document.activeElement;
   for (const p of [...panes]) if (!ids.includes(p.id)) detachPane(p);
   const next = ids.map((id) => { const p = panes.find((x) => x.id === id) || paneCache.get(id) || newPane(id); paneCache.delete(id); return p; });
   panes.splice(0, panes.length, ...next);
   paneRow.replaceChildren(...panes.map((p) => p.el), cardBoardEnd);
   paneLayer.hidden = false;
   applyCardWidths(); paneMetrics();
-  for (const p of panes) { applyPaneAttrs(p); paintPaneButtons(p); if (p.kind !== 'view') cardSizeObserver.observe(p.el); }
+  for (const p of panes) { applyPaneAttrs(p); paintPaneButtons(p); restorePaneReading(p); if (p.kind !== 'view') cardSizeObserver.observe(p.el); }
   paintPaneBar();
-  if (!restoringPanes) store.set('openCard', ids[0]);
+  if (!restoringPanes && !paneDocked()) store.set('openCard', ids[0]);
+  if (timelineOn() && cardKind(ids[0]) !== 'view') markInboxSel(ids[0]);
   workspace.syncShell(); kickLive();
   if (wasHidden) paneStage.scrollLeft = 0;
 }
-function closeCards() {
+// On the 時間軸, Esc puts a card opened large back on the right of the list instead of closing it;
+// `dock: false` closes it all the same (archived, deleted).
+function closeCards({ dock = true } = {}) {
   if (paneLayer.hidden) return;
+  if (dock && overlayOpen() && timelineOn() && panes[0] && panes[0].kind !== 'view' && $('#board .inbox-main')) return dockCards();
+  const docked = paneDocked();
+  endExchangeTrail();
   closePopover();
   for (const p of [...panes]) detachPane(p);
   paneLayer.hidden = true;
+  paneLayer.classList.remove('docked');
   store.set('openCard', null);
   workspace.syncShell(); kickLive();
   const back = cardReturn; cardReturn = null;
-  refocus(back); // refocus() finds a card the board has re-rendered since by its id
+  if (docked) state.inbox.sel = null; // the next drawing of the 時間軸 docks its first card
+  else refocus(back); // refocus() finds a card the board has re-rendered since by its id
+  if (timelineOn()) queueMicrotask(syncDockedCard);
+}
+// Between the 時間軸's right side and the board: the same cards, drafts and scroll, only the place changes.
+function setCardsDocked(dock) {
+  if (paneLayer.hidden || paneDocked() === dock) return;
+  closePopover();
+  if (dock && exchangeTrail) {
+    const id = exchangeTrail.visits[exchangeTrail.active].sessionId;
+    endExchangeTrail();
+    showCards([id], { dock: true });
+    return;
+  }
+  paneLayer.classList.toggle('docked', dock);
+  paneMetrics(); paintPaneBar(); workspace.syncShell();
+  store.set('openCard', dock ? null : panes[0]?.id ?? null);
+}
+function expandCards() {
+  if (!paneDocked()) return;
+  cardReturn = $(`#board .irow[aria-selected="true"]`);
+  setCardsDocked(false);
+  (focusedPane() || panes[0])?.el.focus({ preventScroll: true });
+}
+function dockCards() {
+  setCardsDocked(true);
+  const row = $(`#board .irow[data-card-id="${CSS.escape(state.inbox.sel || '')}"]`);
+  cardReturn = null;
+  (row || panes[0]?.el)?.focus({ preventScroll: true });
 }
 // Every card of the same kind shares one size.
 function resetCardLayout() {
@@ -221,8 +281,12 @@ function paneButtons(p) {
 function paintPaneButtons(p) { const slot = $('.ph-btns', p.el); if (slot) slot.replaceChildren(...paneButtons(p)); }
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing || paneLayer.hidden || document.querySelector('.popover, dialog[open]')) return;
+  if (paneDocked() && !inDockedPane(e.target)) return; // the 時間軸's list keeps its own Esc
   e.preventDefault();
   if (typingIn(e.target)) { e.target.blur(); return; } // the first Esc leaves the field, the next one closes the card
+  if (paneDocked()) { $(`#board .irow[data-card-id="${CSS.escape(state.inbox.sel || '')}"]`)?.focus(); return; } // docked: back to the list
+  if (exchangeTrail && e.shiftKey) { moveExchangeVisit(1); return; }
+  if (moveExchangeVisit(-1)) return;
   closeCards();
 });
 
@@ -248,7 +312,7 @@ async function stepOpenCard(step) {
   await openCard(next);
   if (panes[0]?.id === next) panes[0].el.focus({ preventScroll: true });
 }
-const focusedPane = () => { const el = document.activeElement?.closest?.('.pane'); return panes.find((p) => p.el === el) || panes[0]; };
+const focusedPane = () => { const el = document.activeElement?.closest?.('.pane'); return panes.find((p) => p.el === el) || (exchangeTrail && panes.find(p => p.id === exchangeTrail.visits[exchangeTrail.active].sessionId)) || panes[0]; };
 function stepPane(step) {
   const i = panes.indexOf(focusedPane()), target = panes[i + step];
   if (target) revealPane(target.id);
@@ -274,8 +338,13 @@ function focusPrompt(p) {
 }
 document.addEventListener('keydown', e => {
   if (paneLayer.hidden || e.defaultPrevented || e.isComposing || e.keyCode === 229 || e.metaKey || e.ctrlKey || e.altKey || typingIn(e.target) || e.target.closest?.('.card') || document.querySelector('.popover, dialog[open]')) return;
+  if (paneDocked() && !inDockedPane(e.target)) return; // docked, the keys go to the card only while the focus is in it
   const k = e.key, p = focusedPane();
   let run = null;
+  if (exchangeTrail && e.shiftKey && (/^Digit[123]$/.test(e.code) || /^[123]$/.test(k))) run = () => setExchangeTrailView(EXCHANGE_TRAIL_VIEWS[Number(e.code?.slice(-1) || k) - 1][0]);
+  else if (exchangeTrail && e.shiftKey && k === 'Home') run = () => focusExchangeVisit(exchangeTrail.root);
+  else if (k === 'Enter' && paneDocked() && e.target === p?.el) run = expandCards;
+  else
   if (e.shiftKey && (k === 'ArrowLeft' || k === 'ArrowRight') && p && p.kind !== 'view'
     && !e.target.closest?.('[role="separator"]')) {
     if (e.repeat) return;
@@ -291,6 +360,9 @@ document.addEventListener('keydown', e => {
     else if (/^[1-9]$/.test(k) && PANE_MODES[k - 1]) run = () => setPaneMode(PANE_MODES[k - 1][0]);
     else if (k === 'i') run = () => focusPrompt(p);
     else if ((p.kind === 'session' && (k === 'd' || (k === 'f' && !p.d?.session?.host))) || (p.kind === 'task' && k === 'd')) run = () => toggleThreadSide(p, k === 'd' ? 'details' : 'changes');
+    else if (e.shiftKey && k === 'R' && terminalAvailable(p) && cardTerms.get(p.id)?.closed) run = () => restartTerminal(p);
+    else if (e.shiftKey && k === 'X' && terminalAvailable(p) && cardTerms.get(p.id)?.id && !cardTerms.get(p.id)?.closed) run = () => endTerminal(p);
+    else if (k === 't' && terminalAvailable(p)) run = () => toggleThreadSide(p, 'terminal');
     else if (p.kind === 'session' && (k === 'z' || k === 'Delete')) run = () => paneKeyButton(p, k)?.click();
     else if (/^[olgmh]$/.test(k)) run = () => paneKeyButton(p, k)?.click();
   }
@@ -303,18 +375,23 @@ function helpTip(text) {
     onclick: e => popover(e.currentTarget, 'ヒント', h('p', { text }), { width: 280 }) });
 }
 // ---- opening ----
-async function openCard(cardId, { restore = false } = {}) {
+// `dock`: open on the 時間軸's right side (true) or over the board (false); left out, where the layer already is.
+// A docked card does not take the focus: the list keeps it while j / k walk through it.
+async function openCard(cardId, { restore = false, dock } = {}) {
   closePopover();
   if (workspace.utilityPage()) workspace.navigate('home', { reload: false });
+  if (exchangeTrail && !paintingExchangeTrail && !panes.some(p => p.id === cardId)) endExchangeTrail();
   const shown = !paneLayer.hidden && panes.find((p) => p.id === cardId);
   if (cardKind(cardId) === 'view') return openView(viewOf(cardId), { shown });
-  if (cardKind(cardId) === 'task') return openTaskCard(cardId, { restore, shown });
+  dock ??= paneDocked();
+  if (shown && !paneLayer.hidden) setCardsDocked(dock);
+  if (cardKind(cardId) === 'task') return openTaskCard(cardId, { restore, shown, dock });
   if (shown) return loadSession(shown); // already on the layer: refresh it where it stands
-  for (const l of state.board?.lists || []) for (const c of l.cards) if (c.id === cardId && c.unread) { c.unread = false; render(); }
-  showCards([cardId]);
+  for (const l of state.board?.lists || []) for (const c of l.cards) if (c.id === cardId && c.unread) { c.unread = false; if (!dock) render(); }
+  showCards([cardId], { dock });
   const [p] = panes;
   await loadSession(p, { restore });
-  if (panes.includes(p) && !restore) p.el.focus({ preventScroll: true });
+  if (panes.includes(p) && !restore && !dock) p.el.focus({ preventScroll: true });
 }
 async function loadSession(p, { restore = false } = {}) {
   let d;
@@ -331,8 +408,9 @@ async function loadSession(p, { restore = false } = {}) {
   }
   if (!panes.includes(p)) return;
   renderPaneKeepingDrafts(p, d);
+  await loadExchangeTimeline(p);
 }
-async function openTaskCard(cardId, { restore = false, shown = null } = {}) {
+async function openTaskCard(cardId, { restore = false, shown = null, dock } = {}) {
   let found = findCard(cardId);
   if (!found) {
     try {
@@ -344,13 +422,17 @@ async function openTaskCard(cardId, { restore = false, shown = null } = {}) {
   // Threads: the task beside one session at a time (the one chosen last, else the latest); the others are a click away.
   const choice = taskThreadChoice(cardId, found.card.links);
   const { ids } = taskOverlayIds(cardId, found.card.links, choice ? [choice] : [], 1);
-  showCards(ids);
+  showCards(ids, { dock });
   const [root, ...sessions] = panes;
   await Promise.all([loadTask(root, found), ...sessions.map((p) => loadSession(p))]);
-  if (panes.includes(root) && !restore && !shown) root.el.focus({ preventScroll: true });
+  if (panes.includes(root) && !restore && !shown && !dock) root.el.focus({ preventScroll: true });
 }
 // A session shown beside its task scrolls into view; any other card replaces what is on the layer.
 function revealPane(id) {
+  if (exchangeTrail) {
+    const visit = exchangeTrailModel.cards(exchangeTrail).find(v => v.sessionId === id);
+    if (visit) { focusExchangeVisit(visit.id); return; }
+  }
   const p = panes.find((x) => x.id === id);
   if (!p) return openCard(id);
   p.el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
@@ -377,7 +459,7 @@ function reconcileCards(board) {
 const openViewKind = () => (!paneLayer.hidden && panes[0]?.kind === 'view' ? viewOf(panes[0].id) : null);
 async function openView(kind, { shown = null } = {}) {
   if (!kind) return;
-  if (!shown) showCards([`view:${kind}`]);
+  if (!shown) showCards([`view:${kind}`], { dock: false });
   const [p] = panes;
   workspace.syncShell();
   await loadView(p);
@@ -413,11 +495,21 @@ function paintViewers(p) {
 
 function renderPaneKeepingDrafts(p, d) {
   const el = p.el;
+  const previousFeed = $('.feed', el);
+  const reading = previousFeed && { top: previousFeed.scrollTop, following: atFeedEnd(previousFeed) };
+  const restoreReading = () => {
+    const feed = live.feeds.get(p.id);
+    if (reading && feed) {
+      if (reading.following) scrollFeedToEnd(feed);
+      else feed.list.scrollTop = reading.top;
+    }
+  };
   if (el.querySelector('.req-row textarea')) {
     // Keep the request editor while rebuilding a reset conversation cursor.
     p.d = d;
     const conversation = $('.th-conv', el);
     if (conversation && d.feed) conversation.replaceChildren(renderFeed(d, p));
+    restoreReading();
     return;
   }
   const drafts = [...el.querySelectorAll('input,textarea,select')].filter(input => {
@@ -429,6 +521,7 @@ function renderPaneKeepingDrafts(p, d) {
   const promptValue = drafts.find(draft => draft.label === '送るプロンプト');
   if (promptDraft && promptValue) promptDraft.text = promptValue.value;
   renderPane(p, d);
+  restoreReading();
   for (const draft of drafts) {
     if (!draft.label) continue;
     const input = [...el.querySelectorAll('input,textarea,select')].find(input => input.getAttribute('aria-label') === draft.label);
@@ -443,7 +536,7 @@ async function changeSessionCardState(p, action) {
   p.cardActionBusy = true;
   try {
     await act('canban_set_session_card_state', { cardId: p.id, action }, { okMsg: action === 'delete' ? 'Codexのセッションを削除しました' : action === 'archive' ? 'Codexでアーカイブしました' : 'アーカイブから戻しました' });
-    closeCards();
+    closeCards({ dock: false });
   } finally { p.cardActionBusy = false; }
 }
 function confirmSessionCardDelete(p) {

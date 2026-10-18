@@ -54,11 +54,11 @@ test('pending launches are matched by agent, host, time and folder or prompt', a
 
 test('new-session links and commands', async () => {
   assert.equal(newSessionLink('codex', { host: LOCAL_HOST, cwd: '/w/app', prompt: '直して' }).url, 'codex://threads/new?prompt=%E7%9B%B4%E3%81%97%E3%81%A6&path=%2Fw%2Fapp');
-  assert.equal(newSessionLink('codex', { host: remote, cwd: '/srv', prompt: 'x' }).url, 'codex://threads/new?prompt=x&path=%2Fsrv&hostId=remote-ssh-discovered%3Abox');
+  assert.throws(() => newSessionLink('codex', { host: remote, cwd: '/srv', prompt: 'x' }), /ターミナル/);
   assert.equal(newSessionLink('claude', { host: LOCAL_HOST, cwd: '/w/app', prompt: 'x' }).url, 'claude://code/new?q=x&folder=%2Fw%2Fapp');
   assert.equal(newSessionLink('claude', { host: remote, cwd: '/srv', prompt: 'x' }).url, 'claude://code/new?q=x&ssh_host=box&ssh_port=2222&ssh_folder=%2Fsrv');
-  assert.equal(newSessionCommand('claude', { host: LOCAL_HOST, cwd: '/w/app', prompt: "it's" }), `cd /w/app 2>/dev/null; claude 'it'\\''s'`);
-  assert.equal(newSessionCommand('codex', { host: remote, cwd: '/srv', prompt: 'x' }), `ssh -t box 'cd /srv 2>/dev/null; codex x'`);
+  assert.equal(newSessionCommand('claude', { host: LOCAL_HOST, cwd: '/w/app', prompt: "it's" }), `cd /w/app && claude 'it'\\''s'`);
+  assert.equal(newSessionCommand('codex', { host: remote, cwd: '/srv', prompt: 'x' }), `ssh -t box 'cd /srv && codex x'`);
 });
 
 test('CLI-only Claude sessions open via claude://resume', async () => {

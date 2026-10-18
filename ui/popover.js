@@ -47,6 +47,7 @@ function popover(anchor, title, body, { width, stack = false } = {}) {
   setTimeout(() => {
     const off = (e) => {
       if (!p.isConnected) return document.removeEventListener('pointerdown', off, true);
+      if (anchor?.contains?.(e.target)) return;
       const inside = e.target.closest?.('.popover');
       if (inside === p || (inside && [...document.querySelectorAll('.popover')].indexOf(inside) > [...document.querySelectorAll('.popover')].indexOf(p))) return;
       closePopover(p);
@@ -75,8 +76,9 @@ function picker(anchor, { title, items, multi = false, selected = [], onPick, on
   const paint = () => {
     const raw = input.value.trim();
     const hit = matcher(raw);
-    rows = items.filter((it) => hit(`${it.group || ''} ${it.label} ${it.description || ''} ${it.hint ?? ''} ${it.keywords || ''} ${it.badge || ''}`)).slice(0, limit).map((it) => ({ it }));
-    if (onCreate && raw && !items.some((it) => norm(it.label) === norm(raw))) rows.push({ create: raw });
+    const currentItems = typeof items === 'function' ? items() : items;
+    rows = currentItems.filter((it) => hit(`${it.group || ''} ${it.label} ${it.description || ''} ${it.hint ?? ''} ${it.keywords || ''} ${it.badge || ''}`)).slice(0, limit).map((it) => ({ it }));
+    if (onCreate && raw && !currentItems.some((it) => norm(it.label) === norm(raw))) rows.push({ create: raw });
     active = Math.max(0, Math.min(active, rows.length - 1));
     let group;
     const out = [];
@@ -123,6 +125,7 @@ function picker(anchor, { title, items, multi = false, selected = [], onPick, on
     else if (e.key === ' ' && multi && !input.value) { e.preventDefault(); choose(active); }
   });
   const p = popover(anchor, title, h('div', { class: 'picker' }, input, listEl, footer), { width, stack });
+  p.refreshItems = paint;
   paint();
   const cur = rows.findIndex((r) => r.it && sel.has(r.it.value));
   if (cur > 0 && !multi) { active = cur; mark(); }

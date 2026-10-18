@@ -110,13 +110,15 @@ export function launchInfo(s) {
 
 // ---- new sessions (task cards) ---------------------------------------------
 // host: { local } or { local:false, id, alias, sshPort? }; cwd: absolute folder on that host.
-export function newSessionLink(agent, { host, cwd, prompt }) {
+// projectId: a local Codex project (the app's link opens only local projects).
+export function newSessionLink(agent, { host, cwd, prompt, projectId = null }) {
   const remote = host && host.local === false;
   if (agent === 'codex') {
+    if (remote) throw new Error('Codex の新規画面はリモート接続先を指定できません。ターミナルで開始してください。');
     const url = new URL('codex://threads/new');
     if (prompt) url.searchParams.set('prompt', prompt);
+    if (projectId) url.searchParams.set('projectId', projectId);
     if (cwd) url.searchParams.set('path', cwd);
-    if (remote) url.searchParams.set('hostId', host.id);
     return { url: url.toString(), label: 'Codex で開始' };
   }
   if (agent === 'claude') {
@@ -137,6 +139,6 @@ export function newSessionCommand(agent, { host, cwd, prompt, images = [], prefi
   const bin = agent === 'codex' ? 'codex' : agent === 'claude' ? 'claude' : null;
   if (!bin) return null;
   const imageArgs = agent === 'codex' ? images.map(i => ` --image ${shq(i.path)}`).join('') : '';
-  const inner = `${cwd ? `cd ${shq(cwd)} 2>/dev/null; ` : ''}${prefix}${bin}${imageArgs}${prompt ? `${imageArgs ? ' --' : ''} ${shq(prompt)}` : ''}`;
+  const inner = `${cwd ? `cd ${shq(cwd)} && ` : ''}${prefix}${bin}${imageArgs}${prompt ? `${imageArgs ? ' --' : ''} ${shq(prompt)}` : ''}`;
   return host && host.local === false ? `ssh -t ${shq(host.alias)} ${shq(inner)}` : inner;
 }
