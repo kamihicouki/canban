@@ -11,6 +11,7 @@ import { guestPaths, restoreGuests } from './claude-desktop-guests.mjs';
 import { backupDesktopProfiles } from './desktop-backup.mjs';
 import { readDesktopCapabilities } from './desktop-capabilities.mjs';
 import { inspectDesktopRuntime } from './claude-desktop-runtime.mjs';
+import { createDesktopAccountSetup } from './desktop-account-setup.mjs';
 
 let processCheck = inspectDesktopRuntime;
 const isRunning = status => typeof status === 'boolean' ? status : status?.running !== false;
@@ -118,4 +119,8 @@ export async function saveClaudeExecutionAccount(account, commit, options = {}) 
 // Shared production adapter; callers gate profile changes with the UI capability.
 export function managedDesktopAccounts(dataDir = desktopStorageDirectory()) {
   return createDesktopAccounts({ dataDir, appDir: path.dirname(guestPaths().sessions), runtime: plan => processCheck(plan), restoreGuests: () => restoreGuests({ paths: guestPaths() }), backup: request => backupDesktopProfiles({ dataDir, ...request }), open: () => import('./claude-desktop-open.mjs').then(m => m.openDesktopApp('claude://code')) });
+}
+
+export function managedDesktopSetup(dataDir = desktopStorageDirectory()) {
+  return createDesktopAccountSetup({ dataDir, appDir: path.dirname(guestPaths().sessions), accounts: managedDesktopAccounts(dataDir), runtime: plan => processCheck(plan), open: () => import('./claude-desktop-open.mjs').then(m => m.openDesktopApp('claude://code')) });
 }

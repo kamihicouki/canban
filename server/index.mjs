@@ -47,7 +47,7 @@ import { resolveSshTarget, matchDesktopTarget } from './sources/ssh-targets.mjs'
 import { prepareCodexDesktop } from './codex-desktop-start.mjs';
 import { copyPromptImages } from './prompt-clipboard.mjs';
 import { readDesktopCapabilities } from './desktop-capabilities.mjs';
-import { managedDesktopAccounts } from './claude-desktop-profile.mjs';
+import { managedDesktopSetup } from './claude-desktop-profile.mjs';
 import { createDesktopLaunches } from './desktop-launch.mjs';
 import { desktopProfilePlan, withDesktopAccount, saveClaudeExecutionAccount, desktopExecutionLink } from './claude-desktop-profile.mjs';
 import { SlackService, slackTools } from './slack.mjs';
@@ -190,12 +190,13 @@ const desktopLaunches = createDesktopLaunches({
   },
 });
 desktopLaunches.recover().catch(() => log('Desktop の開始記録を確認できません'));
+const desktopSetup = managedDesktopSetup(store.dir);
 if (process.env.CANBAN_BACKGROUND !== '0') {
   let resuming = false;
   setInterval(async () => {
     if (resuming) return;
     resuming = true;
-    try { await desktopLaunches.recover(); } catch {} finally { resuming = false; }
+    try { await desktopSetup.recover(); await desktopLaunches.recover(); } catch {} finally { resuming = false; }
   }, 5000).unref();
 }
 
@@ -882,11 +883,10 @@ const TOOLS = [
     if (!(await readDesktopCapabilities(store.dir)).clipboardImages) return { state: 'unverified', reason: 'Desktopでの画像受取りを確認するまで、アプリの通常の添付操作を使ってください' };
     return copyPromptImages({ dataDir: store.dir, imageIds: args.imageIds }, { uiAuthorized: true });
   }),
-  appTool('canban_desktop_accounts', 'Desktop の接続状態', {}, [], async () => ({ ...await managedDesktopAccounts(store.dir).view(), ...await readDesktopCapabilities(store.dir) })),
-  appTool('canban_desktop_account_command', 'Desktop の接続を変更', { type: { type: 'string', enum: ['enroll-current','begin-login','finish-login','cancel','recover'] }, account: { type: 'string' }, requestId: { type: 'string' }, uiToken: { type: 'string' } }, ['type','uiToken'], async a => {
+  appTool('canban_desktop_accounts', 'Desktop の接続状態', {}, [], () => desktopSetup.view()),
+  appTool('canban_desktop_account_command', 'Desktop の接続を変更', { type: { type: 'string', enum: ['enroll-current','begin-login','finish-login','cancel','recover','cancel-wait','trial-start','trial-switch','trial-observe','trial-complete','trial-cancel'] }, account: { type: 'string' }, requestId: { type: 'string' }, confirmations: { type: 'object', additionalProperties: { type: 'boolean' } }, uiToken: { type: 'string' } }, ['type','uiToken'], async a => {
     const args = requireLoopUi(a);
-    if (!(await readDesktopCapabilities(store.dir)).accountSwitch) return { state: 'unverified', reason: '認証保持の実機確認が完了していません。既存のCLIとDesktopは維持しています' };
-    return managedDesktopAccounts(store.dir).command(args);
+    return desktopSetup.command(args);
   }),
   {
     name: 'canban_get_start_session', title: '開始状況を確認', description: '同じ開始要求の待機・起動結果を読み取る。',

@@ -1,5 +1,5 @@
-// A local, owner-only acceptance receipt. No tool can write it. App updates
-// invalidate the receipt so a fixture result never becomes a live capability.
+// A local, owner-only acceptance receipt. Only the trusted UI acceptance trial
+// writes it after observed transitions. App updates invalidate the receipt.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { readDesktopJson } from './claude-desktop-roots.mjs';
