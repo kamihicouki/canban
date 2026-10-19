@@ -541,3 +541,15 @@ table.plain .stripe { display: inline-block; width: 8px; height: 8px; border-rad
   .sidebar { position: fixed; z-index: 750; left: 0; bottom: 0; top: 0; box-shadow: 4px 0 12px #0006; background: var(--board-bg); }
   .modal-grid { grid-template-columns: 1fr; }
 }
+
+/* Category selection uses sibling buttons: choosing and pinning stay separate keyboard targets. */
+.category-picker-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.category-picker-list { max-height: min(420px, 50vh); overflow-y: auto; }
+.category-picker-row { display: flex; align-items: center; border-radius: 6px; }
+.category-picker-row.active { background: var(--btn-subtle-hover); }
+.category-choice { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; min-height: 36px; text-align: left; padding: 6px 8px; }
+.category-choice[aria-pressed="true"] { font-weight: 700; }
+.category-pin { flex: none; width: 34px; height: 34px; }
+.category-pin[aria-pressed="true"] { color: var(--accent); }
+.category-picker-hints { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 12px; color: var(--card-muted); }
+.category-choice:focus-visible, .category-pin:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

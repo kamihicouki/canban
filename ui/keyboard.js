@@ -11,6 +11,9 @@ document.addEventListener('keydown', e => {
     const picker = claudeAccountPicker(focusedPane());
     if (picker) { e.preventDefault(); picker.click(); }
   }
+  if (e.altKey && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.isComposing && e.code === 'KeyC' && !laneHides('directory') && (document.querySelector('.category-picker') || !typingIn(e.target) && !document.querySelector('dialog[open], .popover'))) {
+    e.preventDefault(); openCategoryPicker();
+  }
   // Alt+1〜9: the agent's options into the input, also while typing there (⌥ digits would only type symbols).
   const digit = /^Digit([1-9])$/.exec(e.code);
   if (digit && e.altKey && !e.metaKey && !e.ctrlKey && !e.isComposing && !paneLayer.hidden && !document.querySelector('.popover')
@@ -77,7 +80,7 @@ function refreshShortcutHints() {
   const input = document.activeElement;
   const typing = typingIn(input);
   const modKey = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
-  const globalKeys = [['?', 'キー一覧'], [`${modKey}K`, 'コマンド']];
+  const globalKeys = [...(!laneHides('directory') ? [['Alt+C', 'カテゴリ']] : []), ['?', 'キー一覧'], [`${modKey}K`, 'コマンド']];
   const inCard = overlayOpen() || inDockedPane(input);
   let entries;
   if (upper) entries = [];
@@ -138,6 +141,7 @@ const SHORTCUTS = [
   ]],
   ['作成ダイアログ', [['⌘Enter / Ctrl+Enter', 'タスクを作成 / アプリを開く'], ['Enter', 'タイトル欄: タスクを作成'], ['Esc', '下書きを残して閉じる']]],
   ['カードのサイズ', [['右端・下端 + 矢印', 'カードの幅と高さを調整（同じ種類のカードで共通）'], ['右端・下端 + Home', '既定のサイズへ戻す']]],
+  ['カテゴリ一覧', [['Alt+C', 'すべてのカテゴリを開く（ボード・時間軸）'], ['↑ ↓ / Enter', '検索せずカテゴリを選ぶ'], ['Alt+P', '現在行を固定 / 解除'], ['Tab', '固定ボタンへ移る'], ['Esc', '閉じる']]],
   ['ピッカー', [['文字を入力', '絞り込み'], ['↑ ↓ / Enter', '選ぶ'], ['Space', '複数選択の切り替え（入力が空のとき）'], ['Esc', '閉じる']]],
 ];
 function showShortcuts() {
@@ -193,6 +197,8 @@ function commandPalette() {
       { label: '選択したSlackメッセージをカードに追加', run: () => slackUi.link(slackUi.el,slackUi.selected), hint: 'l' },
       { label: '選択したSlackメッセージの返信を読む', run: () => { const node = [...slackUi.el.querySelectorAll('[data-slack-key]')].find(n => n.dataset.slackKey === slackUi.selected.key); if (node) slackUi.thread(node,slackUi.selected); }, hint: 't' },
     ] : []),
+    ...(!laneHides('directory') ? [{ label: 'すべてのカテゴリを選ぶ', run: () => openCategoryPicker(), hint: 'Alt+C' }] : []),
+    ...(!laneHides('directory') && state.filters.directory ? [{ label: `選択中のカテゴリを${categoryIsPinned(state.filters.directory) ? '固定解除' : '固定'}`, run: () => setCategoryPin(state.filters.directory), hint: '一覧内 Alt+P' }] : []),
     { label: 'Slack資料の追加ボタンへ', run: () => focusedPane()?.el.querySelector('.slack-add-prompt')?.focus(), hint: 'Alt+s' },
     ...(!paneLayer.hidden && focusedPane()?.kind !== 'view' ? [
       ...[-1, 1].filter(step => adjacentPaneList(focusedPane(), step)).map(step => {
