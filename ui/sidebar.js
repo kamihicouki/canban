@@ -180,15 +180,18 @@ function filterSection(b, hit = () => true) {
     choice(STATUS_LABELS[k], f.status === k, () => setScope({ status: f.status === k ? '' : k }), h('span', { class: `sdot s-${k}` }), sideCountEl(b.statusCounts?.[k] || 0))));
   if (!laneHides('directory')) {
     const live = liveByDirectory(b);
-    const dirs = [...b.directories, { id: '__none', name: 'カテゴリ無し', color: null, count: b.uncategorizedCount || 0 }];
+    const dirs = state.sideQ.trim() ? allCategories(b) : categoryNavigation(allCategories(b), state.categoryPins, f.directory);
+    if (!dirs.length) nodes.push(sideHead(T.category, h('button', { class: 'side-mini', 'aria-label': 'カテゴリを管理', html: picon('gear', 14), onclick: () => workspace.toggle('directories') })));
     group(T.category, dirs.map((d) => ({ label: d.name, el: h('div', { class: 'side-item side-dir', 'data-dir-id': d.id },
       h('button', { class: `side-row${f.directory === d.id ? ' active' : ''}`, 'aria-pressed': String(f.directory === d.id), title: 'クリックで絞り込み（もう一度で解除）。カードをここへドラッグすると所属を変えられます',
         onclick: () => setScope({ directory: f.directory === d.id ? '' : d.id }) },
-        h('span', { class: 'dot', style: { background: d.color ? colorVar(d.color) : 'var(--header-btn-hover)' } }),
+        categoryIsPinned(d.id) ? h('span', { class: 'side-ic', title: '固定したカテゴリ', html: picon('pin', 15) }) : h('span', { class: 'dot', style: { background: d.color ? colorVar(d.color) : 'var(--header-btn-hover)' } }),
         h('span', { class: 'grow ellipsis', text: d.name }), ...liveBadges(live.get(d.id)), sideCountEl(d.count)),
       d.id === '__none' ? null : h('button', { class: 'icon-btn', 'aria-label': `${d.name} の設定`, text: '⋯', onclick: (e) => directoryMenu(e.currentTarget, d.id) })) })),
       state.layout === 'omni' || (state.layout === 'rail' && matchMedia('(min-width: 721px)').matches) ? null :
         h('button', { class: 'side-mini', title: `${T.category}を管理`, 'aria-label': `${T.category}を管理`, html: picon('gear', 14), onclick: () => workspace.toggle('directories') }));
+    nodes.push(h('button', { type: 'button', class: 'side-row', 'data-all-categories': '', 'aria-label': 'すべてのカテゴリ…', 'aria-keyshortcuts': 'Alt+C', title: 'すべてのカテゴリ（Alt+C）', onclick: e => openCategoryPicker(e.currentTarget) },
+      h('span', { class: 'side-ic', html: picon('search', 15) }), h('span', { class: 'grow', text: 'すべてのカテゴリ…' }), ...keycap('Alt+C')));
   }
   const hosts = (b.hosts || []).filter((x) => x.local || x.enabled);
   if (!laneHides('host') && hosts.length > 1) group('マシン', hosts.map((x) => { const id = x.local ? 'local' : x.id;
