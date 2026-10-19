@@ -1,7 +1,11 @@
 .quick-task-trigger { flex: none; white-space: nowrap; min-height: 32px; }
 .list-head .quick-task-trigger { min-width: 30px; }
 .lane-head .quick-task-trigger { margin-left: auto; color: var(--on-board); background: var(--on-board-btn); padding: 4px 10px; border-radius: 6px; }
-.task-quick-dialog { width: 600px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 112px); margin: auto; padding: 20px; border: 1px solid var(--btn-subtle-hover); border-radius: 14px; background: var(--modal-bg); color: var(--list-fg); box-shadow: var(--lift-shadow); overflow: auto; }
+.task-quick-dialog { width: 600px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 112px); margin: auto; padding: 20px; border: 1px solid var(--btn-subtle-hover); border-radius: 14px; background: var(--modal-bg); color: var(--list-fg); box-shadow: var(--lift-shadow); overflow: hidden; }
+.task-quick-dialog[open] { display: flex; flex-direction: column; }
+.task-quick-dialog > form { display: flex; flex-direction: column; min-height: 0; }
+.creation-body { min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
+.task-quick-head, .creation-modes, .task-quick-actions, .task-quick-feedback { flex-shrink: 0; }
 .task-quick-dialog::backdrop { background: var(--overlay); }
 .task-quick-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
 .task-quick-head h2 { flex: 1; margin: 0; font-size: 20px; }
@@ -28,7 +32,7 @@
 .task-label-choices { grid-column: 1 / -1; padding: 10px; border-radius: 8px; background: var(--modal-panel); }
 .task-label-choices summary { cursor: pointer; font-size: 13px; }
 .task-label-choices label { display: inline-flex; align-items: center; min-height: 34px; gap: 6px; margin: 6px 12px 0 0; font-size: 14px; }
-.task-quick-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+.task-quick-actions { position: sticky; bottom: 0; z-index: 1; background: var(--modal-bg); padding-block: 10px 2px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
 .task-quick-actions button { min-height: 38px; }
 .task-quick-actions .btn-primary { display: inline-flex; align-items: center; gap: 5px; }
 .task-quick-actions .btn-primary .keycap { color: inherit; border-color: currentColor; background: transparent; opacity: .8; }

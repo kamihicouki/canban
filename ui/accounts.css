@@ -115,6 +115,11 @@
 
 .acct-login-actions, .acct-pending .row { flex-wrap: wrap; }
 .acct-login-actions button { flex: 1 1 140px; }
+.acct-desktop-actions { flex-wrap: wrap; gap: 6px; }
+.acct-desktop-actions > * { min-width: 0; max-width: 100%; }
+.acct-desktop-actions .text-input { flex: 1 1 140px; }
+.acct-desktop-actions .btn { white-space: normal; overflow-wrap: anywhere; }
+.acct-desktop-actions .acct-desktop-resume { flex-basis: 100%; }
 
 /* Weekly usage and the elapsed-time target share the same 0–100% scale. */
 .acct-usage-grid.has-week { grid-template-columns: minmax(0, 1fr); gap: 8px; }
@@ -129,3 +134,13 @@
 .acct-pace > .muted { flex-basis: 100%; }
 .acct-pace strong { color: var(--list-fg); }
 .acct-pace.unavailable { color: var(--list-muted); }
+.desktop-account-field { display: grid; gap: 6px; margin-block: 8px; }
+.desktop-account-field .picker-btn { width: 100%; }
+.desktop-resume-control { display: grid; gap: 6px; }
+.desktop-resume-feedback { display: grid; gap: 6px; font-size: 12px; }
+.acct-desktop-actions { display: grid; gap: 8px; }
+.acct-desktop-actions .row { flex-wrap: wrap; }
+.desktop-profile-statuses { font-size: 12px; color: var(--card-muted); }
+.desktop-trial-checks { display: grid; gap: 6px; font-size: 12px; }
+.desktop-trial-checks label { display: flex; align-items: start; gap: 6px; }
+.desktop-pending-launch { display: grid; gap: 6px; padding-block: 8px; border-block: 1px solid var(--input-border); }

@@ -1,0 +1,11 @@
+// Internal argv contains only server-validated, absolute prompt-image files.
+ObjC.import('AppKit');
+function run(argv) {
+  if (!argv.length || argv.length > 8) throw new Error('Invalid image count');
+  const files = $.NSMutableArray.alloc.init;
+  for (const file of argv) files.addObject($.NSURL.fileURLWithPath(file));
+  const pasteboard = $.NSPasteboard.generalPasteboard;
+  pasteboard.clearContents;
+  if (!pasteboard.writeObjects(files)) throw new Error('Clipboard write failed');
+  return JSON.stringify({ copied: true, count: argv.length });
+}

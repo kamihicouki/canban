@@ -15,9 +15,13 @@ const nativeConfig = home => home.default && path.resolve(home.dir) === path.joi
 // { prefix, open(fn) }: prefix goes before the CLI in a terminal command; open
 // wraps the desktop link so the app starts as the account. No account = as is.
 export async function startAccount({ agent, account, host, route, labels = {} }) {
-  if (!account) return { prefix: '', open: fn => fn(), account: null };
+  if (!account) {
+    const registry = await refreshAccounts({ force: true });
+    const current = host?.local === false ? null : registry.homes[agent]?.find(h => h.default && !h.missing)?.account || null;
+    return { prefix: '', open: fn => fn(), account: current };
+  }
   if (!ACCOUNT_KEY.test(account) || account.split(':')[0] !== agent) throw new Error('AI App とアカウントが一致していません');
-  if (host && host.local === false) throw new Error('アカウントを選んで開始できるのはこのマシンだけです。リモートではそのマシンのログインで開始します');
+  if (host && host.local === false && route !== 'desktop') throw new Error('アカウントを選んで開始できるのはこのマシンだけです。リモートではそのマシンのログインで開始します');
   const name = accountName(account, labels);
   const registry = await refreshAccounts({ force: true });
   const homes = registry.homes[agent].filter(h => h.account === account && !h.missing);

@@ -235,10 +235,154 @@ def stop(a):
     os.killpg(pid, signal.SIGINT)
     return {"ok": True, "stopped": True}
 
+# A durable reservation precedes thread/start. Only the official API writes Codex history.
+class DesktopRpc:
+    def __init__(self, binary):
+        import selectors
+        self.child = subprocess.Popen([binary, 'app-server', '--listen', 'stdio://'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        self.selector = selectors.DefaultSelector()
+        self.selector.register(self.child.stdout, selectors.EVENT_READ)
+        self.buffer, self.serial = b'', 0
+        try:
+            self.call('initialize', {'clientInfo': {'name': 'canban_desktop_prepare', 'version': '1.0.0'}})
+            self.write({'method': 'initialized'})
+        except BaseException:
+            self.close()
+            raise
+    def write(self, value):
+        self.child.stdin.write((json.dumps(value) + '\n').encode())
+        self.child.stdin.flush()
+    def call(self, method, params):
+        import time
+        self.serial += 1
+        serial = self.serial
+        self.write({'id': serial, 'method': method, 'params': params})
+        until = time.monotonic() + 25
+        while True:
+            while b'\n' in self.buffer:
+                line, self.buffer = self.buffer.split(b'\n', 1)
+                message = json.loads(line)
+                if message.get('id') != serial:
+                    continue
+                if 'error' in message:
+                    raise RuntimeError('Codex App Server API failed')
+                return message.get('result') or {}
+            remaining = until - time.monotonic()
+            if remaining <= 0 or not self.selector.select(remaining):
+                raise TimeoutError('Codex App Server timeout')
+            chunk = os.read(self.child.stdout.fileno(), 65536)
+            if not chunk:
+                raise RuntimeError('Codex App Server disconnected')
+            self.buffer += chunk
+            if len(self.buffer) > 4 * 1024 * 1024:
+                raise RuntimeError('Codex response too large')
+    def close(self):
+        self.selector.close()
+        try:
+            self.child.stdin.close()
+        except OSError:
+            pass
+        try:
+            self.child.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.child.terminate()
+            try:
+                self.child.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                self.child.kill()
+                self.child.wait()
+        self.child.stdout.close()
+
+def desktop_prepare_codex(a):
+    import stat
+    import uuid
+    rid, cwd = a.get('clientRequestId'), a.get('cwd')
+    if not isinstance(rid, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', rid) or not isinstance(cwd, str) or not os.path.isabs(cwd) or '\0' in cwd or len(cwd) > 4096:
+        return {'ok': True, 'state': 'failed', 'reason': '開始要求が不正です'}
+    binary = shutil.which('codex', path=os.pathsep.join([os.environ.get('PATH', '')] + EXTRA_PATH))
+    if not binary or not os.path.isdir(cwd):
+        return {'ok': True, 'state': 'failed', 'reason': '接続先のCodex CLIと作業フォルダを確認してください'}
+    root = os.path.join(HOME, '.canban-remote')
+    folder = os.path.join(root, 'launches')
+    for directory in (root, folder):
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        info = os.lstat(directory)
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+            raise ValueError('unsafe Desktop reservation directory')
+    file = os.path.join(folder, rid + '.json')
+    def save(value):
+        temp = os.path.join(folder, '.' + str(uuid.uuid4()) + '.tmp')
+        fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'w') as handle:
+            json.dump(value, handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, file)
+        parent = os.open(folder, os.O_RDONLY)
+        try:
+            os.fsync(parent)
+        finally:
+            os.close(parent)
+    def check_thread(thread):
+        return thread.get('id') == record.get('threadId') and os.path.realpath(thread.get('cwd') or '') == record['realCwd']
+    def verify():
+        reader = DesktopRpc(binary)
+        try:
+            return check_thread(reader.call('thread/read', {'threadId': record['threadId'], 'includeTurns': False}).get('thread') or {})
+        finally:
+            reader.close()
+    record = {'state': 'preparing', 'cwd': cwd, 'realCwd': os.path.realpath(cwd)}
+    try:
+        fd = os.open(file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        info = os.lstat(file)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1 or info.st_size > 16384:
+            raise ValueError('unsafe Desktop reservation')
+        try:
+            with open(file) as handle:
+                record = json.load(handle)
+        except (OSError, ValueError):
+            return {'ok': True, 'state': 'uncertain', 'cwd': cwd}
+        if record.get('cwd') != cwd or record.get('realCwd') != os.path.realpath(cwd):
+            return {'ok': True, 'state': 'failed', 'reason': '同じ要求IDの作業フォルダが変わりました'}
+        if record.get('state') != 'prepared':
+            return {'ok': True, 'state': 'uncertain', 'cwd': cwd, 'threadId': record.get('threadId')}
+        try:
+            valid = verify()
+        except BaseException:
+            valid = False
+        return {'ok': True, **record, 'state': 'prepared' if valid else 'uncertain', 'writerClosed': True}
+    with os.fdopen(fd, 'w') as handle:
+        json.dump(record, handle)
+        handle.flush()
+        os.fsync(handle.fileno())
+    save(record)  # fsync the new directory entry before the external intent
+    try:
+        writer = DesktopRpc(binary)
+        try:
+            thread = writer.call('thread/start', {'cwd': cwd, 'model': 'gpt-6.1-sol'})['thread']
+            uuid.UUID(thread['id'])
+            record.update(state='thread-created', threadId=thread['id'])
+            save(record)
+            if not check_thread(thread):
+                raise ValueError('thread cwd mismatch')
+            writer.call('thread/archive', {'threadId': thread['id']})
+            writer.call('thread/unarchive', {'threadId': thread['id']})
+        finally:
+            writer.close()
+        if not verify():
+            raise ValueError('thread readback failed')
+        record.update(state='prepared', writerClosed=True)
+        save(record)
+    except BaseException:
+        record.update(state='uncertain')
+        save(record)
+    return {'ok': True, **record}
+
 def main():
     a = args()
     mode = a.get("mode")
-    handlers = {"inspect": inspect, "start": start, "poll": poll, "stop": stop, "prompt_images": prompt_images, "prompt_skills": prompt_skills}
+    handlers = {"inspect": inspect, "start": start, "poll": poll, "stop": stop, "prompt_images": prompt_images, "prompt_skills": prompt_skills, "desktop_prepare_codex": desktop_prepare_codex}
     if mode not in handlers:
         result = {"ok": False, "error": "unknown mode"}
     else:

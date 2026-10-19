@@ -251,3 +251,65 @@ test('the watcher restores only after Desktop reads stopped three times in a row
   assert.equal(result.restored, 1);
   assert.equal(readings.length, 0, 'the single stopped reading between two running ones did not restore');
 });
+
+test('registered parked profiles are authoritative and stale migration copies are ignored', async () => {
+  const { createDesktopAccounts } = await import('../server/claude-desktop-accounts.mjs');
+  const { backupDesktopProfiles } = await import('../server/desktop-backup.mjs');
+  const paths = guestPaths();
+  const accounts = createDesktopAccounts({ dataDir: paths.dataDir, appDir: app, runtime: async () => ({ running: false }), backup: x => backupDesktopProfiles({ dataDir: paths.dataDir, ...x }) });
+  await accounts.command({ type: 'enroll-current', account: `claude:${HOST}` });
+  const connected = await accounts.command({ type: 'begin-login', account: `claude:${OTHER}`, requestId: 'parked-other' });
+  await write(path.join(app, 'config.json'), { lastKnownAccountUuid: OTHER });
+  await accounts.command({ type: 'finish-login', account: `claude:${OTHER}` });
+  await write(path.join(otherDir, `${ids.open}.json`), record(ids.open, 'a', { completedTurns: 7 }));
+  await accounts.withAccount(`claude:${HOST}`, { allowSwitch: true, requestId: 'return-host' }, () => {});
+  // The seed left a historical duplicate of OTHER in HOST's profile. It is not an original.
+  assert.equal((await read(path.join(otherDir, `${ids.open}.json`))).completedTurns, 1);
+  const plan = await planGuests({ paths });
+  const guest = plan.guests.find(g => g.sessionId === ids.open);
+  assert.ok(guest);
+  assert.match(guest.originPath, new RegExp(connected.profileId));
+  await placeGuests({ paths });
+  const file = path.join(hostDir, `${ids.open}.json`);
+  const placed = await read(file);
+  assert.equal(placed.completedTurns, 7);
+  assert.equal('remoteMcpServersConfig' in placed, false, 'origin account permissions must not be copied');
+  await write(file, { ...placed, completedTurns: 8, enabledMcpTools: { guestOnly: true } });
+  assert.equal((await restoreGuests({ paths })).problems.length, 0);
+  assert.equal((await read(guest.originPath)).completedTurns, 8);
+  assert.equal('enabledMcpTools' in await read(guest.originPath), false);
+  assert.equal((await read(path.join(otherDir, `${ids.open}.json`))).completedTurns, 1);
+});
+
+test('writeback conflicts retain both records and the ledger, and block profile switching', async () => {
+  await placeGuests();
+  const guestPath = path.join(hostDir, `${ids.open}.json`), originPath = path.join(otherDir, `${ids.open}.json`);
+  await write(guestPath, { ...(await read(guestPath)), completedTurns: 3 });
+  await write(originPath, { ...(await read(originPath)), completedTurns: 4 });
+  const result = await restoreGuests();
+  assert.equal(result.problems.length, 1);
+  assert.equal((await read(guestPath)).completedTurns, 3);
+  assert.equal((await read(originPath)).completedTurns, 4);
+  assert.equal((await readLedger()).entries.length, 1);
+  assert.equal((await restoreGuests()).problems.length, 1);
+});
+
+test('reopening a stopped guest writes back the previous guest before placing it again', async () => {
+  await placeGuests();
+  const file = path.join(hostDir, `${ids.open}.json`);
+  await write(file, { ...(await read(file)), completedTurns: 9 });
+  let opened = 0;
+  const result = await openClaudeDesktop({ url: `claude://code/continue?session=${ids.open}`, guestSessionId: ids.open, watch: () => {}, open: async () => { opened++; } });
+  assert.equal(result.opened, true);
+  assert.equal(opened, 1);
+  assert.equal((await read(path.join(otherDir, `${ids.open}.json`))).completedTurns, 9);
+});
+
+test('changing a guest work directory prevents writeback and keeps recovery records', async () => {
+  await placeGuests();
+  const file = path.join(hostDir, `${ids.open}.json`);
+  await write(file, { ...(await read(file)), cwd: '/different' });
+  assert.equal((await restoreGuests()).problems.length, 1);
+  assert.ok(await readLedger());
+  assert.equal((await read(path.join(otherDir, `${ids.open}.json`))).cwd, '/work');
+});

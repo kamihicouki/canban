@@ -627,7 +627,7 @@ function renderPane(p, d) {
         if (result.execution) claudeExecutionHomes.set(s.id, result.execution.homeId); else claudeExecutionHomes.delete(s.id);
         L.claudeDesktopStatus = result.desktop;
           updateExecutionChoice();
-          toast(result.desktop?.maintained ? 'CLI と Desktop に適用しました' : result.execution ? 'CLI に保存しました。Desktop は適用待ちです' : '元の CLI 設定に戻しました');
+          toast(result.execution ? 'CLI の実行アカウントを保存しました' : '元の CLI 設定に戻しました');
       } catch (error) {
         toast(error.message, true);
         throw error;
@@ -679,21 +679,24 @@ function renderPane(p, d) {
     return h('button', { class: 'seg-btn', disabled: !ok, title: ok ? `${term.label} で${label}` : `${term ? term.label : 'ターミナル'}では未対応`, text: label,
       onclick: () => resume(s.id, { route: 'terminal', target }) });
   };
+  const managedDesktop = s.agent === 'claude' && s.host?.local !== false;
+  // This snapshot describes the old owner-based route. The shared picker reads
+  // the selected Desktop account and its current connection state instead.
+  const desktopNote = managedDesktop && L.desktop?.accountMismatch ? null : L.desktop?.note;
   const resumeBox = s.sourceKind === 'codex-cloud' ? h('div', { class: 'resume-box' },
     h('button', { class: 'btn-primary resume-main', 'data-pane-key': 'o', type: 'button', title: L.desktop.url, onclick: () => resume(s.id, { route: 'desktop' }) }, h('span', { html: picon('free', 14) }), 'Codexで開く', ...keycap('o')),
     h('div', { class: 'muted', text: d.dispatch.unavailableReason })) : h('div', { class: 'resume-box' },
     accountPicker ? h('div', { class: 'field-label' }, h('span', { text: '実行アカウント' }), ...keycap('Alt+a')) : null,
     accountPicker,
-    accountPicker ? h('div', { class: 'muted', text: '選択は CLI の再開と指示に使います。Desktop は別途適用状態を表示します。' }) : null,
+    accountPicker ? h('div', { class: 'muted', text: 'CLI の再開と指示に使うアカウントです。Desktop の起動は下の選択を使います。' }) : null,
     accountPicker ? h('div', { class: 'muted claude-thinking-note', text: '別アカウントでは過去の思考を再計算します。組織の思考に関する通知が出ても、会話履歴は引き継がれます。' }) : null,
-    accountPicker ? h('div', { class: 'muted claude-desktop-account-note' }) : null,
     h('button', { class: 'btn-primary resume-main', 'data-pane-key': 'o', title: `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`, onclick: (e) => resume(s.id, optsFromEvent(e)) },
       h('span', { text: '▶ 再開' }), ...keycap('o')),
     h('div', { class: 'field-label', text: 'デスクトップアプリ' }),
-    L.desktop
+    managedDesktop ? desktopResumeControl(s.id) : L.desktop
       ? h('button', { class: 'side-btn', 'data-resume-desktop': '', text: `↗ ${L.desktop.label}`, title: L.desktop.url, onclick: () => resume(s.id, { route: 'desktop' }) })
       : h('div', { class: 'muted', text: s.host ? 'リモートのセッションはターミナルで再開します' : 'このセッションはデスクトップアプリでは開けません' }),
-    L.desktop && L.desktop.note ? h('div', { class: 'muted', text: `${L.desktop.accountMismatch ? '⚠ ' : ''}${L.desktop.note}` }) : null,
+    desktopNote ? h('div', { class: 'muted', text: `${L.desktop.accountMismatch ? '⚠ ' : ''}${desktopNote}` }) : null,
     h('div', { class: 'field-label', text: `ターミナル${term ? `（${term.label}）` : ''}` }),
     term ? h('div', { class: 'seg-row' }, targetBtn('new-window', '新規ウィンドウ'), targetBtn('new-tab', '新規タブ'), targetBtn('split', '分割'), targetBtn('current', '既存ウィンドウ'))
       : h('div', { class: 'muted', text: '対応ターミナルが見つかりません' }),
@@ -704,14 +707,7 @@ function renderPane(p, d) {
     const selected = claudeExecutionHomes.get(s.id);
     const option = executionAccounts.find(a => a.id === selected);
     const desktop = resumeBox.querySelector('[data-resume-desktop]');
-    if (desktop) { desktop.disabled = !!selected && !option?.desktop?.link; desktop.title = selected ? option?.desktop?.reason || option?.desktop?.link?.note || '実行アカウントを選び直してください' : L.desktop.url; }
-    const desktopNote = resumeBox.querySelector('.claude-desktop-account-note');
-    if (desktopNote) {
-        const status = L.claudeDesktopStatus;
-        desktopNote.textContent = !selected ? '' : status?.pending ? `CLI に保存済み · Desktop は適用待ち。${status.reason}`
-          : option?.desktop?.reason || (option?.desktop?.change ? 'CLI に保存済み · Desktop は適用待ち。アプリを終了してから再開すると適用します'
-            : `Desktop の通常起動先: ${option?.desktop?.profile || '標準'}。起動済みアプリへの適用は再開時に確認します`);
-      }
+    if (desktop && s.agent !== 'claude') { desktop.disabled = !!selected && !option?.desktop?.link; desktop.title = selected ? option?.desktop?.reason || option?.desktop?.link?.note || '実行アカウントを選び直してください' : L.desktop?.url || ''; }
     resumeBox.querySelector('.resume-main').title = selected ? '選択した Claude CLI アカウントで再開' : `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`;
     const note = p.el.querySelector('.claude-execution-note');
     if (note) note.textContent = selected ? `実行アカウント: ${option ? accountName(option.account) : '選択したアカウント（利用できません）'}` : `実行アカウント: ${s.accountLabel || '元のアカウント'}`;
@@ -763,7 +759,7 @@ function renderPane(p, d) {
   if (card.slackRefs?.length) secs.slack = { nodes: [slackUi.sources(s.id, secs.send.nodes[0].querySelector('textarea'))] };
   secs.labels = { nodes: [labelWrap], extra: h('button', { class: 'link-btn', 'data-pane-key': 'l', text: '編集', onclick: e => labelPicker(e.currentTarget, s.id, card, paintLabels) }) };
   secs.memo = { nodes: [note] };
-  secs.detail = { nodes: [h('dl', { class: 'kv' },
+  secs.detail = { nodes: [sourceDetails(s), h('dl', { class: 'kv' },
     ...kv('AI App', s.agent === 'codex' ? 'Codex' : 'Claude Code'),
     ...kv('マシン', s.sourceKind === 'codex-cloud' ? 'Codex Cloud' : s.host ? `${s.host.label}（SSH: ${s.host.alias}）` : 'このマシン'),
     ...(s.dot ? kv('dot', dotTitle(s)) : []),

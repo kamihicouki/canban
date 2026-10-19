@@ -105,6 +105,7 @@ test('account editors register dynamic draft fields and keep them after save fai
   const context=vm.createContext({h,state:{filters:{},board:{accounts:{accounts:[account],colors:['blue'],unknown:{codex:0,claude:0},homes:[],profiles:[],discover:false}}},
     workspace:{trackDrafts:root=>{tracked=root;}},ringFor:()=>h('span'),usageTitle:()=>'',usageWindows:()=>[],colorVar:()=>'',COLOR_NAMES:{},
     accountUsageContent:()=>h('div'),accountUpdateText:()=>'',accountScheduleText:()=>'',updateAccountMenuUsage:()=>{},refreshAccountUsage:()=>{},
+    clearTimeout, setTimeout,
     popover:(_anchor,_title,content)=>{mounts++;body=content;},act:async()=>{throw new Error('db_busy');}});
   vm.runInContext(`${menu}\naccountsMenu({});`,context);
   nodes.find(n=>n.attrs['aria-label']==='確認 の設定').attrs.onclick();

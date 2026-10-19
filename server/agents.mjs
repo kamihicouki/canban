@@ -101,6 +101,7 @@ export function resumeCommand(s) {
 }
 
 export function desktopLink(s) {
+  if (s.agent === 'claude' && s.desktopAmbiguous) return null;
   return AGENTS[s.agent]?.desktop(s) ?? null;
 }
 
@@ -141,4 +142,13 @@ export function newSessionCommand(agent, { host, cwd, prompt, images = [], prefi
   const imageArgs = agent === 'codex' ? images.map(i => ` --image ${shq(i.path)}`).join('') : '';
   const inner = `${cwd ? `cd ${shq(cwd)} && ` : ''}${prefix}${bin}${imageArgs}${prompt ? `${imageArgs ? ' --' : ''} ${shq(prompt)}` : ''}`;
   return host && host.local === false ? `ssh -t ${shq(host.alias)} ${shq(inner)}` : inner;
+}
+
+// Existing, persisted remote threads only. A hostId on /threads/new cannot do this.
+export function preparedCodexLink(thread, { prompt = '' } = {}) {
+  if (thread?.state !== 'prepared' || thread.writerClosed !== true || !/^remote-ssh[^\s]{1,200}$/.test(thread.hostId || '') || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(thread.threadId || '')) throw new Error('リモート会話の準備を確認できません');
+  const url = new URL(`codex://threads/${thread.threadId}`);
+  url.searchParams.set('hostId', thread.hostId);
+  if (prompt) url.searchParams.set('prompt', prompt);
+  return { url: url.toString(), label: 'Codex で開く' };
 }
