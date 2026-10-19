@@ -3,9 +3,11 @@
 // Desktop app metadata: ~/Library/Application Support/Claude/claude-code-sessions/*/*/local_*.json
 // Summary normalization and message extraction are shared with the remote collector.
 import path from 'node:path';
+import { storageScope } from '../source-model.mjs';
 import { exists, listDir, listSubdirs, readJson, readJsonLinesFrom, readTailJsonLines, stat } from './readonly.mjs';
 import { projectName, clip, cleanPrompt, firstLine, LOCAL_HOST, sessionKey } from './util.mjs';
 import { defaultClaudeHome, claudeDesktopSessionsDir, claudeDesktopFolders, claudeHomes, refreshAccounts, sessionAccount } from '../accounts.mjs';
+import { guestIndex } from '../claude-desktop-guests.mjs';
 
 export { claudeDesktopSessionsDir };
 export const claudeHome = defaultClaudeHome;
@@ -146,6 +148,16 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
     title: clip(title, 160),
     cwd,
     project: projectName(cwd),
+    sourceMetadata: {
+      claudeGroup: {
+        ref: dm?._groupOwnerKnown !== false && !dm?._groupConflict && dm?._sourceScope && (dm?._groupAccount || dm?._account) && (dm?._groupOrg || dm?._org) && (typeof group?.id === 'string' && group.id.trim() || typeof dm?.groupId === 'string' && dm.groupId.trim())
+          ? { provider: 'claude', identityDomain: 'desktop-account-org', scopeId: JSON.stringify([dm._scopeCanonical ? dm._sourceScope : storageScope(dm._sourceScope), dm._groupAccount || dm._account, dm._groupOrg || dm._org]), kind: 'group', nativeId: typeof group?.id === 'string' ? group.id : dm.groupId } : null,
+        name: groupName || null, product: 'Claude Code', surface: 'desktop',
+        status: dm?._sourceStatus === 'stale' ? 'stale' : groupName ? 'known' : 'unknown',
+        observedAt: groupName ? dm?._observedAt || null : null, source: 'claude-desktop-metadata',
+        sourceUpdatedAt: groupName ? dm?._sourceUpdatedAt || null : null,
+      },
+    },
     claudeGroup: groupName ? { id: typeof group?.id === 'string' ? group.id : typeof dm?.groupId === 'string' ? dm.groupId : groupName, name: groupName } : null,
     branch: s.branch || null,
     model: dm?.model || s.model || null,
@@ -162,7 +174,8 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
     tokens: s.tokens || 0,
     desktopStatus: dm?.postTurnSummary?.status_category ?? dm?.statusCategory ?? null,
     // Claude desktop metadata is often not on disk: archived / title / status from it are then unknown.
-    desktopKnown: !!dm,
+    desktopKnown: !!dm && !dm._ambiguous,
+    desktopAmbiguous: dm?._ambiguous === true,
     desktopTitle: dm?.title ?? null,
     entrypoint: s.entrypoint || null,
     rawStatus: s.rawStatus ?? null,
@@ -185,10 +198,11 @@ async function readMeta(file) {
   if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.j;
   try {
     const j = await readJson(file);
-    metaCache.set(file, { mtimeMs: st.mtimeMs, size: st.size, j });
-    return j;
+    const observed = { ...j, _observedAt: Date.now(), _sourceUpdatedAt: st.mtimeMs, _sourceStatus: 'known' };
+    metaCache.set(file, { mtimeMs: st.mtimeMs, size: st.size, j: observed });
+    return observed;
   } catch {
-    return hit?.j ?? null;
+    return hit ? { ...hit.j, _sourceStatus: 'stale' } : null;
   }
 }
 
@@ -201,18 +215,31 @@ async function desktopFolders(dir) {
 
 async function loadDesktopMeta(dir = claudeDesktopSessionsDir()) {
   const meta = new Map();
+  // A guest of the integrated sidebar (claude-desktop-guests.mjs) is its original
+  // session: owned by the original account, and reachable from the host account too.
+  const guests = dir === claudeDesktopSessionsDir() ? guestIndex() : new Map();
   for (const folder of await desktopFolders(dir)) {
+    const sourceScope = storageScope(folder.scopeDir || path.dirname(path.dirname(folder.dir)));
     for (const f of await listDir(folder.dir)) {
       if (!f.isFile() || !/^local_.*\.json$/.test(f.name)) continue;
-      const j = await readMeta(path.join(folder.dir, f.name));
+      let j = await readMeta(path.join(folder.dir, f.name));
       if (!j?.cliSessionId) continue;
+      const guest = guests.get(path.join(folder.dir, f.name));
+      if (guest && typeof j.title === 'string' && j.title.startsWith(guest.prefix)) j = { ...j, title: j.title.slice(guest.prefix.length) };
+      const owner = guest ? { owner: guest.account, org: guest.org } : folder;
       const prev = meta.get(j.cliSessionId);
-      const reach = [...new Set([...(prev?._reach || []), ...folder.reach])];
-      if (prev && Number(prev.lastActivityAt || 0) >= Number(j.lastActivityAt || 0)) {
-        prev._reach = reach;
+      const groupConflict = !!prev && (prev._sourceScope !== sourceScope || prev._groupAccount !== folder.owner || prev._groupOrg !== folder.org) || !!prev?._groupConflict;
+      if (prev?._ambiguous || prev && prev._account !== owner.owner) {
+        meta.set(j.cliSessionId, { _ambiguous: true });
         continue;
       }
-      meta.set(j.cliSessionId, { ...j, _account: folder.owner, _org: folder.org, _reach: reach });
+      const reach = [...new Set([...(prev?._reach || []), ...folder.reach, ...(guest ? [guest.account] : [])])];
+      if (prev && Number(prev.lastActivityAt || 0) >= Number(j.lastActivityAt || 0)) {
+        prev._reach = reach;
+        prev._groupConflict = groupConflict;
+        continue;
+      }
+      meta.set(j.cliSessionId, { ...j, _account: owner.owner, _org: owner.org, _sourceScope: sourceScope, _scopeCanonical: true, _groupAccount: folder.owner, _groupOrg: folder.org, _groupOwnerKnown: !guest, _groupConflict: groupConflict, _reach: reach });
     }
   }
   return meta;

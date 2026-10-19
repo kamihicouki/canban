@@ -84,7 +84,7 @@ function setLayout(id) {
 
 // Called after every board render and page change.
 function paintLayoutChrome() {
-  for (const key of ['rail', 'dock', 'tabs', 'hud']) if (layoutParts[key]) layoutParts[key].inert = !paneLayer.hidden;
+  for (const key of ['rail', 'dock', 'tabs', 'hud']) if (layoutParts[key]) layoutParts[key].inert = overlayOpen();
   for (const button of $$('[data-place=slackTimeline]')) button.setAttribute('aria-pressed', String(slackUi.visible));
   const here = currentPlace();
   for (const b of $$('[data-place]')) b.setAttribute('aria-current', String(b.dataset.place === here));
@@ -104,11 +104,12 @@ function paintStrip(b) {
       lane.color ? h('i', { style: { background: colorVar(lane.color) } }) : null, lane.name, h('span', { class: 'n', text: String(lane.count) }))));
     return;
   }
-  const pill = (id, name, color, count) => h('button', { class: 'cat-pill', type: 'button', 'aria-pressed': String((f.directory || '') === id),
+  const pill = (id, name, color, count) => h('button', { class: 'cat-pill', type: 'button', 'aria-pressed': String((f.directory || '') === id), 'data-category-id': id || null,
     onclick: () => setScope({ directory: (f.directory || '') === id && id ? '' : id }) },
     color ? h('i', { style: { background: colorVar(color) } }) : null, name, h('span', { class: 'n', text: String(count ?? '') }));
   layoutParts.strip.replaceChildren(pill('', 'すべて', null, b.totals?.shown),
-    ...[...b.directories].sort((x, y) => (y.count || 0) - (x.count || 0)).map((d) => pill(d.id, d.name, d.color, d.count)));
+    ...categoryNavigation(allCategories(b), state.categoryPins, f.directory).map(d => pill(d.id, d.name, d.color, d.count)),
+    h('button', { class: 'cat-pill', type: 'button', 'data-all-categories': '', 'aria-label': 'すべてのカテゴリ…', 'aria-keyshortcuts': 'Alt+C', onclick: e => openCategoryPicker(e.currentTarget) }, 'すべてのカテゴリ…', ...keycap('Alt+C')));
 }
 
 function paintHud(b) {

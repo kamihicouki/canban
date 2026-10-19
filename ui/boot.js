@@ -19,7 +19,9 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => ap
 function sharedUiSnapshot() {
   return {
     slackVisible: slackUi.visible, filters: { ...state.filters }, themePref: state.themePref, layout: state.layoutSaved, boardView: state.view, sidebar: state.sideOpen, workspacePage: workspace.page,
-    paneGlobal: { ...paneGlobal }, cardWidths: { ...cardWidths }, cardHeights: { ...cardHeights }, collapsedLanes: [...collapsedLanes],
+    categoryPins: state.categoryPins,
+    exchangeTrailView: typeof exchangeTrailView === 'string' ? exchangeTrailView : 'center',
+    paneGlobal: { ...paneGlobal }, cardWidths: { ...cardWidths }, cardHeights: { ...cardHeights }, collapsedLanes: [...collapsedLanes], keyGuide: { ...keyGuidePlace },
   };
 }
 
@@ -33,6 +35,7 @@ function adoptSharedUi(record) {
     let layoutChanged = false;
     for (const key of SHARED_UI_KEYS) if (Object.hasOwn(value, key)) store.cache(key, value[key]);
     if (value.filters && typeof value.filters === 'object' && !Array.isArray(value.filters)) state.filters = { ...DEFAULT_FILTERS, ...value.filters };
+    if (Object.hasOwn(value, 'categoryPins')) state.categoryPins = Array.isArray(value.categoryPins) ? value.categoryPins.filter(id => typeof id === 'string') : null;
     if (typeof value.sidebar === 'boolean') state.sideOpen = value.sidebar;
     if (typeof value.slackVisible === 'boolean') { slackUi.visible = value.slackVisible; if (slackUi.visible) slackUi.refresh(); }
     if (typeof value.themePref === 'string') { state.themePref = value.themePref; applyTheme(); }
@@ -43,8 +46,10 @@ function adoptSharedUi(record) {
     }
     if (value.boardView === 'board' || value.boardView === 'timeline') state.view = value.boardView;
     if (value.paneGlobal && typeof value.paneGlobal === 'object') Object.assign(paneGlobal, { mode: oneOf(value.paneGlobal.mode, PANE_MODES, PANE_DEF.mode) });
+    if (['spread', 'center', 'stack'].includes(value.exchangeTrailView)) { exchangeTrailView = value.exchangeTrailView; paintExchangeTrail(); }
     if (value.cardWidths) Object.assign(cardWidths, normalizeCardWidths(value.cardWidths));
     if (value.cardHeights) Object.assign(cardHeights, normalizeCardHeights(value.cardHeights));
+    if (Object.hasOwn(value, 'keyGuide')) keyGuidePlace = normalizeKeyGuide(value.keyGuide);
     if (Array.isArray(value.collapsedLanes)) {
       collapsedLanes.clear();
       for (const name of value.collapsedLanes) if (typeof name === 'string') collapsedLanes.add(name);
@@ -75,7 +80,7 @@ async function applySharedUi(record, { redraw = true } = {}) {
   try { adopted = adoptSharedUi(record); }
   finally { sharedUi.applying = wasApplying; }
   if (!adopted) return;
-  applyCardWidths(); layoutCardBoard(); panes.forEach(applyPaneAttrs); paintPaneBar();
+  applyCardWidths(); placeKeyGuide(); panes.forEach(applyPaneAttrs); paintPaneBar();
   if (redraw) {
     const after = sharedUiSnapshot();
     const layoutOnly = before.layout !== after.layout && Object.keys(before).every(key => key === 'layout' || JSON.stringify(before[key]) === JSON.stringify(after[key]));

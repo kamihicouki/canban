@@ -1,0 +1,58 @@
+{
+  "before": {
+    "viewport": [
+      1280,
+      800
+    ],
+    "messages": 43,
+    "question": "今回は公開を見送ってよいですか？",
+    "yes": "はい、進めてください。",
+    "no": "いいえ、やめてください。",
+    "rawPreserved": true,
+    "draftPreserved": true,
+    "readingPositionPreserved": true,
+    "submitted": [],
+    "errors": [],
+    "samples": [
+      {
+        "view": "board",
+        "cardOpenToAnswersMs": 287.5
+      },
+      {
+        "view": "timeline",
+        "cardOpenToAnswersMs": 36.1
+      }
+    ]
+  },
+  "after": {
+    "viewport": [
+      1280,
+      800
+    ],
+    "messages": 43,
+    "question": "今回は公開を見送ってよいですか？",
+    "yes": "はい。",
+    "no": "いいえ。",
+    "rawPreserved": true,
+    "draftPreserved": true,
+    "readingPositionPreserved": true,
+    "submitted": [],
+    "errors": [],
+    "samples": [
+      {
+        "view": "board",
+        "cardOpenToAnswersMs": 216.2
+      },
+      {
+        "view": "timeline",
+        "cardOpenToAnswersMs": 36.5
+      }
+    ]
+  },
+  "directAnswerActions": {
+    "before": 1,
+    "after": 1
+  },
+  "timingLimit": "one sample per board/timeline view; no speed superiority claim",
+  "dispatchGuard": "canban_dispatch and send operations intercepted and blocked in fixture browser; before/after rerun passed"
+}

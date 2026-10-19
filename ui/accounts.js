@@ -340,7 +340,7 @@ function accountsMenu(anchor) {
   const dirInput = h('input', { class: 'text-input', placeholder: '既存の設定フォルダのパス', 'aria-label': '既存の設定フォルダ' });
   const addHome = () => { const d = dirInput.value.trim(); if (d) saveHomes(homeAgent.value, [...extra[homeAgent.value], d]); };
   dirInput.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) addHome(); };
-  const body = h('div', { class: 'acct-menu' }, auto,
+  const body = h('div', { class: 'acct-menu' }, auto, desktopAccountsSection(),
     h('p', { class: 'muted acct-pace-legend', text: '週間枠の縦線＝今の目安・差±5pt以内は順調' }),
     rows.length > 5 ? rowFilter(rows) : null,
     rows.length ? rows : h('p', { class: 'muted', text: 'アカウントが見つかりません。ログインして追加できます。' }),
@@ -355,6 +355,86 @@ function accountsMenu(anchor) {
   popover(anchor, 'アカウントと使用量', body, { width: 440 });
   updateAccountMenuUsage();
   refreshAccountUsage({ automatic: true });
+}
+
+function desktopAccountsSection() {
+  const status = h('p', { class: 'muted', role: 'status', text: 'Desktop の接続を確認中…' });
+  const controls = h('div', { class: 'acct-desktop-actions' });
+  const section = h('section', { class: 'acct-desktop' }, h('div', { class: 'field-label', text: 'Claude Desktop' }), status, controls);
+  let timer;
+  const action = async (type, account, confirmations) => {
+    controls.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    try {
+      const response = await bridge.callTool('canban_desktop_account_command', { type, ...(account ? { account } : {}), requestId: crypto.randomUUID(), ...(confirmations ? { confirmations } : {}) });
+      await refresh(); status.textContent = response.result?.reason || status.textContent;
+    } catch (e) { await refresh(); status.textContent = e.message || 'Desktop の状態を確認できません'; }
+  };
+  const button = (text, type, account) => h('button', { type: 'button', class: 'btn', text, onclick: () => action(type, account) });
+  const checks = entries => {
+    const controls = entries.map(([key, text]) => ({ key, input: h('input', { type: 'checkbox' }), text }));
+    const root = h('div', { class: 'desktop-trial-checks' }, controls.map(({ input, text }) => h('label', {}, input, h('span', { text }))));
+    return { root, value: () => Object.fromEntries(controls.map(({ key, input }) => [key, input.checked])) };
+  };
+  const refresh = async () => {
+    clearTimeout(timer);
+    try {
+      const { result: view } = await bridge.callTool('canban_desktop_accounts', {});
+      if (!view?.profiles) throw new Error('接続状態が不明です');
+      if (typeof desktopAccounts !== 'undefined') desktopAccounts.view = view;
+      const active = view.profiles.find(p => p.active);
+      status.textContent = `${view.pending?.active ? `${accountName(view.pending.account)} の初回接続待ちです。` : active ? `${accountName(active.account)} を使用中。` : view.activeAccount ? `${accountName(view.activeAccount)} を Desktop で使用中・未接続。` : 'Desktop は未接続です。Desktop で現在のログインを確認してください。'} ${view.accountSwitch ? '認証保持の確認済み。' : '通常切替には認証保持の確認が必要です。'} CLI のログインと実行設定は維持します。`;
+      controls.replaceChildren();
+      controls.append(h('div', { class: 'desktop-profile-statuses' }, view.profiles.map(p => h('div', { text: `${accountName(p.account)} · ${view.accountSwitch ? '利用可能' : ['ready','awaiting-observation'].includes(view.setup?.trial?.state) ? '接続確認中' : '再確認が必要'}` }))));
+      for (const launch of (view.pendingLaunches || []).filter(p => p.agent === 'claude' || p.account?.startsWith('claude:'))) {
+        const pendingAction = async tool => {
+          try { await bridge.callTool(tool, { clientRequestId: launch.clientRequestId }); await refresh(); }
+          catch (e) { status.textContent = e.message; }
+        };
+        controls.append(h('div', { class: 'desktop-pending-launch' },
+          h('div', { text: `${accountName(launch.account)} · ${launch.operation === 'resume' ? '会話の再開' : '新規依頼'} · ${launch.state === 'uncertain' ? '起動結果の確認が必要' : '開始待機中'}` }),
+          h('button', { type: 'button', class: 'btn', text: launch.operation === 'resume' ? '元のカードで確認' : '作成画面へ依頼と画像を戻す', onclick: () => { closePopover(); desktopAccounts.restoreStart(launch.clientRequestId).catch(e => toast(e.message, true)); } }),
+          h('button', { type: 'button', class: 'btn', text: launch.state === 'uncertain' ? 'Desktop で結果を確認した' : 'この開始待機を取り消す', onclick: () => pendingAction(launch.state === 'uncertain' ? 'canban_acknowledge_desktop_launch' : 'canban_cancel_start_session') })));
+      }
+      if (view.setup?.pendingCommand) {
+        controls.append(h('p', { text: 'Desktop を保存して終了すると自動で続行します。' }), button('終了待ちを取り消す', 'cancel-wait'));
+        timer = setTimeout(() => { if (section.isConnected) refresh(); }, 3000); return;
+      }
+      const buttons = h('div', { class: 'row' }); controls.append(buttons);
+      if (view.pending?.active) buttons.append(button('Desktop の接続を確認', 'finish-login', view.pending.account), button('初回接続を取り消す', 'cancel', view.pending.account));
+      else {
+        if (view.pending) { const resume = button(`${accountName(view.pending.account)} の初回接続を再開`, 'begin-login', view.pending.account); resume.classList.add('acct-desktop-resume'); buttons.append(resume); }
+        const choices = (state.board.accounts.accounts || []).filter(a => a.agent === 'claude' && a.key !== view.pending?.account && !view.profiles.some(p => p.account === a.key));
+        if (!active && view.activeAccount && !choices.some(a => a.key === view.activeAccount)) choices.unshift({ key: view.activeAccount });
+        if (choices.length) {
+          const select = h('select', { class: 'text-input', 'aria-label': 'Desktop に接続するアカウント' }, choices.map(a => h('option', { value: a.key, text: accountName(a.key) })));
+          if (!active && choices.some(a => a.key === view.activeAccount)) select.value = view.activeAccount;
+          buttons.append(select, h('button', { type: 'button', class: 'btn', text: active ? '別の Desktop を初回接続' : '現在の Desktop を登録', onclick: () => action(active ? 'begin-login' : 'enroll-current', select.value) }));
+        }
+      }
+      const trial = view.setup?.trial;
+      if (trial && ['ready','awaiting-observation'].includes(trial.state)) {
+        const n = trial.observations?.length || 0;
+        controls.append(h('p', { text: `認証保持の確認 · ${Math.floor(n / 2)} / 3 往復（${n} / 6 回の表示を記録）` }));
+        if (trial.state === 'awaiting-observation') {
+          const observed = checks([['authenticated', `${accountName(trial.account)} でログイン済みの画面を確認した`], ['noLogin','ログアウト・再ログインは行っていない'], ['draftsPreserved','保存済み下書きが保持されている']]);
+          controls.append(observed.root, h('button', { type: 'button', class: 'btn', text: '今回の表示を記録', onclick: () => action('trial-observe', null, observed.value()) }));
+        } else if (n < 6) controls.append(button(`${accountName(n % 2 ? trial.origin : trial.other)} へ切り替えて確認`, 'trial-switch'));
+        else {
+          const confirmed = checks([['cliPreserved','各アカウントの CLI が継続している'],['desktopPreserved','Desktop の会話と作業先を保持している'],['draftsPreserved','各アカウントの保存済み下書きを保持している'],['historyPreserved','同じ会話IDと履歴で続けられた'],['writebackPreserved','終了後に元アカウントへ進捗が戻った'],['dockPreserved','通常の Dock 起動でログインを維持した'],['messagesSentByUser','専用の検証会話へ両アカウントから自分で各1回送信した']]);
+          controls.append(confirmed.root, h('button', { type: 'button', class: 'btn', text: '確認結果を保存して通常切替を有効にする', onclick: () => action('trial-complete', null, confirmed.value()) }));
+        }
+        controls.append(button('保持確認を中止（現在の接続を保持）', 'trial-cancel'));
+      } else if (view.profiles.length >= 2 && !view.pending?.active) {
+        const other = view.profiles.filter(p => !p.active);
+        const select = h('select', { class: 'text-input', 'aria-label': '保持確認のもう一方のアカウント' }, other.map(p => h('option', { value: p.account, text: accountName(p.account) })));
+        controls.append(h('p', { class: 'muted', text: 'バックアップ後、2アカウントを3往復して確認します。保存・終了はご自身で行い、試験メッセージは専用の検証会話だけに送ってください。' }), select,
+          h('button', { type: 'button', class: 'btn', text: '認証保持の確認を始める', onclick: () => action('trial-start', select.value) }));
+      }
+      controls.append(button('切替記録を復元', 'recover'));
+    } catch { status.textContent = 'Desktop の状態を確認できません。ログイン情報は保持しています。'; }
+  };
+  section.append(h('button', { type: 'button', class: 'link-btn', text: 'Desktop の状態を再確認', onclick: refresh }));
+  refresh(); return section;
 }
 
 async function accountLoginDialog(anchor, { home = null, agent = home?.agent, key = null } = {}) {

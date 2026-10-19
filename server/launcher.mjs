@@ -5,13 +5,21 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import { loginBrowsers, openLoginBrowser } from './login-browsers.mjs';
 
 const ALLOWED_SCHEMES = new Set(['codex:', 'claude:']);
 
+// An app started by "open" inherits this process's environment (seen 2026-10-16: Claude
+// Desktop and every session in it got CANBAN_CLIENT=canban-chrome from the Chrome host).
+// Canban's own settings stay with Canban.
+const CLI_AUTH_OVERRIDE = /^(?:CANBAN_|ANTHROPIC_|OPENAI_|CLAUDE_CONFIG_DIR$|CODEX_HOME$|CLAUDE_CODE_OAUTH_TOKEN$|CLAUDE_CODE_USE_|CODEX_ACCESS_TOKEN$|CODEX_API_KEY$)/;
+export const appEnv = (env = process.env) => Object.fromEntries(Object.entries(env).filter(([k]) => !CLI_AUTH_OVERRIDE.test(k)));
+
 let runner = (file, args, input) =>
   new Promise((resolve, reject) => {
-    const child = execFile(file, args, { timeout: 15000 }, (err, stdout, stderr) =>
+    const env = file === 'open' || file === 'xdg-open' ? appEnv() : process.env;
+    const child = execFile(file, args, { timeout: 15000, env }, (err, stdout, stderr) =>
       err ? reject(new Error((stderr || err.message).trim())) : resolve(stdout.trim()),
     );
     if (input != null) child.stdin.end(input);
@@ -24,7 +32,15 @@ export function setRunner(fn) {
   return prev;
 }
 
+// Claude Desktop links go only through openClaudeDesktop (claude-desktop-open.mjs),
+// which merges every account's sessions into the sidebar before Desktop starts.
 export async function openUrl(url) {
+  if (/^claude:/i.test(String(url))) throw new Error('Claude Desktop は openClaudeDesktop（claude-desktop-open.mjs）から開きます');
+  return openAppUrl(url);
+}
+
+// Internal: only claude-desktop-open.mjs may import this (checked by a test).
+export async function openAppUrl(url) {
   let u;
   try {
     u = new URL(url);
@@ -35,6 +51,37 @@ export async function openUrl(url) {
   if (process.platform === 'darwin') return runner('open', [u.toString()]);
   if (process.platform === 'linux') return runner('xdg-open', [u.toString()]);
   throw new Error('この OS ではデスクトップアプリを開けません');
+}
+
+// A Chrome host may restart between retries. Reserve the request on disk before
+// asking the OS to open anything; an unknown result must never repeat that action.
+export async function launchOnce(dataDir, requestId, payload, action) {
+  if (!requestId) return { ...await action(), state: 'opened' };
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestId)) throw new Error('開始リクエストが不正です');
+  const dir = path.join(dataDir, 'launches');
+  await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
+  const file = path.join(dir, `${requestId}.json`);
+  const fingerprint = createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+  const uncertain = { state: 'uncertain', note: '起動結果を確認できません。アプリまたはターミナルを確認してください。同じ依頼を自動で再起動することはありません。' };
+  let reservation;
+  try { reservation = await fs.promises.open(file, 'wx', 0o600); }
+  catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    const record = await fs.promises.readFile(file, 'utf8').then(JSON.parse).catch(() => null);
+    if (record?.fingerprint && record.fingerprint !== fingerprint) throw new Error('前回の開始結果を確認するまで入力を変更して再送できません。アプリを確認し、「新しい依頼」から作成してください。');
+    return record?.result || uncertain;
+  }
+  try { await reservation.writeFile(JSON.stringify({ fingerprint, createdAt: Date.now() })); }
+  finally { await reservation.close(); }
+  let result;
+  try { result = { ...await action(), state: 'opened' }; }
+  catch (error) { result = { ...uncertain, note: `${uncertain.note} ${String(error.message || error).slice(0, 500)}` }; }
+  const temp = path.join(dir, `${requestId}-${randomUUID()}.tmp`);
+  try {
+    await fs.promises.writeFile(temp, JSON.stringify({ fingerprint, result }), { mode: 0o600 });
+    await fs.promises.rename(temp, file);
+  } finally { await fs.promises.rm(temp, { force: true }); }
+  return result;
 }
 
 const APP_PATHS = {

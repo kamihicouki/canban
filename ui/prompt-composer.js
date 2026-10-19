@@ -1,7 +1,9 @@
 // Shared composer for task launches and session follow-ups. Drafts survive live
 // re-rendering; binary files never go into board settings or localStorage.
 const promptDrafts = new Map();
-function promptComposer(input, { key, context, submit, chips = false }) {
+// Codex desktop style: one rounded box with attachments on top, the text, and one row of
+// [+ image] [$ skill] [leading…] ··· [actions…]; key hints sit under the box.
+function promptComposer(input, { key, context, submit, placeholder, leading = [], actions = [], inside = [], place = [], keys = null }) {
   const existing = promptDrafts.get(key);
   if (existing && existing.text === existing.baseline && !existing.images.length && !existing.skills.length && !existing.sending) existing.text = existing.baseline = input.value;
   const draft = promptDrafts.get(key) || { text: input.value, baseline: input.value, images: [], skills: [], context: null, sending: false };
@@ -14,17 +16,17 @@ function promptComposer(input, { key, context, submit, chips = false }) {
   const search = h('input', { class: 'text-input', type: 'search', placeholder: 'スキル名・説明で検索', 'aria-label': 'スキルを検索' });
   const choices = h('div', { class: 'prompt-skill-choices', 'aria-label': '利用できるスキル' });
   const fileInput = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, hidden: true, 'aria-label': '添付する画像を選択' });
-  // chips: icon buttons that share one row with the permission and send controls (the caller adds them).
-  const imageButton = chips
-    ? h('button', { type: 'button', class: 'cx-ico', title: '画像を添付（貼り付け・ドロップも可）', 'aria-label': '画像を添付', html: picon('image', 16), onclick: () => fileInput.click() })
-    : h('button', { type: 'button', class: 'btn', text: '＋ 画像', onclick: () => fileInput.click() });
-  const skillButton = chips
-    ? h('button', { type: 'button', class: 'cx-ico', title: 'スキルを選ぶ（$）', 'aria-label': 'スキルを選ぶ', 'aria-expanded': 'false', 'aria-controls': picker.id, text: '$', onclick: () => toggleSkills() })
-    : h('button', { type: 'button', class: 'btn', text: '＄ スキル', 'aria-expanded': 'false', 'aria-controls': picker.id, onclick: () => toggleSkills() });
-  const toolbar = chips ? h('div', { class: 'prompt-toolbar chips' }, imageButton, skillButton)
-    : h('div', { class: 'prompt-toolbar' }, imageButton, skillButton, h('span', { class: 'muted prompt-hint', text: '画像を貼り付け・ドロップ / $ でスキル' }));
+  if (placeholder) input.placeholder = placeholder;
+  const imageButton = h('button', { type: 'button', class: 'cx-ico', title: '画像を添付（貼り付け・ドロップも可）', 'aria-label': '画像を添付', html: picon('plus', 16), onclick: () => fileInput.click() });
+  const skillButton = h('button', { type: 'button', class: 'cx-ico', title: 'スキルを選ぶ（$）', 'aria-label': 'スキルを選ぶ', 'aria-expanded': 'false', 'aria-controls': picker.id, text: '$', onclick: () => toggleSkills() });
+  const toolbar = h('div', { class: 'prompt-toolbar' }, imageButton, skillButton, ...leading, h('span', { class: 'grow' }), ...actions);
   picker.append(h('div', { class: 'row' }, search, h('button', { type: 'button', class: 'icon-btn', text: '✕', 'aria-label': 'スキル選択を閉じる', onclick: () => closeSkills() })), choices);
-  root.append(assets, input, toolbar, picker, notice, fileInput);
+  const box = h('div', { class: 'cx-box' }, assets, input, toolbar, picker, notice, ...inside, fileInput);
+  root.append(...[box, place.length ? h('div', { class: 'cx-place' }, ...place) : null, keys?.length ? h('div', { class: 'cx-keys' }, ...keys) : null].filter(Boolean));
+  // The text grows with its content up to the CSS max-height, like the Codex composer.
+  const fit = () => { if (!input.style) return; input.style.height = 'auto'; input.style.height = `${input.scrollHeight}px`; };
+  input.addEventListener('input', fit);
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fit);
   let catalog = [], loadedContext = null, pendingSkills = null, requestGeneration = 0, token = null;
   const currentContext = () => {
     const value = context(), signature = JSON.stringify(value);
@@ -38,10 +40,11 @@ function promptComposer(input, { key, context, submit, chips = false }) {
     root.dataset.unsavedForm = String(!!draft.images.length || !!draft.skills.length || draft.sending);
     assets.replaceChildren(...draft.images.map(i => h('div', { class: 'prompt-image' },
       i.preview ? h('img', { src: i.preview, alt: i.name }) : null,
-      h('span', { class: 'ellipsis', text: i.loading ? '添付中…' : i.name, title: i.name }),
+      h('span', { class: 'ellipsis', text: i.loading ? '添付中…' : i.previewLoading ? '画像を読込み中…' : i.previewError ? `${i.name || '添付画像'}（プレビューを表示できません）` : i.name, title: i.name }),
       h('button', { type: 'button', class: 'icon-btn', text: '✕', disabled: draft.sending, 'aria-label': `${i.name} を削除`, onclick: () => {
         draft.images = draft.images.filter(x => x !== i); i.removed = true; URL.revokeObjectURL(i.preview); paint();
       } }))),
+      ...(context().route === 'desktop' && draft.images.length ? [h('span', { class: 'prompt-paste-hint muted', text: '画像は起動後にコピーし、アプリの入力欄で⌘Vを押してください' })] : []),
       ...draft.skills.map(s => h('div', { class: 'prompt-skill-chip', title: s.path },
         h('span', { text: `$${s.name}` }), h('button', { type: 'button', class: 'icon-btn', text: '✕', disabled: draft.sending,
           'aria-label': `${s.name} を削除`, onclick: () => { draft.skills = draft.skills.filter(x => x.path !== s.path); paint(); } }))));
@@ -54,6 +57,32 @@ function promptComposer(input, { key, context, submit, chips = false }) {
     for (const view of draft.views) {
       if (view === paintView || view.root.isConnected) view(); else draft.views.delete(view);
     }
+  }
+  async function restoreImage(item) {
+    if (item.preview || item.previewLoading) return;
+    item.previewLoading = true; paint();
+    const current = () => !item.removed && draft.images.includes(item);
+    try {
+      let offset = 0, sha256, mime, size; const chunks = [];
+      do {
+        const response = await bridge.callTool('canban_read_prompt_image', { id: item.id, offset, maxBytes: 128*1024, ...(sha256 ? { expectedSha256: sha256 } : {}) });
+        if (!current()) return;
+        const part = response.result;
+        if (!part || part.id !== item.id || part.offset !== offset || !Number.isInteger(part.size) || part.size < 1 || part.size > 10*1024*1024 || !['image/png','image/jpeg','image/webp','image/gif'].includes(part.mime) || !/^[a-f0-9]{64}$/.test(part.sha256)) throw new Error('画像の内容を確認できません');
+        if (sha256 && (part.sha256 !== sha256 || part.size !== size || part.mime !== mime)) throw new Error('画像が変更されています');
+        sha256 = part.sha256; size = part.size; mime = part.mime;
+        const bytes = Uint8Array.from(atob(part.data), c => c.charCodeAt(0));
+        if (!bytes.length || bytes.length > 128*1024 || part.nextOffset !== offset+bytes.length || part.nextOffset > size || part.complete !== (part.nextOffset === size)) throw new Error('画像の読込み範囲が一致しません');
+        chunks.push(bytes); offset = part.nextOffset; item.name ||= part.name || '添付画像';
+      } while (offset < size);
+      const bytes = new Uint8Array(size); let at = 0;
+      for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.length; }
+      const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(x => x.toString(16).padStart(2,'0')).join('');
+      if (digest !== sha256) throw new Error('画像のハッシュが一致しません');
+      if (!current()) return;
+      item.mime = mime; item.preview = URL.createObjectURL(new Blob([bytes], { type: mime })); item.previewError = false;
+    } catch { if (current()) item.previewError = true; }
+    finally { item.previewLoading = false; paint(); }
   }
   const readData = blob => new Promise((resolve, reject) => {
     const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1]); reader.onerror = () => reject(new Error('画像を読み取れませんでした')); reader.readAsDataURL(blob);
@@ -134,6 +163,7 @@ function promptComposer(input, { key, context, submit, chips = false }) {
     renderChoices();
     if (!token) search.focus();
   }
+  root.addEventListener('canban:pick-skill', () => { token = null; toggleSkills(true); });
   search.addEventListener('input', renderChoices);
   picker.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeSkills(); input.focus(); } });
   input.addEventListener('input', event => {
@@ -150,7 +180,8 @@ function promptComposer(input, { key, context, submit, chips = false }) {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); submit?.(); }
   });
   paint();
-  return { root, toolbar, draft, contextChanged() { currentContext(); closeSkills(); paint(); },
+  for (const item of draft.images) if (item.id && !item.preview && !item.previewError) restoreImage(item);
+  return { root, box, toolbar, draft, contextChanged() { currentContext(); closeSkills(); paint(); },
     hasContent: () => !!(input.value.trim() || draft.images.length || draft.skills.length),
     payload() {
       draft.text = input.value;
@@ -159,13 +190,16 @@ function promptComposer(input, { key, context, submit, chips = false }) {
       return { imageIds: draft.images.map(i => i.id), skills: draft.skills.map(s => ({ ...s })) };
     },
     setSending(value) { draft.sending = value; paint(); },
-    clear() { draft.images.forEach(i => i.preview && URL.revokeObjectURL(i.preview)); draft.text = draft.baseline = input.value = input.defaultValue = ''; draft.images = []; draft.skills = []; notice.textContent = ''; closeSkills(); paint(); },
+    clear() { draft.images.forEach(i => i.preview && URL.revokeObjectURL(i.preview)); draft.text = draft.baseline = input.value = input.defaultValue = ''; draft.images = []; draft.skills = []; notice.textContent = ''; closeSkills(); paint(); fit(); },
     restore(request) {
       if (this.hasContent()) throw new Error('入力中の指示があります。先に確認してください');
       draft.text = input.value = request.prompt || ''; draft.skills = (request.skills || []).map(s => ({ ...s }));
-      // History keeps server asset IDs; previews are fetched only on demand.
-      draft.images = (request.images || []).map(i => ({ id: i.id, name: i.name, mime: i.mime, preview: '', loading: false }));
-      paint(); input.focus();
+      // Shared drafts own the object URLs; closing a view does not release them.
+      const images = request.images || (request.imageIds || []).map(id => ({ id }));
+      if (!Array.isArray(images) || images.length > 8) throw new Error('画像は8枚までです');
+      draft.images = images.map(i => ({ id: i.id, name: i.name, mime: i.mime, preview: '', loading: false }));
+      paint(); fit(); input.focus();
+      return Promise.all(draft.images.map(restoreImage));
     },
   };
 }
