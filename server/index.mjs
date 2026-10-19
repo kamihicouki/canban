@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { codexLifecycle } from './session-actions.mjs';
 import { startDesktopBridge } from './codex-desktop-bridge.mjs';
@@ -68,8 +68,12 @@ const UI_MIME = 'text/html;profile=mcp-app';
 const uiToken = process.env.CANBAN_UI_TOKEN || randomBytes(32).toString('hex');
 delete process.env.CANBAN_UI_TOKEN; // No launcher, terminal, or supervised agent inherits UI authority.
 const terminals = new Terminals();
+// Compare digests so the check takes the same time whatever the length or prefix of the supplied value.
+const tokenDigest = value => createHash('sha256').update(value).digest();
+const uiTokenDigest = tokenDigest(uiToken);
+const isUiToken = value => typeof value === 'string' && timingSafeEqual(tokenDigest(value), uiTokenDigest);
 const requireLoopUi = a => {
-  if (a.uiToken !== uiToken) throw new Error('この操作はボードUIから確認してください');
+  if (!isUiToken(a.uiToken)) throw new Error('この操作はボードUIから確認してください');
   const { uiToken: omitted, ...args } = a;
   return args;
 };
