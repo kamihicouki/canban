@@ -101,7 +101,7 @@
 /* the panel buttons read like the other labelled controls: icon, name, key */
 .th-tool .keycap { margin-left: 2px; }
 .th-tool[aria-pressed="true"] { background: var(--accent); color: var(--primary-fg) !important; }
-:root:not([data-theme="dark"]) .th-tool[aria-pressed="true"] { color: #fff !important; }
+:root:not([data-theme="dark"]) .th-tool[aria-pressed="true"] { color: var(--on-accent) !important; }
 .th-tool[aria-pressed="true"] .add, .th-tool[aria-pressed="true"] .del { color: inherit; }
 
 /* ---------- the thread layout of a task card ---------- */

@@ -1,5 +1,5 @@
 .prompt-composer { min-width: 0; border-radius: 6px; }
-.prompt-composer.drag-image { outline: 2px dashed var(--accent, #0079bf); outline-offset: 4px; }
+.prompt-composer.drag-image { outline: 2px dashed var(--accent); outline-offset: 4px; }
 .prompt-assets { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
 .prompt-assets:empty, .prompt-notice:empty { display: none; }
 .prompt-image { display: grid; width: 122px; grid-template-columns: minmax(0, 1fr) 24px; gap: 3px; padding: 5px; border: 1px solid var(--input-border); border-radius: 6px; font-size: 11px; }
@@ -11,7 +11,7 @@
 .prompt-skill-picker .text-input { flex: 1; min-width: 0; }
 .prompt-skill-choices { display: grid; gap: 3px; max-height: 240px; overflow-y: auto; margin-top: 6px; }
 .prompt-skill-choice { text-align: left; padding: 7px 8px; border: 0; border-radius: 4px; background: transparent; cursor: pointer; min-width: 0; }
-.prompt-skill-choice:hover, .prompt-skill-choice:focus-visible { background: var(--hover-bg, #0079bf18); }
+.prompt-skill-choice:hover, .prompt-skill-choice:focus-visible { background: var(--btn-subtle-hover); }
 .prompt-skill-choice strong, .prompt-skill-choice span { display: block; overflow-wrap: anywhere; }
 .prompt-skill-choice span { margin-top: 3px; font-size: 11px; }
 .prompt-notice { font-size: 12px; margin-top: 5px; overflow-wrap: anywhere; }
@@ -29,7 +29,7 @@
 .prompt-toolbar .perm-chip.elevated { color: var(--tone-wait); background: var(--tone-wait-bg); }
 .prompt-toolbar .help-tip { flex: none; }
 .send-round { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--primary-fg); display: grid; place-items: center; flex: none; }
-:root:not([data-theme="dark"]) .send-round { color: #fff; }
+:root:not([data-theme="dark"]) .send-round { color: var(--on-accent); }
 .cx-keys { display: flex; gap: 12px; padding: 6px 6px 0; font-size: 12px; color: var(--card-muted); flex-wrap: wrap; }
 /* Where it starts: small selects under the box, like Codex's project · environment · branch row. */
 .cx-place { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; }
