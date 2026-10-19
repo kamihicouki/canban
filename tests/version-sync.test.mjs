@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { VERSION_FILES, bump, nextVersion, parseVersion, usedVersions } from '../scripts/bump-version.mjs';
+import { VERSION_FILES, bump, nextVersion, parseArgs, parseVersion, usedVersions } from '../scripts/bump-version.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (dir, f) => fs.readFileSync(path.join(dir, f), 'utf8');
@@ -71,11 +71,29 @@ test('--next-free skips numbers used by origin/main and open PRs', t => {
   assert.deepEqual(nextVersion(parseVersion('1.2.3'), 'patch', new Set(['1.2.4', '1.2.5'])), [1, 2, 6]);
 });
 
-test('usedVersions falls back to origin/main without gh', () => {
+test('--next-free never picks a number below one in use on another release line', t => {
+  const dir = fixture(t);
+  assert.equal(bump({ dir, nextFree: true, used: new Set(['1.3.5']), summary: 'a', log() {} }), '1.3.6');
+  assert.equal(bump({ dir, kind: 'minor', nextFree: true, used: new Set(['1.4.2', '2.0.0']), summary: 'b', log() {} }), '2.1.0');
+  assert.throws(() => bump({ dir, kind: '2.1.5', nextFree: true, used: new Set(['2.2.0']), summary: 'c', log() {} }), /使用中の 2\.2\.0/);
+});
+
+test('--store needs a value, so --dry-run is never taken as one', () => {
+  assert.throws(() => parseArgs(['patch', '要約', '--store', '--dry-run']), /--store/);
+  assert.throws(() => parseArgs(['patch', '要約', '--store']), /--store/);
+  assert.deepEqual(parseArgs(['minor', '要', '約', '--store', 'ス', '--next-free', '--strict']), { kind: 'minor', summary: '要 約', store: 'ス', nextFree: true, strict: true });
+});
+
+test('usedVersions reads open PRs through refs/pull, covering forks, and warns about what it cannot read', () => {
   const logs = [];
-  const exec = (cmd, args) => cmd === 'git' && args[0] === 'show' && args[1] === 'origin/main:package.json' ? '{"version":"0.29.22"}' : cmd === 'git' ? '' : null;
+  const exec = (cmd, args) => cmd === 'git' && args[0] === 'show' && args[1] === 'origin/main:package.json' ? '{"version":"0.29.22"}' : cmd === 'git' && args[0] === 'fetch' ? '' : null;
   assert.deepEqual([...usedVersions({ exec, log: m => logs.push(m) })], ['0.29.22']);
-  assert.match(logs.join(), /gh が使えない/);
-  const withGh = (cmd, args) => cmd === 'gh' ? '[{"headRefName":"codex/x","title":"何か（0.29.23）"}]' : args[1] === 'origin/codex/x:package.json' ? '{"version":"0.29.24"}' : exec(cmd, args);
-  assert.deepEqual([...usedVersions({ exec: withGh, log() {} })].sort(), ['0.29.22', '0.29.23', '0.29.24']);
+  assert.match(logs.join(), /open PR の一覧（gh）/);
+  assert.throws(() => usedVersions({ exec, strict: true }), /open PR の一覧/);
+  const withGh = (cmd, args) => cmd === 'gh' ? '[{"number":7,"title":"何か（0.29.23）"},{"number":8,"title":"Node 22.13.0 対応"}]' : args[1] === 'origin/pr/7:package.json' ? '{"version":"0.29.24"}' : exec(cmd, args);
+  logs.length = 0;
+  assert.deepEqual([...usedVersions({ exec: withGh, log: m => logs.push(m) })].sort(), ['0.29.22', '0.29.23', '0.29.24']);
+  assert.match(logs.join(), /#8 の package\.json/);
+  const staleFetch = (cmd, args) => cmd === 'git' && args[0] === 'fetch' ? null : withGh(cmd, args);
+  assert.throws(() => usedVersions({ exec: staleFetch, strict: true }), /git fetch/);
 });

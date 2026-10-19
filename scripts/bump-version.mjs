@@ -2,10 +2,10 @@
 // Bump the version in package.json, manifest.json and .codex-plugin/plugin.json together,
 // and add the matching entries to CHANGELOG.md and CHROMEWEBSTORE.md.
 //
-//   npm run bump -- [patch|minor|x.y.z] "変更の要約" [--store "ストア向けの要約"] [--next-free] [--dry-run]
+//   npm run bump -- [patch|minor|x.y.z] "変更の要約" [--store "ストア向けの要約"] [--next-free [--strict]] [--dry-run]
 //
-// --next-free skips numbers already taken by origin/main and open PRs (gh pr list), so
-// parallel branches do not pick the same number. Without gh it checks origin/main only.
+// --next-free counts from the highest number origin/main and open PRs (gh pr list) use and
+// skips taken ones. Without gh it checks origin/main only; --strict makes that an error.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -14,7 +14,6 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const VERSION_FILES = ['package.json', 'manifest.json', '.codex-plugin/plugin.json'];
 const SEMVER = /\b(\d+)\.(\d+)\.(\d+)\b/;
-const SEMVER_ALL = /\b\d+\.\d+\.\d+\b/g;
 
 export function parseVersion(text) {
   const m = SEMVER.exec(String(text || ''));
@@ -70,37 +69,51 @@ function run(cmd, args) {
   return r.status === 0 ? r.stdout : null;
 }
 
-// Numbers in use elsewhere: origin/main's package.json and each open PR (title and head branch).
-export function usedVersions({ exec = run, log = console.error } = {}) {
+// Numbers in use elsewhere: origin/main's package.json and each open PR (its title and the
+// package.json at its head, read through refs/pull/N/head so fork PRs are covered too).
+// It only avoids the numbers it could read; it does not reserve one. `strict` turns any
+// read failure into an error instead of a warning.
+export function usedVersions({ exec = run, log = console.error, strict = false } = {}) {
   const used = new Set();
-  const add = text => { for (const v of String(text || '').match(SEMVER_ALL) || []) used.add(v); };
-  exec('git', ['fetch', '--quiet', 'origin']);
+  const missing = [];
+  const add = version => { if (version) used.add(version); };
+  // A failed fetch would leave stale refs that still read fine, so it counts as unread.
+  if (exec('git', ['fetch', '--quiet', 'origin', 'main', '+refs/pull/*/head:refs/remotes/origin/pr/*']) == null) missing.push('origin の最新（git fetch）');
   const main = exec('git', ['show', 'origin/main:package.json']);
   if (main) add(JSON.parse(main).version);
-  else log('origin/main を読めませんでした。');
-  const prs = exec('gh', ['pr', 'list', '--state', 'open', '--limit', '200', '--json', 'headRefName,title']);
-  if (prs == null) { log('gh が使えないため、origin/main だけで空き番号を判断します。'); return used; }
-  for (const pr of JSON.parse(prs)) {
-    add(pr.title);
-    const pkg = exec('git', ['show', `origin/${pr.headRefName}:package.json`]);
+  else missing.push('origin/main');
+  const prs = exec('gh', ['pr', 'list', '--state', 'open', '--limit', '200', '--json', 'number,title']);
+  if (prs == null) missing.push('open PR の一覧（gh）');
+  else for (const pr of JSON.parse(prs)) {
+    // Titles carry the number as "…（x.y.z）"; other numbers in a title are not versions.
+    add(/[（(](\d+\.\d+\.\d+)[）)]/.exec(pr.title)?.[1]);
+    const pkg = exec('git', ['show', `origin/pr/${pr.number}:package.json`]);
     if (pkg) add(JSON.parse(pkg).version);
+    else missing.push(`#${pr.number} の package.json`);
+  }
+  if (missing.length) {
+    const message = `読めなかったため番号の確認から外しました: ${missing.join('、')}`;
+    if (strict) throw new Error(message);
+    log(message);
   }
   return used;
 }
 
-export function bump({ dir = root, kind = 'patch', summary, store, nextFree = false, dryRun = false, date, used, log = console.log } = {}) {
+export function bump({ dir = root, kind = 'patch', summary, store, nextFree = false, strict = false, dryRun = false, date, used, log = console.log } = {}) {
   if (!summary?.trim()) throw new Error('変更の要約を指定してください: npm run bump -- patch "変更の要約"');
   const read = f => fs.readFileSync(path.join(dir, f), 'utf8');
   const current = parseVersion(JSON.parse(read('package.json')).version);
-  const taken = nextFree ? (used || usedVersions()) : new Set();
-  // Start from the highest number in use so --next-free never goes backwards.
+  const taken = nextFree ? (used || usedVersions({ strict })) : new Set();
+  // With --next-free, patch/minor count from the highest number in use, so an old worktree
+  // never picks a number below one main or another PR already has.
   let base = current;
-  if (nextFree && kind === 'patch') for (const v of taken) {
+  if (nextFree) for (const v of taken) {
     const p = parseVersion(v);
-    if (p[0] === current[0] && p[1] === current[1] && compareVersions(p, base) > 0) base = p;
+    if (p && compareVersions(p, base) > 0) base = p;
   }
-  const next = nextVersion(kind === 'patch' ? base : current, kind, taken);
+  const next = nextVersion(base, kind, taken);
   if (compareVersions(next, current) <= 0) throw new Error(`${formatVersion(next)} は現在の ${formatVersion(current)} より新しくありません`);
+  if (nextFree && compareVersions(next, base) <= 0) throw new Error(`${formatVersion(next)} は使用中の ${formatVersion(base)} より新しくありません`);
   const version = formatVersion(next);
   const today = date || new Date().toLocaleDateString('sv-SE');
   const writes = [
@@ -109,18 +122,22 @@ export function bump({ dir = root, kind = 'patch', summary, store, nextFree = fa
     ['CHROMEWEBSTORE.md', addStoreEntry(read('CHROMEWEBSTORE.md'), version, (store || summary).trim(), formatVersion(current))],
   ];
   if (!dryRun) for (const [f, text] of writes) fs.writeFileSync(path.join(dir, f), text);
-  log(`${formatVersion(current)} → ${version}${dryRun ? '（dry-run: 書き込みなし）' : ''}`);
+  log(`${formatVersion(current)} → ${version}${base !== current ? `（使用中の最大 ${formatVersion(base)} の次）` : ''}${dryRun ? '（dry-run: 書き込みなし）' : ''}`);
   return version;
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const opts = { kind: 'patch' };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--next-free') opts.nextFree = true;
     else if (a === '--dry-run') opts.dryRun = true;
-    else if (a === '--store') opts.store = argv[++i];
+    else if (a === '--strict') opts.strict = true;
+    else if (a === '--store') {
+      opts.store = argv[++i];
+      if (!opts.store?.trim() || opts.store.startsWith('--')) throw new Error('--store にはストア向けの要約を続けてください');
+    }
     else rest.push(a);
   }
   if (/^(patch|minor|\d+\.\d+\.\d+)$/.test(rest[0] || '')) opts.kind = rest.shift();
