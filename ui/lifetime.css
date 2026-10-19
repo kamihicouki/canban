@@ -70,7 +70,7 @@
 .fold-head:hover { background: var(--btn-subtle-hover); color: var(--list-fg); }
 .fold-head > span:first-child { display: grid; color: var(--c-purple); }
 .fold-n { font-weight: 700; color: var(--list-fg); }
-.fold-hits:not(:empty) { padding: 1px 6px; border-radius: 8px; background: var(--focus); color: #fff; font-size: 11px; font-weight: 700; }
+.fold-hits:not(:empty) { padding: 1px 6px; border-radius: 8px; background: var(--focus); color: var(--on-solid); font-size: 11px; font-weight: 700; }
 .fold-why { font-size: 11.5px; }
 .fold-chev { display: grid; transition: transform .15s; transform: rotate(-90deg); }
 .life-fold.open .fold-chev { transform: none; }
@@ -95,9 +95,9 @@
 .theme-modes button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; border-radius: 8px; background: var(--btn-subtle); font-weight: 600; }
 .theme-modes button:hover { background: var(--btn-subtle-hover); }
 .theme-modes button[aria-pressed="true"] { background: var(--accent); color: var(--primary-fg); }
-:root:not([data-theme="dark"]) .theme-modes button[aria-pressed="true"] { color: #fff; }
+:root:not([data-theme="dark"]) .theme-modes button[aria-pressed="true"] { color: var(--on-solid); }
 
 /* Live counts beside a category in the sidebar. */
 .dir-live { font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 2px 5px; border-radius: 8px; flex: none; }
-.dir-live.s-run { background: var(--c-green); color: #0b3a26; }
-.dir-live.s-wait { background: var(--c-yellow); color: #533f04; }
+.dir-live.s-run { background: var(--c-green); color: var(--on-c-green); }
+.dir-live.s-wait { background: var(--c-yellow); color: var(--on-c-yellow); }

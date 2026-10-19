@@ -51,6 +51,14 @@
   --c-gray: #8590a2; --c-blue: #579dff; --c-green: #4bce97; --c-yellow: #f5cd47; --c-orange: #fea362;
   --c-red: #f87168; --c-purple: #9f8fef; --c-pink: #e774bb; --c-sky: #6cc3e0; --c-lime: #94c748;
   --txt-bg: #fbfbfc; --txt-fg: #1d2733; --txt-dim: #6b778c; --note-bg: #fdf0a6; --note-fg: #3d3200;
+  --on-solid: #fff; --on-label: #172b4d; --on-c-green: #0b3a26; --on-c-yellow: #533f04;
+  --prio-high-bg: #ffd5d2; --prio-high-fg: #ae2e24; --prio-medium-bg: #fff7d6; --prio-medium-fg: #7f5f01; --prio-low-bg: #dcfff1; --prio-low-fg: #216e4e;
+  --pr-fg: #fff; --pr-open: #1f883d; --pr-draft: #6e7781; --pr-merged: #8250df; --pr-closed: #cf222e; --pr-failing-fg: #ffd7d5;
+  --mark-bg: #ffe58f; --mark-fg: #172b4d; --toast-bg: #172b4d; --toast-fg: #fff;
+  --usage-remaining-bg: #c9ddff; --usage-remaining-fg: #0747a6; --agm-ring: #2c4f8f; --backdrop: rgba(0, 0, 0, 0.4);
+  --toast-shadow: 0 4px 8px rgba(0, 0, 0, 0.27); --tip-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); --dialog-shadow: 0 12px 48px rgba(0, 0, 0, 0.33);
+  --drawer-shadow: 4px 0 12px rgba(0, 0, 0, 0.4); --seg-shadow: 0 1px 2px #091e4240;
+  --pop-shadow: 0 8px 12px #091e4226, 0 0 1px #091e424f; --drag-shadow: 0 8px 16px -4px #091e4240, 0 0 1px #091e424f;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -97,6 +105,14 @@
   --warn-bg: #533f04;
   --warn-fg: #f5cd47;
   --txt-bg: #0e1215; --txt-fg: #c9d4df; --txt-dim: #7d8b99; --note-bg: #5c4b0a; --note-fg: #ffeaa0;
+  --on-solid: #fff; --on-label: #172b4d; --on-c-green: #0b3a26; --on-c-yellow: #533f04;
+  --prio-high-bg: #5d1f1a; --prio-high-fg: #fd9891; --prio-medium-bg: #533f04; --prio-medium-fg: #f5cd47; --prio-low-bg: #164b35; --prio-low-fg: #7ee2b8;
+  --pr-fg: #fff; --pr-open: #1f883d; --pr-draft: #6e7781; --pr-merged: #8250df; --pr-closed: #cf222e; --pr-failing-fg: #ffd7d5;
+  --mark-bg: #5c4b0a; --mark-fg: #ffeaa0; --toast-bg: #dee4ea; --toast-fg: #1d2125;
+  --usage-remaining-bg: #09326c; --usage-remaining-fg: #cce0ff; --agm-ring: #1d2125; --backdrop: rgba(0, 0, 0, 0.6);
+  --toast-shadow: 0 4px 8px rgba(0, 0, 0, 0.5); --tip-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); --dialog-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  --drawer-shadow: 4px 0 12px rgba(0, 0, 0, 0.6); --seg-shadow: 0 1px 2px #03040480;
+  --pop-shadow: 0 8px 12px #0304048c, 0 0 1px #03040480; --drag-shadow: 0 8px 16px -4px #03040480, 0 0 1px #03040480;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }

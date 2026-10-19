@@ -9,19 +9,19 @@
 .ring2 { --a: 0; --b: 0; --ca: var(--c-green); --cb: var(--c-green); position: relative; width: 28px; height: 28px; flex: none; display: inline-block; }
 .ring2::before, .ring2::after { content: ""; position: absolute; border-radius: 50%; }
 .ring2::before { inset: 0; background: conic-gradient(var(--ca) calc(var(--a) * 1%), var(--ring-track, rgba(255,255,255,.22)) 0);
-  -webkit-mask: radial-gradient(circle, transparent 10.5px, #000 11px); mask: radial-gradient(circle, transparent 10.5px, #000 11px); }
+  -webkit-mask: radial-gradient(circle, transparent 10.5px, black 11px); mask: radial-gradient(circle, transparent 10.5px, black 11px); }
 .ring2::after { inset: 4px; background: conic-gradient(var(--cb) calc(var(--b) * 1%), var(--ring-track, rgba(255,255,255,.22)) 0);
-  -webkit-mask: radial-gradient(circle, transparent 6.5px, #000 7px); mask: radial-gradient(circle, transparent 6.5px, #000 7px); }
+  -webkit-mask: radial-gradient(circle, transparent 6.5px, black 7px); mask: radial-gradient(circle, transparent 6.5px, black 7px); }
 .ring2.no-a::before, .ring2.no-b::after { background: var(--ring-track, rgba(255,255,255,.22)); opacity: .5; }
 .acct-row { --ring-track: var(--btn-subtle-hover); }
-.acct-row .ring2 .agm { border-color: var(--modal-bg, #fff); }
-.ring2 .ini { position: absolute; inset: 8px; border-radius: 50%; display: grid; place-items: center; font-size: 9px; font-weight: 700; line-height: 1; color: #fff; }
-.ring2 .agm { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 3px; border: 1.5px solid #2c4f8f; }
-.agm.codex, .acct-dot.codex { background: #10a37f; }
-.agm.claude, .acct-dot.claude { background: #d97757; }
+.acct-row .ring2 .agm { border-color: var(--modal-bg); }
+.ring2 .ini { position: absolute; inset: 8px; border-radius: 50%; display: grid; place-items: center; font-size: 9px; font-weight: 700; line-height: 1; color: var(--on-solid); }
+.ring2 .agm { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 3px; border: 1.5px solid var(--agm-ring); }
+.agm.codex, .acct-dot.codex { background: var(--codex); }
+.agm.claude, .acct-dot.claude { background: var(--claude); }
 .ring2.stale { opacity: .5; }
 .ring2.none { opacity: .7; }
-.acct-dot { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; font-size: 9px; font-weight: 700; color: #fff; flex: none; }
+.acct-dot { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; font-size: 9px; font-weight: 700; color: var(--on-solid); flex: none; }
 .acct-swatches { display: flex; gap: 4px; }
 .acct-swatches button { width: 18px; height: 18px; border-radius: 50%; border: 2px solid transparent; padding: 0; }
 .acct-swatches button[aria-pressed="true"] { border-color: var(--list-fg); }
@@ -98,8 +98,8 @@
   .topbar .acct-btn .rings, .topbar #refresh { display: none; }
 }
 
-.account-login { width: min(480px, calc(100vw - 48px)); max-height: calc(100vh - 48px); overflow: auto; padding: 20px; border: 1px solid var(--input-border); border-radius: 12px; background: var(--modal-bg); color: var(--list-fg); box-shadow: 0 12px 48px #0005; }
-.account-login::backdrop { background: #0006; }
+.account-login { width: min(480px, calc(100vw - 48px)); max-height: calc(100vh - 48px); overflow: auto; padding: 20px; border: 1px solid var(--input-border); border-radius: 12px; background: var(--modal-bg); color: var(--list-fg); box-shadow: var(--dialog-shadow); }
+.account-login::backdrop { background: var(--backdrop); }
 .account-login h2 { margin: 0 0 8px; font-size: 18px; }
 .account-login [hidden] { display: none; }
 .login-choices { display: grid; gap: 12px; margin: 16px 0; padding: 12px; border: 1px solid var(--input-border); border-radius: 8px; }
