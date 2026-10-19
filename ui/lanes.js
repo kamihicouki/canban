@@ -1,8 +1,9 @@
 // Part of board.html: included into its script by server/ui.mjs and shares its scope.
 // Swimlanes, snippets, saved views
-const LANE_MODES = { '': 'なし', directory: `${T.category}`, project: 'プロジェクト', section: 'Codex セクション', host: 'マシン', account: 'アカウント', agent: 'AI Apps', label: 'ラベル' };
+const LANE_MODES = { '': 'なし', directory: `${T.category}`, ...SOURCE_AXES, project: '旧プロジェクト', section: '旧セクション', host: 'マシン', account: 'アカウント', agent: 'AI Apps', label: 'ラベル' };
 const NO_DIR = 'カテゴリ無し';
 function laneKey(card, mode) {
+  if (SOURCE_AXES[mode]) return sourceLane(card, mode).name;
   if (mode === 'directory') return card.directory ? card.directory.name : NO_DIR;
   if (mode === 'section') {
     const sec = card.codexSection;
@@ -18,19 +19,21 @@ function laneKey(card, mode) {
   return card.project || '（プロジェクトなし）';
 }
 function laneIdForCard(card, mode, board = state.board) {
+  if (SOURCE_AXES[mode]) return JSON.stringify([mode, sourceLane(card, mode, board.sourceFacets).id]);
   const labelId = board.labels.find(label => card.labels.includes(label.id))?.id;
   return JSON.stringify([mode, taskLaneCreation(card, mode, labelId)]);
 }
 function buildLanes(b, mode) {
   const lanes = new Map();
-  const lane = (creation, name) => {
-    const key = JSON.stringify([mode, creation]);
+  const lane = (creation, name, nativeId = null) => {
+    const key = nativeId == null ? JSON.stringify([mode, creation]) : JSON.stringify([mode, nativeId]);
     if (!lanes.has(key)) lanes.set(key, { key, creation, name, count: 0, unread: 0, running: 0, waiting: 0, color: null, dirId: null });
     return lanes.get(key);
   };
   for (const list of b.lists) for (const card of list.cards) {
     const labelId = b.labels.find(label => card.labels.includes(label.id))?.id;
-    const ln = lane(taskLaneCreation(card, mode, labelId), laneKey(card, mode));
+    const native = SOURCE_AXES[mode] ? sourceLane(card, mode, b.sourceFacets) : null;
+    const ln = native ? lane(native.creation, native.name, native.id) : lane(taskLaneCreation(card, mode, labelId), laneKey(card, mode));
     ln.count++;
     if (card.unread) ln.unread++;
     if (card.status === 'running') ln.running++;

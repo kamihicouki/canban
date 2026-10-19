@@ -5,48 +5,56 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { codexLifecycle } from './session-actions.mjs';
 import { startDesktopBridge } from './codex-desktop-bridge.mjs';
 import { Store } from './store.mjs';
 import { leaderFor } from './leader.mjs';
 import { perf } from './perf.mjs';
 import { dispatcherFor, tickDispatch, setSpawner, dryRunSpawner } from './dispatch.mjs';
-import { buildBoard, sessionDetail, allSessions, findSession, hostsWithState, effectiveOrder, dropLocalCache, runRules, tickRules, tickSearch, pool } from './board.mjs';
-import { isCloudSession, CLOUD_OPERATION_REASON } from './sources/codex-dots.mjs';
-import { RULE_TRIGGERS } from './store.mjs';
-import { computeStats } from './stats.mjs';
-import { desktopLink, resumeCommand, newSessionLink, newSessionCommand } from './agents.mjs';
+import { allSessions, findSession, hostsWithState, tickRules, tickSearch, pool } from './board.mjs';
+import { newSessionLink, preparedCodexLink } from './agents.mjs';
 import { LOCAL_HOST } from './sources/util.mjs';
-import { openExternal, runInTerminal, installedTerminals, setRunner, TERMINAL_LABELS } from './launcher.mjs';
+import { setRunner } from './launcher.mjs';
 import { LiveHub } from './live.mjs';
-import { sessionExchanges } from './board.mjs';
 import { createWatch } from './watch.mjs';
 import { Presence, appLabel } from './presence.mjs';
 import { codexHome } from './sources/codex.mjs';
 import { claudeHome, claudeDesktopSessionsDir } from './sources/claude.mjs';
-import { accountTools, accountFilterProp, accountDesktopNote, extraWatchRoots } from './accounts-mcp.mjs';
-import { accountName, accountLabel, desktopAccountMismatch } from './accounts.mjs';
-import { recoverGuests, setGuestRunningCheck, guestPaths } from './claude-desktop-guests.mjs';
-import { openDesktopApp, integratedNote } from './claude-desktop-open.mjs';
+import { accountTools, extraWatchRoots } from './accounts-mcp.mjs';
+import { accountLabel, configureDesktopStorage } from './accounts.mjs';
+import { recoverGuests, setGuestRunningCheck, guestPaths, desktopRunning } from './claude-desktop-guests.mjs';
+import { openDesktopApp } from './claude-desktop-open.mjs';
 import { accountActions, accountActionTools } from './account-actions.mjs';
 import { shutdownLogins } from './login.mjs';
 import { boardHtml } from './ui.mjs';
-import { taskContextSchema } from './task-context.mjs';
-import { uploadImage, promptImages, listSkills, withSkills, withImagePaths, remoteImages } from './prompt-input.mjs';
-import { resolveSession, inspect, timingProblem } from './dispatch.mjs';
-import { claudeExecutionSession, savedClaudeExecutionSession } from './claude-handoff.mjs';
+import { prepareLaunchSelection, launchEvidence } from './launch-selection.mjs';
+import { promptImages, withSkills } from './prompt-input.mjs';
+import { inspect, timingProblem } from './dispatch.mjs';
 import { startAccount } from './start-account.mjs';
 import { claudeEnvironments, codexLaunchTargets } from './sources/launch-targets.mjs';
-import { startCodexCloud, setCloudRunner } from './codex-cloud.mjs';
-import { launchOnce } from './launcher.mjs';
-import { desktopProfilePlan, withDesktopAccount, saveClaudeExecutionAccount, desktopExecutionLink } from './claude-desktop-profile.mjs';
+import { setCloudRunner } from './codex-cloud.mjs';
+import { resolveSshTarget, matchDesktopTarget } from './sources/ssh-targets.mjs';
+import { prepareCodexDesktop } from './codex-desktop-start.mjs';
+import { readDesktopCapabilities } from './desktop-capabilities.mjs';
+import { managedDesktopSetup } from './claude-desktop-profile.mjs';
+import { createClaudeDesktopResume } from './claude-desktop-resume.mjs';
+import { rememberDesktopAccount } from './desktop-account-setup.mjs';
+import { createDesktopLaunches } from './desktop-launch.mjs';
+import { withDesktopAccount } from './claude-desktop-profile.mjs';
 import { SlackService, slackTools } from './slack.mjs';
-import { listChanges, fileDiff } from './changes.mjs';
-import { Terminals, projectRoot } from './terminal.mjs';
+import { Terminals } from './terminal.mjs';
 import { attachSummaryCache } from './summary-cache.mjs';
-import { loopArtifact } from './loop-artifact.mjs';
+import { appAndModel, appTool } from './tools/shared.mjs';
+import { promptTools, promptImageTools } from './tools/prompt.mjs';
+import { workspaceTools } from './tools/workspace.mjs';
+import { boardTools, statsTools, boardConfigTools } from './tools/board.mjs';
+import { sessionTools } from './tools/sessions.mjs';
+import { systemTools, settingsTools } from './tools/system.mjs';
+import { createTaskTools, taskTools } from './tools/tasks.mjs';
+import { startTools } from './tools/start.mjs';
+import { desktopTools } from './tools/desktop.mjs';
+import { loopTools } from './tools/loop.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // The Codex plugin manifest is absent when installed another way (Claude Desktop extension, a bare copy).
@@ -58,8 +66,12 @@ const UI_MIME = 'text/html;profile=mcp-app';
 const uiToken = process.env.CANBAN_UI_TOKEN || randomBytes(32).toString('hex');
 delete process.env.CANBAN_UI_TOKEN; // No launcher, terminal, or supervised agent inherits UI authority.
 const terminals = new Terminals();
+// Compare digests so the check takes the same time whatever the length or prefix of the supplied value.
+const tokenDigest = value => createHash('sha256').update(value).digest();
+const uiTokenDigest = tokenDigest(uiToken);
+const isUiToken = value => typeof value === 'string' && timingSafeEqual(tokenDigest(value), uiTokenDigest);
 const requireLoopUi = a => {
-  if (a.uiToken !== uiToken) throw new Error('この操作はボードUIから確認してください');
+  if (!isUiToken(a.uiToken)) throw new Error('この操作はボードUIから確認してください');
   const { uiToken: omitted, ...args } = a;
   return args;
 };
@@ -79,6 +91,7 @@ function readManifest(...candidates) {
 }
 
 const store = new Store();
+configureDesktopStorage(store.dir);
 attachSummaryCache(store.dir); // Claude transcript summaries survive a restart: only new lines are read
 // Integrated Desktop sidebar: the ledger lives with the data, and the watcher inherits it.
 process.env.CANBAN_DESKTOP_GUESTS_DIR ||= path.join(store.dir, 'desktop-integrated');
@@ -109,864 +122,132 @@ if (process.env.CANBAN_LAUNCH_DRYRUN === '1') {
 // After the dry-run setup, so a dry run never tidies the real integrated-sidebar state.
 recoverGuests().then(r => (r?.restored || r?.tidied) && process.stderr.write(`[canban] Desktop の統合を片付けました（書き戻し ${r.restored || 0} 件・台帳にない複製 ${r.tidied || 0} 件）\n`), error => process.stderr.write(`[canban] Desktop の統合の片付け: ${error.message}\n`));
 
-// ---- tool definitions ----------------------------------------------------
-const appOnly = { ui: { visibility: ['app'] }, 'openai/widgetAccessible': true, 'openai/visibility': 'private' };
-const appAndModel = { ui: { visibility: ['model', 'app'] }, 'openai/widgetAccessible': true };
-
-const filterProps = {
-  agent: { type: 'string', enum: ['all', 'codex', 'claude'], description: 'AI App（codex / claude）で絞り込み' },
-  host: { type: 'string', description: "マシンで絞り込み（'local' またはリモート接続の hostId）" },
-  account: accountFilterProp,
-  project: { type: 'string', description: 'プロジェクトで絞り込み（Codex のプロジェクト名。Codex のプロジェクトに入っていないセッションは作業フォルダ名）' },
-  folder: { type: 'string', description: '作業フォルダ名（cwd の末尾）で絞り込み' },
-  section: { type: 'string', description: "Codex のセクション ID で絞り込み。'__none' でセクションなし" },
-  directory: { type: 'string', description: "Canban のカテゴリ（ユーザーが作る、1 枚に 1 つのまとまり。API 上の名前は directory）の ID で絞り込み。'__none' でカテゴリなし" },
-  label: { type: 'string', description: "ラベル IDで絞り込み。'__none' でラベルなし" },
-  status: { type: 'string', enum: ['running', 'waiting', 'completed', 'aborted', 'idle'], description: '実行状態で絞り込み' },
-  q: { type: 'string', description: 'タイトル・最初の依頼・メモ・ラベルの部分一致検索' },
-  includeArchived: { type: 'boolean' },
-  includeSubagents: { type: 'boolean' },
-  dotScope: { type: 'string', enum: ['exclude', 'all', 'only'], description: 'dotのセッション: 除く（既定）／含める／dotだけ' },
-  pinnedOnly: { type: 'boolean', description: 'Codex アプリでピン留めしたスレッドだけ' },
-  groupBranch: { type: 'boolean', description: '同じリポジトリ＋ブランチのセッションをまとめる' },
-  fulltext: { type: 'boolean', description: 'q を会話の本文でも検索する（3 文字以上）' },
-  days: { type: 'number', description: '未配置セッションの表示期間（日）。0 で無制限。既定 30' },
-};
-
-const loopCommandProps = { taskId: { type: 'string' }, expectedRevision: { type: 'integer', minimum: 0 }, commandId: { type: 'string' }, command: { type: 'object' } };
-async function loopCommand(args, source) {
-  const prior = await store.getLoop({ taskId: args.taskId });
-  if (args.command.type === 'start') {
-    const task = (await store.load()).cards[args.taskId];
-    const taskHost = task.context?.host || task.target?.host || 'local';
-    let cwd = taskHost === 'local' ? task.context?.cwd || task.target?.cwd : null;
-    if (!cwd && task.links?.length) {
-      try { const r = await findSession(store, task.links[0]); if (r.session.host?.local !== false) cwd = r.session.cwd; } catch {}
+// Re-resolve persisted Desktop starts on every resume; no closure over stale targets.
+const desktopResume = createClaudeDesktopResume({ paths: guestPaths(), findSession: async cardId => (await findSession(store, cardId)).session,
+  check: async source => timingProblem(source, await inspect(source, null)), requests: async cardId => dispatcherFor(store).requests.list({ cardId }) });
+async function resolveDesktopStart(input) {
+  if (input.operation === 'resume') return desktopResume.resolve(input);
+  const state = await store.load();
+  if (input.taskId && state.cards[input.taskId]?.kind !== 'task') throw new Error('タスクカードが見つかりません');
+  const selection = await prepareLaunchSelection({ ...input, route: 'desktop' }, { codex: await codexLaunchTargets() });
+  let host = LOCAL_HOST, cwd = input.cwd || '', projectId = null;
+  if (input.environmentId) {
+    const env = (await claudeEnvironments(guestPaths().app, { expectedAccount: input.account, dataDir: store.dir })).environments.find(e => e.id === input.environmentId);
+    if (input.agent !== 'claude' || !env) throw new Error('Claude Desktop の環境を確認してください');
+    cwd = env.cwd;
+    if (env.kind === 'ssh') {
+      const match = await matchDesktopTarget({ requested: { alias: env.sshHost, port: env.sshPort }, codexHosts: await hostsWithState(state) });
+      const known = match.state === 'resolved' ? match.codexHost : null;
+      host = { id: known?.id || env.sshHost, alias: env.sshHost, label: known?.label || env.sshLabel, local: false, sshPort: env.sshPort ?? null };
     }
-    const artifactRef = await loopArtifact(cwd);
-    args.command = { ...args.command, artifactFolder: artifactRef ? cwd : null, startedArtifactRef: artifactRef };
-  }
-  if (['record', 'confirm'].includes(args.command.type)) {
-    const c = prior.cycles.find(c => c.id === args.command.cycleId);
-    const round = c?.rounds.at(-1);
-    if (round?.artifactFolder) {
-      const ref = await loopArtifact(round.artifactFolder);
-      if (!ref || args.command.artifactRef !== ref) throw new Error('成果物が変わったか、版を確認できません。最新の版を読み直して検証してください');
+  } else {
+    let hostId = input.hostId || 'local';
+    if (input.projectId) {
+      const project = (await codexLaunchTargets()).projects.find(p => p.id === input.projectId);
+      if (input.agent !== 'codex' || !project) throw new Error('Codex のプロジェクトを確認してください');
+      cwd = project.root; hostId = project.hostId; projectId = hostId === 'local' ? project.id : null;
+    }
+    if (hostId !== 'local') {
+      const known = (await hostsWithState(state)).find(h => h.id === hostId);
+      if (!known) throw new Error('登録済みの接続を確認してください');
+      host = { ...known, local: false };
     }
   }
-  const result = await store.loopCommand({ ...args, source });
-  if (result.saved && args.command.type === 'pause') {
-    const requests = await dispatcherFor(store).requests.list();
-    for (const r of requests.filter(r => r.state === 'queued' && r.loopContext?.taskId === args.taskId && r.loopContext?.cycleId === args.command.cycleId)) await dispatcherFor(store).requests.cancel(r.id);
+  if (input.agent === 'claude' && host.local === false && !input.environmentId) {
+    const environments = (await claudeEnvironments(guestPaths().app, { expectedAccount: input.account, dataDir: store.dir })).environments.filter(e => e.kind === 'ssh');
+    const match = await matchDesktopTarget({ requested: { alias: host.alias, hostname: host.hostname, port: host.sshPort }, claudeEnvironments: environments });
+    if (match.state !== 'resolved' || !match.claudeEnvironment) throw new Error('同じ接続先のClaude環境を確認し、環境を選んでください');
+    host = { ...host, alias: match.claudeEnvironment.sshHost, sshPort: match.claudeEnvironment.sshPort ?? null };
   }
-  return { text: result.conflict ? '別の画面で更新されています。最新の状態を確認してください' : 'ループを保存しました', structured: result };
+  if (cwd && (!cwd.startsWith('/') || cwd.includes('\0') || cwd.length > 4096)) throw new Error('作業フォルダを確認してください');
+  const remoteCodex = input.agent === 'codex' && host.local === false;
+  let sshIdentity = null;
+  if (remoteCodex) {
+    if (!(await readDesktopCapabilities(store.dir)).codexRemote) throw new Error('このDesktopでのリモート下書き表示は未確認です');
+    sshIdentity = await resolveSshTarget({ alias: host.alias, hostname: host.hostname, port: host.sshPort });
+    if (sshIdentity.state !== 'resolved' || !cwd) throw new Error('SSHの接続先と作業フォルダを確認してください');
+  } else newSessionLink(input.agent, { host, cwd, prompt: input.prompt, projectId });
+  promptImages(store.dir, input.imageIds || []); withSkills(input.prompt, input.skills || []);
+  const account = input.agent === 'codex'
+    ? (await startAccount({ agent: input.agent, account: input.account, host: LOCAL_HOST, route: 'desktop', labels: state.settings.accounts.labels })).account
+    : input.account || null;
+  return { host, cwd, projectId, account, prepareThread: remoteCodex, sshIdentity, selection: { ...selection, account } };
 }
+const desktopLaunches = createDesktopLaunches({
+  dataDir: store.dir, resolveTarget: resolveDesktopStart,
+  recordSelection: async (input, target) => {
+    if (input.operation === 'resume') return { cardId: input.cardId, conversationId: target.desktopSessionId, nativeId: target.nativeId };
+    const evidence = launchEvidence(target.selection, input.clientRequestId);
+    if (input.taskId) await store.recordLaunch({ taskId: input.taskId, ...evidence });
+    return evidence;
+  },
+  accounts: { withAccount: (account, options, action) => withDesktopAccount(account, action, options) },
+  prepareOpen: async (input, target) => input.operation === 'resume' && target.owner !== input.account && await desktopRunning()
+    ? { state: 'waiting-for-quit', reason: 'Desktop を保存して終了すると、選択したアカウントで同じ会話を開きます' } : null,
+  prepareThread: async (input, target) => process.env.CANBAN_LAUNCH_DRYRUN === '1'
+    ? { state: 'prepared', threadId: randomUUID(), hostId: target.host.id, cwd: target.cwd, writerClosed: true, dryRun: true }
+    : prepareCodexDesktop({ host: target.host, cwd: target.cwd, clientRequestId: input.clientRequestId }, { pool }),
+  open: async (input, target, thread) => {
+    const state = await store.load(), labels = state.settings.accounts.labels;
+    if (input.operation === 'resume') {
+      const integrated = await openDesktopApp(target.url, { guestSessionId: target.owner !== input.account ? target.desktopSessionId : null, labelOf: a => accountLabel(`claude:${a}`, labels).replace(/@.*/, '') });
+      if (!integrated.opened) return { notOpened: true, state: integrated.code === 'desktop_running' ? 'waiting-for-quit' : 'failed', reason: integrated.reason };
+      await rememberDesktopAccount({ dataDir: store.dir, appDir: guestPaths().app, account: input.account });
+      await store.markSeen({ cardId: input.cardId });
+      return { url: target.url, exact: true, cwd: target.cwd, desktopAccount: input.account, note: target.importCLI ? '同じ CLI 会話IDの履歴を Desktop に取り込みました。続きはアプリで確認してください。' : '元の会話ID・履歴・作業先で開きました。続きは Desktop で確認してください。' };
+    }
+    const skillPrompt = withSkills(input.prompt, input.skills || []);
+    const localImages = promptImages(store.dir, input.imageIds || []);
+    const text = skillPrompt;
+    const link = target.prepareThread ? preparedCodexLink(thread, { prompt: text }) : newSessionLink(input.agent, { ...target, prompt: text });
+    const integrated = await openDesktopApp(link.url, { labelOf: a => accountLabel(`claude:${a}`, labels).replace(/@.*/, '') });
+    if (input.agent === 'claude' && input.account) await rememberDesktopAccount({ dataDir: store.dir, appDir: guestPaths().app, account: input.account });
+    if (input.taskId) {
+      await store.updateTask({ cardId: input.taskId, target: { agent: input.agent, hostId: target.host.id, cwd: target.cwd, account: target.account } });
+      await store.addPending({ taskId: input.taskId, pending: { agent: input.agent, hostId: target.host.id, cwd: target.cwd, prompt: text.slice(0,200), startedAt: Date.now() } });
+    }
+    return { attachmentCopyAvailable: (await readDesktopCapabilities(store.dir)).clipboardImages, url: link.url, hostId: target.host.id, cwd: target.cwd, ...(thread ? { threadId: thread.threadId } : {}), note: '新規画面を開きました。依頼の送信と実行状況はアプリで確認してください。', integrated: integrated && { ok: integrated.ok, placed: integrated.placed || 0, code: integrated.code || null, reason: integrated.reason || null } };
+  },
+});
+desktopLaunches.recover().catch(() => log('Desktop の開始記録を確認できません'));
+const desktopSetup = managedDesktopSetup(store.dir);
+if (process.env.CANBAN_BACKGROUND !== '0') {
+  let resuming = false;
+  setInterval(async () => {
+    if (resuming) return;
+    resuming = true;
+    try { await desktopSetup.recover(); await desktopLaunches.recover(); } catch {} finally { resuming = false; }
+  }, 5000).unref();
+}
+
+// ---- tool definitions ----------------------------------------------------
+// Each group lives in server/tools/ and takes the runtime pieces it needs; the order is the tools/list order.
+const toolContext = {
+  store, ICONS, UI_URI, requireLoopUi, terminals, watch, live, desktopSetup, desktopLaunches, resolveDesktopStart,
+  getLeader: () => leader, getClient: () => client,
+};
 const TOOLS = [
   ...slackTools({ service: slack, store, appTool, validateCard: async cardId => {
     if (cardId.startsWith('task:')) { const card = (await store.load()).cards[cardId]; if (card?.kind !== 'task') throw new Error('タスクカードが見つかりません'); return card.title; }
     else return (await findSession(store, cardId)).session.title;
   } }),
-  appTool('canban_upload_prompt_image', 'プロンプトに画像を添付', {
-    id: { type: 'string' }, offset: { type: 'integer' }, data: { type: 'string' },
-    name: { type: 'string' }, mime: { type: 'string' }, size: { type: 'integer' },
-  }, ['data'], a => uploadImage(store.dir, a)),
-  appTool('canban_prompt_skills', '利用できるスキルを取得', {
-    cardId: { type: 'string' }, agent: { type: 'string', enum: ['codex', 'claude'] },
-    hostId: { type: 'string' }, cwd: { type: 'string' },
-  }, [], async a => {
-    let context = a, host = null;
-    if (a.cardId) {
-      const resolved = await resolveSession(store, a.cardId);
-      context = resolved.session; host = resolved.host;
-      if (isCloudSession(context)) return { skills: [], reason: CLOUD_OPERATION_REASON };
-    } else if (a.hostId && a.hostId !== 'local') {
-      host = (await hostsWithState(await store.load())).find(h => h.id === a.hostId);
-      if (!host) throw new Error('Codex に登録されていない接続です');
-    }
-    if (!host) return { skills: listSkills(context) };
-    const result = await pool.dispatch(host, { mode: 'prompt_skills', agent: context.agent || 'codex', cwd: context.cwd || '', homeDir: context.homeDir });
-    if (!result.ok) throw new Error(result.error || '接続先のスキルを取得できません');
-    return { skills: result.skills || [] };
-  }),
-  appTool('canban_get_changes', '作業フォルダの変更を取得', { cardId: { type: 'string' }, path: { type: 'string' } }, ['cardId'], async ({ cardId, path: file }) => {
-    const { session, host } = await findSession(store, cardId);
-    if (isCloudSession(session)) return { available: false, reason: CLOUD_OPERATION_REASON };
-    if (host) return { available: false, reason: 'リモートのセッションの変更はまだ表示できません' };
-    if (file) return { available: true, diff: await fileDiff(session.cwd, file) };
-    return listChanges(session.cwd);
-  }),
-  // The card's terminal (server/terminal.mjs). Only the board UI holds the token, so a model cannot type into it.
-  appTool('canban_terminal_open', 'カードのターミナルを開く', { cardId: { type: 'string' }, cols: { type: 'number' }, rows: { type: 'number' }, uiToken: { type: 'string' } }, ['cardId', 'uiToken'], async (a) => {
-    const { cardId, cols, rows } = requireLoopUi(a);
-    const { session, host } = await findSession(store, cardId);
-    if (isCloudSession(session)) throw new Error(CLOUD_OPERATION_REASON);
-    if (host) throw new Error('リモートのセッションではまだターミナルを開けません');
-    const cwd = await projectRoot(session.cwd);
-    if (!cwd) throw new Error('このセッションの作業フォルダが見つかりません');
-    return terminals.open({ key: cardId, cwd, cols, rows });
-  }),
-  appTool('canban_terminal_read', 'カードのターミナルの出力を待つ', { id: { type: 'string' }, since: { type: 'number' }, timeoutMs: { type: 'number' }, uiToken: { type: 'string' } }, ['id', 'uiToken'], (a) => terminals.read(requireLoopUi(a))),
-  appTool('canban_terminal_write', 'カードのターミナルに入力する', { id: { type: 'string' }, data: { type: 'string' }, uiToken: { type: 'string' } }, ['id', 'data', 'uiToken'], (a) => terminals.write(requireLoopUi(a))),
-  appTool('canban_terminal_resize', 'カードのターミナルの大きさを変える', { id: { type: 'string' }, cols: { type: 'number' }, rows: { type: 'number' }, uiToken: { type: 'string' } }, ['id', 'cols', 'rows', 'uiToken'], (a) => terminals.resize(requireLoopUi(a))),
-  appTool('canban_terminal_close', 'カードのターミナルを閉じる', { id: { type: 'string' }, uiToken: { type: 'string' } }, ['id', 'uiToken'], (a) => terminals.close(requireLoopUi(a))),
-  {
-    name: 'open_canban',
-    title: 'Canban',
-    description:
-      'Codex / Claude Code のセッション（このマシンと、有効化したリモート接続）を Trello 風カンバン Canban で開く。セッションのファイルは直接変更せず、リスト・ラベル・メモなどはカンバン側に別保存される。指示はエージェント公式 CLI 経由で 1 ターンずつ送れる。',
-    icons: ICONS,
-    inputSchema: { type: 'object', properties: { agent: filterProps.agent, project: filterProps.project }, additionalProperties: false },
-    annotations: { readOnlyHint: true, title: 'Canban' },
-    _meta: {
-      ui: { resourceUri: UI_URI, visibility: ['model', 'app'] },
-      'ui/resourceUri': UI_URI,
-      'openai/outputTemplate': UI_URI,
-      'openai/ui': { entrypoints: [{ type: 'global' }], preferredModelDisplayMode: 'fullscreen' },
-      'openai/widgetAccessible': true,
-      'openai/toolInvocation/invoking': 'カンバンを開いています…',
-      'openai/toolInvocation/invoked': 'カンバンを開きました',
-    },
-    handler: async (args) => {
-      const board = await buildBoard(store, { ...args, days: 30 });
-      const summary = board.lists.map((l) => `- ${l.title}: ${l.count} 件`).join('\n');
-      return {
-        text: `Canban（表示 ${board.totals.shown} / 全 ${board.totals.sessions} セッション）\n${summary}`,
-        structured: {
-          view: 'board',
-          initialFilters: board.filters,
-          lists: board.lists.map((l) => ({ id: l.id, title: l.title, count: l.count, top: l.cards.slice(0, 5).map((c) => ({ id: c.id, title: c.title })) })),
-          totals: board.totals,
-        },
-      };
-    },
-  },
-  {
-    name: 'canban_get_board',
-    title: 'ボードを取得',
-    description: 'カンバンボード全体（リスト・カード・ラベル）を取得する（UI 用）。',
-    inputSchema: { type: 'object', properties: { ...filterProps, refresh: { type: 'boolean' } }, additionalProperties: false },
-    annotations: { readOnlyHint: true },
-    _meta: appOnly,
-    handler: async (args) => {
-      const board = await buildBoard(store, args, { force: !!args.refresh });
-      return { text: `${board.totals.shown} cards`, structured: board };
-    },
-  },
-  {
-    name: 'canban_search',
-    title: 'セッションを検索',
-    description: 'カンバン上のセッションを検索し、cardId・現在のリスト・タイトルを返す。カード移動の前に cardId を調べるのに使う。',
-    inputSchema: { type: 'object', properties: { ...filterProps, list: { type: 'string', description: 'リスト ID または名前' }, limit: { type: 'number' } }, additionalProperties: false },
-    annotations: { readOnlyHint: true },
-    _meta: appAndModel,
-    handler: async (args) => {
-      const board = await buildBoard(store, { days: 0, ...args });
-      const wanted = args.list ? resolveList(board.lists, args.list)?.id : null;
-      const rows = [];
-      for (const l of board.lists) {
-        if (wanted && l.id !== wanted) continue;
-        for (const c of l.cards) rows.push({ cardId: c.id, list: l.title, listId: l.id, agent: c.agent, title: c.title, project: c.project, directory: c.directory?.name || null, updatedAt: new Date(c.updatedAt || 0).toISOString() });
-      }
-      rows.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
-      const limited = rows.slice(0, Math.min(Number(args.limit) || 30, 200));
-      return {
-        text: limited.map((r) => `${r.cardId} [${r.list}] (${r.agent}/${r.directory ? `📂${r.directory}` : r.project ?? '-'}) ${r.title}`).join('\n') || '該当なし',
-        structured: { results: limited, total: rows.length, lists: board.lists.map((l) => ({ id: l.id, title: l.title })) },
-      };
-    },
-  },
-  {
-    name: 'canban_exchanges',
-    title: 'セッション間のやり取り',
-    description: '取得済みのCodexセッション間メッセージと、確認できたMulti Agentの起動関係を読み取る。既読化・送信・カードの移動は行わない。',
-    inputSchema: { type: 'object', properties: { cardId: { type: 'string' } }, required: ['cardId'], additionalProperties: false },
-    annotations: { readOnlyHint: true },
-    _meta: appOnly,
-    handler: async ({ cardId }) => {
-      const result = await sessionExchanges(store, cardId);
-      return { text: `やり取り: ${result.events.length} 件`, structured: result };
-    },
-  },
-  {
-    name: 'canban_get_session',
-    title: 'セッション詳細',
-    description: '1 セッションの詳細（メタ情報・直近のやりとり・カンバン上のメモ・送信時の権限・依頼のキュー）を返す。',
-    inputSchema: { type: 'object', properties: { cardId: { type: 'string' }, messages: { type: 'number' } }, required: ['cardId'], additionalProperties: false },
-    annotations: { readOnlyHint: true },
-    _meta: appAndModel,
-    handler: async ({ cardId, messages }) => {
-      const d = await sessionDetail(store, cardId, { messages: Math.min(Number(messages) || 12, 40) });
-      await store.markSeen({ cardId });
-      const s = d.session;
-      const text = [
-        `${s.title} (${s.agent}, ${s.status || 'idle'})`,
-        `リスト: ${d.list?.title ?? '-'} / プロジェクト: ${s.project ?? '-'} / ブランチ: ${s.branch ?? '-'}`,
-        s.account ? `アカウント: ${s.accountLabel}${s.home ? `（設定フォルダ: ${s.homeDir}）` : ''}` : null,
-        `更新: ${new Date(s.updatedAt || 0).toISOString()}`,
-        d.card.note ? `メモ: ${d.card.note}` : null,
-        d.dispatch.permission ? `送信時の権限: ${d.dispatch.permission.label}${d.dispatch.permission.elevated ? '（制限なし）' : ''}` : null,
-        d.dispatch.queue.length || d.dispatch.active.length ? `依頼: 待機 ${d.dispatch.queue.length} / 実行中 ${d.dispatch.active.length}${d.dispatch.paused ? `（一時停止: ${d.dispatch.paused.reason}）` : ''}` : null,
-        ...d.recentMessages.map((m) => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.text.slice(0, 300)}`),
-      ]
-        .filter(Boolean)
-        .join('\n');
-      return { text, structured: d };
-    },
-  },
-  {
-    name: 'canban_move_card',
-    title: 'カードを移動',
-    description: 'セッションのカードを別のリストへ移動する。toList はリスト ID か名前。order を省略すると position（top/bottom、既定 top）に置く。',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        cardId: { type: 'string' },
-        toList: { type: 'string' },
-        order: { type: 'number', description: 'UI が計算した並び順の値' },
-        position: { type: 'string', enum: ['top', 'bottom'] },
-      },
-      required: ['cardId', 'toList'],
-      additionalProperties: false,
-    },
-    _meta: appAndModel,
-    handler: async ({ cardId, toList, order, position }) => {
-      const state = (await store.load());
-      const list = resolveList(state.lists, toList);
-      if (!list) throw new Error(`リストが見つかりません: ${toList}`);
-      const { sessions } = await allSessions(state);
-      const isTask = state.cards[cardId]?.kind === 'task';
-      if (!isTask && !sessions.some((s) => s.id === cardId)) throw new Error(`カードが見つかりません: ${cardId}`);
-      if (typeof order !== 'number') order = edgeOrder(state, sessions, list.id, cardId, position || 'top');
-      const res = await store.moveCard({ cardId, toListId: list.id, order });
-      return { text: `${cardId} を「${list.title}」へ移動しました`, structured: res };
-    },
-  },
-  {
-    name: 'canban_update_card',
-    title: 'カード属性を更新',
-    description: 'カードのラベル（ID 配列）・カテゴリ（引数名 directory。ID、null で自動、__none で所属なし）・メモ・優先度（high/medium/low）・期限（ISO 日付）・非表示を更新する。セッション本体は変更しない。',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        cardId: { type: 'string' },
-        labels: { type: 'array', items: { type: 'string' } },
-        directory: { type: ['string', 'null'] },
-        note: { type: 'string' },
-        priority: { type: ['string', 'null'], enum: ['high', 'medium', 'low', null] },
-        due: { type: ['string', 'null'] },
-      },
-      required: ['cardId'],
-      additionalProperties: false,
-    },
-    _meta: appAndModel,
-    handler: async (args) => ({ text: 'カードを更新しました', structured: await store.updateCard(args) }),
-  },
-  {
-    name: 'canban_set_claude_execution',
-    title: 'Claude の実行アカウントを保存',
-    description: '同じ会話の再開・送信に使うアカウントを保存する。ログイン済み Desktop プロフィールがある場合は通常起動も同じアカウントへ切り替える。Desktop 起動中でも CLI の選択は保存し、Desktop は適用待ちとして返す。認証情報や会話は移動しない。',
-    inputSchema: {
-      type: 'object', properties: { cardId: { type: 'string' }, claudeHome: { type: ['string', 'null'] }, account: { type: ['string', 'null'] } },
-      required: ['cardId', 'claudeHome', 'account'], additionalProperties: false,
-    },
-    _meta: appOnly,
-    handler: async ({ cardId, claudeHome, account }) => {
-      const { session: source } = await findSession(store, cardId);
-      if (source.agent !== 'claude' || source.host?.local === false) throw new Error('このマシンの Claude Code セッションを選んでください');
-      if (!claudeHome) {
-        await store.setClaudeExecution({ cardId, execution: null });
-        return { text: '元の CLI 設定に戻しました。Desktop のプロフィールは現在の選択を維持します', structured: { execution: null, desktop: null } };
-      }
-      if (!account) throw new Error('選択したアカウントを確認できません。実行アカウントを選び直してください');
-      const session = await claudeExecutionSession(source, claudeHome, account);
-      const problem = timingProblem(source, await inspect(source, null));
-      if (problem) throw new Error(`${problem}。停止してから実行アカウントを選んでください`);
-      const requests = await dispatcherFor(store).requests.list({ cardId });
-      if (requests.some(r => ['queued', 'starting', 'running'].includes(r.state))) throw new Error('待機中または実行中の指示があります。完了または取消後に実行アカウントを選んでください');
-      const execution = { homeId: session.home, account: session.executionAccount };
-      const result = await saveClaudeExecutionAccount(account, async () => {
-        await claudeExecutionSession(source, session.home, account);
-        return store.setClaudeExecution({ cardId, execution });
-      });
-      return { text: result.desktop.maintained ? 'CLI と Desktop の実行アカウントを保存しました' : `CLI の実行アカウントを保存しました。${result.desktop.reason}`, structured: result };
-    },
-  },
-  {
-    name: 'canban_open_session',
-    title: 'セッションを再開',
-    description:
-      'セッションを再開する。route=desktop は AI App のデスクトップアプリ（Codex / Claude）で開き、route=terminal は再開コマンドをターミナルで実行する。省略時はユーザー設定に従う。target は new-window / new-tab / split / current。',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        cardId: { type: 'string' },
-        route: { type: 'string', enum: ['desktop', 'terminal'] },
-        terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
-        target: { type: 'string', enum: ['new-window', 'new-tab', 'split', 'current'] },
-        claudeHome: { type: 'string', description: 'Claude の実行アカウント（launch.claudeAccounts の ID）。省略時は保存した選択。空文字は元の CLI 設定' },
-      },
-      required: ['cardId'],
-      additionalProperties: false,
-    },
-    _meta: appAndModel,
-    handler: async ({ cardId, route, terminal, target, claudeHome }) => {
-      const { session: source, state } = await findSession(store, cardId);
-      if (isCloudSession(source) && route === 'terminal') throw new Error(CLOUD_OPERATION_REASON);
-      const session = await savedClaudeExecutionSession(source, state, claudeHome);
-      const selected = !!session.executionAccount;
-      if (selected) {
-        const problem = timingProblem(source, await inspect(source, null));
-        if (problem) throw new Error(`${problem}。停止してからアカウントを選んで再開してください`);
-        const requests = await dispatcherFor(store).requests.list({ cardId });
-        if (requests.some(r => ['queued', 'starting', 'running'].includes(r.state))) throw new Error('このセッションには待機中または実行中の指示があります。完了または取消後に再開してください');
-      }
-      await store.markSeen({ cardId });
-      const prefs = state.settings.launch;
-      let useRoute = isCloudSession(session) ? 'desktop' : selected && !route ? 'terminal' : route || prefs.route;
-      // Another account's session, run as the account signed in to Desktop: open the
-      // original through the integrated sidebar. Desktop's import (claude://resume)
-      // would make a second, unlinked record in the signed-in account instead.
-      const mismatch = selected && session.desktopSessionId && !session.archived ? desktopAccountMismatch(source) : null;
-      const crossDesktop = !!mismatch && mismatch.active === session.executionAccount;
-      const link = selected && !crossDesktop ? await desktopExecutionLink(source, session.executionAccount) : desktopLink(session);
-      if (selected && useRoute === 'desktop' && !link) throw new Error('Desktop からこの会話を取り込めません。同じ会話をターミナルで再開してください');
-      if (useRoute === 'desktop' && !link) {
-        if (route === 'desktop') throw new Error('このセッションはデスクトップアプリでは開けません。ターミナルで再開してください。');
-        useRoute = 'terminal';
-      }
-      // Claude desktop signed in to another account would not find the session: the
-      // default route resumes it in the terminal instead (an explicit desktop still opens).
-      let accountNote = selected ? null : accountDesktopNote(session, state.settings.accounts.labels);
-      // A signed-in Desktop profile of the session's own account opens it there.
-      const owner = accountNote && useRoute === 'desktop' ? desktopAccountMismatch(session)?.session : null;
-      const ownerPlan = owner ? await desktopProfilePlan(owner) : null;
-      if (ownerPlan?.available) accountNote = null;
-      // Every Desktop open goes through openDesktopApp (claude-desktop-open.mjs): with
-      // Desktop stopped, the signed-in Desktop starts with every account's sessions.
-      const labels = state.settings.accounts.labels;
-      const labelOf = a => accountLabel(`claude:${a}`, labels).replace(/@.*/, '');
-      let integrated = null;
-      if (crossDesktop && useRoute === 'desktop') {
-        integrated = await openDesktopApp(link.url, { guestSessionId: session.desktopSessionId, labelOf });
-        if (!integrated.opened) throw new Error(`${accountName(mismatch.session, labels)} の会話を Desktop で開けません。${integrated.reason}`);
-      } else if (owner && !ownerPlan?.available && useRoute === 'desktop') {
-        integrated = await openDesktopApp(link.url, { guestSessionId: session.desktopSessionId, labelOf });
-        if (integrated.opened) accountNote = null;
-        else if (route === 'desktop') throw new Error(`${accountName(owner, labels)} の会話を Desktop で開けません。${integrated.reason}`);
-        else accountNote = `${accountNote}\n${integrated.reason}`;
-      }
-      let terminalNote = null;
-      if (useRoute === 'desktop' && accountNote && !route) { useRoute = 'terminal'; terminalNote = accountNote; }
-      if (useRoute === 'desktop' && !integrated?.opened) {
-        if (selected) await withDesktopAccount(session.executionAccount, async () => {
-          await claudeExecutionSession(source, session.home, session.executionAccount);
-          integrated = await openDesktopApp(link.url, { labelOf });
-        });
-        else if (ownerPlan?.available) {
-          try { await withDesktopAccount(owner, async () => { integrated = await openDesktopApp(link.url, { labelOf }); }); }
-          catch (error) {
-            if (route || !['desktop_running', 'desktop_busy', 'desktop_unavailable'].includes(error.code)) throw new Error(`${accountName(owner, labels)} の Desktop で開けません。${error.message}`);
-            useRoute = 'terminal';
-            terminalNote = `${accountName(owner, labels)} の Desktop へ切り替えられないため、ターミナルで再開しました。${error.message}`;
-          }
-        } else integrated = await openDesktopApp(link.url, { labelOf });
-      }
-      if (useRoute === 'desktop') accountNote = integratedNote(integrated) || accountNote;
-      if (useRoute === 'desktop') {
-        const note = accountNote || link.note || null;
-        return { text: `${link.label}: ${link.url}${accountNote ? `\n${note}` : ''}`, structured: { route: 'desktop', url: link.url, exact: link.exact, note, executionAccount: session.executionAccount || null, integrated: integrated && { ok: integrated.ok, placed: integrated.placed || 0, code: integrated.code || null } } };
-      }
-      const term = terminal || prefs.terminal;
-      if (!installedTerminals().some((t) => t.id === term)) throw new Error(`${TERMINAL_LABELS[term] || term} が見つかりません。設定でターミナルを選んでください。`);
-      const command = resumeCommand(session);
-      const res = await runInTerminal({ terminal: term, target: target || prefs.target, command });
-      return { text: `${TERMINAL_LABELS[term]} で再開: ${command}${terminalNote ? `\n${terminalNote}` : ''}`, structured: { route: 'terminal', command, executionAccount: session.executionAccount || null, note: terminalNote, ...res } };
-    },
-  },
-  {
-    name: 'canban_send_prompt',
-    title: 'セッションに指示を送る',
-    description:
-      '既存の Codex / Claude Code セッションにプロンプトを 1 ターン分送る（Codex / Claude Code 公式 CLI のヘッドレス再開。権限はそのセッションの設定を引き継ぎ、昇格しない）。when=now はすぐ送る（セッションが実行中・入力待ち・直前に更新された場合は理由を返して送らない）、queue はセッションが空いたら順に送る。結果は canban_list_requests で確認する。制限なし（danger-full-access / bypassPermissions）のセッションには送れない。',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        cardId: { type: 'string', description: 'canban_search で調べたセッションの cardId' },
-        prompt: { type: 'string' },
-        when: { type: 'string', enum: ['now', 'queue'], description: '既定 queue' },
-        claudeHome: { type: 'string', description: 'Claude の実行アカウント（launch.claudeAccounts の ID）' },
-      },
-      required: ['cardId', 'prompt'],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-    _meta: appAndModel,
-    handler: async ({ cardId, prompt, when = 'queue', claudeHome }) => {
-      const r = await dispatcherFor(store).submit({ cardId, prompt, when, claudeHome, origin: 'model' });
-      return { text: `${r.state === 'queued' ? 'キューに追加しました' : '送信しました'}（${r.id}）`, structured: requestView(r) };
-    },
-  },
-  {
-    name: 'canban_list_requests',
-    title: '依頼の一覧',
-    description: 'セッションに送った／待機中の依頼と、その状態・結果（エージェントの最終メッセージ先頭）を返す。',
-    inputSchema: {
-      type: 'object',
-      properties: { cardId: { type: 'string' }, state: { type: 'string', enum: ['queued', 'starting', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted', 'blocked'] }, limit: { type: 'number' } },
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true },
-    _meta: appAndModel,
-    handler: async ({ cardId, state, limit }) => {
-      const d = dispatcherFor(store);
-      await d.tick().catch(() => {});
-      const rows = (await d.requests.list({ cardId, state })).sort((a, b) => b.createdAt - a.createdAt).slice(0, Math.min(Number(limit) || 20, 100)).map(requestView);
-      return {
-        text: rows.map((r) => `${r.id} [${r.state}] ${r.cardId}: ${r.prompt.slice(0, 60)}${r.resultText ? ` → ${r.resultText.slice(0, 120)}` : ''}${r.error ? ` ✗ ${r.error}` : ''}`).join('\n') || '依頼はありません',
-        structured: { requests: rows, paused: (await d.requests.load()).paused },
-      };
-    },
-  },
-  {
-    name: 'canban_cancel_request',
-    title: '待機中の依頼を取り消す',
-    description: 'キューで待機中の依頼を取り消す（実行中のものは取り消せない）。',
-    inputSchema: { type: 'object', properties: { requestId: { type: 'string' } }, required: ['requestId'], additionalProperties: false },
-    _meta: appAndModel,
-    handler: async ({ requestId }) => ({ text: '取り消しました', structured: requestView((await dispatcherFor(store).requests.cancel(requestId))) }),
-  },
-  {
-    name: 'canban_dispatch',
-    title: '指示を送る（UI）',
-    description: '指示を送る（カンバン UI 用）',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        cardId: { type: 'string' },
-        claudeHome: { type: 'string' },
-        prompt: { type: 'string' },
-        imageIds: { type: 'array', items: { type: 'string' }, maxItems: 8 },
-        skills: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, path: { type: 'string' } }, required: ['name', 'path'], additionalProperties: false }, maxItems: 20 },
-        when: { type: 'string', enum: ['now', 'queue'] },
-        expectedUpdatedAt: { type: ['number', 'null'] },
-        allowElevated: { type: 'boolean' },
-      },
-      required: ['cardId', 'prompt', 'when'],
-      additionalProperties: false,
-    },
-    _meta: appOnly,
-    handler: async (a) => {
-      const r = await dispatcherFor(store).submit({ ...a, origin: 'ui' });
-      return { text: r.state === 'queued' ? 'キューに追加しました' : '送信しました', structured: requestView(r) };
-    },
-  },
-  appTool('canban_stop_request', '実行中の依頼を停止', { requestId: { type: 'string' } }, ['requestId'], (a) => dispatcherFor(store).stop(a.requestId)),
-  appTool('canban_update_request', '待機中の依頼を編集', { requestId: { type: 'string' }, prompt: { type: 'string' }, order: { type: 'number' } }, ['requestId'], async (a) => (await dispatcherFor(store).requests.update(a.requestId, a))),
-  appTool('canban_resume_queue', 'キューを再開', { cardId: { type: 'string' } }, ['cardId'], (a) => dispatcherFor(store).resume(a.cardId)),
-  appTool('canban_update_dispatch_settings', '指示の送信の設定を変更', {
-    enabled: { type: 'boolean' },
-    maxLocal: { type: 'number' },
-    maxPerHost: { type: 'number' },
-    allowModel: { type: 'boolean' },
-    allowModelElevated: { type: 'boolean' },
-    modelPerHour: { type: 'number' },
-  }, [], (a) => store.updateDispatchSettings(a)),
-  {
-    name: 'canban_watch',
-    title: '変更を待つ',
-    description: 'ボードや開いているセッションに変化があるまで待ち、差分を返す（カンバン UI 用のロングポーリング）。',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        since: { type: ['number', 'null'], description: '前回の seq。null で現在の seq だけ返す' },
-        cardId: { type: ['string', 'null'], description: '詳細を開いているセッション（1 件のとき）' },
-        offset: { type: ['number', 'null'], description: 'そのセッションのログの読み取り位置' },
-        size: { type: ['number', 'null'], description: '前回見たログのサイズ' },
-        codexItems: { type: 'boolean' },
-        feeds: {
-          type: 'array', maxItems: 8, description: '詳細を開いているセッションが複数あるとき。cardId / offset / size / codexItems の組',
-          items: { type: 'object', properties: { cardId: { type: 'string' }, offset: { type: ['number', 'null'] }, size: { type: ['number', 'null'] }, codexItems: { type: 'boolean' } }, required: ['cardId'], additionalProperties: false },
-        },
-        timeoutMs: { type: 'number' },
-      },
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true },
-    _meta: appOnly,
-    handler: async (args) => {
-      if (!watch) return { text: 'live off', structured: { off: true } };
-      const r = await watch(args);
-      return { text: `seq ${r.seq}${r.reload ? ' reload' : ''} ${r.patches.length} patches${Object.keys(r.feeds || {}).length ? ` ${Object.values(r.feeds).reduce((n, f) => n + f.items.length, 0)} items` : ''}`, structured: r };
-    },
-  },
-  {
-    name: 'canban_get_perf',
-    title: '動作の重さ',
-    description: 'Canban 自身の処理時間（p50 / p95 / 予算）、イベントループ遅延、メモリ、背景処理のリーダーかどうかを返す（カンバン UI 用）',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    annotations: { readOnlyHint: true },
-    _meta: appOnly,
-    handler: async () => {
-      const p = perf.summary({ leader: leader.isLeader, leaderPid: await leader.owner(), client, live: live ? { active: live.active, seq: live.seq, ...live.counters } : null });
-      return { text: `rss ${p.rssMB}MB, loop p99 ${p.loop?.p99 ?? '-'}ms, slow ${p.slow.length}`, structured: p };
-    },
-  },
-  {
-    name: 'canban_list_hosts',
-    title: 'マシン一覧',
-    description: 'このマシンと、Codex アプリに登録済みのリモート接続（SSH）の一覧と読み取り状態を返す。',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    annotations: { readOnlyHint: true },
-    _meta: appAndModel,
-    handler: async () => {
-      const hosts = await hostsWithState((await store.load()));
-      return {
-        text: hosts.map((h) => `${h.id} ${h.label} ${h.enabled ? 'on' : 'off'} ${h.status.state}${h.status.error ? ` (${h.status.error})` : ''}`).join('\n') || 'リモート接続は登録されていません',
-        structured: { hosts: hosts.map(({ sshArgs, ...h }) => h) },
-      };
-    },
-  },
-  appTool('canban_set_remote_host', 'リモート接続の読み取りを切り替え', { hostId: { type: 'string' }, enabled: { type: 'boolean' } }, ['hostId', 'enabled'], async (a) => {
-    const hosts = await hostsWithState((await store.load()));
-    if (!hosts.some((h) => h.id === a.hostId)) throw new Error('Codex に登録されていない接続です');
-    return store.setRemoteHost(a);
-  }),
+  ...promptTools(toolContext),
+  ...workspaceTools(toolContext),
+  ...boardTools(toolContext),
+  ...sessionTools(toolContext),
+  ...systemTools(toolContext),
   ...accountTools({ store, allSessions, appTool, meta: appAndModel, getLive: () => live }),
   ...accountActionTools({ actions: accountsActions, store, appTool }),
-  appTool('canban_update_settings', '再開方法の既定を変更', {
-    route: { type: 'string', enum: ['desktop', 'terminal'] },
-    terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
-    target: { type: 'string', enum: ['new-window', 'new-tab', 'split', 'current'] },
-    linkBrowser: { type: 'string', enum: ['', 'chrome', 'safari'] },
-    linkProfile: { type: 'string', maxLength: 40 },
-  }, [], (a) => store.updateLaunchSettings(a)),
-  appTool('canban_open_external', '設定したブラウザで URL を開く', { url: { type: 'string', maxLength: 2000 } }, ['url'],
-    async ({ url }) => { await openExternal(url, (await store.load()).settings.launch); return { opened: true }; }),
-  {
-    name: 'canban_create_task',
-    title: 'タスクカードを追加',
-    description: 'セッションに紐づかないタスクカードを作る（Trello のカードと同じ）。list はリスト ID か名前（省略時は既定のリスト）。',
-    inputSchema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, list: { type: 'string' }, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } }, context: taskContextSchema, clientRequestId: { type: 'string', maxLength: 128 }, slackSource: { type: 'string', maxLength: 120 } }, required: ['title'], additionalProperties: false },
-    _meta: appAndModel,
-    handler: async ({ title, description, list, directory, labels, context, clientRequestId, slackSource }) => {
-      const l = list ? resolveList((await store.load()).lists, list) : null;
-      const res = await store.createTask({ title, description, listId: l?.id || list, directory, labels, context, clientRequestId, slackSource });
-      return { text: `タスクカード「${res.title}」を作成しました（${res.cardId}）`, structured: res };
-    },
-  },
-  {
-    name: 'canban_launch_targets',
-    title: '開始先の一覧',
-    description: '新しいセッションの開始先を、各デスクトップアプリと同じデータで返す。Claude は Desktop の「環境」（ログイン中のアカウント）、Codex はアプリの「プロジェクト」と「実行場所: クラウド」の環境。',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    annotations: { readOnlyHint: true },
-    _meta: appAndModel,
-    handler: async () => {
-      const [claude, codex] = await Promise.all([claudeEnvironments(guestPaths().app), codexLaunchTargets()]);
-      return {
-        text: [`Claude の環境: ${claude.environments.map((e) => e.name).join('、') || 'なし'}`, `Codex のプロジェクト: ${codex.projects.map((p) => p.name).join('、') || 'なし'}`,
-          `Codex Cloud の環境: ${codex.cloudEnvironments.map((e) => e.name).join('、') || 'なし'}`].join('\n'),
-        structured: { claude, codex },
-      };
-    },
-  },
-  {
-    name: 'canban_start_session',
-    title: '新しいセッションを開始',
-    description: 'Codex / Claude Code の新規画面をデスクトップで開くか、ターミナルで開始する。taskId は任意で、省略するとタスクカードを作らない。デスクトップでの送信・実行開始はアプリで確認する。',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        taskId: { type: 'string' },
-        clientRequestId: { type: 'string', minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_-]+$', description: '同じ開始リクエストの再試行に同じIDを使うと二重起動を防ぐ' },
-        agent: { type: 'string', enum: ['codex', 'claude'] },
-        hostId: { type: 'string', description: "'local' またはリモート接続の hostId" },
-        cwd: { type: 'string', description: '作業フォルダ（そのマシン上の絶対パス）' },
-        prompt: { type: 'string' },
-        imageIds: { type: 'array', items: { type: 'string' }, maxItems: 8 },
-        skills: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, path: { type: 'string' } }, required: ['name', 'path'], additionalProperties: false }, maxItems: 20 },
-        route: { type: 'string', enum: ['desktop', 'terminal'] },
-        terminal: { type: 'string', enum: ['ghostty', 'terminal', 'iterm'] },
-        target: { type: 'string', enum: ['new-window', 'new-tab', 'split', 'current'] },
-        account: { type: ['string', 'null'], description: "開始するアカウント（canban_get_usage の key。例 'claude:<uuid>'）。省略・null はいまのログイン。Desktop は現在ログインしているアカウントでのみ開ける" },
-        environmentId: { type: 'string', maxLength: 128, description: 'Claude Desktop の環境（canban_launch_targets の claude.environments[].id）。その環境のフォルダ・SSH 接続で開く。hostId / cwd より優先' },
-        projectId: { type: 'string', maxLength: 200, description: 'Codex のプロジェクト（canban_launch_targets の codex.projects[].id）。そのプロジェクトのマシン・フォルダで開く。hostId / cwd より優先' },
-        runOn: { type: 'string', enum: ['local', 'cloud'], description: "Codex の実行場所。'cloud' は Codex Cloud にタスクを送信して開始する（新規画面は開かない）" },
-        cloudEnvironment: { type: 'string', maxLength: 200, description: "runOn 'cloud' の環境（canban_launch_targets の codex.cloudEnvironments[].id）" },
-      },
-      required: ['agent'],
-      additionalProperties: false,
-    },
-    _meta: appAndModel,
-    handler: async ({ taskId, agent, hostId = 'local', cwd = '', prompt, imageIds = [], skills = [], route, terminal, target, account = null, clientRequestId, environmentId, projectId, runOn = 'local', cloudEnvironment }) => {
-      const state = (await store.load());
-      const task = state.cards[taskId];
-      if (taskId !== undefined && task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
-      let host = LOCAL_HOST;
-      let remoteEnabled = true;
-      let codexProject = null;
-      const cloud = agent === 'codex' && runOn === 'cloud';
-      if (runOn === 'cloud' && agent !== 'codex') throw new Error('クラウドで開始できるのは Codex だけです');
-      if (environmentId) {
-        if (agent !== 'claude') throw new Error('環境を選べるのは Claude だけです');
-        const env = (await claudeEnvironments(guestPaths().app)).environments.find((e) => e.id === environmentId);
-        if (!env) throw new Error('Claude Desktop の環境が見つかりません。Desktop で環境を確認してください');
-        cwd = env.cwd;
-        hostId = 'local';
-        if (env.kind === 'ssh') {
-          // Desktop's own SSH connection; Canban reads it as a host only when Codex has the same alias.
-          const known = (await hostsWithState(state)).find((x) => x.alias === env.sshHost);
-          host = { id: known?.id || env.sshHost, alias: env.sshHost, label: known?.label || env.sshLabel, local: false, sshPort: env.sshPort ?? known?.sshPort ?? null };
-          hostId = host.id;
-          remoteEnabled = known ? known.enabled : true;
-        }
-      }
-      if (projectId) {
-        if (agent !== 'codex') throw new Error('プロジェクトを選べるのは Codex だけです');
-        codexProject = (await codexLaunchTargets()).projects.find((p) => p.id === projectId);
-        if (!codexProject) throw new Error('Codex のプロジェクトが見つかりません。Codex でプロジェクトを確認してください');
-        cwd = codexProject.root;
-        hostId = codexProject.hostId;
-      }
-      if (!environmentId && hostId && hostId !== 'local') {
-        const h = (await hostsWithState(state)).find((x) => x.id === hostId);
-        if (!h) throw new Error('Codex に登録されていない接続です');
-        host = { id: h.id, alias: h.alias, label: h.label, local: false, sshPort: h.sshPort };
-        remoteEnabled = h.enabled;
-      }
-      const rawPrompt = String(prompt ?? [task?.title, task?.description, task?.note].filter(Boolean).join('\n\n'));
-      if (rawPrompt.length > 20000) throw new Error('依頼文は20000文字までです');
-      if (cwd && (!cwd.startsWith('/') || cwd.includes('\0') || cwd.length > 4096)) throw new Error('作業フォルダは絶対パスで指定してください');
-      const prefs = state.settings.launch;
-      const useRoute = cloud ? 'cloud' : route || prefs.route;
-      const desktopProjectId = useRoute === 'desktop' && host.local !== false ? codexProject?.id : null;
-      if (useRoute === 'desktop') newSessionLink(agent, { host, cwd, prompt: rawPrompt, projectId: desktopProjectId });
-      if (useRoute === 'terminal' && !cwd) throw new Error('ターミナルで開始する作業フォルダを選んでください');
-      if (cloud) {
-        if (!cloudEnvironment) throw new Error('Codex Cloud の環境を選んでください');
-        if (!rawPrompt.trim()) throw new Error('クラウドで開始するには依頼内容が必要です');
-        if (imageIds.length) throw new Error('クラウドで開始するときは画像を添付できません');
-      }
-      const detail = await launchOnce(store.dir, clientRequestId, { taskId: taskId || null, agent, hostId, cwd, prompt: rawPrompt, imageIds, skills, route: useRoute, terminal: terminal || prefs.terminal, target: target || prefs.target, account, environmentId: environmentId || null, projectId: projectId || null, cloudEnvironment: cloud ? cloudEnvironment : null }, async () => {
-        const skillPrompt = withSkills(rawPrompt, skills);
-        const localImages = promptImages(store.dir, imageIds);
-        const images = host.local === false ? await remoteImages(store.dir, localImages, host, pool) : localImages;
-        const text = withImagePaths(skillPrompt, images);
-        let detail;
-        const labels = state.settings.accounts.labels;
-        const as = await startAccount({ agent, account, host: cloud ? LOCAL_HOST : host, route: cloud ? 'terminal' : useRoute, labels });
-        if (cloud) {
-          detail = await startCodexCloud({ environment: cloudEnvironment, prompt: skillPrompt, prefix: as.prefix, cwd: host.local !== false && cwd ? cwd : null });
-        } else if (useRoute === 'desktop') {
-          const link = newSessionLink(agent, { host, cwd, prompt: text, projectId: desktopProjectId });
-          let integrated = null;
-          await as.open(async () => { integrated = await openDesktopApp(link.url, { labelOf: a => accountLabel(`claude:${a}`, labels).replace(/@.*/, '') }); });
-          detail = { route: 'desktop', url: link.url, account: as.account, integrated: integrated && { ok: integrated.ok, placed: integrated.placed || 0, code: integrated.code || null, reason: integrated.reason || null } };
-        } else {
-          const term = terminal || prefs.terminal;
-          if (!installedTerminals().some((t) => t.id === term)) throw new Error(`${TERMINAL_LABELS[term] || term} が見つかりません。設定でターミナルを選んでください。`);
-          const command = newSessionCommand(agent, { host, cwd, prompt: agent === 'codex' ? skillPrompt : text, images, prefix: as.prefix });
-          detail = { route: 'terminal', command, ...(await runInTerminal({ terminal: term, target: target || prefs.target, command })) };
-        }
-        if (taskId) {
-          await store.updateTask({ cardId: taskId, target: { agent, hostId: host.local === false ? host.id : 'local', cwd, account: as.account } });
-          await store.addPending({ taskId, pending: { agent, hostId: host.local === false ? host.id : 'local', cwd, prompt: text.slice(0, 200), startedAt: Date.now() } });
-        }
-        const note = cloud ? `Codex Cloud にタスクを送信しました。実行状況は Codex の「クラウド」で確認してください。${detail.url ? `（${detail.url}）` : ''}` : !remoteEnabled ? `${host.label} の読み取りがオフです。「マシン」でオンにするとセッションを表示できます。` : useRoute === 'desktop' ? ['新規画面を開きました。依頼の送信と実行状況はアプリで確認してください。', integratedNote({ ...detail.integrated, opened: true })].filter(Boolean).join('') : null;
-        return { ...detail, note };
-      });
-      return { text: detail.note || (detail.route === 'desktop' ? 'デスクトップの新規画面を開きました' : detail.route === 'cloud' ? 'Codex Cloud にタスクを送信しました' : 'ターミナルに開始を依頼しました'), structured: detail };
-    },
-  },
-  {
-    name: 'canban_link_session',
-    title: 'セッションをタスクカードに紐付け',
-    description: '既存のセッションをタスクカードに紐付ける（紐付いたセッションはタスクカードの中に表示される）。',
-    inputSchema: { type: 'object', properties: { taskId: { type: 'string' }, sessionId: { type: 'string' } }, required: ['taskId', 'sessionId'], additionalProperties: false },
-    _meta: appAndModel,
-    handler: async (a) => {
-      const { sessions } = await allSessions(await store.load());
-      const session = sessions.find(s => s.id === a.sessionId);
-      if (!session) throw new Error('セッションが見つかりません');
-      if (session.subagent) throw new Error('タスクには通常のセッションを紐付けてください。サブエージェントは親セッションから参照できます。');
-      return { text: '紐付けました', structured: await store.linkSession(a) };
-    },
-  },
-  appTool('canban_unlink_session', 'セッションの紐付けを解除', { taskId: { type: 'string' }, sessionId: { type: 'string' } }, ['taskId', 'sessionId'], (a) => store.unlinkSession(a)),
-  appTool('canban_update_task', 'タスクカードを更新', { cardId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, context: taskContextSchema, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } } }, ['cardId'], (a) => store.updateTask(a)),
-  {
-    name: 'canban_set_session_card_state',
-    title: 'セッションカードを整理',
-    description: 'エージェント本体のセッションをアーカイブ・復元・削除する。削除は会話履歴と関連情報も永久に削除する。対応するAPIがない場合は失敗し、Canbanだけの状態変更は行わない。',
-    inputSchema: { type: 'object', properties: { cardId: { type: 'string' }, action: { type: 'string', enum: ['archive', 'restore', 'delete'] } }, required: ['cardId', 'action'], additionalProperties: false },
-    _meta: appAndModel,
-    handler: async (a) => {
-      const { session, state } = await findSession(store, a.cardId);
-      const before = a.action === 'delete' ? (await allSessions(state)).sessions : [];
-      const affected = new Set([a.cardId]);
-      if (a.action === 'delete') {
-        for (let added = true; added;) {
-          added = false;
-          for (const s of before) if (affected.has(s.parentId) && !affected.has(s.id)) { affected.add(s.id); added = true; }
-        }
-      }
-      let result;
-      try { result = await codexLifecycle(session, a.action, { dataDir: store.dir }); }
-      finally { dropLocalCache(); }
-      if (a.action === 'delete') {
-        const remaining = new Set((await allSessions(state, { force: true })).sessions.map(s => s.id));
-        for (const id of affected) if (!remaining.has(id)) await store.removeSessionMetadata(id);
-      }
-      return { text: 'エージェントのセッションを操作しました', structured: result };
-    },
-  },
-  appTool('canban_delete_task', 'タスクカードを削除', { cardId: { type: 'string' } }, ['cardId'], (a) => store.deleteTask(a)),
-  appTool('canban_clear_pending', '開始待ちを取り消す', { taskId: { type: 'string' } }, ['taskId'], (a) => store.clearPending(a)),
-  {
-    name: 'canban_get_task_dashboard',
-    title: 'タスクの画面設定を取得',
-    description: 'タスクごとに保存したカードダッシュボードの配置と、明示的に紐付いたセッションIDを返す。会話や実行状態は含まない。',
-    inputSchema: { type: 'object', properties: { taskId: { type: 'string' } }, required: ['taskId'], additionalProperties: false },
-    annotations: { readOnlyHint: true },
-    _meta: appOnly,
-    handler: async (a) => {
-      const record = await store.getTaskDashboard(a);
-      const { sessions } = await allSessions(await store.load());
-      const members = new Set(record.links);
-      return { text: 'タスクの画面設定', structured: { ...record, sessions: sessions.filter(s => members.has(s.id)).map(s => ({ id: s.id, title: s.title, agent: s.agent, status: s.status || 'idle', subagent: !!s.subagent })) } };
-    },
-  },
-  appTool('canban_save_task_dashboard', 'タスクの画面設定を保存', {
-    taskId: { type: 'string' }, expectedRevision: { type: 'integer', minimum: 0 }, state: { type: 'object' },
-  }, ['taskId', 'expectedRevision', 'state'], (a) => store.saveTaskDashboard(a)),
-  {
-    name: 'canban_get_loop', title: '改善ループを取得', description: '目標、版付きの条件、大小2段のループと追記した周回・検証根拠を返す。CLIの正常終了は合格と扱わない。',
-    inputSchema: { type: 'object', properties: { taskId: { type: 'string' } }, required: ['taskId'], additionalProperties: false },
-    annotations: { readOnlyHint: true }, _meta: appAndModel,
-    handler: async a => {
-      const record = await store.getLoop(a);
-      const refs = new Map();
-      for (const c of record.cycles) {
-        const last = c.rounds.at(-1);
-        if (last?.artifactFolder) {
-          if (!refs.has(last.artifactFolder)) refs.set(last.artifactFolder, await loopArtifact(last.artifactFolder));
-          c.currentArtifactRef = refs.get(last.artifactFolder);
-          c.stale = !!last.results && c.currentArtifactRef !== last.artifactRef;
-        }
-      }
-      return { text: '改善ループ', structured: record };
-    },
-  },
-  {
-    name: 'canban_loop_command', title: '改善ループを進める',
-    description: 'expectedRevisionと一意なcommandIdを指定。command: configure(goal, criteria文字列配列, principles, maxRounds, 任意cycleId/parentId)、start(cycleId,nextAction)、record(cycleId,roundId,version,artifactRef,results:[criterionId,pass:true/false/null,summary,ref],learning)、pause/resume(cycleId)。エージェントの検証結果は報告として保存され、人の確認まで完了にはしない。送信はUIで人が行う。',
-    inputSchema: { type: 'object', properties: loopCommandProps, required: Object.keys(loopCommandProps), additionalProperties: false },
-    annotations: { readOnlyHint: false, destructiveHint: false }, _meta: appAndModel,
-    handler: async a => loopCommand(a, 'reported'),
-  },
-  {
-    name: 'canban_review_loop', title: '改善ループを確認（UI）',
-    inputSchema: { type: 'object', properties: { ...loopCommandProps, uiToken: { type: 'string' } }, required: [...Object.keys(loopCommandProps), 'uiToken'], additionalProperties: false },
-    _meta: appOnly, handler: async a => loopCommand(requireLoopUi(a), 'human'),
-  },
-  {
-    name: 'canban_send_loop', title: 'この周回の指示を送る（UI）',
-    inputSchema: { type: 'object', properties: { taskId: { type: 'string' }, cycleId: { type: 'string' }, roundId: { type: 'string' }, expectedRevision: { type: 'integer' }, cardId: { type: 'string' }, prompt: { type: 'string' }, uiToken: { type: 'string' } }, required: ['taskId','cycleId','roundId','expectedRevision','cardId','prompt','uiToken'], additionalProperties: false },
-    _meta: appOnly,
-    handler: async a => {
-      const { taskId, cycleId, roundId, expectedRevision, cardId, prompt } = requireLoopUi(a);
-      const r = await dispatcherFor(store).submit({ cardId, prompt, when: 'queue', origin: 'ui', loopContext: { taskId, cycleId, roundId, expectedRevision } });
-      return { text: `この周回の依頼（${r.id}）`, structured: requestView(r) };
-    },
-  },
-  {
-    name: 'canban_get_stats',
-    title: '分析',
-    description: 'セッション数・トークン量の推移、プロジェクト／カテゴリ／マシン別の内訳、リストの滞留時間、完了までのサイクルタイムを返す。',
-    inputSchema: { type: 'object', properties: { days: { type: 'number' }, agent: filterProps.agent, host: filterProps.host, account: filterProps.account, project: filterProps.project, directory: filterProps.directory, includeSubagents: { type: 'boolean' }, dotScope: filterProps.dotScope }, additionalProperties: false },
-    annotations: { readOnlyHint: true },
-    _meta: appAndModel,
-    handler: async (args) => {
-      let state = (await store.load());
-      const { sessions } = await allSessions(state);
-      if (await store.syncSessionCategories(sessions)) state = await store.load();
-      const days = Math.min(Math.max(Number(args.days) || 30, 1), 365);
-      const st = computeStats(state, sessions, { ...args, days });
-      return { text: `直近 ${days} 日: ${st.totals.sessions} セッション / ${st.totals.tokens.toLocaleString()} トークン`, structured: st };
-    },
-  },
-  appTool('canban_save_view', 'ビューを保存', { id: { type: 'string' }, name: { type: 'string' }, filters: { type: 'object' } }, ['name', 'filters'], (a) => store.saveView(a)),
-  appTool('canban_delete_view', 'ビューを削除', { viewId: { type: 'string' } }, ['viewId'], (a) => store.deleteView(a)),
-  appTool('canban_set_rule', '自動化（カードの自動移動）を保存', {
-    id: { type: 'string' },
-    enabled: { type: 'boolean' },
-    trigger: { type: 'string', description: `${RULE_TRIGGERS.join(' / ')}、または section:<Codex のセクション ID>` },
-    fromListId: { type: 'string' },
-    toListId: { type: 'string' },
-  }, ['trigger', 'toListId'], (a) => store.setRule(a)),
-  appTool('canban_delete_rule', '自動化（カードの自動移動）を削除', { ruleId: { type: 'string' } }, ['ruleId'], (a) => store.deleteRule(a)),
-  appTool('canban_run_rule', '自動化を今すぐ実行', { ruleId: { type: 'string' } }, ['ruleId'], async ({ ruleId }) => {
-    const state = await store.load();
-    if (!state.settings.rules.some((r) => r.id === ruleId)) throw new Error('自動化が見つかりません');
-    const { sessions, errors } = await allSessions(state, { force: true });
-    const moves = await runRules(store, state, sessions, Date.now(), { ruleId });
-    return { ruleId, moved: moves.length, moves, errors };
-  }),
-  appTool('canban_undo_move', '自動移動を元に戻す', { cardId: { type: 'string' } }, ['cardId'], (a) => store.undoAutoMove(a)),
-  appTool('canban_mark_all_seen', 'すべて既読にする', {}, [], () => store.markAllSeen()),
-  appTool('canban_create_list', 'リストを追加', { title: { type: 'string' }, color: { type: 'string' }, afterListId: { type: 'string' } }, ['title'], (a) => store.createList(a)),
-  appTool('canban_update_list', 'リストを更新', { listId: { type: 'string' }, title: { type: 'string' }, color: { type: ['string', 'null'] }, wipLimit: { type: ['number', 'null'] } }, ['listId'], (a) => store.updateList(a)),
-  appTool('canban_delete_list', 'リストを削除', { listId: { type: 'string' }, moveCardsTo: { type: 'string' } }, ['listId'], (a) => store.deleteList(a)),
-  appTool('canban_reorder_lists', 'リストを並べ替え', { listIds: { type: 'array', items: { type: 'string' } } }, ['listIds'], (a) => store.reorderLists(a)),
-  appTool('canban_set_default_list', '既定リストを設定', { listId: { type: 'string' } }, ['listId'], (a) => store.setDefaultList(a)),
-  appTool('canban_create_label', 'ラベルを追加', { name: { type: 'string' }, color: { type: 'string' } }, ['name'], (a) => store.createLabel(a)),
-  appTool('canban_update_label', 'ラベルを更新', { labelId: { type: 'string' }, name: { type: 'string' }, color: { type: 'string' } }, ['labelId'], (a) => store.updateLabel(a)),
-  appTool('canban_delete_label', 'ラベルを削除', { labelId: { type: 'string' } }, ['labelId'], (a) => store.deleteLabel(a)),
-  appTool('canban_create_directory', 'カテゴリを追加', { name: { type: 'string' }, color: { type: ['string', 'null'] }, paths: { type: 'array', items: { type: 'string' } } }, ['name'], (a) => store.createDirectory(a)),
-  appTool('canban_update_directory', 'カテゴリを更新', { directoryId: { type: 'string' }, name: { type: 'string' }, color: { type: ['string', 'null'] }, paths: { type: 'array', items: { type: 'string' } } }, ['directoryId'], (a) => store.updateDirectory(a)),
-  appTool('canban_delete_directory', 'カテゴリを削除', { directoryId: { type: 'string' } }, ['directoryId'], (a) => store.deleteDirectory(a)),
-  appTool('canban_get_ui_state', '共有画面状態を取得', {}, [], () => store.getUiState()),
-  appTool('canban_save_ui_state', '共有画面状態を保存', {
-    expectedRevision: { type: 'integer', minimum: 0 },
-    state: { type: 'object' },
-  }, ['expectedRevision', 'state'], ({ expectedRevision, state }) => store.saveUiState({ expectedRevision, state })),
+  ...settingsTools(toolContext),
+  ...createTaskTools(toolContext),
+  ...startTools(toolContext),
+  ...promptImageTools(toolContext),
+  ...desktopTools(toolContext),
+  ...taskTools(toolContext),
+  ...loopTools(toolContext),
+  ...statsTools(toolContext),
+  ...boardConfigTools(toolContext),
 ];
-
-// Requests as returned to the UI / model (the prompt is kept; log paths only locally).
-function requestView(r) {
-  if (!r) return null;
-  const { owner, ownerUuid, leaseGeneration, argv, ...rest } = r;
-  return { ...rest, logPath: r.hostId === 'local' ? r.logPath ?? null : null };
-}
-
-function appTool(name, title, properties, required, fn) {
-  return {
-    name,
-    title,
-    description: `${title}（カンバン UI 用）`,
-    inputSchema: { type: 'object', properties, required, additionalProperties: false },
-    _meta: appOnly,
-    handler: async (args) => ({ text: `${title}: OK`, structured: { result: await fn(args) } }),
-  };
-}
-
-function resolveList(lists, key) {
-  if (!key) return null;
-  const k = String(key).trim();
-  return lists.find((l) => l.id === k) || lists.find((l) => l.title === k) || lists.find((l) => l.title.toLowerCase() === k.toLowerCase()) || null;
-}
-
-function edgeOrder(state, sessions, listId, cardId, position) {
-  const orders = [];
-  for (const s of sessions) {
-    if (s.id === cardId) continue;
-    const card = state.cards[s.id];
-    const lid = card?.listId && state.lists.some((l) => l.id === card.listId) ? card.listId : state.defaultListId;
-    if (lid === listId) orders.push(effectiveOrder(s, card));
-  }
-  if (!orders.length) return 0;
-  return position === 'bottom' ? Math.max(...orders) + 1000 : Math.min(...orders) - 1000;
-}
 
 const toolsByName = new Map(TOOLS.map((t) => [t.name, t]));
 

@@ -1,4 +1,23 @@
 // Part of board.html: included into its script by server/ui.mjs and shares its scope.
+// A durable waiting launch must finish cancellation before its request ID can be replaced.
+async function cancelTaskLaunchWait(draft, callTool) {
+  if (!draft.launchRequest || !['waiting-for-quit', 'waiting-for-login', 'prepared', 'opening'].includes(draft.launchResult?.state)) return true;
+  const response = await callTool('canban_cancel_start_session', { clientRequestId: draft.launchRequest.clientRequestId });
+  rememberTaskLaunchResult(draft, response.result || response);
+  return draft.launchResult.state === 'cancelled';
+}
+
+// Terminal and remote folder routes cannot claim that a saved Project was applied.
+function taskLaunchLocation(selected, args, hosts) {
+  if (!selected) return args;
+  const hostId = selected.hostId || (selected.kind === 'ssh' ? hosts.find(h => h.id === selected.sshHost || h.alias === selected.sshHost)?.id : 'local');
+  if (args.route === 'desktop' && args.agent === 'codex' && hostId === 'local') return { ...args, hostId: 'local', cwd: '', projectId: selected.id, sourceRef: selected.sourceRef };
+  if (args.route === 'desktop' && args.agent === 'claude') throw new Error('保存環境の完全適用は未確認です。元アプリで開始するかフォルダ指定を選んでください');
+  const cwd = selected.cwd || selected.root || (selected.roots?.length === 1 ? selected.roots[0] : '');
+  if (!hostId || !cwd?.startsWith('/')) throw new Error('開始設定の作業フォルダとマシンを確認できません。フォルダを指定してください');
+  return { ...args, cwd, hostId, account: hostId === 'local' || args.route === 'desktop' ? args.account : null };
+}
+
 // Task card detail
 function findCard(cardId) {
   for (const l of state.board?.lists || []) for (const c of l.cards) if (c.id === cardId) return { card: c, list: l };
@@ -97,6 +116,25 @@ async function loadTask(p, found) {
   const cwd = h('input', { class: 'text-input', list: dl.id, placeholder: '作業フォルダ（絶対パス）', value: t.cwd || '', 'aria-label': '作業フォルダ' });
   const fillFolders = () => dl.replaceChildren(...b.folders.filter((f) => f.hostId === hostSel.value).map((f) => h('option', { value: f.cwd, label: f.project || '' })));
   fillFolders();
+  let launchTargets = null;
+  const preset = h('select', { class: 'text-input', 'aria-label': '開始設定' }, h('option', { value: '__folder', text: 'フォルダを指定して開始' }));
+  const presetInfo = h('span', { class: 'muted' });
+  const nativeStart = h('button', { class: 'link-btn', type: 'button', text: '元アプリで開始', hidden: true, onclick: () => bridge.openLink('claude://code/new') });
+  const presetValue = () => preset.value.startsWith('project:') ? launchTargets?.codex?.projects?.find(p => p.id === preset.value.slice(8)) : preset.value.startsWith('environment:') ? launchTargets?.claude?.environments?.find(e => e.id === preset.value.slice(12)) : null;
+  const paintPreset = () => {
+    const selected = presetValue();
+    cwd.readOnly = !!selected; hostSel.disabled = !!selected;
+    presetInfo.textContent = selected ? `${selected.cwd || selected.roots?.join('・') || ''} · ${selected.kind || selected.hostId || ''}${agentSel.value === 'claude' ? ' · 保存環境の完全適用は未確認です。元アプリで開始するかフォルダ指定を選んでください' : ''}` : '';
+    nativeStart.hidden = !selected || agentSel.value !== 'claude';
+    composer.contextChanged();
+  };
+  const fillPresets = () => {
+    const previous = preset.value;
+    preset.replaceChildren(h('option', { value: '__folder', text: 'フォルダを指定して開始' }), ...(agentSel.value === 'codex' ? launchTargets?.codex?.projects || [] : launchTargets?.claude?.environments || []).map(p => h('option', { value: `${agentSel.value === 'codex' ? 'project' : 'environment'}:${p.id}`, text: `${agentSel.value === 'codex' ? 'Codexのプロジェクト' : 'Claudeの環境'}: ${p.name} · ${p.hostId || p.kind}` })));
+    if ([...preset.options].some(p => p.value === previous)) preset.value = previous;
+    paintPreset();
+  };
+  preset.onchange = paintPreset;
   const prompt = h('textarea', { class: 'note', 'aria-label': '依頼文' });
   prompt.value = taskRequestText(card.title, card.description, card.note);
   prompt.defaultValue = prompt.value;
@@ -104,7 +142,8 @@ async function loadTask(p, found) {
   // Codex-style: the round button starts on the default route; ⋯ picks the other route explicitly.
   const routeMenu = (anchor) => popover(anchor, '開始する場所', h('div', {},
     h('button', { class: 'menu-item', text: 'デスクトップアプリで開始', onclick: () => { closePopover(); start({ route: 'desktop' }); } }),
-    h('button', { class: 'menu-item', text: 'ターミナルで開始', onclick: () => { closePopover(); start({ route: 'terminal' }); } })), { width: 220 });
+    h('button', { class: 'menu-item', text: 'ターミナルで開始', onclick: () => { closePopover(); start({ route: 'terminal' }); } }),
+    composer.draft.launchRequest ? h('button', { class: 'menu-item', onclick: () => { closePopover(); p.newTaskRequest(); } }, '新しい依頼に切り替える ', ...keycap('Enter')) : null), { width: 220, placement: 'top' });
   startButtons.push(h('button', { class: 'cx-ico', type: 'button', title: '開始する場所を選ぶ', 'aria-label': '開始する場所を選ぶ', html: picon('more', 16), onclick: e => routeMenu(e.currentTarget) }),
     h('button', { class: 'send-round', type: 'button', title: `${routeLabel(b.settings.launch.route, { desktop: true })}で開始（⌘Enter）\n${shortcutHelp()}`, 'aria-label': '開始', html: picon('send', 15), onclick: e => start(optsFromEvent(e)) }));
   const importButton = h('button', { class: 'cx-ico', type: 'button', title: '説明・メモを依頼文に取り込む', 'aria-label': '説明・メモを依頼文に取り込む', html: picon('undo', 16), onclick: () => {
@@ -112,20 +151,85 @@ async function loadTask(p, found) {
     prompt.value = taskRequestText(title.value, desc.value, memo.value);
     prompt.dispatchEvent(new Event('input', { bubbles: true }));
   } });
+  const launchNotice = h('span', { text: '画像は起動後にコピーし、アプリの入力欄で⌘Vを押してください' });
+  const copyImages = h('button', { class: 'link-btn', type: 'button', text: '画像をコピー', hidden: true, onclick: async () => {
+    const imageIds = composer.draft.launchResult?.imageIds || composer.draft.launchRequest?.imageIds || [];
+    if (!imageIds.length) return;
+    try {
+      const response = await bridge.callTool('canban_copy_prompt_images', { imageIds });
+      const result = response.result || response;
+      launchNotice.textContent = result.state === 'copied' ? '画像をコピーしました。アプリの入力欄で⌘Vを押してください。' : result.reason || '画像をコピーできませんでした。';
+    } catch (e) { toast(e.message, true); }
+  } });
+  const paintLaunchImages = () => {
+    const r = composer.draft.launchResult, request = composer.draft.launchRequest;
+    copyImages.hidden = r?.state !== 'opened' || request?.route !== 'desktop' || !(r.imageIds || request.imageIds)?.length;
+    copyImages.disabled = !(r?.attachmentCopyAvailable ?? launchTargets?.desktopCapabilities?.clipboardImages);
+  };
   const composer = promptComposer(prompt, { key: `start:${cardId}`, context: () => ({ agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim() }), submit: () => start(),
-    placeholder: 'このタスクで何をしてほしいですか？', leading: [importButton], actions: startButtons, place: [agentSel, hostSel, acctSel, cwd, dl],
-    keys: [keyHint(['⌘', 'Enter'], '開始'), keyHint(['$'], 'スキル'), h('span', { text: 'デスクトップで開始すると、依頼文に画像の参照を含めます' })] });
-  agentSel.addEventListener('change', () => composer.contextChanged());
+    placeholder: 'このタスクで何をしてほしいですか？', leading: [importButton], actions: startButtons, place: [agentSel, preset, presetInfo, nativeStart, hostSel, acctSel, cwd, dl],
+    keys: [keyHint(['⌘', 'Enter'], '開始'), keyHint(['$'], 'スキル'), launchNotice, copyImages] });
+  p.copyTaskImages = () => copyImages.click();
+  p.canCopyTaskImages = () => !copyImages.hidden && !copyImages.disabled;
+  p.newTaskRequest = async () => {
+    if (composer.draft.sending) return;
+    composer.setSending(true); startButtons.forEach(b => { b.disabled = true; });
+    try {
+      if (!await cancelTaskLaunchWait(composer.draft, (name, args) => bridge.callTool(name, args))) {
+        launchNotice.textContent = '前回の開始を取り消せませんでした。元アプリと開始結果を確認してください。';
+        return;
+      }
+      const previous = composer.draft;
+      if (previous.launchResult?.state === 'uncertain' && previous.launchRequest?.route === 'desktop' && previous.launchResult?.route !== 'cloud' && previous.launchRequest?.runOn !== 'cloud') {
+        await bridge.callTool('canban_acknowledge_desktop_launch', { clientRequestId: previous.launchRequest.clientRequestId });
+      }
+      beginNewTaskRequest(composer.draft);
+      paintLaunchImages();
+      launchNotice.textContent = '新しい依頼に切り替えました。前回の未確認結果は保持し、開始を押すと同じ文面でも新しい依頼になります。';
+      prompt.focus();
+    } catch (e) { toast(e.message, true); }
+    finally { composer.setSending(false); startButtons.forEach(b => { b.disabled = false; }); }
+  };
+  p.hasTaskLaunchRequest = () => !!composer.draft.launchRequest;
+  if (composer.draft.launchNewRequest) launchNotice.textContent = '新しい依頼に切り替えました。開始を押すと新しい依頼になります。';
+  else if (composer.draft.launchResult && composer.draft.launchResult.state !== 'opened') launchNotice.textContent = '前回の開始結果は未確認です。同じ内容は結果を確認し、編集した内容は新しい依頼として開始します。';
+  agentSel.addEventListener('change', fillPresets);
+  bridge.callTool('canban_launch_targets', {}).then(targets => {
+    launchTargets = targets; fillPresets(); paintLaunchImages();
+    const savedRef = card.launchSelection?.selectedRefs?.[0];
+    const saved = agentSel.value === 'codex' ? targets.codex?.projects?.find(p => sourceRefKey(p.sourceRef) === sourceRefKey(savedRef) && sourceRefKey(savedRef)) : targets.claude?.environments?.find(p => sourceRefKey(p.sourceRef) === sourceRefKey(savedRef) && sourceRefKey(savedRef));
+    if (saved) { preset.value = `${agentSel.value === 'codex' ? 'project' : 'environment'}:${saved.id}`; paintPreset(); }
+  }).catch(() => { presetInfo.textContent = '開始設定は未取得です。フォルダ指定は利用できます'; });
   cwd.addEventListener('change', () => composer.contextChanged());
   const start = async (opts = {}) => {
     if (composer.draft.sending) return;
     try {
       const payload = composer.payload();
       composer.setSending(true); startButtons.forEach(b => { b.disabled = true; });
-      const r = await bridge.callTool('canban_start_session', { taskId: cardId, agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim(), prompt: prompt.value, account: acctSel.value || null, ...payload, ...opts });
+      const selected = presetValue();
+      const prefs = state.board.settings.launch;
+      const args = taskLaunchLocation(selected, { taskId: cardId, agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim(), prompt: prompt.value, account: acctSel.value || null, ...payload, route: prefs.route, terminal: prefs.terminal, target: prefs.target, ...opts }, b.hosts);
+      if (args.route === 'desktop' && args.agent === 'codex' && args.hostId !== 'local' && !launchTargets?.desktopCapabilities?.codexRemote) throw new Error('このDesktopでのリモート下書き表示は実機確認が必要です');
+      if (args.route === 'desktop' && args.agent === 'claude') {
+        const capabilities = await desktopAccounts.refresh();
+        args.account ||= desktopAccounts.defaultAccount();
+        const problem = desktopAccounts.problem(args.account);
+        if (problem) throw new Error(problem);
+        args.allowDesktopSwitch = !!capabilities?.accountSwitch && args.account !== capabilities.activeAccount;
+      }
+      const sameRequest = taskSessionRequest({ launchRequest: composer.draft.launchRequest }, args, () => null) === composer.draft.launchRequest;
+      if (!sameRequest && composer.draft.launchRequest?.agent === 'claude' && composer.draft.launchRequest?.route === 'desktop' && composer.draft.launchResult?.state === 'uncertain') throw new Error('元アプリで前回の開始結果を確認し、「新しい依頼に切り替える」を選んでください');
+      if (!sameRequest && !await cancelTaskLaunchWait(composer.draft, (name, args) => bridge.callTool(name, args))) throw new Error('前回の開始を取り消せませんでした。元アプリと開始結果を確認してください');
+      const request = taskSessionRequest(composer.draft, args, () => crypto.randomUUID());
+      const r = await bridge.callTool('canban_start_session', request);
+      rememberTaskLaunchResult(composer.draft, r);
+      paintLaunchImages();
+      launchNotice.textContent = r.state === 'opened' ? '開始を依頼しました。適用結果は元アプリで確認してください。' : '前回の開始結果は未確認です。同じ内容は結果を確認し、編集した内容は新しい依頼として開始します。';
       toast(r.note || `${acctSel.value ? accountName(acctSel.value) : agentSel.value === 'codex' ? 'Codex' : 'Claude'} で開始しました。セッションが現れると自動で紐付きます`, !!r.note);
-      composer.clear();
-      prompt.value = ''; workspace.draftValues.set(prompt, '');
+      if (r.state !== 'opened') return; // unresolved launch keeps the original request for idempotent retries
+      if (request.route === 'desktop' && request.imageIds?.length) { load(); return; }
+      delete composer.draft.launchRequest;
+      if (prompt.value === request.prompt) { composer.clear(); prompt.value = ''; workspace.draftValues.set(prompt, ''); }
       load();
     } catch (e) {
       toast(e.message, true);
@@ -146,12 +250,12 @@ async function loadTask(p, found) {
   const secs = {
     breadcrumb: { nodes: [cardCrumb(listSel)] },
     title: { nodes: [title] },
-    status: { nodes: [h('div', { class: 'sub row' }, taskQuickAdd.button(), h('span', { class: 'badge task-badge', text: T.taskCard }), h('span', { class: 'row pane-status' }, h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]))] },
+    status: { nodes: [h('div', { class: 'sub row' }, taskQuickAdd.button(), h('span', { class: 'badge task-badge', text: T.taskCard }), h('span', { class: 'row pane-status' }, h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]), h('span', { class: 'muted', text: 'リンクしたセッションの状態', title: 'タスクやGoalの完了とは別です' }))] },
     conv: { title: '説明', nodes: [desc], hint: '説明は Canban に保存します。新しいセッションの依頼文にも使います。' },
     memo: { title: 'メモ', nodes: [memo] },
     related: { title: taskRelatedTitle(card), extra: taskLinkButton(cardId), nodes: taskRelatedNodes(card), hint: 'ホームのセッションをこのカードへドラッグして紐付けることもできます。' },
     send: { title: '新しいセッションを開始', extra: h('span', {}, ...keycap('i'), ' ', ...keycap('Alt+a')), nodes: [h('div', { class: 'send-box' }, composer.root)], hint: '開始したセッションは、AI App・マシン・フォルダ・依頼文が一致すると自動でこのカードに紐付きます。' },
-    add: { nodes: [taskQuickAdd.summary(card),
+    add: { nodes: [sourceDetails(card), taskQuickAdd.summary(card),
       h('button', { class: 'side-btn', text: '所属を変更', onclick: () => taskQuickAdd.edit(card, list) }), h('button', { class: 'side-btn', 'data-pane-key': 'l', onclick: e => labelPicker(e.currentTarget, cardId, labelState, () => {}) }, h('span', { html: picon('tag', 14) }), ' ラベル', keycap('l')),
       h('button', { class: 'side-btn', 'data-pane-key': 'g', onclick: e => directoryPicker(e.currentTarget, card, { cwd: cwd.value.trim() || null, after: () => openCard(cardId) }) }, h('span', { html: picon('folder', 14) }), ` ${T.category}: ${card.directory?.name || 'カテゴリ無し'}`, keycap('g'))] },
     prio: { nodes: [prio, due] },

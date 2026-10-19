@@ -71,7 +71,9 @@ function inboxSelect(id, { focus = false } = {}) {
 function inboxStep(delta) {
   const rows = inboxRows(), i = rows.findIndex((r) => r.dataset.cardId === state.inbox.sel);
   const next = rows[Math.max(0, Math.min(rows.length - 1, (i < 0 ? 0 : i + delta)))];
-  if (next) inboxSelect(next.dataset.cardId, { focus: true });
+  if (!next) return;
+  inboxSelect(next.dataset.cardId, { focus: true });
+  prefetchSession(rows[rows.indexOf(next) + Math.sign(delta)]?.dataset.cardId);
 }
 // Enter / double click: the same card, large over the board (Esc puts it back on the right).
 function inboxExpand(id) {

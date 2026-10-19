@@ -65,6 +65,64 @@ await step('create task or direct session', async () => {
     if (await tasks() !== before + 1) throw new Error('task creation failed');
   } finally { document.querySelector('.task-quick-dialog')?.close(); }
 }, 300);
+await step('unsupported environment keeps start controls visible', async () => {
+  document.querySelector('#quickTaskBtn').click();
+  document.querySelector('[data-create-mode="session"]').click();
+  document.querySelector('.session-new-request:not([hidden])')?.click();
+  document.querySelector('input[value="claude-desktop"]').click();
+  for(let i=0;i<30&&!document.querySelector('select[aria-label="開始設定（Claudeの環境）"] option[value="fixture-env"]');i++) await w(100);
+  const select=document.querySelector('select[aria-label="開始設定（Claudeの環境）"]'); select.value='fixture-env'; select.dispatchEvent(new Event('change',{bubbles:true}));
+  const dialog=document.querySelector('.task-quick-dialog'), button=dialog.querySelector('.btn-primary');
+  if(!dialog.textContent.includes('完全適用は未確認') || !button.disabled) throw new Error('unsupported preset is not explained and blocked');
+  if(button.getBoundingClientRect().bottom>dialog.getBoundingClientRect().bottom) throw new Error('start action clipped by preset explanation');
+  const folder=dialog.querySelector('select[aria-label="開始設定（Claudeの環境）"]');folder.value='__folder';folder.dispatchEvent(new Event('change',{bubbles:true}));
+  const next=document.querySelector('.task-quick-dialog'); if(next.querySelector('.btn-primary').getBoundingClientRect().bottom>next.getBoundingClientRect().bottom) throw new Error('folder start action clipped');
+  next.close();
+});
+await step('task start keeps unknown result and uses new payload only after an edited explicit submit', async () => {
+  const taskId=document.querySelector('.card.task').dataset.cardId;
+  const rpc=async(name,args)=>fetch('/rpc',{method:'POST',body:JSON.stringify({name,arguments:args})});
+  await rpc('canban_link_session',{taskId,sessionId:'codex:t1'});key('r');await w(500);
+  document.querySelector('[data-card-id="'+taskId+'"]').click();
+  for(let i=0;i<30&&!document.querySelector('#paneLayer [data-sec="send"] textarea');i++) await w(100);
+  const input=document.querySelector('#paneLayer [data-sec="send"] textarea');
+  const send=document.querySelector('#paneLayer .send-round');
+  const tool=window.openai.callTool, calls=[];
+  window.openai.callTool=async(name,args)=>{
+    if(name==='canban_acknowledge_desktop_launch')return {structuredContent:{state:'acknowledged'}};
+    if(name!=='canban_start_session')return tool(name,args);
+    calls.push(JSON.parse(JSON.stringify(args)));
+    return {structuredContent:{state:'uncertain',note:'fixture: 開始結果は未確認です。元アプリを確認してください。',receipt:{requestId:args.clientRequestId,status:'unresolved'}}};
+  };
+  const submit=async()=>{for(let i=0;i<30&&send.disabled;i++) await w(50);if(send.disabled)throw new Error('task composer stayed disabled');send.click();for(let i=0;i<30&&send.disabled;i++) await w(50);};
+  try {
+    input.value='first fake task request';input.dispatchEvent(new Event('input',{bubbles:true}));await submit();
+    if(!document.querySelector('.toast')?.textContent.includes('開始結果は未確認です'))throw new Error('existing launch result toast missing');
+    if(!document.querySelector('#paneLayer').textContent.includes('前回の開始結果は未確認'))throw new Error('unknown result hint missing');
+    await submit();
+    if(calls[0].clientRequestId!==calls[1].clientRequestId)throw new Error('unchanged request lost idempotency');
+    input.value='edited fake task request';input.dispatchEvent(new Event('input',{bubbles:true}));await w(100);
+    if(calls.length!==2)throw new Error('editing automatically relaunched');
+    await submit();
+    if(!calls[2])throw new Error('edited request did not start; calls='+calls.length+'; toast='+document.querySelector('.toast')?.textContent);if(calls[2].prompt!==input.value||calls[2].clientRequestId===calls[1].clientRequestId)throw new Error('edited prompt reused old launch');
+    const folder=document.querySelector('#paneLayer input[aria-label="作業フォルダ"]');folder.value='/r/other';folder.dispatchEvent(new Event('change',{bubbles:true}));await submit();
+    if(!calls[3])throw new Error('changed folder did not start; calls='+calls.length+'; toast='+document.querySelector('.toast')?.textContent);if(calls[3].cwd!=='/r/other'||calls[3].clientRequestId===calls[2].clientRequestId)throw new Error('edited start setting reused old launch');
+    document.querySelector('#paneLayer button[aria-label="開始する場所を選ぶ"]').click();
+    const newRequestRow=[...document.querySelectorAll('.popover .menu-item')].find(button=>button.textContent.includes('新しい依頼に切り替える'));
+    const rowRect=newRequestRow.getBoundingClientRect(), toastRect=document.querySelector('.toast').getBoundingClientRect();
+    if(rowRect.left<toastRect.right&&rowRect.right>toastRect.left&&rowRect.top<toastRect.bottom&&rowRect.bottom>toastRect.top)throw new Error('new-request menu row is covered by the launch error toast');
+    newRequestRow.click();
+    if(calls.length!==4)throw new Error('new-request choice automatically launched');
+    await submit();
+    if(!calls[4])throw new Error('menu new request did not start; calls='+calls.length+'; toast='+document.querySelector('.toast')?.textContent);if(calls[4].prompt!==calls[3].prompt||calls[4].clientRequestId===calls[3].clientRequestId)throw new Error('unchanged explicit new request reused old ID');
+    key('k',{metaKey:true});
+    const fresh=[...document.querySelectorAll('.picker-row')].find(button=>button.textContent.includes('タスク: 新しい依頼に切り替える'));
+    if(!fresh)throw new Error('palette new-request action missing');fresh.click();
+    if(calls.length!==5)throw new Error('palette new-request action automatically launched');
+    await submit();if(!calls[5])throw new Error('palette new request did not start; calls='+calls.length+'; toast='+document.querySelector('.toast')?.textContent);if(calls[5].clientRequestId===calls[4].clientRequestId)throw new Error('palette new-request action reused old ID');
+
+  } finally {window.openai.callTool=tool;key('Escape');document.querySelector('.pane-close')?.click();await rpc('canban_unlink_session',{taskId,sessionId:'codex:t1'});key('r');await w(500);}
+});
 await step('today', () => document.querySelector('.rb-day.is-today').click());
 await step('esc', () => key('Escape'));
 for (const k of ['live', 'fresh', 'active', 'dormant']) await step('phase ' + k, () => document.querySelector('.rb-phase.life-' + k).click(), 150);
@@ -116,6 +174,8 @@ await step('row', () => document.querySelector('.irow[data-card-id="codex:t1"]')
 await step('conversation labels and draft', async () => {
   const pane = document.querySelector('.pane[data-kind="session"]');
   if (!pane) throw new Error('selected session did not open');
+  // Card content is fetched asynchronously; wait for the message, not a fixed click delay.
+  for (let i = 0; i < 100 && !pane.querySelector('.fi-user .fi-content .raw'); i++) await w(100);
   const original = pane.querySelector('.fi-user .fi-content .raw');
   if (original?.textContent !== 'ログインを直して') throw new Error('original prompt changed: ' + JSON.stringify(original?.textContent));
   const stamp = pane.querySelector('.fi-user time');
@@ -215,11 +275,70 @@ await step('analytics', () => key('a'), 2000);
 await step('analytics off', () => key('a'));
 await step('usage', () => key('u'), 1500);
 await step('usage off', () => key('u'));
+await step('Claude Desktop account selection owns its current-account explanation', async () => {
+  document.querySelector('.pane-close')?.click();
+  const tool=window.openai.callTool;
+  window.openai.callTool=async(name,args)=>{
+    const response=await tool(name,args);
+    if(name==='canban_get_session'&&args.cardId==='claude:c2'){
+      const detail=response.structuredContent||response.result;
+      if(!detail?.launch?.desktop)throw new Error('Desktop launch fixture missing');
+      detail.launch.desktop.note='fixture: outdated account mismatch';
+      detail.launch.desktop.accountMismatch={session:'claude:a',active:'claude:old'};
+    }
+    return response;
+  };
+  try{
+    document.querySelector('[data-card-id="claude:c2"]').click();
+    for(let i=0;i<40&&!document.querySelector('.th-tool[data-side-tab="details"]');i++)await w(100);
+    const details=document.querySelector('.th-tool[data-side-tab="details"]');if(details?.getAttribute('aria-pressed')!=='true')details?.click();
+    for(let i=0;i<40&&!document.querySelector('.desktop-resume-control');i++)await w(100);
+    const pane=document.querySelector('.desktop-resume-control')?.closest('.pane');
+    if(!pane)throw new Error('managed Desktop account control missing');
+    if(pane.textContent.includes('fixture: outdated account mismatch'))throw new Error('legacy account warning overrides the selected Desktop account');
+  }finally{window.openai.callTool=tool;document.querySelector('.pane-close')?.click();}
+});
+await step('a saved new Desktop start restores its prompt and image before cancellation', async () => {
+  document.querySelector('dialog[open]')?.close();
+  document.querySelector('#quickTaskBtn').click();
+  document.querySelector('[data-create-mode="session"]')?.click();
+  const previous=document.querySelector('.session-prompt');previous.value='';previous.dispatchEvent(new Event('input',{bubbles:true}));
+  document.querySelector('dialog[open]').close();
+  const original=window.openai.callTool;
+  const data='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jK1cAAAAASUVORK5CYII=';
+  const bytes=Uint8Array.from(atob(data),c=>c.charCodeAt(0));
+  const sha=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(x=>x.toString(16).padStart(2,'0')).join('');
+  let cancelled=null;
+  const result={clientRequestId:'recover-new',agent:'claude',account:'claude:restore-b',state:'waiting-for-quit',imageIds:['recover-image']};
+  window.openai.callTool=async(name,args)=>{
+    if(name==='canban_desktop_accounts')return {result:{accountSwitch:false,activeAccount:'claude:restore-a',profiles:[{account:'claude:restore-a',active:true}],pendingLaunches:cancelled?[]:[result]}};
+    if(name==='canban_get_desktop_launch_draft')return {result:{input:{clientRequestId:'recover-new',agent:'claude',route:'desktop',account:'claude:restore-b',cwd:'/work',hostId:'local',prompt:'保存した依頼の本文',imageIds:['recover-image']},result}};
+    if(name==='canban_read_prompt_image')return {result:{id:'recover-image',offset:0,data,size:bytes.length,sha256:sha,mime:'image/png',name:'sample.png',nextOffset:bytes.length,complete:true}};
+    if(name==='canban_cancel_start_session'){cancelled=args.clientRequestId;return {result:{state:'cancelled'}};}
+    return original(name,args);
+  };
+  try {
+    document.querySelector('#accountsBtn').click();
+    for(let i=0;i<40&&![...document.querySelectorAll('.desktop-pending-launch button')].some(b=>b.textContent.includes('依頼と画像を戻す'));i++)await w(100);
+    [...document.querySelectorAll('.desktop-pending-launch button')].find(b=>b.textContent.includes('依頼と画像を戻す')).click();
+    for(let i=0;i<40&&document.querySelector('.session-prompt')?.value!=='保存した依頼の本文';i++)await w(100);
+    const input=document.querySelector('.session-prompt');if(input.value!=='保存した依頼の本文'||!input.readOnly)throw new Error('saved prompt not restored and locked');
+    for(let i=0;i<40&&!document.querySelector('.prompt-image img');i++)await w(100);
+    if(!document.querySelector('.prompt-image img'))throw new Error('saved image IDs were not restored');
+    [...document.querySelectorAll('.task-quick-feedback button')].find(b=>b.textContent==='開始待機を取り消す').click();
+    for(let i=0;i<40&&!cancelled;i++)await w(100);
+    if(cancelled!=='recover-new')throw new Error('cancel did not keep saved request ID');
+    document.querySelector('dialog[open]').close();
+  } finally {window.openai.callTool=original;}
+});
 return { errs, sessionOpened: !!document.querySelector('.th-conv') || true };
 `;
 
 test('the board, the ribbon, the time axis and the card layers run without page errors', { timeout: 120000, skip: !fs.existsSync(chromeBin) && 'no Chrome' }, async (t) => {
   const fx = makeFixtures();
+  const appDir = path.dirname(fx.desktopDir);
+  fs.writeFileSync(path.join(appDir,'config.json'),JSON.stringify({lastKnownAccountUuid:'fixture-account'}));
+  fs.writeFileSync(path.join(appDir,'ccd-session-presets.json'),JSON.stringify({byAccount:{'fixture-account':{presets:[{id:'fixture-env',name:'複数フォルダの環境',target:{kind:'local',cwd:'/r/web',additionalFolders:['/r/api']}}]}}}));
   const edgeDb = new DatabaseSync(path.join(fx.codexHome, 'state_5.sqlite'));
   edgeDb.exec("CREATE TABLE thread_spawn_edges (parent_thread_id TEXT, child_thread_id TEXT); INSERT INTO thread_spawn_edges VALUES ('t1','t2')");
   edgeDb.prepare("UPDATE threads SET title='リリースの確認', name='リリースの確認', updated_at_ms=? WHERE id='t1'").run(Date.now() - 120000);
@@ -331,6 +450,108 @@ test('the board, the ribbon, the time axis and the card layers run without page 
       const shot=await cdp('Page.captureScreenshot',{format:'png'});
       fs.writeFileSync(path.join(dir,`${view}-${theme}-${mode}.png`),Buffer.from(shot.result.data,'base64'));
       assert.equal(capture.result.exceptionDetails, undefined, JSON.stringify(capture.result.exceptionDetails));
+    }
+  }
+  if (process.env.CANBAN_PROMPT_IMAGE_SHOTS) {
+    const dir=path.resolve(process.env.CANBAN_PROMPT_IMAGE_SHOTS);fs.mkdirSync(dir,{recursive:true});
+    const data=fs.readFileSync(path.join(root,'assets','canban.png')).toString('base64');
+    for (const view of ['board','timeline']) for (const theme of ['light','dark']) {
+      const capture=await cdp('Runtime.evaluate',{expression:`(async()=>{
+        document.querySelector('.task-quick-dialog')?.close();document.querySelector('.exchange-popover .close')?.click();
+        if(!document.querySelector('#paneLayer').hidden && !document.querySelector('#paneLayer').classList.contains('docked'))document.querySelector('.pane-close')?.click();
+        if(!!document.querySelector('.inbox')!==${view==='timeline'})document.dispatchEvent(new KeyboardEvent('keydown',{key:'i',bubbles:true}));
+        await new Promise(r=>setTimeout(r,400));document.documentElement.dataset.theme=${JSON.stringify(theme)};
+        document.querySelector('#quickTaskBtn').click();document.querySelector('[data-create-mode="session"]').click();
+        document.querySelector('.session-new-request:not([hidden])')?.click();
+        let d=document.querySelector('.task-quick-dialog');for(const button of d.querySelectorAll('.prompt-image button'))button.click();
+        const input=d.querySelector('.session-prompt');input.value='添付した画面を確認してください。';input.dispatchEvent(new Event('input',{bubbles:true}));
+        const bytes=Uint8Array.from(atob(${JSON.stringify(data)}),c=>c.charCodeAt(0)),transfer=new DataTransfer();
+        for(let i=0;i<8;i++)transfer.items.add(new File([bytes],'画面'+(i+1)+'.png',{type:'image/png'}));
+        const file=d.querySelector('input[type="file"]');file.files=transfer.files;file.dispatchEvent(new Event('change',{bubbles:true}));
+        for(let i=0;i<100;i++){d=document.querySelector('.task-quick-dialog');if(d.querySelectorAll('.prompt-image img').length===8 && !d.textContent.includes('添付中'))break;await new Promise(r=>setTimeout(r,100));}
+        if(d.querySelectorAll('.prompt-image img').length!==8)throw new Error('8th image preview missing: '+JSON.stringify({count:d.querySelectorAll('.prompt-image img').length,notice:d.querySelector('.prompt-notice')?.textContent,readOnly:d.querySelector('.session-prompt').readOnly,fileDisabled:file.disabled}));
+        d.querySelector('.creation-body').scrollTop=d.querySelector('.creation-body').scrollHeight;
+        const action=d.querySelector('.task-quick-actions').getBoundingClientRect(),rect=d.getBoundingClientRect();
+        if(action.bottom>rect.bottom+1)throw new Error('image composer actions overflow');
+      })()`,awaitPromise:true,returnByValue:true});
+      assert.equal(capture.result.exceptionDetails,undefined,JSON.stringify(capture.result.exceptionDetails));
+      const shot=await cdp('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(dir,`${view}-${theme}-images.png`),Buffer.from(shot.result.data,'base64'));
+    }
+  }
+  if (process.env.CANBAN_DESKTOP_ACCOUNT_SHOTS) {
+    const dir = path.resolve(process.env.CANBAN_DESKTOP_ACCOUNT_SHOTS); fs.mkdirSync(dir, { recursive: true });
+    const fixture = await cdp('Runtime.evaluate', { expression: `(async()=>{
+      const original = window.openai.callTool;
+      const response=await original('canban_desktop_accounts',{});
+      const payload=response.structuredContent||response.result||response;
+      const current=(payload.result||payload).activeAccount||'claude:account-a';
+      const profiles=[...new Set([current,'claude:a','claude:account-a'])].map(account=>({account,active:account===current}));
+      window.desktopShotView={accountSwitch:true,activeAccount:current,lastAccount:current,profiles,pending:{account:'claude:account-b',active:false}};
+      window.openai.callTool = (name,args) => name === 'canban_desktop_accounts'
+        ? Promise.resolve({result:window.desktopShotView})
+        : original(name,args);
+    })()`,awaitPromise:true });
+    assert.equal(fixture.result?.exceptionDetails, undefined);
+    for (const view of ['board','timeline']) for (const theme of ['light','dark']) {
+      const capture = await cdp('Runtime.evaluate', { expression: `(async()=>{
+        document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+        document.querySelector('.popover .close')?.click();
+        if(!document.querySelector('#paneLayer').hidden&&!document.querySelector('#paneLayer').classList.contains('docked'))document.querySelector('.pane-close')?.click();
+        document.activeElement?.blur();
+        if(!!document.querySelector('.inbox') !== ${view === 'timeline'})document.dispatchEvent(new KeyboardEvent('keydown',{key:'i',bubbles:true}));
+        document.documentElement.dataset.theme=${JSON.stringify(theme)};
+        await new Promise(r=>setTimeout(r,300));
+        if(!!document.querySelector('.inbox') !== ${view === 'timeline'})throw new Error('wrong Desktop account screenshot view');
+        document.querySelector('#accountsBtn').click();
+        for(let i=0;i<40&&!document.querySelector('.acct-desktop-resume');i++)await new Promise(r=>setTimeout(r,100));
+        const resume=[...document.querySelectorAll('.acct-desktop-actions button')].find(b=>b.textContent.includes('初回接続を再開'));
+        if(!resume)throw new Error('cancelled Desktop connection cannot resume');
+        const rect=resume.getBoundingClientRect();if(rect.top<0||rect.bottom>innerHeight)throw new Error('Desktop reconnect action clipped');
+        const boundary=document.querySelector('.acct-desktop').getBoundingClientRect();
+        for(const control of document.querySelectorAll('.acct-desktop-actions button,.acct-desktop-actions select'))if(control.getBoundingClientRect().right>boundary.right+1)throw new Error('Desktop connection action overflows its section');
+      })()`, awaitPromise:true });
+      assert.equal(capture.result?.exceptionDetails, undefined, JSON.stringify(capture.result?.exceptionDetails));
+      const shot = await cdp('Page.captureScreenshot', { format:'png',captureBeyondViewport:false });
+      fs.writeFileSync(path.join(dir,`${view}-${theme}-accounts.png`),Buffer.from(shot.result.data,'base64'));
+      const pickerCapture = await cdp('Runtime.evaluate', { expression: `(async()=>{
+        document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+        const card=document.querySelector('[data-card-id="claude:c2"]');if(!card)throw new Error('Claude card not found');card.click();
+        for(let i=0;i<40&&!document.querySelector('.th-tool[data-side-tab="details"]');i++)await new Promise(r=>setTimeout(r,100));
+        const details=document.querySelector('.th-tool[data-side-tab="details"]');if(details?.getAttribute('aria-pressed')!=='true')details?.click();
+        const control=document.querySelector('.desktop-resume-control');if(!control)throw new Error('Desktop account picker absent');
+        for(let parent=control.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
+        control.scrollIntoView({block:'nearest'});
+        control.querySelector('.desktop-account-picker').click();
+        for(let i=0;i<40&&!document.querySelector('input[aria-label="Desktop の起動アカウントを絞り込み"]');i++)await new Promise(r=>setTimeout(r,100));
+        const search=document.querySelector('input[aria-label="Desktop の起動アカウントを絞り込み"]');
+        search.value='claude:account-a';search.dispatchEvent(new Event('input',{bubbles:true}));
+        document.querySelector('.popover .picker-row')?.click();
+        for(let i=0;i<40&&!control.textContent.includes('Claude を開く');i++)await new Promise(r=>setTimeout(r,100));
+        await new Promise(r=>setTimeout(r,400));
+        const visibleControl=document.querySelector('.desktop-resume-control');
+        for(let parent=visibleControl.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
+        const button=visibleControl.querySelector('[data-resume-desktop]');if(!button.textContent.includes('Claude を開く'))throw new Error('selected Desktop name absent');
+        button.scrollIntoView({behavior:'instant',block:'center'});await new Promise(r=>setTimeout(r,200));
+        const buttonRect=button.getBoundingClientRect();if(!button.isConnected||buttonRect.height<1||buttonRect.bottom>innerHeight-60||buttonRect.top<0)throw new Error('Desktop launch action is not visible');
+        visibleControl.querySelector('.desktop-account-picker').click();
+        await new Promise(r=>setTimeout(r,200));
+        if(!document.querySelector('.popover'))throw new Error('Desktop account choices are not visible');
+      })()`, awaitPromise:true });
+      assert.equal(pickerCapture.result?.exceptionDetails,undefined,JSON.stringify(pickerCapture.result?.exceptionDetails));
+      const pickerShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+      fs.writeFileSync(path.join(dir,`${view}-${theme}-desktop-picker.png`),Buffer.from(pickerShot.result.data,'base64'));
+      const unverifiedCapture=await cdp('Runtime.evaluate',{expression:`(async()=>{
+        document.querySelector('.popover .close')?.click();window.desktopShotView.accountSwitch=false;
+        window.dispatchEvent(new Event('focus'));await new Promise(r=>setTimeout(r,300));
+        const control=document.querySelector('.desktop-resume-control'),button=control.querySelector('[data-resume-desktop]');
+        button.scrollIntoView({behavior:'instant',block:'center'});
+        if(!button.disabled||!button.textContent.includes('保持確認が必要'))throw new Error('unverified Desktop launch is misleading');
+        if(!control.textContent.includes('Desktop の現在のアカウント:'))throw new Error('current Desktop account is absent');
+      })()`,awaitPromise:true});
+      assert.equal(unverifiedCapture.result?.exceptionDetails,undefined,JSON.stringify(unverifiedCapture.result?.exceptionDetails));
+      const unverifiedShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+      fs.writeFileSync(path.join(dir,`${view}-${theme}-desktop-unverified.png`),Buffer.from(unverifiedShot.result.data,'base64'));
+      await cdp('Runtime.evaluate',{expression:`window.desktopShotView.accountSwitch=true;window.dispatchEvent(new Event('focus'));`});
     }
   }
   ws.close();

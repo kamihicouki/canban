@@ -55,6 +55,15 @@ test('no account keeps the current login; mismatched AI App and remote hosts are
   await assert.rejects(startAccount({ agent: 'codex', account: 'codex:nobody', host: { local: true }, route: 'desktop' }), /Codex Desktop は .* でサインインしています/);
 });
 
+test('Desktop account selection is local to the app even when its workspace is remote', { skip: process.platform !== 'darwin' }, async () => {
+  const target = await startAccount({ agent: 'claude', account: 'claude:first', host: { local: false, id: 'remote-box' }, route: 'desktop' });
+  assert.equal(target.prefix, '');
+  let opened = false;
+  await target.open(() => { opened = true; });
+  assert.equal(opened, true);
+  assert.equal(await fs.realpath(app), await fs.realpath(first));
+});
+
 test('accounts are named with their AI App, and the CLI prefix goes before the binary', () => {
   assert.equal(accountName('codex:abcdef123456'), 'Codex · abcdef12');
   assert.equal(accountName('claude:x', { 'claude:x': 'me@example.com' }), 'Claude · me@example.com');

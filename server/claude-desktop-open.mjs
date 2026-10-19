@@ -6,6 +6,9 @@
 // account's sessions are placed as guests before Desktop starts, and a watcher writes
 // them back after the user's ⌘Q. A running Desktop is never touched; the link opens as is.
 import { openAppUrl } from './launcher.mjs';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { withDesktopMutationLock } from './claude-desktop-lock.mjs';
 import { desktopRunning, planGuests, placeGuests, restoreGuests, spawnGuestWatcher, guestPaths } from './claude-desktop-guests.mjs';
 
 const NOT_GUEST = '作業途中で終了された会話';
@@ -14,6 +17,12 @@ const NOT_GUEST = '作業途中で終了された会話';
 // link opens; it must be placeable, or nothing is opened (the link would not find it).
 // Returns { ok, placed, code?, reason? }; ok=false with an opened Desktop is not an error.
 export async function openClaudeDesktop({ url, guestSessionId = null, labelOf = a => a.slice(0, 8), paths = guestPaths(), watch = spawnGuestWatcher, open = openAppUrl }) {
+  const dataDir = paths.dataDir || path.dirname(paths.state);
+  await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
+  return withDesktopMutationLock({ dataDir }, () => openClaudeDesktopLocked({ url, guestSessionId, labelOf, paths, watch, open }));
+}
+
+async function openClaudeDesktopLocked({ url, guestSessionId, labelOf, paths, watch, open }) {
   if (!/^claude:/i.test(url)) throw new Error('Claude Desktop のリンクではありません');
   if (await desktopRunning()) {
     if (guestSessionId) return { ok: false, opened: false, code: 'desktop_running', reason: 'Desktop を終了してから開くと、全アカウントの会話をまとめた Desktop で開けます。' };
@@ -21,6 +30,8 @@ export async function openClaudeDesktop({ url, guestSessionId = null, labelOf = 
     return { ok: false, opened: true, code: 'desktop_running', placed: 0 };
   }
   if (guestSessionId) {
+    const restored = await restoreGuests({ paths });
+    if (restored.problems?.length) return { ok: false, opened: false, code: 'desktop_guests_left', reason: restored.problems.join('、') };
     const plan = await planGuests({ paths, labelOf });
     if (!plan.ok) return { ok: false, opened: false, code: 'desktop_unavailable', reason: plan.reason };
     if (!plan.guests.some(g => g.sessionId === guestSessionId)) {
