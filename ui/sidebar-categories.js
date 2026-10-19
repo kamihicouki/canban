@@ -18,14 +18,14 @@ function setCategoryPin(id) {
   renderSidebar(state.board);
 }
 function openCategoryPicker(anchor = document.querySelector('[data-all-categories]') || $('#sideBtn')) {
-  if (!state.board) return;
+  if (!state.board || laneHides('directory')) return;
   const existing = document.querySelector('.category-picker');
   if (existing) { closePopover(existing); return; }
   const input = h('input', { type: 'search', class: 'text-input', placeholder: 'カテゴリ名で検索', 'aria-label': 'カテゴリ名で検索', autocomplete: 'off' });
   const list = h('div', { class: 'category-picker-list', role: 'group', 'aria-label': 'カテゴリ一覧' });
   const count = h('div', { class: 'muted', role: 'status', 'aria-live': 'polite' });
   let rows = [], active = 0;
-  const select = id => { closePopover(p); setScope({ directory: state.filters.directory === id ? '' : id }); };
+  const select = id => { closePopover(p); if (laneHides('directory')) return; setScope({ directory: state.filters.directory === id ? '' : id }); };
   const mark = () => rows.forEach((row, i) => row.el.classList.toggle('active', i === active));
   const paintPin = (button, id) => {
     const on = categoryIsPinned(id);

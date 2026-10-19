@@ -174,14 +174,13 @@ function filterSection(b, hit = () => true) {
   const f = state.filters, nodes = [sideHead('絞り込み', filterChips(b).length ? h('button', { class: 'side-mini', title: '絞り込みをすべて解除', text: '解除', onclick: clearFilters }) : null)];
   const seg = (label, items, on, pick) => h('div', { class: 'side-seg', role: 'group', 'aria-label': label }, items.map(([k, t]) => h('button', { type: 'button', 'aria-pressed': String(on(k)), text: t, onclick: () => pick(k) })));
   if (!laneHides('agent')) nodes.push(seg(T.aiApps, [['all', 'すべて'], ['codex', 'Codex'], ['claude', 'Claude']], (k) => f.agent === k, (k) => setScope({ agent: k })));
-  const group = (title, rows, extra) => { const shown = rows.filter((r) => r && hit(r.label)); if (shown.length) nodes.push(sideHead(title, extra), ...shown.map((r) => r.el)); };
+  const group = (title, rows, extra, always = false) => { const shown = rows.filter((r) => r && hit(r.label)); if (shown.length || always) nodes.push(sideHead(title, extra), ...shown.map((r) => r.el)); };
   const choice = (label, on, pick, lead, ...tail) => ({ label, el: h('button', { class: `side-row${on ? ' active' : ''}`, 'aria-pressed': String(on), onclick: pick }, lead, h('span', { class: 'grow ellipsis', text: label }), ...tail) });
   group('状態', ['running', 'waiting', 'completed', 'aborted', 'idle'].filter((k) => b.statusCounts?.[k] || f.status === k).map((k) =>
     choice(STATUS_LABELS[k], f.status === k, () => setScope({ status: f.status === k ? '' : k }), h('span', { class: `sdot s-${k}` }), sideCountEl(b.statusCounts?.[k] || 0))));
   if (!laneHides('directory')) {
     const live = liveByDirectory(b);
     const dirs = state.sideQ.trim() ? allCategories(b) : categoryNavigation(allCategories(b), state.categoryPins, f.directory);
-    if (!dirs.length) nodes.push(sideHead(T.category, h('button', { class: 'side-mini', 'aria-label': 'カテゴリを管理', html: picon('gear', 14), onclick: () => workspace.toggle('directories') })));
     group(T.category, dirs.map((d) => ({ label: d.name, el: h('div', { class: 'side-item side-dir', 'data-dir-id': d.id },
       h('button', { class: `side-row${f.directory === d.id ? ' active' : ''}`, 'aria-pressed': String(f.directory === d.id), title: 'クリックで絞り込み（もう一度で解除）。カードをここへドラッグすると所属を変えられます',
         onclick: () => setScope({ directory: f.directory === d.id ? '' : d.id }) },
@@ -189,7 +188,7 @@ function filterSection(b, hit = () => true) {
         h('span', { class: 'grow ellipsis', text: d.name }), ...liveBadges(live.get(d.id)), sideCountEl(d.count)),
       d.id === '__none' ? null : h('button', { class: 'icon-btn', 'aria-label': `${d.name} の設定`, text: '⋯', onclick: (e) => directoryMenu(e.currentTarget, d.id) })) })),
       state.layout === 'omni' || (state.layout === 'rail' && matchMedia('(min-width: 721px)').matches) ? null :
-        h('button', { class: 'side-mini', title: `${T.category}を管理`, 'aria-label': `${T.category}を管理`, html: picon('gear', 14), onclick: () => workspace.toggle('directories') }));
+        h('button', { class: 'side-mini', title: `${T.category}を管理`, 'aria-label': `${T.category}を管理`, html: picon('gear', 14), onclick: () => workspace.toggle('directories') }), true);
     nodes.push(h('button', { type: 'button', class: 'side-row', 'data-all-categories': '', 'aria-label': 'すべてのカテゴリ…', 'aria-keyshortcuts': 'Alt+C', title: 'すべてのカテゴリ（Alt+C）', onclick: e => openCategoryPicker(e.currentTarget) },
       h('span', { class: 'side-ic', html: picon('search', 15) }), h('span', { class: 'grow', text: 'すべてのカテゴリ…' }), ...keycap('Alt+C')));
   }

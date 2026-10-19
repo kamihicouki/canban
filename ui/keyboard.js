@@ -11,7 +11,7 @@ document.addEventListener('keydown', e => {
     const picker = claudeAccountPicker(focusedPane());
     if (picker) { e.preventDefault(); picker.click(); }
   }
-  if (e.altKey && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.isComposing && e.code === 'KeyC' && !typingIn(e.target) && !document.querySelector('dialog[open], .popover')) {
+  if (e.altKey && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.isComposing && e.code === 'KeyC' && !laneHides('directory') && !typingIn(e.target) && !document.querySelector('dialog[open], .popover')) {
     e.preventDefault(); openCategoryPicker();
   }
   // Alt+1〜9: the agent's options into the input, also while typing there (⌥ digits would only type symbols).
@@ -80,7 +80,7 @@ function refreshShortcutHints() {
   const input = document.activeElement;
   const typing = typingIn(input);
   const modKey = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
-  const globalKeys = [['Alt+C', 'カテゴリ'], ['?', 'キー一覧'], [`${modKey}K`, 'コマンド']];
+  const globalKeys = [...(!laneHides('directory') ? [['Alt+C', 'カテゴリ']] : []), ['?', 'キー一覧'], [`${modKey}K`, 'コマンド']];
   const inCard = overlayOpen() || inDockedPane(input);
   let entries;
   if (upper) entries = [];
@@ -197,8 +197,8 @@ function commandPalette() {
       { label: '選択したSlackメッセージをカードに追加', run: () => slackUi.link(slackUi.el,slackUi.selected), hint: 'l' },
       { label: '選択したSlackメッセージの返信を読む', run: () => { const node = [...slackUi.el.querySelectorAll('[data-slack-key]')].find(n => n.dataset.slackKey === slackUi.selected.key); if (node) slackUi.thread(node,slackUi.selected); }, hint: 't' },
     ] : []),
-    { label: 'すべてのカテゴリを選ぶ', run: () => openCategoryPicker(), hint: 'Alt+C' },
-    ...(state.filters.directory ? [{ label: `選択中のカテゴリを${categoryIsPinned(state.filters.directory) ? '固定解除' : '固定'}`, run: () => setCategoryPin(state.filters.directory), hint: '一覧内 Alt+P' }] : []),
+    ...(!laneHides('directory') ? [{ label: 'すべてのカテゴリを選ぶ', run: () => openCategoryPicker(), hint: 'Alt+C' }] : []),
+    ...(!laneHides('directory') && state.filters.directory ? [{ label: `選択中のカテゴリを${categoryIsPinned(state.filters.directory) ? '固定解除' : '固定'}`, run: () => setCategoryPin(state.filters.directory), hint: '一覧内 Alt+P' }] : []),
     { label: 'Slack資料の追加ボタンへ', run: () => focusedPane()?.el.querySelector('.slack-add-prompt')?.focus(), hint: 'Alt+s' },
     ...(!paneLayer.hidden && focusedPane()?.kind !== 'view' ? [
       ...[-1, 1].filter(step => adjacentPaneList(focusedPane(), step)).map(step => {

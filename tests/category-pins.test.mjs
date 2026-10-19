@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const source = fs.readFileSync(new URL('../ui/sidebar-categories.js', import.meta.url), 'utf8');
-const model = vm.runInNewContext(`${source}\n({ categoryNavigation, toggleCategoryPin });`);
+const model = vm.runInNewContext(`${source}\n({ categoryNavigation, toggleCategoryPin, openCategoryPicker });`, { state: { board: {} }, laneHides: () => true, document: { querySelector: () => { throw new Error('category filter must not open for its own lane axis'); } } });
 const plain = value => JSON.parse(JSON.stringify(value));
 const dirs = Array.from({ length: 30 }, (_, i) => ({ id: `d${i}`, name: `カテゴリ${i}`, count: i }));
 test('defaults show five categories and keep an unpinned selection visible', () => {
@@ -23,4 +23,8 @@ test('zero-count and uncategorized entries remain selectable and pinnable', () =
   const list = [...dirs, { id: '__none', name: 'カテゴリ無し', count: 0 }];
   assert.deepEqual(plain(model.toggleCategoryPin(list, [], '__none')), ['__none']);
   assert.equal(model.categoryNavigation(list, ['d0'], '')[0].count, 0);
+});
+
+test('a category lane cannot open a hidden category filter', () => {
+  assert.equal(model.openCategoryPicker({}), undefined);
 });
