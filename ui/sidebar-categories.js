@@ -15,10 +15,19 @@ function categoryIsPinned(id) { return categoryNavigation(allCategories(), state
 function setCategoryPin(id) {
   state.categoryPins = toggleCategoryPin(allCategories(), state.categoryPins, id);
   store.set('categoryPins', state.categoryPins);
+  const trigger = document.querySelector('.category-picker') ? categoryPickerAnchor() : null;
   renderSidebar(state.board);
+  if (state.layout === 'omni') paintStrip(state.board);
+  // Keep the open popover anchored to the same DOM button across navigation redraws.
+  const replacement = trigger ? categoryPickerAnchor() : null;
+  if (trigger?.matches('[data-all-categories]') && replacement !== trigger && replacement?.matches('[data-all-categories]')) replacement.replaceWith(trigger);
 }
-function openCategoryPicker(anchor = document.querySelector('[data-all-categories]') || $('#sideBtn')) {
+function categoryPickerAnchor() {
+  return [...document.querySelectorAll('[data-all-categories]')].find(el => el.getClientRects().length) || $('#sideBtn');
+}
+function openCategoryPicker(anchor = null) {
   if (!state.board || laneHides('directory')) return;
+  anchor ||= categoryPickerAnchor();
   const existing = document.querySelector('.category-picker');
   if (existing) { closePopover(existing); return; }
   const input = h('input', { type: 'search', class: 'text-input', placeholder: 'カテゴリ名で検索', 'aria-label': 'カテゴリ名で検索', autocomplete: 'off' });
@@ -34,7 +43,7 @@ function openCategoryPicker(anchor = document.querySelector('[data-all-categorie
     button.title = `${on ? '固定解除' : '固定'}（Alt+P）`;
     button.innerHTML = picon('pin', 16);
   };
-  const toggle = row => { if (!row) return; setCategoryPin(row.id); paintPin(row.pin, row.id); p.returnFocus = document.querySelector('[data-all-categories]') || $('#sideBtn'); };
+  const toggle = row => { if (!row) return; setCategoryPin(row.id); paintPin(row.pin, row.id); p.returnFocus = categoryPickerAnchor(); };
   const paint = () => {
     const hit = matcher(input.value.trim());
     rows = allCategories().filter(d => hit(d.name)).map(d => {

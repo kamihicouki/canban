@@ -74,7 +74,16 @@ test('category navigation remains selectable without remembering names', { timeo
     await command(`レイアウト: ${label}`);
     await page.locator('#sideBtn').focus(); await page.keyboard.press('Alt+c');
     await picker.waitFor(); assert.equal(await picker.locator('.category-choice').count(), 31);
-    await page.keyboard.press('Escape');
+    if (layout === 'omni') {
+      assert.equal(await page.locator('.cat-strip [data-category-id]').count(), 6);
+      await search.fill('架空カテゴリ 00');
+      await picker.getByRole('button', { name: '架空カテゴリ 00 を固定解除', exact: true }).click();
+      assert.equal(await page.locator('.cat-strip [data-category-id]').count(), 5, 'pin changes immediately update the visible omnibar');
+      await picker.getByRole('button', { name: '架空カテゴリ 00 を固定', exact: true }).click();
+      assert.equal(await page.locator('.cat-strip [data-category-id]').count(), 6);
+    }
+    await page.keyboard.press('Alt+c');
+    assert.equal(await picker.count(), 0, 'the same key closes the picker even while its search has focus');
   }
   await command('レイアウト: Trello');
   for (const view of ['board','timeline']) {

@@ -11,7 +11,7 @@ document.addEventListener('keydown', e => {
     const picker = claudeAccountPicker(focusedPane());
     if (picker) { e.preventDefault(); picker.click(); }
   }
-  if (e.altKey && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.isComposing && e.code === 'KeyC' && !laneHides('directory') && !typingIn(e.target) && !document.querySelector('dialog[open], .popover')) {
+  if (e.altKey && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.isComposing && e.code === 'KeyC' && !laneHides('directory') && (document.querySelector('.category-picker') || !typingIn(e.target) && !document.querySelector('dialog[open], .popover'))) {
     e.preventDefault(); openCategoryPicker();
   }
   // Alt+1〜9: the agent's options into the input, also while typing there (⌥ digits would only type symbols).
