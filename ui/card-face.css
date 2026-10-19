@@ -24,7 +24,7 @@
 .face-compact .ftime { margin-left: 0; }
 .fflags { display: inline-flex; gap: 4px; flex: none; margin-top: 1px; align-items: center; color: var(--card-muted); }
 .fflag { display: inline-flex; align-items: center; }
-.fflag-new { background: var(--accent); color: var(--on-solid); border-radius: 4px; padding: 1px 5px; font-size: 10.5px; font-weight: 700; }
+.fflag-new { background: var(--accent); color: var(--on-accent); border-radius: 4px; padding: 1px 5px; font-size: 10.5px; font-weight: 700; }
 .fnow { margin-left: 27px; font-size: .8125rem; line-height: 1.6; color: var(--card-muted); display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .fnow-wait { color: var(--tone-wait); } .fnow-err { color: var(--tone-err); } .fnow-run { color: var(--tone-run); }
 .face-rich .fnow { -webkit-line-clamp: 2; }
@@ -45,7 +45,7 @@
 .card.face .card-resume, .card .card-resume { right: 6px; top: 6px; }
 .card-peek { position: absolute; right: 36px; top: 6px; width: 26px; height: 26px; border-radius: 6px; display: none; place-items: center; background: var(--card-bg); color: var(--card-muted); box-shadow: var(--card-shadow); }
 .card:hover .card-peek, .card:focus-within .card-peek, .card:focus .card-peek, .card.peeking .card-peek { display: grid; }
-.card-peek:hover, .card.peeking .card-peek { background: var(--accent); color: var(--on-solid); }
+.card-peek:hover, .card.peeking .card-peek { background: var(--accent); color: var(--on-accent); }
 .card.face.face-compact .card-peek, .card.face.face-compact .card-resume { top: 50%; transform: translateY(-50%); }
 /* inline reply */
 .card.peeking { box-shadow: var(--lift-shadow); cursor: default; z-index: 1; }
@@ -59,7 +59,7 @@
 .peek-compose { display: flex; align-items: flex-end; gap: 6px; background: var(--input-bg); border: 1px solid var(--btn-subtle-hover); border-radius: 14px; padding: 4px 4px 4px 12px; }
 .peek-compose:focus-within { border-color: var(--accent); }
 .peek-input { flex: 1; min-width: 0; border: 0; outline: 0; resize: none; background: none; font-size: .875rem; line-height: 1.6; padding: 5px 0; max-height: 120px; color: var(--card-fg); }
-.send-round { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--on-solid); display: grid; place-items: center; flex: none; }
+.send-round { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; flex: none; }
 .send-round:disabled { background: var(--btn-subtle-hover); color: var(--card-muted); cursor: default; }
 .peek-foot { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--card-muted); } .peek-keys { flex: 1; min-width: 0; display: flex; gap: 10px; white-space: nowrap; }
 /* A card that is open for reply keeps its title clear of the two corner buttons. */

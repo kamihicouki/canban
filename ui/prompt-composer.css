@@ -29,7 +29,7 @@
 .prompt-toolbar .perm-chip.elevated { color: var(--tone-wait); background: var(--tone-wait-bg); }
 .prompt-toolbar .help-tip { flex: none; }
 .send-round { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--primary-fg); display: grid; place-items: center; flex: none; }
-:root:not([data-theme="dark"]) .send-round { color: var(--on-solid); }
+:root:not([data-theme="dark"]) .send-round { color: var(--on-accent); }
 .cx-keys { display: flex; gap: 12px; padding: 6px 6px 0; font-size: 12px; color: var(--card-muted); flex-wrap: wrap; }
 /* Where it starts: small selects under the box, like Codex's project · environment · branch row. */
 .cx-place { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; }

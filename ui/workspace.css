@@ -39,7 +39,7 @@ body[data-page="settings"] .page-panel > .seg { display: flex; flex-wrap: wrap; 
 .page-help { color: var(--list-muted); font-size: 12px; line-height: 1.7; }
 .page-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
 .page-tabs button { padding: 8px 14px; background: var(--btn-subtle); border-radius: 5px; }
-.page-tabs button[aria-pressed="true"] { background: var(--accent); color: var(--on-solid); }
+.page-tabs button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
 .usage-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
 .usage-heading h2 { margin: 0; flex: 1; }
 .usage-window { display: grid; grid-template-columns: 110px minmax(180px,1fr) 160px; gap: 20px; align-items: center; padding: 16px 0; border-top: 1px solid var(--btn-subtle-hover); }
