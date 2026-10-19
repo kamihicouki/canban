@@ -217,3 +217,19 @@ test('the filters in effect become chips, except the axis the lanes follow', () 
   Object.assign(context.state.filters, { agent: 'all', directory: '', swimlane: '', days: 30 });
   assert.equal(vm.runInContext('activeView(board)?.name', context), '返事待ち');
 });
+test('a detail read ahead on j / k is used only while the card is unchanged, and an unread card is never read ahead', async () => {
+  const html = boardHtml();
+  const source = html.slice(html.indexOf('const SESSION_PREFETCH_MS'), html.indexOf('// A card opened for the first time'));
+  const card = { id: 'codex:b', updatedAt: 1, unread: false };
+  const calls = [];
+  const context = vm.createContext({ panes: [], cardKind: (id) => id.startsWith('task:') ? 'task' : 'session', state: { board: { lists: [{ id: 'inbox', cards: [card] }] } },
+    bridge: { callTool: async (name, args) => { calls.push(args.cardId); return { read: calls.length }; } } });
+  vm.runInContext(source, context);
+  context.prefetchSession('codex:b');
+  assert.deepEqual((await context.takeSessionDetail('codex:b')), { read: 1 }); // the read ahead is used
+  assert.equal(calls.length, 1);
+  context.prefetchSession('codex:b'); card.updatedAt = 2; // the session moved after it was read ahead
+  assert.deepEqual((await context.takeSessionDetail('codex:b')), { read: 3 });
+  card.unread = true; context.prefetchSession('codex:b');
+  assert.equal(calls.length, 3); // reading would mark it seen
+});

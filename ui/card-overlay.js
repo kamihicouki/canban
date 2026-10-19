@@ -360,7 +360,7 @@ document.addEventListener('keydown', e => {
     else if (k === '[' || k === ']') run = () => stepPane(k === ']' ? 1 : -1);
     else if (/^[1-9]$/.test(k) && PANE_MODES[k - 1]) run = () => setPaneMode(PANE_MODES[k - 1][0]);
     else if (k === 'i') run = () => focusPrompt(p);
-    else if ((p.kind === 'session' && (k === 'd' || (k === 'f' && !p.d?.session?.host))) || (p.kind === 'task' && k === 'd')) run = () => toggleThreadSide(p, k === 'd' ? 'details' : 'changes');
+    else if ((p.kind === 'session' && (k === 'd' || (k === 'f' && !sessionHost(p)))) || (p.kind === 'task' && k === 'd')) run = () => toggleThreadSide(p, k === 'd' ? 'details' : 'changes');
     else if (e.shiftKey && k === 'R' && terminalAvailable(p) && cardTerms.get(p.id)?.closed) run = () => restartTerminal(p);
     else if (e.shiftKey && k === 'X' && terminalAvailable(p) && cardTerms.get(p.id)?.id && !cardTerms.get(p.id)?.closed) run = () => endTerminal(p);
     else if (k === 't' && terminalAvailable(p)) run = () => toggleThreadSide(p, 'terminal');
@@ -416,21 +416,23 @@ function prefetchSession(id) {
   if (!hit || cardKind(id) !== 'session' || hit.card.unread || panes.some((p) => p.id === id)) return;
   const known = sessionPrefetch.get(id);
   if ((known && Date.now() - known.at < SESSION_PREFETCH_MS) || [...sessionPrefetch.values()].some((x) => x.pending)) return;
-  const entry = { at: Date.now(), pending: true };
+  const entry = { at: Date.now(), updatedAt: hit.card.updatedAt, pending: true };
   entry.promise = fetchSessionDetail(id).finally(() => { entry.pending = false; });
   entry.promise.catch(() => { if (sessionPrefetch.get(id) === entry) sessionPrefetch.delete(id); });
   sessionPrefetch.set(id, entry);
 }
+// A detail read ahead is used only while the card has not moved since; otherwise it is read again (and marked seen then).
 function takeSessionDetail(id) {
-  const hit = sessionPrefetch.get(id);
+  const hit = sessionPrefetch.get(id), card = boardSession(id)?.card;
   sessionPrefetch.delete(id);
-  return hit && Date.now() - hit.at < SESSION_PREFETCH_MS ? hit.promise.catch(() => fetchSessionDetail(id)) : fetchSessionDetail(id);
+  const fresh = hit && card && Date.now() - hit.at < SESSION_PREFETCH_MS && card.updatedAt === hit.updatedAt && !card.unread;
+  return fresh ? hit.promise.catch(() => fetchSessionDetail(id)) : fetchSessionDetail(id);
 }
 // A card opened for the first time shows its head and input from the board at once (renderPendingThreadPane).
 function paintPendingSession(p) {
   const hit = boardSession(p.id);
   if (!hit) return;
-  p.pending = true;
+  p.pending = true; p.pendingCard = hit.card;
   applyPaneAttrs(p);
   renderPendingThreadPane(p, hit.card, hit.list.id);
   paintPaneButtons(p);
@@ -456,7 +458,7 @@ async function loadSession(p, { restore = false } = {}) {
   }
   if (!panes.includes(p)) return;
   renderPaneKeepingDrafts(p, d);
-  p.pending = false;
+  p.pending = false; p.pendingCard = null;
   await loadExchangeTimeline(p);
 }
 async function openTaskCard(cardId, { restore = false, shown = null, dock } = {}) {

@@ -132,7 +132,9 @@ function sideTabOf(p) {
   const tab = p.sideTab === undefined ? store.get('threadSide', null) : p.sideTab;
   return tab === 'terminal' && !terminalAvailable(p) ? null : tab;
 }
-const terminalAvailable = (p) => p?.kind === 'session' && !!p.d?.session && !p.d.session.host;
+// Before the detail arrives, the board's card tells whether the session is on this machine.
+const sessionHost = (p) => (p?.d?.session || p?.pendingCard)?.host;
+const terminalAvailable = (p) => p?.kind === 'session' && !!(p.d?.session || p.pendingCard) && !sessionHost(p);
 function openThreadSide(p, tab) {
   p.sideTab = tab || null;
   store.set('threadSide', p.sideTab);
