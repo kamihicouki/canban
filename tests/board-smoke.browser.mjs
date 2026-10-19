@@ -89,11 +89,12 @@ await step('task start keeps unknown result and uses new payload only after an e
   const send=document.querySelector('#paneLayer .send-round');
   const tool=window.openai.callTool, calls=[];
   window.openai.callTool=async(name,args)=>{
+    if(name==='canban_acknowledge_desktop_launch')return {structuredContent:{state:'acknowledged'}};
     if(name!=='canban_start_session')return tool(name,args);
     calls.push(JSON.parse(JSON.stringify(args)));
     return {structuredContent:{state:'uncertain',note:'fixture: 開始結果は未確認です。元アプリを確認してください。',receipt:{requestId:args.clientRequestId,status:'unresolved'}}};
   };
-  const submit=async()=>{send.click();for(let i=0;i<30&&send.disabled;i++) await w(50);};
+  const submit=async()=>{for(let i=0;i<30&&send.disabled;i++) await w(50);if(send.disabled)throw new Error('task composer stayed disabled');send.click();for(let i=0;i<30&&send.disabled;i++) await w(50);};
   try {
     input.value='first fake task request';input.dispatchEvent(new Event('input',{bubbles:true}));await submit();
     if(!document.querySelector('.toast')?.textContent.includes('開始結果は未確認です'))throw new Error('existing launch result toast missing');
@@ -103,9 +104,9 @@ await step('task start keeps unknown result and uses new payload only after an e
     input.value='edited fake task request';input.dispatchEvent(new Event('input',{bubbles:true}));await w(100);
     if(calls.length!==2)throw new Error('editing automatically relaunched');
     await submit();
-    if(calls[2].prompt!==input.value||calls[2].clientRequestId===calls[1].clientRequestId)throw new Error('edited prompt reused old launch');
+    if(!calls[2])throw new Error('edited request did not start; calls='+calls.length+'; toast='+document.querySelector('.toast')?.textContent);if(calls[2].prompt!==input.value||calls[2].clientRequestId===calls[1].clientRequestId)throw new Error('edited prompt reused old launch');
     const folder=document.querySelector('#paneLayer input[aria-label="作業フォルダ"]');folder.value='/r/other';folder.dispatchEvent(new Event('change',{bubbles:true}));await submit();
-    if(calls[3].cwd!=='/r/other'||calls[3].clientRequestId===calls[2].clientRequestId)throw new Error('edited start setting reused old launch');
+    if(!calls[3])throw new Error('changed folder did not start; calls='+calls.length+'; toast='+document.querySelector('.toast')?.textContent);if(calls[3].cwd!=='/r/other'||calls[3].clientRequestId===calls[2].clientRequestId)throw new Error('edited start setting reused old launch');
     document.querySelector('#paneLayer button[aria-label="開始する場所を選ぶ"]').click();
     const newRequestRow=[...document.querySelectorAll('.popover .menu-item')].find(button=>button.textContent.includes('新しい依頼に切り替える'));
     const rowRect=newRequestRow.getBoundingClientRect(), toastRect=document.querySelector('.toast').getBoundingClientRect();
@@ -113,12 +114,12 @@ await step('task start keeps unknown result and uses new payload only after an e
     newRequestRow.click();
     if(calls.length!==4)throw new Error('new-request choice automatically launched');
     await submit();
-    if(calls[4].prompt!==calls[3].prompt||calls[4].clientRequestId===calls[3].clientRequestId)throw new Error('unchanged explicit new request reused old ID');
+    if(!calls[4])throw new Error('menu new request did not start; calls='+calls.length+'; toast='+document.querySelector('.toast')?.textContent);if(calls[4].prompt!==calls[3].prompt||calls[4].clientRequestId===calls[3].clientRequestId)throw new Error('unchanged explicit new request reused old ID');
     key('k',{metaKey:true});
     const fresh=[...document.querySelectorAll('.picker-row')].find(button=>button.textContent.includes('タスク: 新しい依頼に切り替える'));
     if(!fresh)throw new Error('palette new-request action missing');fresh.click();
     if(calls.length!==5)throw new Error('palette new-request action automatically launched');
-    await submit();if(calls[5].clientRequestId===calls[4].clientRequestId)throw new Error('palette new-request action reused old ID');
+    await submit();if(!calls[5])throw new Error('palette new request did not start; calls='+calls.length+'; toast='+document.querySelector('.toast')?.textContent);if(calls[5].clientRequestId===calls[4].clientRequestId)throw new Error('palette new-request action reused old ID');
 
   } finally {window.openai.callTool=tool;key('Escape');document.querySelector('.pane-close')?.click();await rpc('canban_unlink_session',{taskId,sessionId:'codex:t1'});key('r');await w(500);}
 });

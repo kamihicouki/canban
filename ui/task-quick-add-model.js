@@ -142,7 +142,7 @@ function taskSessionRequest(draft, args, newRequestId) {
   const ordered = value => Array.isArray(value) ? value.map(ordered) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, ordered(value[key])])) : value;
   const payload = JSON.parse(JSON.stringify(args));
   const previous = draft.launchRequest;
-  const fingerprint = request => { const { clientRequestId, ...body } = request; return JSON.stringify(ordered(body)); };
+  const fingerprint = request => { const { clientRequestId, allowDesktopSwitch, allowQuit, ...body } = request; return JSON.stringify(ordered(body)); };
   if (previous && fingerprint(previous) === fingerprint(payload)) return previous;
   const request = { ...payload, clientRequestId: newRequestId() };
   draft.launchRequest = request;

@@ -195,6 +195,7 @@ async function commandPalette() {
     { label: 'すべて既読にする', run: () => act('canban_mark_all_seen', {}, { okMsg: 'すべて既読にしました' }) },
     { label: state.sideOpen ? 'サイドバーを閉じる' : 'サイドバーを開く', run: () => toggleSidebar(), hint: 'b' },
     { label: '作成（タスクカード / 今すぐ始める）', run: () => taskQuickAdd.open(), hint: 'c' },
+    ...(!paneLayer.hidden && focusedPane()?.canCopyTaskImages?.() ? [{ label: 'タスク: 添付画像をコピー', run: () => focusedPane()?.copyTaskImages(), hint: 'Tab → Enter' }] : []),
     ...(taskQuickAdd.sessionDraft?.startResult?.state === 'opened' && taskQuickAdd.sessionDraft.startResult.imageIds?.length && (taskQuickAdd.sessionDraft.startResult.attachmentCopyAvailable ?? taskQuickAdd.targets?.desktopCapabilities?.clipboardImages) ? [{ label: '添付画像をコピー', run: () => taskQuickAdd.copySessionImages(), hint: 'Tab → Enter' }] : []),
     ...(taskQuickAdd.sessionDraft?.startRequest && ['waiting-for-quit','waiting-for-login','prepared'].includes(taskQuickAdd.sessionDraft.startResult?.state) ? [{ label: 'Desktop の開始待機を取り消す', run: () => taskQuickAdd.cancelSessionWait(), hint: 'Tab → Enter' }] : []),
     { label: 'エージェントで今すぐ始める', run: () => taskQuickAdd.open({ mode: 'session' }) },

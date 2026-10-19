@@ -35,7 +35,7 @@ function forward(message) {
     return;
   }
   pending.set(JSON.stringify(message.id), message.id);
-  if (['canban_review_loop', 'canban_send_loop', 'canban_start_session', 'canban_cancel_start_session', 'canban_desktop_account_command', 'canban_copy_prompt_images', 'canban_read_prompt_image'].includes(message.params?.name) || String(message.params?.name || '').startsWith('canban_terminal_')) message = { ...message, params: { ...message.params, arguments: { ...message.params.arguments, uiToken } } };
+  if (['canban_review_loop', 'canban_send_loop', 'canban_start_session', 'canban_cancel_start_session', 'canban_desktop_account_command', 'canban_open_session', 'canban_acknowledge_desktop_launch', 'canban_get_desktop_launch_draft', 'canban_copy_prompt_images', 'canban_read_prompt_image'].includes(message.params?.name) || String(message.params?.name || '').startsWith('canban_terminal_')) message = { ...message, params: { ...message.params, arguments: { ...message.params.arguments, uiToken } } };
   child.stdin.write(`${JSON.stringify(message)}\n`);
 }
 

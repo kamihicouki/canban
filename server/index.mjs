@@ -168,8 +168,10 @@ async function resolveDesktopStart(input) {
     if (sshIdentity.state !== 'resolved' || !cwd) throw new Error('SSHの接続先と作業フォルダを確認してください');
   } else newSessionLink(input.agent, { host, cwd, prompt: input.prompt, projectId });
   promptImages(store.dir, input.imageIds || []); withSkills(input.prompt, input.skills || []);
-  if (input.agent === 'codex') await startAccount({ agent: input.agent, account: input.account, host, route: 'desktop', labels: state.settings.accounts.labels });
-  return { host, cwd, projectId, account: input.account || null, prepareThread: remoteCodex, sshIdentity, selection };
+  const account = input.agent === 'codex'
+    ? (await startAccount({ agent: input.agent, account: input.account, host: LOCAL_HOST, route: 'desktop', labels: state.settings.accounts.labels })).account
+    : input.account || null;
+  return { host, cwd, projectId, account, prepareThread: remoteCodex, sshIdentity, selection: { ...selection, account } };
 }
 const desktopLaunches = createDesktopLaunches({
   dataDir: store.dir, resolveTarget: resolveDesktopStart,
@@ -201,7 +203,7 @@ const desktopLaunches = createDesktopLaunches({
     const integrated = await openDesktopApp(link.url, { labelOf: a => accountLabel(`claude:${a}`, labels).replace(/@.*/, '') });
     if (input.agent === 'claude' && input.account) await rememberDesktopAccount({ dataDir: store.dir, appDir: guestPaths().app, account: input.account });
     if (input.taskId) {
-      await store.updateTask({ cardId: input.taskId, target: { agent: input.agent, hostId: target.host.id, cwd: target.cwd, account: input.account } });
+      await store.updateTask({ cardId: input.taskId, target: { agent: input.agent, hostId: target.host.id, cwd: target.cwd, account: target.account } });
       await store.addPending({ taskId: input.taskId, pending: { agent: input.agent, hostId: target.host.id, cwd: target.cwd, prompt: text.slice(0,200), startedAt: Date.now() } });
     }
     return { attachmentCopyAvailable: (await readDesktopCapabilities(store.dir)).clipboardImages, url: link.url, hostId: target.host.id, cwd: target.cwd, ...(thread ? { threadId: thread.threadId } : {}), note: '新規画面を開きました。依頼の送信と実行状況はアプリで確認してください。', integrated: integrated && { ok: integrated.ok, placed: integrated.placed || 0, code: integrated.code || null, reason: integrated.reason || null } };

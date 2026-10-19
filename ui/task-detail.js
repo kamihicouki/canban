@@ -1,4 +1,23 @@
 // Part of board.html: included into its script by server/ui.mjs and shares its scope.
+// A durable waiting launch must finish cancellation before its request ID can be replaced.
+async function cancelTaskLaunchWait(draft, callTool) {
+  if (!draft.launchRequest || !['waiting-for-quit', 'waiting-for-login', 'prepared', 'opening'].includes(draft.launchResult?.state)) return true;
+  const response = await callTool('canban_cancel_start_session', { clientRequestId: draft.launchRequest.clientRequestId });
+  rememberTaskLaunchResult(draft, response.result || response);
+  return draft.launchResult.state === 'cancelled';
+}
+
+// Terminal and remote folder routes cannot claim that a saved Project was applied.
+function taskLaunchLocation(selected, args, hosts) {
+  if (!selected) return args;
+  const hostId = selected.hostId || (selected.kind === 'ssh' ? hosts.find(h => h.id === selected.sshHost || h.alias === selected.sshHost)?.id : 'local');
+  if (args.route === 'desktop' && args.agent === 'codex' && hostId === 'local') return { ...args, hostId: 'local', cwd: '', projectId: selected.id, sourceRef: selected.sourceRef };
+  if (args.route === 'desktop' && args.agent === 'claude') throw new Error('保存環境の完全適用は未確認です。元アプリで開始するかフォルダ指定を選んでください');
+  const cwd = selected.cwd || selected.root || (selected.roots?.length === 1 ? selected.roots[0] : '');
+  if (!hostId || !cwd?.startsWith('/')) throw new Error('開始設定の作業フォルダとマシンを確認できません。フォルダを指定してください');
+  return { ...args, cwd, hostId, account: hostId === 'local' || args.route === 'desktop' ? args.account : null };
+}
+
 // Task card detail
 function findCard(cardId) {
   for (const l of state.board?.lists || []) for (const c of l.cards) if (c.id === cardId) return { card: c, list: l };
@@ -132,21 +151,51 @@ async function loadTask(p, found) {
     prompt.value = taskRequestText(title.value, desc.value, memo.value);
     prompt.dispatchEvent(new Event('input', { bubbles: true }));
   } });
-  const launchNotice = h('span', { text: 'デスクトップで開始すると、依頼文に画像の参照を含めます' });
+  const launchNotice = h('span', { text: '画像は起動後にコピーし、アプリの入力欄で⌘Vを押してください' });
+  const copyImages = h('button', { class: 'link-btn', type: 'button', text: '画像をコピー', hidden: true, onclick: async () => {
+    const imageIds = composer.draft.launchResult?.imageIds || composer.draft.launchRequest?.imageIds || [];
+    if (!imageIds.length) return;
+    try {
+      const response = await bridge.callTool('canban_copy_prompt_images', { imageIds });
+      const result = response.result || response;
+      launchNotice.textContent = result.state === 'copied' ? '画像をコピーしました。アプリの入力欄で⌘Vを押してください。' : result.reason || '画像をコピーできませんでした。';
+    } catch (e) { toast(e.message, true); }
+  } });
+  const paintLaunchImages = () => {
+    const r = composer.draft.launchResult, request = composer.draft.launchRequest;
+    copyImages.hidden = r?.state !== 'opened' || request?.route !== 'desktop' || !(r.imageIds || request.imageIds)?.length;
+    copyImages.disabled = !(r?.attachmentCopyAvailable ?? launchTargets?.desktopCapabilities?.clipboardImages);
+  };
   const composer = promptComposer(prompt, { key: `start:${cardId}`, context: () => ({ agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim() }), submit: () => start(),
     placeholder: 'このタスクで何をしてほしいですか？', leading: [importButton], actions: startButtons, place: [agentSel, preset, presetInfo, nativeStart, hostSel, acctSel, cwd, dl],
-    keys: [keyHint(['⌘', 'Enter'], '開始'), keyHint(['$'], 'スキル'), launchNotice] });
-  p.newTaskRequest = () => {
-    beginNewTaskRequest(composer.draft);
-    launchNotice.textContent = '新しい依頼に切り替えました。前回の未確認結果は保持し、開始を押すと同じ文面でも新しい依頼になります。';
-    prompt.focus();
+    keys: [keyHint(['⌘', 'Enter'], '開始'), keyHint(['$'], 'スキル'), launchNotice, copyImages] });
+  p.copyTaskImages = () => copyImages.click();
+  p.canCopyTaskImages = () => !copyImages.hidden && !copyImages.disabled;
+  p.newTaskRequest = async () => {
+    if (composer.draft.sending) return;
+    composer.setSending(true); startButtons.forEach(b => { b.disabled = true; });
+    try {
+      if (!await cancelTaskLaunchWait(composer.draft, (name, args) => bridge.callTool(name, args))) {
+        launchNotice.textContent = '前回の開始を取り消せませんでした。元アプリと開始結果を確認してください。';
+        return;
+      }
+      const previous = composer.draft;
+      if (previous.launchResult?.state === 'uncertain' && previous.launchRequest?.route === 'desktop' && previous.launchResult?.route !== 'cloud' && previous.launchRequest?.runOn !== 'cloud') {
+        await bridge.callTool('canban_acknowledge_desktop_launch', { clientRequestId: previous.launchRequest.clientRequestId });
+      }
+      beginNewTaskRequest(composer.draft);
+      paintLaunchImages();
+      launchNotice.textContent = '新しい依頼に切り替えました。前回の未確認結果は保持し、開始を押すと同じ文面でも新しい依頼になります。';
+      prompt.focus();
+    } catch (e) { toast(e.message, true); }
+    finally { composer.setSending(false); startButtons.forEach(b => { b.disabled = false; }); }
   };
   p.hasTaskLaunchRequest = () => !!composer.draft.launchRequest;
   if (composer.draft.launchNewRequest) launchNotice.textContent = '新しい依頼に切り替えました。開始を押すと新しい依頼になります。';
   else if (composer.draft.launchResult && composer.draft.launchResult.state !== 'opened') launchNotice.textContent = '前回の開始結果は未確認です。同じ内容は結果を確認し、編集した内容は新しい依頼として開始します。';
   agentSel.addEventListener('change', fillPresets);
   bridge.callTool('canban_launch_targets', {}).then(targets => {
-    launchTargets = targets; fillPresets();
+    launchTargets = targets; fillPresets(); paintLaunchImages();
     const savedRef = card.launchSelection?.selectedRefs?.[0];
     const saved = agentSel.value === 'codex' ? targets.codex?.projects?.find(p => sourceRefKey(p.sourceRef) === sourceRefKey(savedRef) && sourceRefKey(savedRef)) : targets.claude?.environments?.find(p => sourceRefKey(p.sourceRef) === sourceRefKey(savedRef) && sourceRefKey(savedRef));
     if (saved) { preset.value = `${agentSel.value === 'codex' ? 'project' : 'environment'}:${saved.id}`; paintPreset(); }
@@ -158,14 +207,27 @@ async function loadTask(p, found) {
       const payload = composer.payload();
       composer.setSending(true); startButtons.forEach(b => { b.disabled = true; });
       const selected = presetValue();
-      if (selected && agentSel.value === 'claude') throw new Error('保存環境の完全適用は未確認です。元アプリで開始するかフォルダ指定を選んでください');
       const prefs = state.board.settings.launch;
-      const request = taskSessionRequest(composer.draft, { taskId: cardId, agent: agentSel.value, hostId: hostSel.value, cwd: selected ? '' : cwd.value.trim(), prompt: prompt.value, account: acctSel.value || null, ...payload, route: prefs.route, terminal: prefs.terminal, target: prefs.target, ...opts, ...(selected ? { projectId: selected.id, sourceRef: selected.sourceRef } : {}) }, () => crypto.randomUUID());
+      const args = taskLaunchLocation(selected, { taskId: cardId, agent: agentSel.value, hostId: hostSel.value, cwd: cwd.value.trim(), prompt: prompt.value, account: acctSel.value || null, ...payload, route: prefs.route, terminal: prefs.terminal, target: prefs.target, ...opts }, b.hosts);
+      if (args.route === 'desktop' && args.agent === 'codex' && args.hostId !== 'local' && !launchTargets?.desktopCapabilities?.codexRemote) throw new Error('このDesktopでのリモート下書き表示は実機確認が必要です');
+      if (args.route === 'desktop' && args.agent === 'claude') {
+        const capabilities = await desktopAccounts.refresh();
+        args.account ||= desktopAccounts.defaultAccount();
+        const problem = desktopAccounts.problem(args.account);
+        if (problem) throw new Error(problem);
+        args.allowDesktopSwitch = !!capabilities?.accountSwitch && args.account !== capabilities.activeAccount;
+      }
+      const sameRequest = taskSessionRequest({ launchRequest: composer.draft.launchRequest }, args, () => null) === composer.draft.launchRequest;
+      if (!sameRequest && composer.draft.launchRequest?.agent === 'claude' && composer.draft.launchRequest?.route === 'desktop' && composer.draft.launchResult?.state === 'uncertain') throw new Error('元アプリで前回の開始結果を確認し、「新しい依頼に切り替える」を選んでください');
+      if (!sameRequest && !await cancelTaskLaunchWait(composer.draft, (name, args) => bridge.callTool(name, args))) throw new Error('前回の開始を取り消せませんでした。元アプリと開始結果を確認してください');
+      const request = taskSessionRequest(composer.draft, args, () => crypto.randomUUID());
       const r = await bridge.callTool('canban_start_session', request);
       rememberTaskLaunchResult(composer.draft, r);
+      paintLaunchImages();
       launchNotice.textContent = r.state === 'opened' ? '開始を依頼しました。適用結果は元アプリで確認してください。' : '前回の開始結果は未確認です。同じ内容は結果を確認し、編集した内容は新しい依頼として開始します。';
       toast(r.note || `${acctSel.value ? accountName(acctSel.value) : agentSel.value === 'codex' ? 'Codex' : 'Claude'} で開始しました。セッションが現れると自動で紐付きます`, !!r.note);
       if (r.state !== 'opened') return; // unresolved launch keeps the original request for idempotent retries
+      if (request.route === 'desktop' && request.imageIds?.length) { load(); return; }
       delete composer.draft.launchRequest;
       if (prompt.value === request.prompt) { composer.clear(); prompt.value = ''; workspace.draftValues.set(prompt, ''); }
       load();

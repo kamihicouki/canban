@@ -24,7 +24,7 @@ import { currentLimits, cardSignals, limitsByAccount } from './signals.mjs';
 import { configureAccounts, accountsView, accountName } from './accounts.mjs';
 import { matchesAccount, withAccountNote } from './accounts-mcp.mjs';
 import { effectiveTaskContext } from './task-context.mjs';
-import { normalizeSourceSelections, categoryBindingConflicts } from './category-bindings.mjs';
+import { normalizeSourceSelections, categoryBindingConflicts, resolveCategory } from './category-bindings.mjs';
 import { sourceRelationsForTask, matchesSourceFilters, sourceFacetsForCards, plannedSourceRelations, legacyMatches, normalizeWorkingFolder, matchesWorkingFolder } from './source-filters.mjs';
 
 import { peekGit, refreshGit } from './gitlive.mjs';
@@ -106,9 +106,16 @@ function matchesDirectory(f, dir) {
 
 
 function sessionCardStates(sessions, state) {
-  const receipts = Object.values(state.cards).flatMap(card => card.launchReceipts || []);
+  const receiptsBySession = new Map();
+  for (const card of Object.values(state.cards)) for (const receipt of card.launchReceipts || []) {
+    if (receipt.status !== 'confirmed') continue;
+    const sessionId = receipt.sessionId;
+    if (!sessionId) continue;
+    if (!receiptsBySession.has(sessionId)) receiptsBySession.set(sessionId, []);
+    receiptsBySession.get(sessionId).push(receipt);
+  }
   return sessions.map(session => {
-    const launchReceipts = receipts.filter(receipt => receipt.sessionId === session.id && receipt.status === 'confirmed');
+    const launchReceipts = receiptsBySession.get(session.id) || [];
     return { ...session, launchReceipts, sourceView: sessionSourceView(session, {}, launchReceipts) };
   }); // archive and deletion belong exclusively to the agent
 }
@@ -470,9 +477,12 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
     const status = aggregateStatus(links.map((x) => x.status || 'idle'));
     const taskUpdatedAt = typeof t.updatedAt === 'number' ? t.updatedAt : Date.parse(t.updatedAt) || 0;
     const updatedAt = Math.max(t.createdAt || 0, taskUpdatedAt, ...links.map((x) => x.updatedAt || 0), ...(loopSummaries[id]?.cycles || []).map(c => c.updatedAt));
-    const dir = resolveDirectory(state, t, t.target?.cwd || links.find((x) => x.cwd)?.cwd);
     const context = effectiveTaskContext(t, links);
     const sourceRelations = sourceRelationsForTask(links);
+    const category = resolveCategory({ card: t, sourceView: { relations: sourceRelations },
+      bindings: state.categoryMapping?.bindings || [], legacy: { directories: state.directories,
+        cwd: t.target?.cwd || links.find((x) => x.cwd)?.cwd, tombstones: state.categoryMapping?.tombstones || [] } });
+    const dir = state.directories.find(d => d.id === category.categoryId) || null;
     if (t.context?.project) projects.set(context.project, (projects.get(context.project) || 0) + 1);
     if (t.context?.folder) folders.set(context.folder, (folders.get(context.folder) || 0) + 1);
     if (t.context?.section) {

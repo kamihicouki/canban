@@ -40,9 +40,9 @@ function browser() {
   const context = vm.createContext({ window: { innerWidth: 1280 }, localStorage: { getItem: k => values.get(k) ?? null, setItem: (k, v) => values.set(k, v) },
     slackUi: { visible: false }, T: { category: 'カテゴリ', automation: '自動化', aiApps: 'AI Apps' }, STATUS_LABELS: {}, panes: [],
     workspace: { utilityPage: () => false, navigate() {} }, bridge: { callTool: async (name, args) => { context.lastArgs = plain(args); return call(name, args); } },
-    render() {}, reconcileCards() {}, refreshShortcutHints() {}, refreshViews() {}, syncHeaderInputs() {}, picon: () => '', keycap: () => null,
+    render() {}, reconcileCards() {}, refreshShortcutHints() {}, refreshViews() {}, syncHeaderInputs() {}, picon: () => '', keycap: () => [],
   });
-  const files = ['state.js', 'source-facets.js', 'sidebar.js', 'load.js'];
+  const files = ['state.js', 'source-facets.js', 'sidebar-categories.js', 'sidebar.js', 'load.js'];
   vm.runInContext(files.map(file => fs.readFileSync(path.join(root, 'ui', file), 'utf8')).join('\n'), context);
   // Only DOM painting is replaced. The picker, filters, applyView, load, wire and server are real.
   vm.runInContext(`toast=()=>{}; syncHeaderInputs=()=>{}; h=(tag,attrs={},...children)=>({tag,attrs,children:children.flat(Infinity)});`, context);

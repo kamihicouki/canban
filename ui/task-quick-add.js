@@ -64,21 +64,7 @@ const taskQuickAdd = {
       h('label', { class: 'creation-open-after' }, openAfter, '作成後にカードを開く'));
     this.primary = h('button', { type: 'submit', class: 'btn-primary' },
       h('span', { text: edit ? '保存' : session ? this.sessionActionLabel() : 'タスクを作成' }), keycap('⌘/Ctrl', 'Enter'));
-    this.newRequestButton = session ? h('button', { type: 'button', class: 'btn session-new-request', hidden: !this.sessionDraft.startRequest, text: '新しい依頼', onclick: async () => {
-      const previous = this.sessionDraft;
-      if (['waiting-for-quit','waiting-for-login','prepared','opening'].includes(previous.startResult?.state)) {
-        await this.cancelSessionWait();
-        if (previous.startResult?.state !== 'cancelled') return;
-      }
-      if (previous.startResult?.state === 'uncertain') {
-        try { await bridge.callTool('canban_acknowledge_desktop_launch', { clientRequestId: previous.startRequest.clientRequestId }); }
-        catch (e) { toast(e.message, true); return; }
-      }
-      if (previous.startResult?.state === 'opened') this.composer?.clear();
-      this.sessionDraft = { ...previous, prompt: previous.startResult?.state === 'opened' ? '' : previous.prompt };
-      delete this.sessionDraft.startRequest; delete this.sessionDraft.startResult;
-      this.mount();
-    } }) : null;
+    this.newRequestButton = session ? h('button', { type: 'button', class: 'btn session-new-request', hidden: !this.sessionDraft.startRequest, text: '新しい依頼', onclick: () => this.newSessionRequest() }) : null;
     form.append(content, feedback, h('div', { class: 'task-quick-actions' }, this.primary, this.newRequestButton,
       h('button', { type: 'button', class: 'btn creation-cancel', text: 'キャンセル', onclick: () => this.dialog.close() })));
     form.addEventListener('submit', e => { e.preventDefault(); this.submit(!!draft.openAfterCreate); });
@@ -135,6 +121,22 @@ const taskQuickAdd = {
       if (at) this.form.querySelector('.session-prompt')?.setSelectionRange(...at);
     }
   },
+  async newSessionRequest() {
+    const previous = this.sessionDraft;
+    if (previous.submitting || !previous.startRequest) return;
+    if (['waiting-for-quit','waiting-for-login','prepared','opening'].includes(previous.startResult?.state)) {
+      await this.cancelSessionWait();
+      if (previous.startResult?.state !== 'cancelled') return;
+    }
+    if (previous.startResult?.state === 'uncertain' && previous.startRequest?.route === 'desktop' && previous.startResult?.route !== 'cloud' && previous.startRequest?.runOn !== 'cloud') {
+      try { await bridge.callTool('canban_acknowledge_desktop_launch', { clientRequestId: previous.startRequest.clientRequestId }); }
+      catch (e) { toast(e.message, true); return; }
+    }
+    if (previous.startResult?.state === 'opened') this.composer?.clear();
+    this.sessionDraft = { ...previous, prompt: previous.startResult?.state === 'opened' ? '' : previous.prompt };
+    delete this.sessionDraft.startRequest; delete this.sessionDraft.startResult;
+    this.mount();
+  },
   sessionActionLabel() {
     const draft = this.sessionDraft;
     if (draft.startRequest) return '開始結果を確認';
@@ -143,6 +145,24 @@ const taskQuickAdd = {
     if (draft.route === 'terminal') return `${draft.agent === 'codex' ? 'Codex' : 'Claude Code'}を開始`;
     return `${draft.agent === 'codex' ? 'Codex' : 'Claude'}を開く`;
   },
+  chooseSessionDestination(agent, route) {
+    const draft = this.sessionDraft;
+    if (draft.startRequest || draft.submitting) return;
+    if (draft.route === 'desktop' && route === 'terminal') {
+      const selected = draft.agent === 'codex' ? this.targets?.codex?.projects?.find(p => p.id === draft.projectId) : this.targets?.claude?.environments?.find(e => e.id === draft.environmentId);
+      if (selected) {
+        const host = selected.hostId || (selected.kind === 'ssh' ? state.board.hosts.find(h => h.id === selected.sshHost || h.alias === selected.sshHost)?.id : 'local');
+        draft.cwd = host ? selected.cwd || selected.root || (selected.roots?.length === 1 ? selected.roots[0] : '') : '';
+        draft.hostId = host || 'local';
+      }
+      draft.projectId = '__folder'; draft.environmentId = '__folder'; draft.sourceRef = null; draft.runOn = 'local'; draft.cloudEnvironment = null;
+      if (draft.hostId !== 'local') draft.account = null;
+    }
+    if (draft.agent !== agent) { draft.projectId = '__folder'; draft.environmentId = '__folder'; draft.sourceRef = null; }
+    draft.agent = agent; draft.route = route;
+    if (!draft.account?.startsWith(`${agent}:`)) draft.account = null;
+    this.mount('input[name="session-destination"]:checked');
+  },
   sessionFields(field) {
     const draft = this.sessionDraft, board = state.board;
     const choices = [['codex', 'desktop', 'Codex', 'デスクトップ'], ['claude', 'desktop', 'Claude', 'デスクトップのCode'],
@@ -150,7 +170,7 @@ const taskQuickAdd = {
     const destinations = h('fieldset', { class: 'session-destination' }, h('legend', { class: 'creation-label', text: 'AI App・開く方法' }),
       h('div', { class: 'session-destinations' }, choices.map(([agent, route, label, detail]) => {
         const radio = h('input', { type: 'radio', name: 'session-destination', value: `${agent}-${route}`, checked: draft.agent === agent && draft.route === route,
-          onchange: () => { draft.agent = agent; draft.route = route; if (!draft.account?.startsWith(`${agent}:`)) draft.account = null; this.mount('input[name="session-destination"]:checked'); } });
+          onchange: () => this.chooseSessionDestination(agent, route) });
         return h('label', { class: 'session-choice' }, radio, h('span', {}, h('strong', { text: label }), h('span', { text: detail })));
       })));
     const targets = this.targets;
