@@ -309,8 +309,9 @@ async function stepOpenCard(step) {
   // rather than refreshing it in place; detached panes keep their drafts in cache.
   showCards([next]);
   paneStage.scrollLeft = 0;
+  prefetchSession(neighborCardId(ids, next, step)); // most often the next press
   await openCard(next);
-  if (panes[0]?.id === next) panes[0].el.focus({ preventScroll: true });
+  if (panes[0]?.id === next && !panes[0].el.contains(document.activeElement)) panes[0].el.focus({ preventScroll: true });
 }
 const focusedPane = () => { const el = document.activeElement?.closest?.('.pane'); return panes.find((p) => p.el === el) || (exchangeTrail && panes.find(p => p.id === exchangeTrail.visits[exchangeTrail.active].sessionId)) || panes[0]; };
 function stepPane(step) {
@@ -359,7 +360,7 @@ document.addEventListener('keydown', e => {
     else if (k === '[' || k === ']') run = () => stepPane(k === ']' ? 1 : -1);
     else if (/^[1-9]$/.test(k) && PANE_MODES[k - 1]) run = () => setPaneMode(PANE_MODES[k - 1][0]);
     else if (k === 'i') run = () => focusPrompt(p);
-    else if ((p.kind === 'session' && (k === 'd' || (k === 'f' && !p.d?.session?.host))) || (p.kind === 'task' && k === 'd')) run = () => toggleThreadSide(p, k === 'd' ? 'details' : 'changes');
+    else if ((p.kind === 'session' && (k === 'd' || (k === 'f' && !sessionHost(p)))) || (p.kind === 'task' && k === 'd')) run = () => toggleThreadSide(p, k === 'd' ? 'details' : 'changes');
     else if (e.shiftKey && k === 'R' && terminalAvailable(p) && cardTerms.get(p.id)?.closed) run = () => restartTerminal(p);
     else if (e.shiftKey && k === 'X' && terminalAvailable(p) && cardTerms.get(p.id)?.id && !cardTerms.get(p.id)?.closed) run = () => endTerminal(p);
     else if (k === 't' && terminalAvailable(p)) run = () => toggleThreadSide(p, 'terminal');
@@ -390,24 +391,74 @@ async function openCard(cardId, { restore = false, dock } = {}) {
   for (const l of state.board?.lists || []) for (const c of l.cards) if (c.id === cardId && c.unread) { c.unread = false; if (!dock) render(); }
   showCards([cardId], { dock });
   const [p] = panes;
-  await loadSession(p, { restore });
-  if (panes.includes(p) && !restore && !dock) p.el.focus({ preventScroll: true });
+  const loading = loadSession(p, { restore }); // paints the head and the input before it waits
+  const focus = !restore && !dock;
+  if (focus) p.el.focus({ preventScroll: true });
+  await loading;
+  if (focus && panes.includes(p) && !p.el.contains(document.activeElement)) p.el.focus({ preventScroll: true }); // typing started meanwhile keeps its field
+}
+// j / k read the next card's detail ahead, one at a time, so walking the board does not wait on every card.
+// Reading a detail marks the card seen, so an unread card is left for the user to open.
+const SESSION_PREFETCH_MS = 20000;
+const sessionPrefetch = new Map(); // card id → { at, promise }
+const fetchSessionDetail = (id) => bridge.callTool('canban_get_session', { cardId: id, messages: 14 });
+// The session as the board has it: its own card, or a link inside a task's card.
+function boardSession(id) {
+  for (const list of state.board?.lists || []) for (const c of list.cards) {
+    if (c.id === id) return { card: c, list };
+    const link = c.kind === 'task' && c.links?.find((x) => x.id === id);
+    if (link) return { card: { ...link, directory: link.directory ?? c.directory }, list };
+  }
+  return null;
+}
+function prefetchSession(id) {
+  const hit = id && boardSession(id);
+  if (!hit || cardKind(id) !== 'session' || hit.card.unread || panes.some((p) => p.id === id)) return;
+  const known = sessionPrefetch.get(id);
+  if ((known && Date.now() - known.at < SESSION_PREFETCH_MS) || [...sessionPrefetch.values()].some((x) => x.pending)) return;
+  const entry = { at: Date.now(), updatedAt: hit.card.updatedAt, pending: true };
+  entry.promise = fetchSessionDetail(id).finally(() => { entry.pending = false; });
+  entry.promise.catch(() => { if (sessionPrefetch.get(id) === entry) sessionPrefetch.delete(id); });
+  sessionPrefetch.set(id, entry);
+}
+// A detail read ahead is used only while the card has not moved since; otherwise it is read again (and marked seen then).
+function takeSessionDetail(id) {
+  const hit = sessionPrefetch.get(id), card = boardSession(id)?.card;
+  sessionPrefetch.delete(id);
+  const fresh = hit && card && Date.now() - hit.at < SESSION_PREFETCH_MS && card.updatedAt === hit.updatedAt && !card.unread;
+  return fresh ? hit.promise.catch(() => fetchSessionDetail(id)) : fetchSessionDetail(id);
+}
+// A card opened for the first time shows its head and input from the board at once (renderPendingThreadPane).
+function paintPendingSession(p) {
+  const hit = boardSession(p.id);
+  if (!hit) return;
+  p.pending = true; p.pendingCard = hit.card;
+  applyPaneAttrs(p);
+  renderPendingThreadPane(p, hit.card, hit.list.id);
+  paintPaneButtons(p);
+  workspace.trackDrafts(p.el);
 }
 async function loadSession(p, { restore = false } = {}) {
   let d;
+  if (!p.d && (!p.pending || p.el.querySelector?.('.conv-failed'))) paintPendingSession(p);
   try {
-    d = await bridge.callTool('canban_get_session', { cardId: p.id, messages: 14 });
+    d = await takeSessionDetail(p.id);
   } catch (e) {
     if (!panes.includes(p)) return;
     if (restore && e.message.startsWith('セッションが見つかりません:')) return closeCards();
     if (p.d) return toast(e.message, true);
-    p.el.replaceChildren(h('p', { class: 'muted pane-loading', text: `読み込みに失敗しました: ${e.message}` }),
-      h('button', { class: 'btn', text: '再読み込み', onclick: () => loadSession(p) }),
+    const failed = [h('p', { class: 'muted pane-loading', text: `読み込みに失敗しました: ${e.message}` }),
+      h('button', { class: 'btn', text: '再読み込み', onclick: () => loadSession(p) })];
+    // With the head already shown, only the conversation reports the failure; the input keeps what was typed.
+    const conv = p.pending && p.el.querySelector?.('.th-conv');
+    if (conv) { conv.removeAttribute('aria-busy'); conv.replaceChildren(h('div', { class: 'conv-failed', role: 'alert' }, ...failed)); return; }
+    p.el.replaceChildren(...failed,
       h('button', { class: 'pane-close', style: { margin: '8px 16px 16px' }, text: '閉じる', onclick: () => closeCards() }));
     return;
   }
   if (!panes.includes(p)) return;
   renderPaneKeepingDrafts(p, d);
+  p.pending = false; p.pendingCard = null;
   await loadExchangeTimeline(p);
 }
 async function openTaskCard(cardId, { restore = false, shown = null, dock } = {}) {
@@ -517,6 +568,10 @@ function renderPaneKeepingDrafts(p, d) {
     return (baseline !== undefined && baseline !== input.value) || input.matches('.send-box textarea') && !!input.value.trim()
       || input.matches('textarea.note') && input.value !== input.defaultValue;
   }).map(input => ({ label: input.getAttribute('aria-label'), value: input.value }));
+  // The field being typed in keeps the focus and the caret through the rebuild (the head shown before the detail).
+  const focused = el.ownerDocument?.activeElement;
+  const active = focused?.matches('input,textarea') && el.contains(focused) ? focused : null;
+  const caret = active && { label: active.getAttribute('aria-label'), start: active.selectionStart, end: active.selectionEnd };
   const promptDraft = promptDrafts.get(`dispatch:${p.id}`);
   const promptValue = drafts.find(draft => draft.label === '送るプロンプト');
   if (promptDraft && promptValue) promptDraft.text = promptValue.value;
@@ -528,6 +583,8 @@ function renderPaneKeepingDrafts(p, d) {
     if (input) input.value = draft.value;
     else if (draft.label === '送るプロンプト') keepDisabledPrompt($('.send-section', el), draft.value);
   }
+  const field = caret?.label && [...el.querySelectorAll('input,textarea')].find(input => input.getAttribute('aria-label') === caret.label);
+  if (field && !field.disabled) { field.focus({ preventScroll: true }); try { field.setSelectionRange(caret.start, caret.end); } catch {} }
 }
 
 async function changeSessionCardState(p, action) {

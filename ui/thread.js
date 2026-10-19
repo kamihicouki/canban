@@ -132,7 +132,9 @@ function sideTabOf(p) {
   const tab = p.sideTab === undefined ? store.get('threadSide', null) : p.sideTab;
   return tab === 'terminal' && !terminalAvailable(p) ? null : tab;
 }
-const terminalAvailable = (p) => p?.kind === 'session' && !!p.d?.session && !p.d.session.host;
+// Before the detail arrives, the board's card tells whether the session is on this machine.
+const sessionHost = (p) => (p?.d?.session || p?.pendingCard)?.host;
+const terminalAvailable = (p) => p?.kind === 'session' && !!(p.d?.session || p.pendingCard) && !sessionHost(p);
 function openThreadSide(p, tab) {
   p.sideTab = tab || null;
   store.set('threadSide', p.sideTab);
@@ -141,12 +143,13 @@ function openThreadSide(p, tab) {
 function toggleThreadSide(p, tab) { openThreadSide(p, sideTabOf(p) === tab ? null : tab); }
 function paintThreadSide(p) {
   const tab = sideTabOf(p), side = $('.th-side', p.el);
-  if (!side) return;
   const shown = tab;
+  // While the detail loads there is no panel yet: the buttons keep the choice and the panel opens with the detail.
+  for (const [id] of SIDE_TABS) { $$(`[data-side-tab="${id}"]`, p.el).forEach((b) => b.setAttribute('aria-pressed', String(shown === id))); }
+  if (!side) return;
   p.el.classList.toggle('side-open', !!shown);
   side.hidden = !shown;
   side.dataset.tab = shown || '';
-  for (const [id] of SIDE_TABS) { $$(`[data-side-tab="${id}"]`, p.el).forEach((b) => b.setAttribute('aria-pressed', String(shown === id))); }
   const body = $('.th-side-b', side);
   if (shown === 'changes') { body.replaceChildren(renderChangesPanel(p)); }
   else if (shown === 'terminal') { body.replaceChildren(terminalPanel(p)); }
@@ -198,6 +201,35 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
     h('div', { class: 'th-dock', 'data-sec': 'send' }, secs.slack ? h('details', { class: 'th-attach', 'data-sec': 'slack' }, h('summary', {}, h('span', { html: picon('message', 13) }), `Slack資料（${card.slackRefs.length}）`), ...secs.slack.nodes) : null, ...secs.send.nodes));
   el.replaceChildren(...[head, threadStrip(p, d), title].filter(Boolean), h('div', { class: 'th-meta' }, secs.status.nodes[0], ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('session'));
   paintThreadStat(p, git);
+  paintThreadSide(p);
+}
+
+// The same frame before the detail arrives: the board's card already has the title, the state and the
+// attribute line, so they and the input come at once; only the conversation waits, as a few lines in its place.
+function renderPendingThreadPane(p, card, listId) {
+  const conv = h('div', { class: 'th-conv', 'data-sec': 'conv', 'aria-busy': 'true' },
+    h('div', { class: 'conv-wait', role: 'status', 'aria-label': '会話を読み込み中' }, ...['w1', 'w2', 'w3', 'w4'].map((w) => h('i', { class: w }))));
+  const tool = (tab, icon, label, key) => h('button', { class: 'th-tool', type: 'button', 'data-side-tab': tab, title: `${label}を右に開く・閉じる（${key}）。詳細が届くと開きます`, 'aria-pressed': 'false', 'aria-keyshortcuts': key, onclick: () => toggleThreadSide(p, tab) }, h('span', { html: picon(icon, 14) }), label, ...keycap(key));
+  const head = h('div', { class: 'th-head' }, cardCrumb(cardListControls(p, listId)), h('span', { class: 'grow' }),
+    !card.host ? tool('changes', 'diff', '変更', 'f') : null, !card.host ? tool('terminal', 'terminal', 'ターミナル', 't') : null,
+    tool('details', 'panel', '詳細', 'd'), h('span', { class: 'ph-btns card-actions' }));
+  const labels = (card.labels || []).map((id) => state.board.labels.find((l) => l.id === id)).filter(Boolean);
+  const chips = [
+    dotPill(card),
+    dirPill(card.directory || { name: 'カテゴリ無し' }),
+    card.git ? gitPill(card.git, card.branch) : card.branch ? h('span', { class: 'ellipsis', title: card.branch, text: `⎇ ${card.branch}` }) : null,
+    card.pr ? prPill(card.pr) : null,
+    ...labels.map((l) => h('span', { class: 'th-label', title: 'ラベル' }, h('i', { style: { background: colorVar(l.color) } }), l.name)),
+    card.host ? h('span', { class: 'host-chip', text: card.host.label }) : null,
+    acctChip(card),
+    h('span', { class: 'th-time', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }),
+  ].filter(Boolean);
+  const status = h('div', { class: 'sub row' }, h('span', { class: `badge ${card.agent}`, text: card.agent === 'codex' ? 'Codex' : 'Claude' }),
+    h('span', { class: 'row pane-status' }, h('span', { class: `sdot s-${card.status || 'idle'}` }), card.statusKnown === false ? '状態未取得' : STATUS_LABELS[card.status || 'idle']));
+  const main = h('div', { class: 'th-main' }, conv, h('div', { class: 'th-dock', 'data-sec': 'send' }, renderPendingDispatch(card)));
+  p.el.replaceChildren(head, h('div', { class: 'th-title' }, h('h2', { text: card.title, title: card.title })), h('div', { class: 'th-meta' }, status, ...chips),
+    h('div', { class: 'th-body' }, main), ...paneSizeHandles('session'));
+  p.el.setAttribute('aria-label', `セッション詳細: ${card.title}`);
   paintThreadSide(p);
 }
 

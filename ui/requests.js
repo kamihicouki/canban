@@ -133,6 +133,21 @@ function renderDispatch(d) {
   return box;
 }
 
+// The input before the detail arrives: the same composer and draft, so typing can start at once;
+// sending waits for the session's permission and queue, which come with the detail.
+function renderPendingDispatch(card) {
+  const box = h('div', { class: 'send-section' });
+  if (!state.board?.settings?.dispatch?.enabled) return box;
+  const ta = h('textarea', { placeholder: 'このセッションに送るプロンプト（⌘/Ctrl + Enter で今すぐ送信）', 'aria-label': '送るプロンプト' });
+  const wait = () => toast('セッションの詳細を読み込み中です。入力は保持しています');
+  const composer = promptComposer(ta, { key: `dispatch:${card.id}`, context: () => ({ cardId: card.id }), submit: wait,
+    leading: [h('span', { class: 'perm-chip', text: '🔒 権限を確認中…' })],
+    actions: [h('button', { class: 'send-round', type: 'button', disabled: true, title: '詳細を読み込み中', 'aria-label': '今すぐ送信', html: picon('send', 15) })],
+    keys: [keyHint(['⌘', 'Enter'], '送信'), keyHint(['⌥', 'Enter'], 'キューへ'), keyHint(['$'], 'スキル')] });
+  box.append(h('div', { class: 'cx-choices', role: 'group', 'aria-label': '選択肢で答える', hidden: true }), h('div', { class: 'send-box' }, composer.root));
+  return box;
+}
+
 function requestRow(s,r,{index=-1,queue=[],review=null}={}) {
   const who = r.origin === 'model' ? '🤖 ' : '';
   const when = r.endedAt ? `${relTime(r.endedAt)}${r.startedAt ? `・${Math.max(1, Math.round((r.endedAt - r.startedAt) / 1000))} 秒` : ''}` : r.startedAt ? `${relTime(r.startedAt)}から` : relTime(r.createdAt);
