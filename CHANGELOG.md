@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.29.52 — 2026-10-19
+
+- バージョン更新を `npm run bump`（`scripts/bump-version.mjs`）にまとめ、3つのJSONの番号・CHANGELOG.md・CHROMEWEBSTORE.mdを同時に更新します。`--next-free` でorigin/mainとopen PRが使う番号を避けます。番号と変更履歴のずれは `tests/version-sync.test.mjs` が検出します。
+
 ## 0.29.51 — 2026-10-19
 
 - カテゴリ固定・元アプリ分類・Desktop開始とアカウント選択、色トークン、MCPツール分割、カード初期表示の各開発実装をmainへ統合しました。
