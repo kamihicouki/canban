@@ -126,3 +126,12 @@
 .th-attach > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 6px; height: 32px; font-size: 12.5px; font-weight: 600; color: var(--card-muted); }
 .th-attach > summary::-webkit-details-marker { display: none; }
 .th-attach[open] { padding-bottom: 10px; } .th-attach .slack-sources { max-height: 240px; overflow: auto; }
+
+/* The conversation before the detail arrives: a few lines in its place; the head and the input are already real. */
+.th-conv > .conv-wait { display: flex; flex-direction: column; gap: 12px; padding-top: 28px; }
+.conv-wait i { display: block; height: 12px; border-radius: 6px; background: var(--btn-subtle); animation: conv-wait 1.4s ease-in-out infinite alternate; }
+.conv-wait .w1 { width: 46%; } .conv-wait .w2 { width: 82%; } .conv-wait .w3 { width: 68%; } .conv-wait .w4 { width: 34%; margin-left: auto; }
+@keyframes conv-wait { from { background: var(--btn-subtle); } to { background: var(--btn-subtle-hover); } }
+@media (prefers-reduced-motion: reduce) { .conv-wait i { animation: none; } }
+.conv-failed { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.conv-failed .pane-loading { padding: 0; }

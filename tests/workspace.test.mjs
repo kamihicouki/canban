@@ -125,8 +125,8 @@ test('a session that cannot be read keeps its card with a reload button; a genui
   const source = html.slice(html.indexOf('async function loadSession('), html.indexOf('async function openTaskCard('));
   const p = {id:'codex:mock',d:null,el:{replaceChildren(...nodes){this.nodes=nodes;}}}, panes = [p];
   let error = new Error('db_busy'), closed = 0;
-  const context = vm.createContext({ panes, bridge: {callTool: async () => {throw error;}},
-    closeCards: () => {closed++;}, h: (tag,attrs) => ({tag,attrs}), toast: () => {}, renderPaneKeepingDrafts: () => {} });
+  const context = vm.createContext({ panes, takeSessionDetail: async () => {throw error;}, paintPendingSession: () => {},
+    closeCards: () => {closed++;}, h: (tag,attrs,...kids) => ({tag,attrs,kids}), toast: () => {}, renderPaneKeepingDrafts: () => {} });
   await vm.runInContext(`${source}\nloadSession(panes[0],{restore:true});`,context);
   assert.equal(closed,0); assert.ok(p.el.nodes.some(n => n.attrs.text === '再読み込み'));
   error = new Error('セッションが見つかりません: codex:mock');
@@ -134,6 +134,23 @@ test('a session that cannot be read keeps its card with a reload button; a genui
   assert.equal(closed,1);
   closed = 0; await vm.runInContext(`loadSession(panes[0]);`,context);
   assert.equal(closed,0); // outside a restore the error is shown, not hidden
+});
+test('a session whose head is already shown reports a failed load in the conversation only, and the reload puts the placeholder back', async () => {
+  const html = boardHtml();
+  const source = html.slice(html.indexOf('async function loadSession('), html.indexOf('async function openTaskCard('));
+  const conv = { removeAttribute(){}, replaceChildren(...nodes){this.nodes=nodes;} };
+  let failedShown = false;
+  const p = {id:'codex:mock',d:null,pending:true,el:{replaceChildren(){throw new Error('the whole card must stay');},querySelector:(sel)=>sel==='.th-conv'?conv:sel==='.conv-failed'&&failedShown?{}:null}};
+  let painted = 0;
+  const context = vm.createContext({ panes:[p], takeSessionDetail: async () => {throw new Error('db_busy');}, paintPendingSession: () => {painted++;},
+    closeCards: () => {}, h: (tag,attrs,...kids) => ({tag,attrs,kids}), toast: () => {}, renderPaneKeepingDrafts: () => {} });
+  await vm.runInContext(`${source}\nloadSession(panes[0]);`,context);
+  assert.equal(painted,0); // already pending: the head is not rebuilt
+  assert.equal(conv.nodes[0].attrs.class,'conv-failed');
+  assert.ok(conv.nodes[0].kids.some(n => n.attrs.text === '再読み込み'));
+  failedShown = true;
+  await vm.runInContext(`loadSession(panes[0]);`,context);
+  assert.equal(painted,1); // retrying shows the lines again while it loads
 });
 test('the card that was open comes back after a reload, and only that one', async () => {
   const html = boardHtml();
