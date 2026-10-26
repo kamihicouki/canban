@@ -54,6 +54,7 @@ test('setup persists a quit wait, resumes after restart, and can cancel the wait
   const readyView = await f.setup.view();
   assert.equal(readyView.setup.trial.state, 'ready', 'the unchanged Desktop build keeps the trial visible');
   assert.equal(readyView.profiles.every(p => p.status === 'checking'), true);
+  await assert.rejects(f.setup.command({ type: 'trial-start', account: 'claude:a' }), /保持確認を中止/);
   assert.equal((await f.setup.command({ type: 'trial-switch', requestId: 'switch-1' })).state, 'waiting-for-quit');
   assert.equal((await f.setup.view()).setup.pendingCommand.requestId, 'switch-1');
   await f.setup.command({ type: 'cancel-wait' });
@@ -93,3 +94,26 @@ test('a changed build, wrong identity or unobserved login cannot produce a capab
   await assert.rejects(f.setup.command({ type: 'trial-observe', confirmations: { authenticated: true, noLogin: true, draftsPreserved: true } }));
   assert.equal((await readDesktopCapabilities(f.dataDir, { builds: f.builds, platform: 'darwin' })).accountSwitch, false);
 });
+
+for (const phase of ['ready', 'awaiting-observation', 'waiting-for-quit']) {
+  test(`an updated Desktop can restart a ${phase} trial from the visible setup action`, async t => {
+    const f = await fixture(t); await connectB(f);
+    await f.setup.command({ type: 'trial-start', account: 'claude:a' });
+    if (phase !== 'ready') {
+      if (phase === 'awaiting-observation') f.stopped();
+      await f.setup.command({ type: 'trial-switch', requestId: 'old-switch' });
+    }
+    f.update();
+    assert.equal((await f.setup.view()).setup.trial.state, 'needs-review');
+    const before = await f.accounts.view(), opens = f.opens();
+    const restarted = await f.setup.command({ type: 'trial-start', account: phase === 'awaiting-observation' ? 'claude:b' : 'claude:a' });
+    assert.equal(restarted.state, 'ready');
+    assert.equal(restarted.builds.claude, 'updated');
+    assert.deepEqual(restarted.observations, []);
+    assert.equal((await f.setup.view()).setup.pendingCommand, undefined);
+    assert.equal((await f.setup.view()).accountSwitch, false);
+    await f.setup.recover();
+    assert.deepEqual(await f.accounts.view(), before);
+    assert.equal(f.opens(), opens);
+  });
+}

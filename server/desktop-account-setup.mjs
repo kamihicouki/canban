@@ -61,13 +61,19 @@ export function createDesktopAccountSetup({ dataDir, appDir, accounts, runtime, 
       const state = await readDesktopJson(file) || {};
       const save = async result => { await lock.assertHeld(); await write(file, state); return result; };
       if (input.type === 'cancel-wait') { delete state.pendingCommand; return save({ state: 'cancelled', reason: '終了待ちを取り消しました' }); }
+      const currentBuilds = trialCommands.has(input.type) ? await builds() : null;
+      // view() offers a fresh trial after an update. Apply that same invalidation
+      // before the old trial / quit-wait guards, without carrying over acceptance.
+      if (input.type === 'trial-start' && state.trial && state.trial.builds?.claude !== currentBuilds.claude) {
+        state.trial = { ...state.trial, state: 'needs-review' };
+        delete state.pendingCommand;
+      }
       if (state.pendingCommand && JSON.stringify(state.pendingCommand) !== JSON.stringify(input) && !['cancel','recover','trial-cancel'].includes(input.type)) throw desktopError('Desktop の終了待ちを取り消してから操作してください');
       if (initial.has(input.type)) {
         const result = await accounts.command(input);
         if (result.state === 'waiting-for-quit') state.pendingCommand = input; else delete state.pendingCommand;
         return save(result);
       }
-      const currentBuilds = await builds();
       if (input.type === 'trial-start') {
         if (platform !== 'darwin' || !currentBuilds.claude) throw desktopError('この Desktop のビルドを確認できません');
         if (state.trial && !['cancelled','complete','needs-review'].includes(state.trial.state)) throw desktopError('保持確認を中止してからやり直してください');
