@@ -84,7 +84,7 @@ test('board cards compact the same source view as full details without replacing
       const { Store } = await import('./server/store.mjs');
       const { buildBoard, sessionDetail } = await import('./server/board.mjs');
       const store = new Store(process.env.CANBAN_DATA_DIR);
-      const board = await buildBoard(store);
+      const board = await buildBoard(store, { days: 0 });
       const card = board.lists.flatMap(l => l.cards).find(c => c.id === 'codex:t1');
       const detail = await sessionDetail(store, 'codex:t1');
       console.log(JSON.stringify({ card, session: detail.session }));
