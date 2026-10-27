@@ -100,6 +100,7 @@ const SIDE_LOOK = [['analytics', 'chart', '分析', 'a'], ['usage', 'gauge', 'Ag
 const SIDE_MANAGE = [['rules', 'zap', T.automation], ['labels', 'tag', 'ラベル'], ['views', 'bookmark', '保存ビュー'], ['hosts', 'server', 'マシン'], ['slack', 'message', 'Slack接続'], ['settings', 'gear', '設定']];
 // The axes a lane can follow, in the order the sidebar offers them; the rest sit behind ⋯.
 const LANE_AXES = [['', 'なし'], ['directory', T.category], ['agent', 'AI Apps'], ['host', 'マシン'], ['label', 'ラベル']];
+const SIDE_SOURCE_TOP = 5; // rows per 元アプリ axis before the rest fold into 「ほか N 件…」
 const LANE_MORE = [...Object.entries(SOURCE_AXES), ['account', 'アカウント']];
 function sideCount(b, page) {
   return { rules: b.settings?.rules?.length, views: b.settings?.views?.length, labels: b.labels?.length, directories: b.directories?.length,
@@ -205,9 +206,16 @@ function filterSection(b, hit = () => true) {
       h('span', { class: 'side-ic', html: picon('search', 15) }), h('span', { class: 'grow', text: 'すべてのカテゴリ…' }), ...keycap('Alt+C')));
   }
   nodes.push(sideHead('元アプリ', keycap('p')));
+  // 元アプリ: each axis shows its busiest few and whatever is chosen; the rest stay one press away in the picker (p).
   for (const [axis, label] of Object.entries(SOURCE_AXES)) if (!laneHides(axis)) {
-    if (axis === 'workingFolder') group(label, workingFolderFacets(b).map(x => choice(`${x.name} · ${(x.origins || []).map(o => o === 'planned' ? '予定' : '観測').join('・')}`, f.workingFolder === x.cwd, () => setScope({ workingFolder: f.workingFolder === x.cwd ? '' : x.cwd }), null, sideCountEl(x.count))));
-    else group(label, (b.sourceFacets || []).filter(x => sourceAxis(x.ref) === axis).map(x => choice(`${sourceFacetName(x, b.sourceFacets)} · ${(x.origins || []).map(o => o === 'planned' ? '予定' : '観測').join('・')}`, sourceFilterSelected(x.ref), () => toggleSourceFilter(x.ref), null, sideCountEl(x.count))));
+    const items = (axis === 'workingFolder'
+      ? workingFolderFacets(b).map(x => ({ x, name: x.name, on: f.workingFolder === x.cwd, pick: () => setScope({ workingFolder: f.workingFolder === x.cwd ? '' : x.cwd }) }))
+      : (b.sourceFacets || []).filter(x => sourceAxis(x.ref) === axis).map(x => ({ x, name: sourceFacetName(x, b.sourceFacets), on: sourceFilterSelected(x.ref), pick: () => toggleSourceFilter(x.ref) })))
+      .sort((a, z) => z.x.count - a.x.count);
+    const shown = state.sideQ.trim() ? items : items.filter((it, i) => i < SIDE_SOURCE_TOP || it.on), rest = items.length - shown.length;
+    group(label, [...shown.map(it => choice(it.name, it.on, it.pick, null,
+      (it.x.origins || []).includes('planned') ? h('span', { class: 'side-tag', title: '開始予定', text: '予定' }) : null, sideCountEl(it.x.count))),
+      rest ? { label: '', el: h('button', { type: 'button', class: 'side-row side-more', title: 'すべての元アプリから選ぶ（p）', onclick: e => scopePicker(e.currentTarget) }, h('span', { class: 'grow', text: `ほか ${rest} 件…` })) } : null]);
   }
   const hosts = (b.hosts || []).filter((x) => x.local || x.enabled);
   if (!laneHides('host') && hosts.length > 1) group('マシン', hosts.map((x) => { const id = x.local ? 'local' : x.id;

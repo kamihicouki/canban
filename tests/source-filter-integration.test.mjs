@@ -66,7 +66,7 @@ function browser() {
       } else {
         const rows = vm.runInContext('filterSection(state.board)', context);
         const all = []; const walk = node => { if (!node || typeof node !== 'object') return; all.push(node); for (const child of node.children || []) walk(child); }; walk(rows);
-        const row = all.find(node => node.tag === 'button' && node.children.some(child => child?.attrs?.text?.startsWith(folder+' ·')));
+        const row = all.find(node => node.tag === 'button' && node.children.some(child => child?.attrs?.text === folder));
         assert.ok(row, `sidebar folder ${folder}`); row.attrs.onclick();
       }
       await this.settled();
