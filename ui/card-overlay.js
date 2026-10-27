@@ -829,7 +829,7 @@ function renderPane(p, d) {
     ...kv('モデル', s.model || '-'),
     ...kv('作成', fmtDate(s.createdAt)),
     ...kv('最終更新', fmtDate(s.updatedAt)),
-    ...kv('状態', [s.agent === 'claude' && !s.desktopKnown ? 'アーカイブ状態は不明（Claude デスクトップの情報がディスクにありません）' : s.archived ? 'アーカイブ済' : '進行中/未アーカイブ', s.pinnedInAgent ? '📌 Codex でピン留め' : null, s.subagent ? 'サブエージェント' : null, s.automation ? '⏰ Codex オートメーション' : null].filter(Boolean).join(' · ')),
+    ...kv('状態', [s.agent === 'claude' && !s.desktopKnown ? 'アーカイブ状態は不明（Claude デスクトップの情報がディスクにありません）' : s.archived ? 'アーカイブ済' : '進行中/未アーカイブ', s.pinnedInAgent ? '📌 Codex でピン留め' : null, s.subagent ? 'サブエージェント' : null, s.automation ? (s.agent === 'claude' ? '⏰ Claude 定期タスク' : '⏰ Codex オートメーション') : null].filter(Boolean).join(' · ')),
   )] };
   if (d.pr) secs.pr = { title: d.pr.provider === 'gitlab' ? 'マージリクエスト' : 'プルリクエスト', extra: prPill(d.pr), nodes: [h('div', { class: 'msg' },
     h('button', { class: 'link-btn', text: `${d.pr.title}`, onclick: () => bridge.openLink(d.pr.url).catch(() => copyText(d.pr.url, 'PR の URL')) }),
