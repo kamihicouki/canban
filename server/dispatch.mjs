@@ -22,7 +22,7 @@ import { RequestStore, queueHeads, ACTIVE_STATES, MAX_PROMPT } from './requests.
 import { permissionFor } from './permissions.mjs';
 import { headlessArgs } from './agents.mjs';
 import { codexRawStatus, claudeRawStatus, settle } from './status.mjs';
-import { stat, readTailJsonLines } from './sources/readonly.mjs';
+import { stat, readTailJsonLines, rolloutFile } from './sources/readonly.mjs';
 import { findCodexSession } from './sources/codex.mjs';
 import { listClaudeSessions } from './sources/claude.mjs';
 import { codexAppState, annotateCodexApp } from './sources/codex-app.mjs';
@@ -185,7 +185,7 @@ export async function inspect(session, host) {
       return { records: res.records || [], mtimeMs: res.mtimeMs || 0 };
     }
     if (!session.sourcePath) return { records: [], mtimeMs: 0 };
-    const st = await stat(session.sourcePath);
+    const st = await stat(rolloutFile(session.sourcePath));
     if (!st) return { records: [], mtimeMs: 0 };
     return { records: await readTailJsonLines(session.sourcePath, INSPECT_BYTES), mtimeMs: st.mtimeMs };
   });

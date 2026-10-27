@@ -5,6 +5,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { clip, cleanPrompt } from './sources/util.mjs';
 import { textOf, isHumanPrompt } from './sources/claude.mjs';
+import { rolloutFile, zstdTail } from './sources/readonly.mjs';
 
 export const FEED_TAIL_BYTES = 512 * 1024; // first read of a session
 export const FEED_MAX_DELTA = 1024 * 1024; // larger appends restart from the tail
@@ -14,18 +15,25 @@ const OUT_MAX = 600;
 
 // Read complete JSON lines from `start` (or the last `tailBytes`) to the last newline.
 // `offset` is where the next read continues; a partial last line is left for it.
+// A compressed rollout (`.jsonl.zst`) is decompressed down to the bytes that can be asked for.
 export async function readLines(file, { start = null, tailBytes = FEED_TAIL_BYTES } = {}) {
-  const fh = await fsp.open(file, 'r');
+  file = rolloutFile(file);
+  const zst = file.endsWith('.zst') ? await zstdTail(file, Math.max(tailBytes, FEED_MAX_DELTA)) : null;
+  const fh = zst ? null : await fsp.open(file, 'r');
   try {
-    const { size } = await fh.stat();
+    const size = zst ? zst.size : (await fh.stat()).size;
     let from = start == null ? Math.max(0, size - tailBytes) : start;
     let reset = false;
     if (start != null && (start > size || size - start > FEED_MAX_DELTA)) {
       from = Math.max(0, size - tailBytes); // truncated, rewritten or far behind
       reset = true;
     }
-    const buf = Buffer.alloc(size - from);
-    if (buf.length) await fh.read(buf, 0, buf.length, from);
+    let buf;
+    if (zst) buf = zst.buf.subarray(from - (size - zst.buf.length));
+    else {
+      buf = Buffer.alloc(size - from);
+      if (buf.length) await fh.read(buf, 0, buf.length, from);
+    }
     const end = buf.lastIndexOf(10); // '\n'
     const body = end < 0 ? '' : buf.subarray(0, end).toString('utf8');
     let lines = body.split('\n');
@@ -39,7 +47,7 @@ export async function readLines(file, { start = null, tailBytes = FEED_TAIL_BYTE
     }
     return { records, offset: end < 0 ? from : from + end + 1, size, reset };
   } finally {
-    await fh.close();
+    await fh?.close();
   }
 }
 
