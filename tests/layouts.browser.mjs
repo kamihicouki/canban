@@ -33,6 +33,7 @@ const snapshotUi = () => Object.fromEntries(['filters','themePref','layout','boa
 for (const id of ['trello', 'classic', 'rail', 'omni', 'hud']) {
   const initialUi = snapshotUi();
   key('k', { metaKey: true });
+  for (let i = 0; i < 30 && !document.querySelector('.popover.palette .picker-row'); i++) await w();
   const cmd = [...document.querySelectorAll('.picker-row')].find(el => el.textContent.includes('レイアウト: ' + ({trello:'Trello',classic:'定番',rail:'レール',omni:'オムニバー',hud:'ライブ HUD'})[id]));
   check(cmd, 'palette layout command: ' + id); calls.length = 0; cmd.click();
   check(!calls.includes('canban_get_board') && !calls.includes('canban_mark_all_seen') && !calls.includes('canban_mark_seen'), 'layout has no board/seen calls: ' + calls.join(','));
