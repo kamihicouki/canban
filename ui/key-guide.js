@@ -39,6 +39,15 @@ function placeKeyGuide() {
   else s.bottom = `${Math.round(innerHeight - r.bottom + gap)}px`;
   if (dock === 'bottom') { s.left = `${Math.round(r.left + r.width / 2)}px`; s.transform = 'translateX(-50%)'; s.maxWidth = `${Math.max(120, r.width - gap * 2)}px`; }
   else s.maxWidth = '';
+  markKeyGuideFoot();
+}
+// Along the foot the strip covers the end of what scrolls down to it (the detail panel d). Those scrollers end with
+// --kg-foot of room, so their last row scrolls clear of it; nothing moves. A guide hidden under a dialog keeps its room.
+let keyGuideFootH = 0;
+function markKeyGuideFoot() {
+  const strip = keyGuidePlace.dock === 'bottom' && !keyGuidePlace.min;
+  if (strip && !keyGuide.hidden) keyGuideFootH = Math.max(0, Math.ceil(innerHeight - keyGuide.getBoundingClientRect().top));
+  document.documentElement.style.setProperty('--kg-foot', `${strip ? keyGuideFootH : 0}px`);
 }
 keyGuideFold.addEventListener('click', (e) => { e.stopPropagation(); setKeyGuidePlace({ min: !keyGuidePlace.min }); });
 keyGuideHead.addEventListener('keydown', (e) => {

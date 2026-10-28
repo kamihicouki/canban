@@ -31,6 +31,8 @@
 /* A narrow card keeps the full width for the conversation; the details panel floats over it instead. */
 @container (max-width: 880px) { .th-side { position: absolute; top: 0; right: 0; bottom: 0; width: min(300px, 85%); z-index: 3; box-shadow: var(--card-shadow); } }
 .th-side-b { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+/* Room for the key guide's strip along the foot (key-guide.js --kg-foot), so 状態 and カード操作 scroll clear of it. */
+.th-side:not([data-tab="terminal"]) .th-side-b { padding-bottom: var(--kg-foot, 0px); }
 .pane-pad { padding: 10px 12px; }
 /* attributes of the details panel */
 .dsec { border-bottom: 1px solid var(--btn-subtle); padding: 0 14px; }
