@@ -20,6 +20,8 @@
 .board {
   flex: 1; display: flex; align-items: flex-start; gap: 12px;
   padding: 12px; overflow-x: auto; overflow-y: hidden;
+  /* Room for the key guide's strip along the foot (key-guide.js --kg-foot), so a full list's ＋タスクを追加 stays clear of it. */
+  padding-bottom: calc(12px + var(--kg-foot, 0px));
 }
 .list {
   flex: 0 0 272px; width: 272px; min-width: 0; max-height: 100%; display: flex; flex-direction: column;
