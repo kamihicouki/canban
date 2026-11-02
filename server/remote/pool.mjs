@@ -28,7 +28,7 @@ export class RemotePool {
     this.inflight = new Map();
   }
 
-  run(host, args, script = SCRIPT) {
+  run(host, args, script = SCRIPT, timeoutMs = this.timeoutMs) {
     return new Promise((resolve) => {
       const sshArgs = [...(host.sshArgs || []), '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-T', '--', host.alias, 'python3', '-'];
       const child = spawn(this.ssh, sshArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -43,8 +43,8 @@ export class RemotePool {
       };
       const timer = setTimeout(() => {
         child.kill('SIGKILL');
-        done({ ok: false, error: `タイムアウト（${Math.round(this.timeoutMs / 1000)} 秒）` });
-      }, this.timeoutMs);
+        done({ ok: false, error: `タイムアウト（${Math.round(timeoutMs / 1000)} 秒）` });
+      }, timeoutMs);
       child.stdout.on('data', (d) => (out += d));
       child.stderr.on('data', (d) => (err += d));
       child.on('error', (e) => done({ ok: false, error: e.message }));
@@ -147,6 +147,12 @@ export class RemotePool {
     const res = await this.run(host, { ...(this.dispatchArgs || {}), ...args }, DISPATCH_SCRIPT);
     if (!res.ok) throw new Error(`${host.label}: ${res.error}`);
     return res;
+  }
+
+  async prepareDesktop(host, { clientRequestId, cwd }) {
+    const result = await this.run(host, { mode: 'desktop_prepare_codex', clientRequestId, cwd }, DISPATCH_SCRIPT, Math.max(this.timeoutMs, 90000));
+    if (!result.ok) throw new Error('リモートDesktopの準備を確認できません');
+    return { ...result, hostId: result.hostId || host.id };
   }
 
   hostStatus(hostId) {

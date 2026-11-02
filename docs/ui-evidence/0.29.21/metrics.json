@@ -1,0 +1,74 @@
+{
+  "before-development": {
+    "viewport": [
+      1280,
+      800
+    ],
+    "question": "今回は公開を見送ってよいですか？",
+    "answer": "今回は見送ります。",
+    "choicesAfterReply": 2,
+    "paletteActionsAfterReply": 2,
+    "appendToChoicesMs": 172.7,
+    "rawPreserved": true,
+    "draftPreserved": true,
+    "readingPositionPreserved": true,
+    "initialLoadChecked": true,
+    "nextQuestionChoices": 2,
+    "submitted": [],
+    "errors": []
+  },
+  "after-development": {
+    "viewport": [
+      1280,
+      800
+    ],
+    "question": "今回は公開を見送ってよいですか？",
+    "answer": "今回は見送ります。",
+    "choicesAfterReply": 0,
+    "paletteActionsAfterReply": 0,
+    "appendToChoicesMs": 188.9,
+    "rawPreserved": true,
+    "draftPreserved": true,
+    "readingPositionPreserved": true,
+    "initialLoadChecked": true,
+    "nextQuestionChoices": 2,
+    "submitted": [],
+    "errors": []
+  },
+  "before-candidate": {
+    "viewport": [
+      1280,
+      800
+    ],
+    "question": "今回は公開を見送ってよいですか？",
+    "answer": "今回は見送ります。",
+    "choicesAfterReply": 2,
+    "paletteActionsAfterReply": 2,
+    "appendToChoicesMs": 199.6,
+    "rawPreserved": true,
+    "draftPreserved": true,
+    "readingPositionPreserved": true,
+    "initialLoadChecked": true,
+    "nextQuestionChoices": 2,
+    "submitted": [],
+    "errors": []
+  },
+  "after-candidate": {
+    "viewport": [
+      1280,
+      800
+    ],
+    "question": "今回は公開を見送ってよいですか？",
+    "answer": "今回は見送ります。",
+    "choicesAfterReply": 0,
+    "paletteActionsAfterReply": 0,
+    "appendToChoicesMs": 184.4,
+    "rawPreserved": true,
+    "draftPreserved": true,
+    "readingPositionPreserved": true,
+    "initialLoadChecked": true,
+    "nextQuestionChoices": 2,
+    "submitted": [],
+    "errors": []
+  }
+}

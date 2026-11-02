@@ -71,7 +71,7 @@ test('remote layout-only updates redraw cached data; changed filters still fetch
     const context = vm.createContext({
       hasUnsavedPaneInput: () => false, sharedUi: {}, sharedUiSnapshot: () => snapshot,
       adoptSharedUi: record => { snapshot = record.state; return true; },
-      applyCardWidths() {}, layoutCardBoard() {}, panes: [], applyPaneAttrs() {}, paintPaneBar() {},
+      applyCardWidths() {}, placeKeyGuide() {}, panes: [], applyPaneAttrs() {}, paintPaneBar() {},
       load: async () => loads++, render: () => renders++, renderSidebar() {}, state: { board: {} },
     });
     context.record = { state: { layout: 'rail', filters: { agent: filtersChanged ? 'codex' : 'all' }, workspacePage: 'home' } };

@@ -1,0 +1,53 @@
+{
+  "before": {
+    "viewport": [
+      1280,
+      800
+    ],
+    "messages": 63,
+    "expectedStart": 1,
+    "actualStart": 1,
+    "rawPreserved": true,
+    "draftPreserved": true,
+    "readingPositionPreserved": true,
+    "errors": [],
+    "samples": [
+      {
+        "view": "board",
+        "cardOpenToBodyMs": 687.3
+      },
+      {
+        "view": "timeline",
+        "cardOpenToBodyMs": 268
+      }
+    ],
+    "fixtureRecords": 64,
+    "primaryActionsPerView": 4
+  },
+  "after": {
+    "viewport": [
+      1280,
+      800
+    ],
+    "messages": 63,
+    "primaryActionsPerView": 4,
+    "expectedStart": 3,
+    "actualStart": 3,
+    "taskDescriptionUnchanged": true,
+    "rawPreserved": true,
+    "draftPreserved": true,
+    "readingPositionPreserved": true,
+    "errors": [],
+    "samples": [
+      {
+        "view": "board",
+        "cardOpenToBodyMs": 208.4
+      },
+      {
+        "view": "timeline",
+        "cardOpenToBodyMs": 37.3
+      }
+    ]
+  },
+  "timingLimit": "one sample per view; startup/cache/concurrent load differ, not a speed improvement claim"
+}

@@ -17,7 +17,7 @@ function closePopover(p = null) {
   popoverClosedAt = Date.now();
   if (!document.activeElement || document.activeElement === document.body) refocus(gone[0].returnFocus);
 }
-function popover(anchor, title, body, { width, stack = false } = {}) {
+function popover(anchor, title, body, { width, stack = false, placement = 'bottom' } = {}) {
   if (anchor?._pagePanel) {
     anchor._pagePanel.replaceChildren(body);
     workspace.trackDrafts(body);
@@ -30,14 +30,15 @@ function popover(anchor, title, body, { width, stack = false } = {}) {
     h('button', { class: 'icon-btn close', 'aria-label': '閉じる', text: '✕', onclick: () => closePopover(p) }),
     body);
   p.returnFocus = returnFocus;
-  document.body.append(p);
+  (anchor?.closest?.('dialog[open]') || document.body).append(p);
   const place = () => {
     if (!p.isConnected) return;
     const r = anchor.getBoundingClientRect();
     const minTop = Math.max(8, ($('.appbar')?.getBoundingClientRect().bottom || 48) + 8);
     p.style.maxHeight = `${Math.max(120, window.innerHeight - minTop - 8)}px`;
     p.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - p.offsetWidth - 8))}px`;
-    p.style.top = `${Math.max(minTop, Math.min(r.bottom + 6, window.innerHeight - p.offsetHeight - 8))}px`;
+    const preferredTop = placement === 'top' ? r.top - p.offsetHeight - 6 : r.bottom + 6;
+    p.style.top = `${Math.max(minTop, Math.min(preferredTop, window.innerHeight - p.offsetHeight - 8))}px`;
   };
   place();
   const observer = new ResizeObserver(place);
@@ -47,6 +48,7 @@ function popover(anchor, title, body, { width, stack = false } = {}) {
   setTimeout(() => {
     const off = (e) => {
       if (!p.isConnected) return document.removeEventListener('pointerdown', off, true);
+      if (anchor?.contains?.(e.target)) return;
       const inside = e.target.closest?.('.popover');
       if (inside === p || (inside && [...document.querySelectorAll('.popover')].indexOf(inside) > [...document.querySelectorAll('.popover')].indexOf(p))) return;
       closePopover(p);
@@ -75,8 +77,9 @@ function picker(anchor, { title, items, multi = false, selected = [], onPick, on
   const paint = () => {
     const raw = input.value.trim();
     const hit = matcher(raw);
-    rows = items.filter((it) => hit(`${it.group || ''} ${it.label} ${it.description || ''} ${it.hint ?? ''} ${it.keywords || ''} ${it.badge || ''}`)).slice(0, limit).map((it) => ({ it }));
-    if (onCreate && raw && !items.some((it) => norm(it.label) === norm(raw))) rows.push({ create: raw });
+    const currentItems = typeof items === 'function' ? items() : items;
+    rows = currentItems.filter((it) => hit(`${it.group || ''} ${it.label} ${it.description || ''} ${it.hint ?? ''} ${it.keywords || ''} ${it.badge || ''}`)).slice(0, limit).map((it) => ({ it }));
+    if (onCreate && raw && !currentItems.some((it) => norm(it.label) === norm(raw))) rows.push({ create: raw });
     active = Math.max(0, Math.min(active, rows.length - 1));
     let group;
     const out = [];
@@ -123,6 +126,7 @@ function picker(anchor, { title, items, multi = false, selected = [], onPick, on
     else if (e.key === ' ' && multi && !input.value) { e.preventDefault(); choose(active); }
   });
   const p = popover(anchor, title, h('div', { class: 'picker' }, input, listEl, footer), { width, stack });
+  p.refreshItems = paint;
   paint();
   const cur = rows.findIndex((r) => r.it && sel.has(r.it.value));
   if (cur > 0 && !multi) { active = cur; mark(); }

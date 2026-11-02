@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { runReadyProcesses } from './helpers/ready-processes.mjs';
 import { DatabaseSync } from 'node:sqlite';
 import { Store } from '../server/store.mjs';
 import { RequestStore } from '../server/requests.mjs';
@@ -21,29 +22,24 @@ function processRun(args, input, onReady) {
 }
 const migrate = (dir,...args) => processRun(['scripts/migrate-sqlite.mjs','--data-dir',dir,...args]);
 
-test('10 processes preserve 1000 accepted updates with bounded contention', async (t) => {
+test('10 processes preserve 1000 accepted updates with bounded contention', { timeout: 60000 }, async (t) => {
   const dir=tmp(), store=new Store(dir); await store.load();
-  // Start writes only after every DB connection is initialized. Startup failure
-  // is a separate contract from preserving accepted writes under contention.
-  const ready=[];
-  const onReady=child=>{ready.push(child);if(ready.length===10)for(const c of ready)c.send('start');};
-  const results=await Promise.all(Array.from({length:10},(_,client)=>processRun(['--input-type=module'],`
+  t.after(() => store.close());
+  // Startup is sequential; the initialized connections still write concurrently.
+  const inputs=Array.from({length:10},(_,client)=>`
     import {Store} from './server/store.mjs';
     const s=new Store(${JSON.stringify(dir)});
     await s.load();
-    const started=new Promise((resolve,reject)=>{
-      const timer=setTimeout(()=>reject(new Error('DB clients did not become ready')),15000);
-      process.once('message',()=>{clearTimeout(timer);resolve();});
-    });
-    process.send('ready');await started;process.disconnect();
-    let max=0,rejected=0,accepted=0;
+    const started=new Promise(resolve=>process.once('message',resolve));
+    process.send('ready');await started;
+    let max=0,maxBusy=0,rejected=0,accepted=0;
     for(let i=0;i<100;i++){
       for(let attempt=0;;attempt++){
         const start=performance.now();
         try {await s.moveCard({cardId:'codex:${client}:'+i,toListId:'doing',order:i});accepted++;break;}
         catch(error){
           if(error.code!=='db_busy'||attempt>=19)throw error;
-          rejected++;
+          maxBusy=Math.max(maxBusy,error.busyElapsedMs);rejected++;
         }
         finally {max=Math.max(max,performance.now()-start);}
         // Only the fixture resubmits a rejected DB write; accepted writes and CLI
@@ -51,23 +47,34 @@ test('10 processes preserve 1000 accepted updates with bounded contention', asyn
         await new Promise(resolve=>setTimeout(resolve,50+Math.random()*150));
       }
     }
-    console.log(JSON.stringify({max,rejected,accepted}));await s.close();
-  `,onReady)));
-  let rejected=0;
+    console.log(JSON.stringify({max,maxBusy,rejected,accepted}));
+    // close() writes to instances; keep it out of other clients' write phase.
+    const closing=new Promise(resolve=>process.once('message',resolve));
+    process.send('written');await closing;
+    try {await s.close();} finally {process.disconnect();}
+  `);
+  const diagnostics=process.env.CANBAN_SQLITE_FIXTURE_DIAGNOSTICS==='1';
+  const results=await runReadyProcesses({inputs,cwd:root,signal:t.signal,diagnostics,finishTogether:true});
+  if(diagnostics)for(const result of results)for(const line of result.err.split('\n'))
+    if(line.startsWith('CANBAN_SQLITE_DIAGNOSTIC '))t.diagnostic(line);
+  let rejected=0,max=0;
   for(const result of results) {
     assert.equal(result.code,0,result.err);
     const stats=JSON.parse(result.out);
-    assert.ok(stats.max<2100,result.out);assert.equal(stats.accepted,100);
+    // Keep both end-to-end latency and the worker retry measurement bounded,
+    // with the same 500ms scheduling slack as the dedicated lock test.
+    assert.ok(Number.isFinite(stats.max)&&stats.max>=0&&stats.max<2500,result.out);
+    assert.ok(Number.isFinite(stats.maxBusy)&&stats.maxBusy>=0&&stats.maxBusy<2500,result.out);
+    assert.equal(stats.accepted,100);max=Math.max(max,stats.max);
     rejected+=stats.rejected;
   }
-  t.diagnostic(`1000 accepted DB updates; ${rejected} bounded busy rejections resubmitted by fixture`);
+  t.diagnostic(`1000 accepted DB updates; ${rejected} bounded busy rejections; max wall time ${max}ms`);
   const cards=(await store.load()).cards;
   assert.equal(Object.keys(cards).length,1000);
   for(let client=0;client<10;client++)for(let i=0;i<100;i++){
     assert.equal(cards['codex:'+client+':'+i].listId,'doing');
     assert.equal(cards['codex:'+client+':'+i].order,i);
   }
-  await store.close();
 });
 
 test('write contention stops within two seconds without blocking main thread',async()=>{

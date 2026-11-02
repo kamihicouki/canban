@@ -66,6 +66,15 @@ test('stats: directory breakdown and filter', async () => {
   assert.equal(computeStats(state, sessions, { days: 7, now, directory: '__none' }).totals.tokens, 7);
 });
 
+for (const agent of ['codex', 'claude']) test(`directory paths never classify ${agent} sessions by cwd`, () => {
+  const state = { directories: [{ id: 'path', name: 'Task folder', paths: ['/r/web'] }, { id: 'manual', name: 'Manual', paths: [] }] };
+  const session = { id: `${agent}:new`, agent, cwd: '/r/web/src' };
+  assert.equal(resolveDirectory(state, null, session.cwd, session), null);
+  assert.equal(resolveDirectory(state, { directoryId: 'manual' }, session.cwd, session)?.id, 'manual');
+  assert.equal(resolveDirectory(state, { directoryId: '__none' }, session.cwd, session), null);
+  assert.equal(resolveDirectory(state, { kind: 'task' }, session.cwd)?.id, 'path');
+});
+
 test('source categories persist, keep manual names, and respect explicit category-less overrides', async () => {
   const root = tmp(), store = new Store(root);
   try {
@@ -75,8 +84,14 @@ test('source categories persist, keep manual names, and respect explicit categor
       {id:'claude:1',agent:'claude',cwd:'/r/api',claudeGroup:{id:'g1',name:'Team'}},
       {id:'claude:2',agent:'claude',cwd:'/r/api'},
     ];
-    await store.createDirectory({name:'Legacy',paths:['/r']});
-    assert.equal(await store.syncSessionCategories(sources),true);
+    await store.createDirectory({name:'Legacy',paths:[]});
+    const previous = await store.load();
+    previous.directories.push(...sources.filter(s => s.codexProject || s.agent === 'claude').map((s, i) => ({
+      id: `old-${i}`, name: s.codexProject?.name || s.claudeGroup?.name || 'api', color: null, paths: [],
+      sourceKeys: [JSON.stringify([s.agent, 'local', s.codexProject || s.claudeGroup ? 'group' : 'cwd', s.codexProject?.id || s.claudeGroup?.id || s.cwd])],
+    })));
+    await store.save(previous);
+    assert.equal(await store.syncSessionCategories(sources),false, 'normal reads never apply a migration');
     assert.equal(await store.syncSessionCategories(sources),false);
     let state = await store.load();
     const resolve = (session, card = null) => resolveDirectory(state,card,session.cwd,session);

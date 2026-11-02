@@ -7,7 +7,7 @@ const FACE_BY_LIFE = { live: 'rich', fresh: 'standard', active: 'standard', dorm
 
 // The status as one small mark: a spinner while it works, an amber dot while it waits for you.
 function faceGlyph(status, statusKnown = true) {
-  const tone = FACE_TONE[status] || 'idle';
+  const tone = statusKnown === false ? 'idle' : FACE_TONE[status] || 'idle';
   const label = statusKnown === false ? '状態未取得' : STATUS_LABELS[status] || STATUS_LABELS.idle;
   const g = h('span', { class: `glyph g-${tone}`, role: 'img', title: label, 'aria-label': label });
   if (tone === 'done') g.innerHTML = picon('check', 12);
@@ -76,7 +76,7 @@ function renderCard(card, list) {
   el.append(h('div', { class: 'frow' }, faceGlyph(card.status, card.statusKnown), h('div', { class: 'ftitle', text: card.title }), compact ? dotPill(card) : faceFlags(card),
     compact ? h('i', { class: `fagent fagent-${task ? 'task' : card.agent}`, title: task ? T.taskCard : card.agent === 'codex' ? 'Codex' : 'Claude' }) : null,
     compact ? h('span', { class: 'ftime', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }) : null));
-  if (compact) return finishFace(el, card, list);
+  if (compact) { const pill = exchangePill(card, true); if (pill) el.querySelector('.frow').append(pill); return finishFace(el, card, list); }
   const now = task ? faceTaskNow(card) : faceNow(card);
   if (now && !(rich && !task && !(card.status === 'running' || card.status === 'waiting') && card.last)) el.append(now);
   if (rich) {
@@ -90,7 +90,10 @@ function renderCard(card, list) {
     if (task && card.links.length) el.append(h('div', { class: 'flinks' }, ...card.links.slice(0, 3).map((l) => h('span', { class: 'flink', title: l.title }, faceGlyph(l.status, l.statusKnown), faceWho(l.agent), h('span', { class: 'ellipsis', text: l.title })))));
   }
   const foot = h('div', { class: 'ffoot' }, faceWho(task ? 'task' : card.agent), dotPill(card), dirPill(card.directory || { name: 'カテゴリ無し' }));
+  const source = cardSourceRelations(card).filter((relation, index, all) => all.findIndex(r => sourceRefKey(r.ref) === sourceRefKey(relation.ref)) === index);
+  if (source.length) foot.append(h('span', { class: 'pill ellipsis', title: sourceDetailRows(card).map(([k,v]) => `${k}: ${v}`).join('\n'), text: source.length > 1 ? `元アプリ 複数（${source.length}）` : sourceFacetLabel({ ref: source[0].ref, name: source[0].observation?.value?.name }) }));
   if (!task) {
+    const exchanges = exchangePill(card); if (exchanges) foot.append(exchanges);
     const branch = card.git?.branch || card.branch;
     if (branch) foot.append(h('span', { class: 'fbranch ellipsis', title: gitTitleOr(card), text: branch }));
     const stat = faceStat(card);

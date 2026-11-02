@@ -4,8 +4,14 @@ const TOOL_ICONS = { ok: '✓', error: '✗' };
 const fmtClock = (at) => (at ? new Date(at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '');
 
 function feedItem(it, f) {
-  if (it.k === 'user') return h('div', { class: 'fi fi-user', title: fmtDate(Date.parse(it.at)) }, h('div', { class: 'fi-who', text: 'あなた' }), h('div', { text: it.text }));
-  if (it.k === 'assistant') return h('div', { class: 'fi fi-asst' }, h('div', { class: 'fi-who', text: f.pane.d?.session?.agent === 'claude' ? 'Claude' : 'Codex' }), h('span', { class: 'raw', text: it.text }), h('div', { class: 'md', html: mdHtml(it.text) }));
+  if (it.k === 'user' || it.k === 'assistant') {
+    const stamp = Date.parse(it.at);
+    const who = h('div', { class: 'fi-who' }, it.k === 'user' ? 'あなた' : f.pane.d?.session?.agent === 'claude' ? 'Claude' : 'Codex',
+      Number.isFinite(stamp) ? h('time', { datetime: new Date(stamp).toISOString(), title: fmtDate(stamp), text: fmtClock(it.at) }) : null);
+    return it.k === 'user'
+      ? h('div', { class: 'fi fi-user' }, who, h('div', { class: 'fi-content' }, h('span', { class: 'raw', text: exchangeModel.messageText(it.text) }), userMessageView(exchangeModel.messageText(it.text))))
+      : h('div', { class: 'fi fi-asst' }, who, h('div', { class: 'fi-content' }, h('span', { class: 'raw', text: it.text }), h('div', { class: 'md', html: mdHtml(it.text) })));
+  }
   if (it.k === 'commentary') return h('div', { class: 'fi fi-note', text: it.text });
   if (it.k === 'thinking') {
     if (!it.text) return null;
@@ -32,11 +38,14 @@ function renderFeed(d, p) {
   list.append(editSummary(f).el);
   for (const it of d.feed.items) feedPush(f, it);
   f.edits?.paint();
-  const lastSaid = [...d.feed.items].reverse().find((it) => it.k === 'assistant');
-  p.lastText = lastSaid ? lastSaid.text : d.session.preview || '';
+  // A user message consumes the earlier question; tool/turn records do not.
+  const lastSaid = [...d.feed.items].reverse().find((it) => it.k === 'assistant' || it.k === 'user');
+  p.lastText = lastSaid?.k === 'assistant' ? lastSaid.text : '';
   if (!d.feed.items.length) list.append(h('div', { class: 'muted', text: 'まだやりとりはありません' }));
   live.feeds.set(f.cardId, f);
   paintFeedFoot(f);
+  if (p.exchangeData) queueMicrotask(() => { if (panes.includes(p)) paintExchangeTimeline(p); });
+  queueMicrotask(() => paintChoices(f)); // the input is built after the conversation
   kickLive();
   return h('div', { class: 'feed-wrap' }, list, newBtn, foot);
 }
@@ -72,9 +81,12 @@ function applyFeed(f, feed) {
       t.icon.className = `ti ${it.ok ? 'ok' : 'error'}`;
       t.icon.textContent = TOOL_ICONS[it.ok ? 'ok' : 'error'];
       if (it.out) { t.out.textContent = it.out; t.out.hidden = false; }
+      const group = t.el.closest('.tg');
+      if (group) paintToolGroup(group);
       continue;
     }
     if (it.k === 'assistant') f.pane.lastText = it.text;
+    else if (it.k === 'user') f.pane.lastText = '';
     if (feedPush(f, it)) added++;
   }
   // Keep the DOM bounded on long runs.
@@ -102,6 +114,8 @@ function applyFeed(f, feed) {
       }
     }
   }
+  if (added || feed.status) paintChoices(f);
+  if (added && f.pane.exchangeData) { paintExchangeTimeline(f.pane); scheduleExchangeRefresh(f.pane); }
   if (added) { if (stick) scrollFeedToEnd(f); else f.newBtn.hidden = false; }
 }
 
@@ -199,7 +213,7 @@ function applyLive(r, args) {
   if (r.seq != null) live.seq = live.seq == null ? r.seq : Math.max(live.seq, r.seq);
   if (r.patches?.length) applyPatches(r.patches);
   applyAccountLimits(r.accountLimits);
-  if (r.reload) scheduleLoad();
+  if (r.reload) { scheduleLoad(); for (const p of panes) scheduleExchangeRefresh(p); }
   if (r.requests) { for (const f of live.feeds.values()) refreshDispatch(f); scheduleLoad(); }
   for (const [id, feed] of Object.entries(r.feeds || {})) {
     const f = live.feeds.get(id);

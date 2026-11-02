@@ -1,13 +1,17 @@
-// Desktop has its own OAuth login. Reuse an existing, signed-in Desktop profile;
+// Desktop has its own OAuth login. Use it only for the account it is signed in to;
 // never transplant CLI credentials or move the user's application data.
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { claudeDesktopRoots, invalidateDesktopRoots } from './accounts.mjs';
+import { claudeDesktopRoots, invalidateDesktopRoots, desktopStorageDirectory } from './accounts.mjs';
+import { createDesktopAccounts } from './claude-desktop-accounts.mjs';
+import { withDesktopMutationLock } from './claude-desktop-lock.mjs';
+import { guestPaths, restoreGuests } from './claude-desktop-guests.mjs';
 
+import { backupDesktopProfiles } from './desktop-backup.mjs';
+import { readDesktopCapabilities } from './desktop-capabilities.mjs';
 import { inspectDesktopRuntime } from './claude-desktop-runtime.mjs';
-import { desktopProfileLock } from './claude-desktop-lock.mjs';
+import { createDesktopAccountSetup } from './desktop-account-setup.mjs';
 
 let processCheck = inspectDesktopRuntime;
 const isRunning = status => typeof status === 'boolean' ? status : status?.running !== false;
@@ -20,87 +24,55 @@ const identity = async dir => {
   } catch { return null; }
 };
 
+// Pure layout (docs/claude-desktop-pure-layout-plan.md): one real Desktop data
+// folder with one login. Canban never switches profiles or links; another account
+// needs a Desktop sign-in switch by the user, or a CLI run.
 export async function desktopProfilePlan(account, { platform = process.platform } = {}) {
   if (!/^claude:[A-Za-z0-9_-]{1,128}$/.test(account)) return { available: false, reason: 'Desktop のアカウントIDを確認できません' };
-  if (platform !== 'darwin') return { available: false, reason: 'Desktop のアカウント維持は macOS の既存プロフィールに対応しています' };
+  if (platform !== 'darwin') return { available: false, reason: 'Desktop のアカウント確認は macOS に対応しています' };
   invalidateDesktopRoots();
-  const roots = await claudeDesktopRoots();
-  const current = roots.find(r => r.default);
+  const current = (await claudeDesktopRoots()).find(r => r.default);
   const currentDir = await fs.realpath(current.dir).catch(() => null);
-  if (currentDir && await identity(currentDir) === account) return { available: true, account, dir: currentDir, profile: current.name || '標準', defaultDir: current.dir, change: false };
-  const candidates = [];
-  for (const root of roots.filter(r => !r.default)) {
-    const dir = await fs.realpath(root.dir).catch(() => null);
-    if (dir && await identity(dir) === account) candidates.push(dir);
-  }
-  // The active switcher already identifies its profile family. A legacy
-  // Claude-* backup outside that family must not make its unique match ambiguous.
-  const family = currentDir && path.dirname(currentDir);
-  const inFamily = path.basename(family || '') === 'Claude-Profiles' ? candidates.filter(dir => path.dirname(dir) === family) : [];
-  const choices = inFamily.length ? inFamily : candidates;
-  if (choices.length !== 1) return { available: false, reason: choices.length ? '同じアカウントの Desktop プロフィールが複数あります。通常起動するプロフィールを先に選んでください' : 'このアカウントでログイン済みの Desktop プロフィールがありません。Desktop のプロフィールを用意してから選んでください' };
-  const stat = await fs.lstat(current.dir).catch(() => null);
-  if (!stat?.isSymbolicLink()) return { available: false, reason: 'Desktop の保存先がプロフィール切替用のリンクになっていません。既存データを移動せずに切り替えるため、先に Desktop のプロフィール構成を用意してください' };
-  const support = await fs.realpath(path.dirname(current.dir));
-  const known = currentDir && (path.dirname(currentDir) === path.join(support, 'Claude-Profiles') || (path.dirname(currentDir) === support && /^Claude-/.test(path.basename(currentDir))));
-  if (!known) return { available: false, reason: 'Desktop の現在の保存先が既知のプロフィールではありません。リンクを変更せず、CLI の選択だけを保存します' };
-  return { available: true, account, dir: choices[0], profile: path.basename(choices[0]).replace(/^Claude-/, ''), defaultDir: current.dir, change: true };
+  const signedIn = currentDir && await identity(currentDir);
+  if (signedIn === account) return { available: true, account, dir: currentDir, profile: current.name || '標準', defaultDir: current.dir, change: false };
+  return { available: false, signedIn, reason: signedIn ? 'Desktop は別のアカウントでログイン中です。Desktop でログインを切り替えるか、CLI で実行してください' : 'Desktop のログインを確認できません。Desktop にログインしてから開いてください' };
 }
 
-// Hold the filesystem lock through the caller's DB commit/open. Atomic rename
-// replaces only the existing symlink. Roll back on failure if it is still ours.
+// Runs the action only while Desktop is signed in to the account. A running app
+// must be confirmed to have that data folder open.
 export async function withDesktopAccount(account, action, options = {}) {
+  const dataDir = desktopStorageDirectory();
+  const registered = dataDir && await fs.lstat(path.join(dataDir, 'desktop-accounts', 'claude', 'registry.json')).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+  if (options.accounts || registered) {
+    const service = options.accounts || managedDesktopAccounts(dataDir);
+    if (!options.accounts && options.allowSwitch) options = { ...options, allowSwitch: (await readDesktopCapabilities(dataDir)).accountSwitch };
+    let performed = false;
+    const result = await service.withAccount(account, options, status => {
+      performed = true; invalidateDesktopRoots();
+      return action({ ...status, maintained: true, pending: false, profile: status.profileId });
+    });
+    if (!performed) throw Object.assign(new Error(result.reason || 'Desktop の準備を待っています'), { code: result.state === 'waiting-for-quit' ? 'desktop_running' : 'desktop_unavailable' });
+    return result;
+  }
+  if (dataDir) return withDesktopMutationLock({ dataDir, lease: null }, async () => {
+    if (await fs.lstat(path.join(dataDir, 'desktop-accounts', 'claude', 'registry.json')).catch(() => null)) throw Object.assign(new Error('Desktop の登録状態が変わりました。もう一度確認してください'), { code: 'desktop_busy' });
+    return useCurrentDesktopAccount(account, action, options);
+  });
+  return useCurrentDesktopAccount(account, action, options);
+}
+
+async function useCurrentDesktopAccount(account, action, options) {
   const plan = await desktopProfilePlan(account, options);
   if (!plan.available) throw Object.assign(new Error(plan.reason), { code: 'desktop_unavailable' });
-  const lock = path.join(path.dirname(plan.defaultDir), '.canban-claude-profile.lock');
-  const lease = await desktopProfileLock(lock);
-  const temporary = `${plan.defaultDir}.canban-${randomUUID()}`;
-  let previous, changed = false;
-  try {
-    const fresh = await desktopProfilePlan(account, options);
-    if (!fresh.available || fresh.dir !== plan.dir) throw new Error('Desktop のプロフィールが変わりました。実行アカウントを選び直してください');
-    // A link can have been changed externally while an old app is still open.
-    // The app's loaded login cannot be inferred from a symlink/config snapshot.
-    const runtime = await processCheck(fresh);
-    const running = isRunning(runtime);
-    if (running && (fresh.change || runtime.profileDir !== fresh.dir)) throw Object.assign(new Error('Desktop への適用は Claude Desktop を終了してから行ってください。起動中のプロフィールを確認できません'), { code: 'desktop_running' });
-    await lease.assertHeld();
-    if (fresh.change) {
-      previous = await fs.readlink(plan.defaultDir);
-      if (await identity(plan.dir) !== account) throw new Error('Desktop のログインアカウントが変わりました');
-      await fs.symlink(plan.dir, temporary);
-      if (isRunning(await processCheck(fresh))) throw Object.assign(new Error('Claude Desktop が起動しました。終了してから再操作してください'), { code: 'desktop_running' });
-      await lease.assertHeld();
-      // A separate profile switcher must not be silently overwritten.
-      if (await fs.readlink(plan.defaultDir) !== previous) throw new Error('別の操作で Desktop のプロフィールが切り替わりました');
-      await fs.rename(temporary, plan.defaultDir);
-      changed = true;
-      invalidateDesktopRoots();
-    }
-    if (await fs.realpath(plan.defaultDir) !== plan.dir || await identity(plan.dir) !== account) throw new Error('Desktop の実行アカウントを確認できません');
-    await lease.assertHeld();
-    const result = await action({ account, changed, maintained: true, pending: false, profile: fresh.profile });
-    await lease.assertHeld();
-    return result;
-  } catch (error) {
-    if (changed) {
-      // Never switch a running app's data directory back, or overwrite a newer
-      // external choice. Report a failed rollback rather than claim success.
-      if (isRunning(await processCheck(plan)) || await fs.realpath(plan.defaultDir).catch(() => null) !== plan.dir) throw new Error(`${error.message}。Desktop の保存先は切替後のままです。アプリを終了してプロフィールを確認してください`);
-      await fs.symlink(previous, temporary);
-      await fs.rename(temporary, plan.defaultDir);
-      invalidateDesktopRoots();
-    }
-    throw error;
-  } finally {
-    await fs.unlink(temporary).catch(() => {});
-    await lease.release();
-  }
+  const runtime = await processCheck(plan);
+  if (isRunning(runtime) && runtime.profileDir !== plan.dir) throw Object.assign(new Error('起動中の Desktop の保存先を確認できません。Desktop を終了してから開いてください'), { code: 'desktop_running' });
+  return action({ account, changed: false, maintained: true, pending: false, profile: plan.profile });
 }
 
 // Normal Desktop startup only searches ~/.claude/projects for CLI imports.
 // A continue link is usable only when the selected account owns/reaches it.
 export async function desktopExecutionLink(session, account, { cliHome = path.join(os.homedir(), '.claude'), platform = process.platform } = {}) {
+  if (session.desktopAmbiguous) return null;
   if (!/^claude:[A-Za-z0-9_-]{1,128}$/.test(account)) return null;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session.nativeId)) return null;
   const projects = path.join(cliHome, 'projects');
@@ -142,4 +114,13 @@ export async function saveClaudeExecutionAccount(account, commit, options = {}) 
     if (!['desktop_unavailable', 'desktop_running', 'desktop_busy'].includes(error.code)) throw error;
     return { execution, desktop: { maintained: false, pending: true, account, reason: error.message, code: error.code } };
   }
+}
+
+// Shared production adapter; callers gate profile changes with the UI capability.
+export function managedDesktopAccounts(dataDir = desktopStorageDirectory()) {
+  return createDesktopAccounts({ dataDir, appDir: path.dirname(guestPaths().sessions), runtime: plan => processCheck(plan), restoreGuests: () => restoreGuests({ paths: guestPaths() }), backup: request => backupDesktopProfiles({ dataDir, ...request }), open: () => import('./claude-desktop-open.mjs').then(m => m.openDesktopApp('claude://code')) });
+}
+
+export function managedDesktopSetup(dataDir = desktopStorageDirectory()) {
+  return createDesktopAccountSetup({ dataDir, appDir: path.dirname(guestPaths().sessions), accounts: managedDesktopAccounts(dataDir), runtime: plan => processCheck(plan), open: () => import('./claude-desktop-open.mjs').then(m => m.openDesktopApp('claude://code')) });
 }

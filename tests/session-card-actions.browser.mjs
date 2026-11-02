@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { DatabaseSync } from 'node:sqlite';
 import { makeFixtures } from './helpers.mjs';
 const require = createRequire(process.env.CANBAN_PLAYWRIGHT_PACKAGE || import.meta.url);
 const { chromium } = require('playwright');
@@ -12,6 +13,9 @@ const root = process.cwd(), fx = makeFixtures();
 function writable(dir) { fs.chmodSync(dir,0o755); for (const entry of fs.readdirSync(dir,{withFileTypes:true})) { const target=path.join(dir,entry.name); if(entry.isDirectory()) writable(target); else fs.chmodSync(target,0o644); } }
 writable(fx.codexHome);
 fs.writeFileSync(path.join(fx.codexHome,'.canban-lifecycle-fixture'),'fixture');
+// The fixture dates age into the dormant fold (7 days), so the cards this test opens are touched now.
+const db = new DatabaseSync(path.join(fx.codexHome, 'state_5.sqlite'));
+db.prepare('UPDATE threads SET updated_at_ms=? WHERE id=?').run(Date.now(), 't1'); db.close();
 fs.mkdirSync(path.join(root, '.local'), {recursive:true});
 const dataDir = fs.mkdtempSync(path.join(root, '.local/session-actions-data-'));
 const output = path.join(root, '.local/session-actions-screenshots');
@@ -27,7 +31,24 @@ try {
   await page.route('**/direct', async route => { const response = await route.fetch(); const html = await response.text(); const i = html.lastIndexOf('})();'); assert.ok(i > 0); await route.fulfill({response, body: html.slice(0,i) + 'globalThis.__test = {setThemePref,state,load,bridge,openCard,closeCards};\n' + html.slice(i)}); });
   await page.goto('http://localhost:4598/direct');
   await page.waitForSelector('.card[data-card-id="codex:t1"]');
+  // Thread cards keep these buttons in the details panel (d), in the closed 「カード操作」 section.
+  const openActions = async () => {
+    const sec = page.locator('.pane[data-kind="session"] .dsec[data-sec="actions"]');
+    const toggle = page.locator('.pane[data-kind="session"] .th-head [data-side-tab="details"]');
+    await toggle.waitFor();
+    if (await toggle.getAttribute('aria-pressed') !== 'true') await toggle.click();
+    // The pane paints again once its data arrives, so keep the section open until its buttons stay visible.
+    for (let i = 0; i < 50; i++) {
+      await sec.waitFor({ state: 'attached' });
+      await sec.evaluate(e => { e.open = true; e.scrollIntoView({ block: 'start' }); });
+      await page.waitForTimeout(100);
+      if (await sec.locator('[data-pane-key="z"]').isVisible()) return;
+    }
+    throw new Error('the actions section did not stay open');
+  };
+  const unfold = () => page.evaluate(() => { for (const b of document.querySelectorAll('.fold-head[aria-expanded="false"]')) b.click(); });
   await page.locator('.card[data-card-id="codex:t1"]').click();
+  await openActions();
   await page.waitForSelector('[data-pane-key="z"]');
   for (const theme of ['light', 'dark']) for (const layout of ['board']) {
     await page.evaluate(({theme,layout}) => { __test.setThemePref(theme); }, {theme,layout});
@@ -55,6 +76,7 @@ try {
   await page.evaluate(async () => { __test.state.filters.includeArchived = true; await __test.load(); });
   await page.waitForSelector('.card[data-card-id="codex:t1"].is-archived');
   await page.locator('.card[data-card-id="codex:t1"]').click();
+  await openActions();
   await page.getByRole('button', { name: /アーカイブから戻す/ }).click();
   await page.waitForSelector('.pane', {state:'detached'});
   assert.equal(await page.locator('.card[data-card-id="codex:t1"].is-archived').count(), 0);
@@ -76,6 +98,7 @@ try {
     __test.closeCards(); await __test.bridge.callTool('canban_delete_task',{cardId:taskId}); await __test.load();
   }, taskId);
   await page.locator('.card[data-card-id="codex:t1"]').click();
+  await openActions();
   await page.getByRole('button', { name: /セッションを削除/ }).click();
   await page.getByRole('dialog').getByRole('button', {name:'セッションを削除',exact:true}).click();
   await page.waitForSelector('dialog', {state:'detached'});
@@ -83,11 +106,13 @@ try {
   await page.evaluate(async () => { __test.state.filters.includeArchived = true; await __test.load({refresh:true}); });
   assert.equal(await page.locator('.card[data-card-id="codex:t1"]').count(), 0);
   assert.equal(fs.existsSync(path.join(fx.codexHome,'sessions/rollout-a.jsonl')), false);
+  await unfold();
   await page.locator('.card[data-card-id="claude:c2"]').click();
+  await openActions();
   assert.equal(await page.locator('[data-pane-key="z"]').isDisabled(), true);
   assert.match(await page.locator('.dsec[data-sec="actions"]').innerText(), /Claudeで操作/);
   assert.equal(await page.getByText('ボードから隠す',{exact:true}).count(), 0);
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({passed:true,screenshots:11,viewport:'1280x800',layouts:5,themes:2,archiveRestore:true,deleteCancelDraft:true,deletePersists:true,nativeFixtureHistoryDeleted:true,claudeUnsupportedIsExplicit:true,browserErrors:errors}));
+  console.log(JSON.stringify({passed:true,screenshots:3,viewport:'1280x800',layouts:1,themes:2,archiveRestore:true,deleteCancelDraft:true,deletePersists:true,nativeFixtureHistoryDeleted:true,claudeUnsupportedIsExplicit:true,browserErrors:errors}));
 } catch(e) { console.error(e); console.error(hostLog.slice(-2000)); process.exitCode=1; }
 finally { await browser?.close(); host.kill('SIGTERM'); fx.cleanup(); fs.rmSync(dataDir, {recursive:true,force:true}); }

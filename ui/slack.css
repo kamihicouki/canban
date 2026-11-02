@@ -19,7 +19,7 @@
 .slack-steps { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 18px; }
 .slack-step { display: grid; grid-template-columns: 26px minmax(0,1fr); gap: 10px; }
 .slack-step > div { display: grid; gap: 6px; min-width: 0; }
-.slack-step-n { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 13px; display: grid; place-items: center; }
+.slack-step-n { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: 13px; display: grid; place-items: center; }
 .slack-step .page-help { margin: 0; line-height: 1.7; }
 .slack-step code { font: inherit; font-size: 12px; padding: 1px 5px; border-radius: 4px; background: var(--btn-subtle-hover); white-space: nowrap; }
 .slack-token { display: grid; gap: 4px; font-size: 12px; }

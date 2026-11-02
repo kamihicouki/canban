@@ -36,9 +36,14 @@ function shortcutHelp() {
 }
 async function resume(cardId, opts = {}) {
   try {
+    if (cardId.startsWith('claude:') && (opts.route === 'desktop' || !opts.route && launchPrefs().route === 'desktop' && !claudeExecutionHomes.has(cardId))) {
+      const result = await desktopAccounts.startResume(cardId);
+      toast(result?.reason || result?.note || 'Desktop の再開状況をカードで確認してください');
+      return result;
+    }
     await claudeExecutionPending.get(cardId);
     const r = await bridge.callTool('canban_open_session', { cardId, ...opts });
-    if (r.route === 'desktop') toast(r.exact ? 'デスクトップアプリで開きました' : 'フォルダを開きました（続きはターミナルで再開できます）');
+    if (r.route === 'desktop') toast([r.exact ? 'デスクトップアプリで開きました' : 'フォルダを開きました（続きはターミナルで再開できます）', r.note].filter(Boolean).join('。'));
     else toast(`${TERMINAL_NAMES[r.terminal] || 'ターミナル'}で再開しました（${TARGET_LABELS[r.target] || r.target}${r.fellBack ? '・未対応のため新規ウィンドウ' : ''}）`);
   } catch (e) {
     toast(e.message, true);

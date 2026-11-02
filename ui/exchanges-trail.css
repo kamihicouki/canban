@@ -1,0 +1,50 @@
+/* Session relationship views share the existing thread cards and their editors. */
+.exchange-trail-bar[hidden] { display: none; }
+.exchange-trail-bar { flex: none; padding: 5px 24px; color: var(--on-scrim); }
+.exchange-trail-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.exchange-trail-controls .hbtn { min-height: 30px; color: var(--on-scrim); background: var(--scrim-ctl); font-size: 12px; }
+.exchange-trail-controls .seg { margin-left: auto; }
+.exchange-trail-controls .seg button { color: var(--on-scrim); min-height: 30px; font-size: 12px; }
+.exchange-trail-controls .seg [aria-pressed="true"] { background: var(--modal-bg); color: var(--list-fg); }
+.exchange-trail-controls button:disabled { opacity: .45; }
+.exchange-trail-hint { font-size: 11px; }
+.exchange-trail-path { display: flex; gap: 5px; overflow-x: auto; padding: 6px 0 2px; scrollbar-width: thin; }
+.exchange-trail-path button { flex: none; border: 0; border-radius: 7px; max-width: 220px; padding: 5px 8px; color: var(--on-scrim); background: var(--scrim-ctl); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; font-size: 12px; cursor: pointer; }
+.exchange-trail-path button[aria-current="step"] { color: var(--list-fg); background: var(--modal-bg); font-weight: 700; }
+.exchange-trail-path .is-previous-visit { border: 1px dashed currentColor; opacity: .7; }
+.exchange-trail-path small { opacity: .7; }
+.exchange-trail .pane[hidden] { display: none; }
+.exchange-trail .pane[data-trail-active="true"] { box-shadow: var(--lift-shadow), 0 0 0 2px var(--focus); }
+.exchange-trail .pane-bar { margin-inline: 24px; }
+.exchange-trail[data-exchange-view="spread"] .pane { width: min(var(--pw), max(560px, calc(var(--card-board-width) * .6))); }
+.exchange-trail[data-exchange-view="center"] .pane-row { width: 100%; gap: 12px; }
+.exchange-trail[data-exchange-view="center"] .pane { width: calc((100% - 24px) / 3); min-width: min(340px, calc(var(--card-board-width) - 24px)); flex: 1 0 0; }
+.exchange-trail[data-exchange-view="center"] .pane[data-trail-active="true"] { flex-grow: 1.12; }
+.exchange-trail[data-exchange-view="stack"] .pane-row { width: 100%; }
+.exchange-trail[data-exchange-view="stack"] .pane { position: absolute; width: min(var(--pw), calc(100% - 160px)); left: 50%; transform: translateX(calc(-50% + var(--trail-index) * 72px)) scale(.94); transform-origin: center top; top: 22px; }
+.exchange-trail[data-exchange-view="stack"] .pane[data-trail-active="false"] { filter: brightness(.8); pointer-events: none; }
+.exchange-trail[data-exchange-view="stack"] .pane[data-trail-active="true"] { transform: translateX(-50%); top: 0; z-index: 2; }
+.exchange-trail .pane .th-title { padding-inline: 18px; }
+.exchange-trail .pane .th-meta { padding-inline: 18px; }
+.exchange-trail .pane .th-title h2 { font-size: 20px; }
+.exchange-trail .pane .th-conv > .feed-wrap > .feed { padding-inline: 18px; --reading-size: 13px; }
+.exchange-touchpoint { display: flex; gap: 8px; font-size: 12px; padding: 9px 10px; border-radius: 9px; background: var(--btn-subtle); border-left: 2px solid var(--accent); }
+.exchange-touchpoint.is-sent { border-left: 0; border-right: 2px solid var(--accent); margin-left: 16px; }
+.exchange-touchpoint:not(.is-sent) { margin-right: 16px; }
+.exchange-touchpoint time { color: var(--card-muted); flex: none; font-size: 10px; padding-top: 3px; }
+.exchange-touchpoint > div { min-width: 0; }
+.exchange-touchpoint-peer { display: flex; gap: 5px; align-items: center; border: 0; padding: 0; background: none; color: var(--accent); text-align: left; font-size: 12px; font-weight: 600; cursor: pointer; }
+.exchange-touchpoint-peer:disabled { color: var(--card-muted); cursor: default; }
+.exchange-touchpoint p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 6em; overflow: auto; }
+.exchange-timeline-note { font-size: 11px; margin: 0; }
+@media (max-width: 760px) {
+  .exchange-trail-controls .seg { margin-left: 0; }
+  .exchange-trail-hint { width: 100%; }
+  .exchange-trail[data-exchange-view="stack"] .pane { width: calc(100% - 64px); transform: translateX(calc(-50% + var(--trail-index) * 28px)) scale(.94); }
+  .exchange-trail[data-exchange-view="stack"] .pane[data-trail-active="true"] { transform: translateX(-50%); }
+}
+
+.exchange-trail[data-exchange-view="stack"] .exchange-stack-peek { position: absolute; z-index: 1; top: 22px; bottom: 0; left: 50%; width: min(var(--w-session), calc(100% - 160px)); transform: translateX(calc(-50% + var(--trail-index) * 72px)) scale(.94); border: 0; border-radius: 12px; background: transparent; cursor: pointer; }
+.exchange-trail[data-exchange-view="stack"] .exchange-stack-peek:focus-visible { outline: 3px solid var(--focus); }
+.exchange-touchpoint.is-linked { outline: 2px solid var(--focus); background: color-mix(in srgb, var(--accent) 12%, var(--modal-bg)); }
+@media (max-width: 760px) { .exchange-trail[data-exchange-view="stack"] .exchange-stack-peek { width: calc(100% - 64px); transform: translateX(calc(-50% + var(--trail-index) * 28px)) scale(.94); } }

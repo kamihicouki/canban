@@ -105,6 +105,7 @@ test('account editors register dynamic draft fields and keep them after save fai
   const context=vm.createContext({h,state:{filters:{},board:{accounts:{accounts:[account],colors:['blue'],unknown:{codex:0,claude:0},homes:[],profiles:[],discover:false}}},
     workspace:{trackDrafts:root=>{tracked=root;}},ringFor:()=>h('span'),usageTitle:()=>'',usageWindows:()=>[],colorVar:()=>'',COLOR_NAMES:{},
     accountUsageContent:()=>h('div'),accountUpdateText:()=>'',accountScheduleText:()=>'',updateAccountMenuUsage:()=>{},refreshAccountUsage:()=>{},
+    clearTimeout, setTimeout,
     popover:(_anchor,_title,content)=>{mounts++;body=content;},act:async()=>{throw new Error('db_busy');}});
   vm.runInContext(`${menu}\naccountsMenu({});`,context);
   nodes.find(n=>n.attrs['aria-label']==='確認 の設定').attrs.onclick();
@@ -124,8 +125,8 @@ test('a session that cannot be read keeps its card with a reload button; a genui
   const source = html.slice(html.indexOf('async function loadSession('), html.indexOf('async function openTaskCard('));
   const p = {id:'codex:mock',d:null,el:{replaceChildren(...nodes){this.nodes=nodes;}}}, panes = [p];
   let error = new Error('db_busy'), closed = 0;
-  const context = vm.createContext({ panes, bridge: {callTool: async () => {throw error;}},
-    closeCards: () => {closed++;}, h: (tag,attrs) => ({tag,attrs}), toast: () => {}, renderPaneKeepingDrafts: () => {} });
+  const context = vm.createContext({ panes, takeSessionDetail: async () => {throw error;}, paintPendingSession: () => {},
+    closeCards: () => {closed++;}, h: (tag,attrs,...kids) => ({tag,attrs,kids}), toast: () => {}, renderPaneKeepingDrafts: () => {} });
   await vm.runInContext(`${source}\nloadSession(panes[0],{restore:true});`,context);
   assert.equal(closed,0); assert.ok(p.el.nodes.some(n => n.attrs.text === '再読み込み'));
   error = new Error('セッションが見つかりません: codex:mock');
@@ -133,6 +134,23 @@ test('a session that cannot be read keeps its card with a reload button; a genui
   assert.equal(closed,1);
   closed = 0; await vm.runInContext(`loadSession(panes[0]);`,context);
   assert.equal(closed,0); // outside a restore the error is shown, not hidden
+});
+test('a session whose head is already shown reports a failed load in the conversation only, and the reload puts the placeholder back', async () => {
+  const html = boardHtml();
+  const source = html.slice(html.indexOf('async function loadSession('), html.indexOf('async function openTaskCard('));
+  const conv = { removeAttribute(){}, replaceChildren(...nodes){this.nodes=nodes;} };
+  let failedShown = false;
+  const p = {id:'codex:mock',d:null,pending:true,el:{replaceChildren(){throw new Error('the whole card must stay');},querySelector:(sel)=>sel==='.th-conv'?conv:sel==='.conv-failed'&&failedShown?{}:null}};
+  let painted = 0;
+  const context = vm.createContext({ panes:[p], takeSessionDetail: async () => {throw new Error('db_busy');}, paintPendingSession: () => {painted++;},
+    closeCards: () => {}, h: (tag,attrs,...kids) => ({tag,attrs,kids}), toast: () => {}, renderPaneKeepingDrafts: () => {} });
+  await vm.runInContext(`${source}\nloadSession(panes[0]);`,context);
+  assert.equal(painted,0); // already pending: the head is not rebuilt
+  assert.equal(conv.nodes[0].attrs.class,'conv-failed');
+  assert.ok(conv.nodes[0].kids.some(n => n.attrs.text === '再読み込み'));
+  failedShown = true;
+  await vm.runInContext(`loadSession(panes[0]);`,context);
+  assert.equal(painted,1); // retrying shows the lines again while it loads
 });
 test('the card that was open comes back after a reload, and only that one', async () => {
   const html = boardHtml();
@@ -198,4 +216,20 @@ test('the filters in effect become chips, except the axis the lanes follow', () 
   assert.deepEqual(chips(), ['Codex', '入力待ち', 'dotを除く']); // lanes by category already show every category
   Object.assign(context.state.filters, { agent: 'all', directory: '', swimlane: '', days: 30 });
   assert.equal(vm.runInContext('activeView(board)?.name', context), '返事待ち');
+});
+test('a detail read ahead on j / k is used only while the card is unchanged, and an unread card is never read ahead', async () => {
+  const html = boardHtml();
+  const source = html.slice(html.indexOf('const SESSION_PREFETCH_MS'), html.indexOf('// A card opened for the first time'));
+  const card = { id: 'codex:b', updatedAt: 1, unread: false };
+  const calls = [];
+  const context = vm.createContext({ panes: [], cardKind: (id) => id.startsWith('task:') ? 'task' : 'session', state: { board: { lists: [{ id: 'inbox', cards: [card] }] } },
+    bridge: { callTool: async (name, args) => { calls.push(args.cardId); return { read: calls.length }; } } });
+  vm.runInContext(source, context);
+  context.prefetchSession('codex:b');
+  assert.deepEqual((await context.takeSessionDetail('codex:b')), { read: 1 }); // the read ahead is used
+  assert.equal(calls.length, 1);
+  context.prefetchSession('codex:b'); card.updatedAt = 2; // the session moved after it was read ahead
+  assert.deepEqual((await context.takeSessionDetail('codex:b')), { read: 3 });
+  card.unread = true; context.prefetchSession('codex:b');
+  assert.equal(calls.length, 3); // reading would mark it seen
 });

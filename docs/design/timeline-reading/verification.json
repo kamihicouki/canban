@@ -1,0 +1,97 @@
+{
+  "label": "timeline-after",
+  "viewport": "1280x800",
+  "question": "定期チェックの頻度はどれにしますか？",
+  "answer": "6時間ごと",
+  "themes": [
+    {
+      "theme": "light",
+      "timelineScroll": {
+        "before": 10,
+        "after": 10,
+        "draft": "時間軸の下書き"
+      },
+      "timelineRefresh": {
+        "before": 10,
+        "after": 10,
+        "draft": "時間軸の下書き"
+      },
+      "toolStatus": [
+        {
+          "ok": true,
+          "running": false,
+          "error": false
+        },
+        {
+          "ok": false,
+          "running": false,
+          "error": true
+        }
+      ],
+      "cardOpenToComposerMs": 105.39529200000004,
+      "replyHeight": 77,
+      "replyWidth": 315.375,
+      "fontSize": "14px",
+      "lineHeight": "19px",
+      "text": "あなた質問: 定期チェックの頻度はどれにしますか？\n\n回答: 6時間ごと",
+      "draftPreserved": true,
+      "focus": true,
+      "scrollPreserved": true,
+      "timelineReplyMatches": true
+    },
+    {
+      "theme": "dark",
+      "timelineScroll": {
+        "before": 10,
+        "after": 10,
+        "draft": "時間軸の下書き"
+      },
+      "timelineRefresh": {
+        "before": 10,
+        "after": 10,
+        "draft": "時間軸の下書き"
+      },
+      "toolStatus": [
+        {
+          "ok": true,
+          "running": false,
+          "error": false
+        },
+        {
+          "ok": false,
+          "running": false,
+          "error": true
+        }
+      ],
+      "cardOpenToComposerMs": 106.96862500000043,
+      "replyHeight": 77,
+      "replyWidth": 315.375,
+      "fontSize": "14px",
+      "lineHeight": "19px",
+      "text": "あなた質問: 定期チェックの頻度はどれにしますか？\n\n回答: 6時間ごと",
+      "draftPreserved": true,
+      "focus": true,
+      "scrollPreserved": true,
+      "timelineReplyMatches": true
+    }
+  ],
+  "pageErrors": [],
+  "base": "585cd86",
+  "before": {
+    "light": {
+      "scrollBefore": 10,
+      "scrollAfter": 73
+    },
+    "dark": {
+      "scrollBefore": 10,
+      "scrollAfter": 73
+    }
+  },
+  "nextCandidate": "既存の可読性改善ブランチの取り込み状況を確認し、本文と属性の文字サイズ・余白を点検する。",
+  "comparison": "Codexは提供画像のみ。Claude Desktopの現在画面は未確認。速度の優劣は評価しない。",
+  "verificationHarnessNotes": [
+    "最初の再現試行はIIFE内関数への直接アクセスが失敗。選択行クリックによる実操作に変更。",
+    "初回80px指定はスクロール最大73pxへ丸められ末尾条件だったため、10pxで過去を読む条件を再現。",
+    "終了後にdev-host子プロセスのEPIPEを記録。画面検証完了・ページエラー0・exit0。"
+  ]
+}

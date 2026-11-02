@@ -9,12 +9,12 @@ test('browsing a linked session makes it the root instead of only refreshing its
   const calls = [], cards = ['codex:a', 'task:b', 'codex:c'].map(id => ({ dataset: { cardId: id }, scrollIntoView() {} }));
   const context = vm.createContext({ panes: [{ id: 'task:b', kind: 'task' }, { id: 'codex:a' }],
     displayedListCards: () => cards, neighborCardId: (ids, id, step) => ids[ids.indexOf(id) + step],
-    toast: text => calls.push(['toast', text]), cardReturn: null, paneStage: { scrollLeft: 900 },
-    showCards: ids => { calls.push(['show', ...ids]); context.panes = ids.map(id => ({ id, el: { focus() {} } })); },
-    openCard: async id => calls.push(['open', id]) });
+    toast: text => calls.push(['toast', text]), cardReturn: null, document: { activeElement: null }, paneStage: { scrollLeft: 900 },
+    showCards: ids => { calls.push(['show', ...ids]); context.panes = ids.map(id => ({ id, el: { focus() {}, contains: () => false } })); },
+    openCard: async id => calls.push(['open', id]), prefetchSession: id => calls.push(['prefetch', id]) });
   vm.runInContext(stepSource, context);
   await context.stepOpenCard(-1);
-  assert.deepEqual(calls, [['show', 'codex:a'], ['open', 'codex:a']]);
+  assert.deepEqual(calls, [['show', 'codex:a'], ['prefetch', undefined], ['open', 'codex:a']]); // nothing lies beyond the first card to read ahead
   assert.equal(context.cardReturn, cards[0]);
   assert.equal(context.paneStage.scrollLeft, 0);
   calls.length = 0; await context.stepOpenCard(-1);

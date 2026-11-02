@@ -26,7 +26,7 @@ const call = async (name, args = {}) => (await rpc('tools/call', { name, argumen
 test('UI loop confirmation rejects ordinary model calls and accepts the rendered UI capability', async () => {
   const taskId = (await call('canban_create_task', { title: 'Loop confirmation fixture' })).structuredContent.cardId;
   const args = { taskId, expectedRevision: 0, commandId: 'ui-config', command: { type: 'configure', goal: '確認する', criteria: ['根拠'] } };
-  for (const uiToken of [undefined, 'forged-token']) {
+  for (const uiToken of [undefined, '', 'forged-token', 'f'.repeat(64)]) {
     const denied = await call('canban_review_loop', { ...args, uiToken });
     assert.equal(denied.isError, true); assert.match(denied.content[0].text, /ボードUI/);
   }
@@ -105,6 +105,21 @@ test('ui resource is served as an MCP App', async () => {
   assert.match(result.contents[0].text, /ui\/initialize/);
 });
 
+test('exchange popover is app-only and reads without marking seen or modifying either store or source logs', async () => {
+  const listed = (await rpc('tools/list')).result.tools.find(t => t.name === 'canban_exchanges');
+  assert.equal(listed.annotations.readOnlyHint, true);
+  assert.deepEqual(listed._meta.ui.visibility, ['app']);
+  const { Store } = await import('../server/store.mjs');
+  const store = new Store(dataDir);
+  const before = await store.load();
+  const sourceBefore = fx.snapshot();
+  const result = await call('canban_exchanges', { cardId: 'codex:t1' });
+  assert.equal(result.isError, undefined);
+  assert.equal(result.structuredContent.cardId, 'codex:t1');
+  assert.deepEqual(await store.load(), before);
+  assert.deepEqual(fx.snapshot(), sourceBefore);
+});
+
 test('list and card operations persist only to the kanban store', async () => {
   const board = (await call('canban_get_board', { days: 0 })).structuredContent;
   assert.equal(board.lists[0].id, 'inbox');
@@ -144,15 +159,20 @@ test('an archive rule can be replayed over MCP even when disabled and archived c
   await call('canban_delete_list', { listId: archive.id });
 });
 
-test('directories: source categories, explicit assignment and category-less filter', async () => {
+test('directories: explicit folder rules, explicit assignment and category-less filter', async () => {
   const dir = (await call('canban_create_directory', { name: 'Web', paths: ['/r/web'] })).structuredContent.result;
   let board = (await call('canban_get_board', { days: 0 })).structuredContent;
   const all = board.lists.flatMap((l) => l.cards);
   const inWeb = all.filter((c) => c.cwd === '/r/web');
   assert.ok(inWeb.length, 'fixtures have sessions under /r/web');
-  assert.ok(inWeb.filter(c => c.agent === 'codex').every(c => c.directory === null), 'Codex without a project stays category-less');
-  assert.ok(inWeb.filter(c => c.agent === 'claude').every(c => c.directory?.name === 'web'), 'Claude falls back to its cwd name');
+  assert.ok(inWeb.every(c => c.directory?.id !== dir.id), 'directory paths do not classify native sessions');
   assert.equal(board.directories.find(d => d.id === dir.id).count, 0);
+  const task = (await call('canban_create_task', { title: 'Existing folder rule' })).structuredContent;
+  await call('canban_update_task', { cardId: task.cardId, target: { agent: 'codex', host: 'local', cwd: '/r/web' } });
+  board = (await call('canban_get_board', { days: 0, directory: dir.id })).structuredContent;
+  assert.deepEqual(board.lists.flatMap(l => l.cards).map(c => c.id), [task.cardId], 'existing explicit full folder rules remain active for tasks');
+  await call('canban_delete_task', { cardId: task.cardId });
+  assert.ok(!board.directories.some(d => d.name === 'web'), 'new source names do not create categories');
   for (const card of inWeb) await call('canban_update_card', { cardId: card.id, directory: dir.id });
   board = (await call('canban_get_board', { days: 0 })).structuredContent;
   assert.equal(board.directories.find(d => d.id === dir.id).count, inWeb.length);
@@ -330,4 +350,16 @@ test('unsupported native lifecycle never changes Claude history or Canban state'
   const after = (await call('canban_get_session', { cardId: 'claude:c2' })).structuredContent;
   assert.deepEqual(after.card, detail.card);
   assert.deepEqual(fx.snapshot(), before);
+});
+
+test('Desktop status is read-only and cancellation requires the rendered UI capability', async () => {
+  const listed = (await rpc('tools/list')).result.tools;
+  assert.deepEqual(listed.find(t => t.name === 'canban_cancel_start_session')._meta.ui.visibility, ['app']);
+  assert.equal(listed.find(t => t.name === 'canban_get_start_session').annotations.readOnlyHint, true);
+  assert.equal((await call('canban_cancel_start_session', { clientRequestId: 'absent', uiToken: 'forged' })).isError, true);
+  assert.deepEqual(listed.find(t => t.name === 'canban_copy_prompt_images')._meta.ui.visibility, ['app']);
+  assert.equal((await call('canban_copy_prompt_images', { imageIds: [], uiToken: 'forged' })).isError, true);
+  assert.equal((await call('canban_read_prompt_image', { id: 'untrusted', uiToken: 'forged' })).isError, true);
+  assert.equal((await call('canban_start_session', { agent: 'claude', uiToken: 'forged', allowQuit: true })).isError, true);
+  assert.equal((await call('canban_get_start_session', { clientRequestId: 'absent' })).structuredContent.result, null);
 });

@@ -61,3 +61,9 @@ test('failed delete restores an originally unarchived session and preserves a pr
     assert.deepEqual(calls, archived ? [true] : [true, false]);
   }
 });
+
+test('per-operation advisory capabilities retain session lifecycle restrictions', async () => {
+  const { capabilitiesFor } = await import('../server/source-capabilities.mjs');
+  assert.equal(capabilitiesFor({ session }).archive.status, 'available');
+  assert.equal(capabilitiesFor({ session: { ...session, status: 'waiting' } }).delete.status, 'blocked');
+});

@@ -1,0 +1,23 @@
+{
+  "metrics": [
+    {
+      "theme": "light",
+      "font": "16px",
+      "lineHeight": "28.8px",
+      "color": "rgb(36, 39, 43)",
+      "width": 672,
+      "paragraphMargin": "12px",
+      "overflow": false
+    },
+    {
+      "theme": "dark",
+      "font": "16px",
+      "lineHeight": "28.8px",
+      "color": "rgb(227, 230, 235)",
+      "width": 672,
+      "paragraphMargin": "12px",
+      "overflow": false
+    }
+  ],
+  "errors": []
+}

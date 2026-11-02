@@ -21,7 +21,11 @@ export function buildLocalPlugin({ repository = root } = {}) {
   fs.mkdirSync(path.dirname(outputDirectory), { recursive: true });
   const staging = fs.mkdtempSync(path.join(path.dirname(outputDirectory), '.plugin-build-'));
   try {
-    run('tar', ['-xf', '-', '-C', staging], { input: run('git', ['archive', '--format=tar', sha]) });
+    // Through a file, not a buffer: the archive (docs/design images included) outgrows any fixed maxBuffer.
+    const archive = path.join(staging, '.archive.tar');
+    run('git', ['archive', '--format=tar', `--output=${archive}`, sha]);
+    run('tar', ['-xf', archive, '-C', staging]);
+    fs.rmSync(archive);
     if (fs.existsSync(path.join(staging, '.local'))) throw new Error('配布物にローカルデータが含まれています');
     const version = JSON.parse(fs.readFileSync(path.join(staging, 'package.json'), 'utf8')).version;
     fs.rmSync(outputDirectory, { recursive: true, force: true });

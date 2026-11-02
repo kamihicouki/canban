@@ -7,4 +7,9 @@ $('#fulltext').checked = !!state.filters.fulltext;
 $('#fulltext').addEventListener('change', (e) => { state.filters.fulltext = e.target.checked; saveFilters(); if (state.filters.q) load(); });
 // Analytics is a sheet on the overlay, over the board (a / the sidebar's 分析 toggle it).
 function toggleAnalytics() { toggleView('analytics'); }
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.querySelector('.popover')) closePopover(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || e.defaultPrevented) return;
+  const top = [...document.querySelectorAll('.popover')].at(-1);
+  if (!top) return;
+  e.preventDefault(); e.stopImmediatePropagation(); closePopover(top);
+});

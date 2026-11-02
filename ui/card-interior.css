@@ -30,7 +30,6 @@
 /* In the default main column the conversation receives all space left by the composer. */
 .pane:not(.sheet) .send-box { padding: 0; background: transparent; margin-bottom: 0; }
 
-.pane[data-kind="session"] .send-box textarea { min-height: 64px; height: 64px; border-radius: 8px; }
 
 .pane:not(.sheet) textarea.title-input { field-sizing: content; font-family: inherit; resize: none; min-height: 1.4em; max-height: 200px; }
 .pane:not(.sheet) .task-related-row { align-items: flex-start; gap: 6px; padding: 8px 0; background: transparent; }

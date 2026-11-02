@@ -1,0 +1,82 @@
+[
+  {
+    "view": "board",
+    "theme": "light",
+    "loading": {
+      "disabled": true,
+      "label": "環境を読み込み中…⌘/CtrlEnter",
+      "feedback": "環境を読み込み中です。取得後に開始できます。",
+      "draft": "READMEの構成を確認してください。入力した依頼は取得後も保持します。",
+      "scrollTop": 126,
+      "theme": "light",
+      "timeline": false
+    },
+    "ready": {
+      "disabled": false,
+      "label": "Codexを開く⌘/CtrlEnter",
+      "draft": "READMEの構成を確認してください。入力した依頼は取得後も保持します。",
+      "targetsLoading": false,
+      "scrollTop": 0
+    }
+  },
+  {
+    "view": "board",
+    "theme": "dark",
+    "loading": {
+      "disabled": true,
+      "label": "環境を読み込み中…⌘/CtrlEnter",
+      "feedback": "環境を読み込み中です。取得後に開始できます。",
+      "draft": "READMEの構成を確認してください。入力した依頼は取得後も保持します。",
+      "scrollTop": 126,
+      "theme": "dark",
+      "timeline": false
+    },
+    "ready": {
+      "disabled": false,
+      "label": "Codexを開く⌘/CtrlEnter",
+      "draft": "READMEの構成を確認してください。入力した依頼は取得後も保持します。",
+      "targetsLoading": false,
+      "scrollTop": 0
+    }
+  },
+  {
+    "view": "timeline",
+    "theme": "light",
+    "loading": {
+      "disabled": true,
+      "label": "環境を読み込み中…⌘/CtrlEnter",
+      "feedback": "環境を読み込み中です。取得後に開始できます。",
+      "draft": "READMEの構成を確認してください。入力した依頼は取得後も保持します。",
+      "scrollTop": 126,
+      "theme": "light",
+      "timeline": true
+    },
+    "ready": {
+      "disabled": false,
+      "label": "Codexを開く⌘/CtrlEnter",
+      "draft": "READMEの構成を確認してください。入力した依頼は取得後も保持します。",
+      "targetsLoading": false,
+      "scrollTop": 0
+    }
+  },
+  {
+    "view": "timeline",
+    "theme": "dark",
+    "loading": {
+      "disabled": true,
+      "label": "環境を読み込み中…⌘/CtrlEnter",
+      "feedback": "環境を読み込み中です。取得後に開始できます。",
+      "draft": "READMEの構成を確認してください。入力した依頼は取得後も保持します。",
+      "scrollTop": 126,
+      "theme": "dark",
+      "timeline": true
+    },
+    "ready": {
+      "disabled": false,
+      "label": "Codexを開く⌘/CtrlEnter",
+      "draft": "READMEの構成を確認してください。入力した依頼は取得後も保持します。",
+      "targetsLoading": false,
+      "scrollTop": 0
+    }
+  }
+]

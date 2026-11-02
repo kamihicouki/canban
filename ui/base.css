@@ -21,9 +21,11 @@
   --list-fg: #172b4d;
   --list-muted: #44546f;
   --card-bg: #fff;
+  --term-bg: #f7f8f9; --term-fg: #172b4d; --term-cursor: #0c66e4; --term-sel: #cce0ff;
   --chat-human-bg: #e9f2ff; --chat-agent-bg: #f1f2f4;
-  --card-fg: #172b4d;
-  --card-muted: #626f86;
+  --card-fg: #24272b;
+  --card-muted: #59616c;
+  --reading-size: 1rem; --reading-leading: 1.75; --reading-width: 60rem;
   --card-shadow: 0 1px 1px #091e4240, 0 0 1px #091e424f;
   --card-hover: #f7f8f9;
   --input-bg: #fff;
@@ -49,6 +51,14 @@
   --c-gray: #8590a2; --c-blue: #579dff; --c-green: #4bce97; --c-yellow: #f5cd47; --c-orange: #fea362;
   --c-red: #f87168; --c-purple: #9f8fef; --c-pink: #e774bb; --c-sky: #6cc3e0; --c-lime: #94c748;
   --txt-bg: #fbfbfc; --txt-fg: #1d2733; --txt-dim: #6b778c; --note-bg: #fdf0a6; --note-fg: #3d3200;
+  --on-solid: #fff; --on-accent: #fff; --on-label: #172b4d; --on-c-green: #0b3a26; --on-c-yellow: #533f04;
+  --prio-high-bg: #ffd5d2; --prio-high-fg: #ae2e24; --prio-medium-bg: #fff7d6; --prio-medium-fg: #7f5f01; --prio-low-bg: #dcfff1; --prio-low-fg: #216e4e;
+  --pr-fg: #fff; --pr-open-bg: #1f883d; --pr-draft-bg: #6e7781; --pr-merged-bg: #8250df; --pr-closed-bg: #cf222e; --pr-failing-fg: #ffd7d5;
+  --mark-bg: #ffe58f; --mark-fg: #172b4d; --toast-bg: #172b4d; --toast-fg: #fff;
+  --usage-remaining-bg: #c9ddff; --usage-remaining-fg: #0747a6; --agm-ring: #2c4f8f; --backdrop: rgba(0, 0, 0, 0.4);
+  --toast-shadow: 0 4px 8px rgba(0, 0, 0, 0.27); --tip-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); --dialog-shadow: 0 12px 48px rgba(0, 0, 0, 0.33);
+  --drawer-shadow: 4px 0 12px rgba(0, 0, 0, 0.4); --seg-shadow: 0 1px 2px #091e4240;
+  --pop-shadow: 0 8px 12px #091e4226, 0 0 1px #091e424f; --drag-shadow: 0 8px 16px -4px #091e4240, 0 0 1px #091e424f;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -71,9 +81,10 @@
   --list-fg: #b6c2cf;
   --list-muted: #8c9bab;
   --card-bg: #22272b;
+  --term-bg: #161a1d; --term-fg: #dee4ea; --term-cursor: #579dff; --term-sel: #09326c;
   --chat-human-bg: #09326c; --chat-agent-bg: #282e33;
-  --card-fg: #b6c2cf;
-  --card-muted: #8c9bab;
+  --card-fg: #e3e6eb;
+  --card-muted: #a9b2bd;
   --card-shadow: 0 1px 1px #03040480, 0 0 1px #03040480;
   --card-hover: #2c333a;
   --input-bg: #22272b;
@@ -94,12 +105,20 @@
   --warn-bg: #533f04;
   --warn-fg: #f5cd47;
   --txt-bg: #0e1215; --txt-fg: #c9d4df; --txt-dim: #7d8b99; --note-bg: #5c4b0a; --note-fg: #ffeaa0;
+  --on-solid: #fff; --on-accent: #1d2125; --on-label: #172b4d; --on-c-green: #0b3a26; --on-c-yellow: #533f04;
+  --prio-high-bg: #5d1f1a; --prio-high-fg: #fd9891; --prio-medium-bg: #533f04; --prio-medium-fg: #f5cd47; --prio-low-bg: #164b35; --prio-low-fg: #7ee2b8;
+  --pr-fg: #fff; --pr-open-bg: #1f883d; --pr-draft-bg: #6e7781; --pr-merged-bg: #8250df; --pr-closed-bg: #cf222e; --pr-failing-fg: #ffd7d5;
+  --mark-bg: #5c4b0a; --mark-fg: #ffeaa0; --toast-bg: #dee4ea; --toast-fg: #1d2125;
+  --usage-remaining-bg: #09326c; --usage-remaining-fg: #cce0ff; --agm-ring: #1d2125; --backdrop: rgba(0, 0, 0, 0.6);
+  --toast-shadow: 0 4px 8px rgba(0, 0, 0, 0.5); --tip-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); --dialog-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  --drawer-shadow: 4px 0 12px rgba(0, 0, 0, 0.6); --seg-shadow: 0 1px 2px #03040480;
+  --pop-shadow: 0 8px 12px #0304048c, 0 0 1px #03040480; --drag-shadow: 0 8px 16px -4px #03040480, 0 0 1px #03040480;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
-  font: 14px/20px -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  font: .875rem/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", "Noto Sans CJK JP", sans-serif;
   color: var(--list-fg);
   display: flex; flex-direction: column; overflow: hidden;
 }

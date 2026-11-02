@@ -7,14 +7,35 @@ const CARD_WIDTH_MIN = 560, CARD_WIDTH_MAX = 1600;
 const CARD_HEIGHT_DEF = { session: 860, task: 860 };
 const CARD_HEIGHT_MIN = 320, CARD_HEIGHT_MAX = 1600;
 const TASK_SESSIONS_MAX = 8;
-// The card board's margins follow the window: a slim one on the left, the key guide's on the right.
-// Nothing here is saved; the card itself is what the user sizes.
-function cardBoardGeometry(width) {
+// The card board's margins follow the window: a slim one on each side, and room for the key guide where it is
+// docked (`reserve`: the width it needs on the left or right; the right by default). Nothing here is saved.
+function cardBoardGeometry(width, reserve = {}) {
   const w = Math.max(1, width);
-  const minStage = Math.min(360, w * .55), legend = Math.min(216, w * .32), margin = Math.min(Math.max(24, w * .06), w * .08);
-  const left = Math.round(Math.min(margin, w - minStage - legend));
-  const right = Math.round(Math.max(0, Math.min(legend, w - minStage - left)));
+  const want = { left: Math.max(0, reserve.left ?? 0), right: Math.max(0, reserve.right ?? KEY_GUIDE_ROOM) };
+  const minStage = Math.min(360, w * .55), margin = Math.min(Math.max(24, w * .06), w * .08);
+  const legendL = Math.min(want.left, w * .32), legendR = Math.min(want.right, w * .32);
+  const left = Math.round(Math.max(0, Math.min(Math.max(margin, legendL), w - minStage - legendR)));
+  const right = Math.round(Math.max(0, Math.min(want.right ? legendR : margin, w - minStage - left)));
   return { left, right, width: w - left - right };
+}
+// The key guide: one panel on every screen, docked at a corner of the stage or as a strip along its foot.
+// Where it sits is shared UI state ('keyGuide'); it floats over the stage and takes no room.
+const KEY_GUIDE_DOCKS = ['tr', 'br', 'bottom', 'bl']; // clockwise: the arrows on its title walk this ring
+const KEY_GUIDE_DEF = { dock: 'bottom', min: false };
+const KEY_GUIDE_WIDTH = 200, KEY_GUIDE_ROOM = 216;
+function normalizeKeyGuide(value) {
+  return { dock: KEY_GUIDE_DOCKS.includes(value?.dock) ? value.dock : KEY_GUIDE_DEF.dock, min: value?.min === true };
+}
+// Where a guide dropped at (x, y) — fractions of the stage — lands: the strip in the middle of the foot,
+// else the nearest corner. The top left belongs to the navigation and the ribbon, so the top is always the right.
+function keyGuideDockAt(x, y) {
+  if (y > .8 && x > .25 && x < .75) return 'bottom';
+  if (y < .5) return 'tr';
+  return x < .5 ? 'bl' : 'br';
+}
+function keyGuideStep(dock, step) {
+  const i = Math.max(0, KEY_GUIDE_DOCKS.indexOf(dock));
+  return KEY_GUIDE_DOCKS[(i + step + KEY_GUIDE_DOCKS.length) % KEY_GUIDE_DOCKS.length];
 }
 // Analytics and Agent Usage open on the same layer as sheets, under ids of their own ("view:analytics").
 const VIEW_SHEETS = { analytics: ['chart', '分析'], usage: ['gauge', 'Agent Usage'], orbit: ['refresh', '軌道'] };

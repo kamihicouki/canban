@@ -5,10 +5,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
+import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { claudeItems, codexItems, foldResults, activityOf, readLines, readFeed, readFeedDelta } from '../server/feed.mjs';
 import { Store } from '../server/store.mjs';
+import { rolloutFile, readTailJsonLines } from '../server/sources/readonly.mjs';
 import { LiveHub } from '../server/live.mjs';
 import { makeFixtures } from './helpers.mjs';
 
@@ -120,6 +122,34 @@ test('readLines continues from an offset and leaves a partial line for later', a
   assert.deepEqual(d.items.map((i) => i.k), ['user']);
   const tail = await readLines(f, { tailBytes: 5 });
   assert.equal(tail.records.length, 0);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a rollout compressed to .jsonl.zst is read through its .jsonl path', { skip: !zlib.zstdCompressSync }, async () => {
+  const dir = tmp();
+  const f = path.join(dir, 'rollout-a.jsonl');
+  const recs = [
+    { type: 'event_msg', payload: { type: 'user_message', message: 'やって' } },
+    { type: 'event_msg', payload: { type: 'agent_message', message: 'x'.repeat(4000) } },
+    { type: 'event_msg', payload: { type: 'agent_message', message: 'はい' } },
+  ];
+  const text = recs.map(line).join('');
+  fs.writeFileSync(`${f}.zst`, zlib.zstdCompressSync(Buffer.from(text)));
+  assert.equal(rolloutFile(f), `${f}.zst`);
+  const session = { agent: 'codex', sourcePath: f };
+  const first = await readFeed(session);
+  assert.deepEqual(first.items.map((i) => i.k), ['user', 'assistant', 'assistant']);
+  assert.deepEqual([first.offset, first.size], [Buffer.byteLength(text), Buffer.byteLength(text)]);
+  assert.deepEqual((await readFeedDelta(session, first.offset)).items, []);
+  // A tail shorter than the content drops the cut first line.
+  const tail = await readLines(f, { tailBytes: 200 });
+  assert.deepEqual(tail.records.map((r) => r.payload.message), ['はい']);
+  assert.deepEqual((await readTailJsonLines(f, 200)).map((r) => r.payload.message), ['はい']);
+  assert.equal((await readTailJsonLines(f)).length, 3);
+  // The plain log wins while it is still there.
+  fs.writeFileSync(f, line(recs[0]));
+  assert.equal(rolloutFile(f), f);
+  assert.equal((await readTailJsonLines(f)).length, 1);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -296,8 +326,17 @@ test('canban_watch over stdio: patches the card and streams the open session', a
     const meta = path.join(fx.desktopDir, 'a', 'b', 'local_2.json');
     const m = JSON.parse(fs.readFileSync(meta, 'utf8'));
     await call('canban_get_board'); // index the sessions (desktop titles) for the watcher
-    await new Promise((r2) => setTimeout(r2, 300)); // let the board load's own writes arrive
-    const since = (await call('canban_watch', { since: afterBoard.seq, timeoutMs: 0 })).seq;
+    // Drain the board load's own DB notifications before testing a metadata-only edit.
+    // Include the 2s DB polling fallback and coalescing, even if macOS file events lag.
+    let settled = await call('canban_watch', { since: afterBoard.seq, timeoutMs: 0 });
+    const settleBy = Date.now() + 10000;
+    for (;;) {
+      const next = await call('canban_watch', { since: settled.seq, timeoutMs: 2500 });
+      if (next.seq === settled.seq) break;
+      assert.ok(Date.now() < settleBy, 'board notifications must settle before the metadata edit');
+      settled = next;
+    }
+    const since = settled.seq;
     const w2 = call('canban_watch', { since, timeoutMs: 1500 });
     await new Promise((r2) => setTimeout(r2, 100));
     fs.writeFileSync(meta, JSON.stringify({ ...m, lastActivityAt: String(Date.now()) }));

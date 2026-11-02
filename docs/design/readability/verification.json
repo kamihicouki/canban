@@ -1,0 +1,111 @@
+{
+  "results": [
+    {
+      "theme": "light",
+      "layout": "Trello",
+      "font": "16px",
+      "lineHeight": "28.8px",
+      "feedOverflow": false,
+      "pageOverflow": false,
+      "feedWidth": 963
+    },
+    {
+      "theme": "light",
+      "layout": "定番",
+      "font": "16px",
+      "lineHeight": "28.8px",
+      "feedOverflow": false,
+      "pageOverflow": false,
+      "feedWidth": 963
+    },
+    {
+      "theme": "light",
+      "layout": "レール",
+      "font": "16px",
+      "lineHeight": "28.8px",
+      "feedOverflow": false,
+      "pageOverflow": false,
+      "feedWidth": 963
+    },
+    {
+      "theme": "light",
+      "layout": "オムニバー",
+      "font": "16px",
+      "lineHeight": "28.8px",
+      "feedOverflow": false,
+      "pageOverflow": false,
+      "feedWidth": 963
+    },
+    {
+      "theme": "light",
+      "layout": "ライブ HUD",
+      "font": "16px",
+      "lineHeight": "28.8px",
+      "feedOverflow": false,
+      "pageOverflow": false,
+      "feedWidth": 963
+    },
+    {
+      "theme": "dark",
+      "layout": "Trello",
+      "font": "16px",
+      "lineHeight": "28.8px",
+      "feedOverflow": false,
+      "pageOverflow": false,
+      "feedWidth": 963
+    },
+    {
+      "theme": "dark",
+      "layout": "定番",
+      "font": "16px",
+      "lineHeight": "28.8px",
+      "feedOverflow": false,
+      "pageOverflow": false,
+      "feedWidth": 963
+    },
+    {
+      "theme": "dark",
+      "layout": "レール",
+      "font": "16px",
+      "lineHeight": "28.8px",
+      "feedOverflow": false,
+      "pageOverflow": false,
+      "feedWidth": 963
+    },
+    {
+      "theme": "dark",
+      "layout": "オムニバー",
+      "font": "16px",
+      "lineHeight": "28.8px",
+      "feedOverflow": false,
+      "pageOverflow": false,
+      "feedWidth": 963
+    },
+    {
+      "theme": "dark",
+      "layout": "ライブ HUD",
+      "font": "16px",
+      "lineHeight": "28.8px",
+      "feedOverflow": false,
+      "pageOverflow": false,
+      "feedWidth": 963
+    }
+  ],
+  "narrow": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "feedOverflow": false,
+    "feedWidth": 217,
+    "close": {
+      "x": 213,
+      "y": 191.5,
+      "width": 28,
+      "height": 28,
+      "top": 191.5,
+      "right": 241,
+      "bottom": 219.5,
+      "left": 213
+    }
+  },
+  "errors": []
+}

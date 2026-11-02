@@ -3,7 +3,7 @@
 // Detail source: the thread's rollout JSONL file.
 // Row normalization and message extraction are shared with the remote collector.
 import path from 'node:path';
-import { exists, listDir, queryReadOnly, readTailJsonLines, stat } from './readonly.mjs';
+import { exists, listDir, queryReadOnly, readTailJsonLines, rolloutFile, stat } from './readonly.mjs';
 import { projectName, clip, cleanPrompt, firstLine, LOCAL_HOST, sessionKey } from './util.mjs';
 import { defaultCodexHome, codexHomes, refreshAccounts, sessionAccount } from '../accounts.mjs';
 
@@ -227,6 +227,6 @@ export function codexMessagesFromRecords(records, limit = 12) {
 }
 
 export async function codexSessionMessages(rolloutPath, limit = 12) {
-  if (!rolloutPath || !exists(rolloutPath)) return [];
+  if (!rolloutPath || !exists(rolloutFile(rolloutPath))) return [];
   return codexMessagesFromRecords(await readTailJsonLines(rolloutPath, 768 * 1024), limit);
 }

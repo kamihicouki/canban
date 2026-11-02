@@ -14,10 +14,11 @@ export function matchesAccount(account, s) {
 }
 
 // The Claude desktop app lists only the signed-in account's sessions: opening another
-// account's session there would not find it, so say so (the terminal resumes it).
+// account's session there would not find it, so say so. With Desktop stopped, opening it
+// launches the integrated sidebar (claude-desktop-guests.mjs); otherwise the terminal resumes it.
 export function accountDesktopNote(s, labels) {
   const m = desktopAccountMismatch(s);
-  return m ? `このセッションは ${accountName(m.session, labels)} のものです。Claude デスクトップは今 ${accountName(m.active, labels)} でサインインしているため、開くにはアカウントを切り替えるか、ターミナルで再開してください。` : null;
+  return m ? `このセッションは ${accountName(m.session, labels)} のものです。Claude デスクトップは今 ${accountName(m.active, labels)} でサインインしています。Desktop を終了した状態で開くと、全アカウントの会話をまとめた Desktop で開きます。起動中はターミナルで再開してください。` : null;
 }
 export function withAccountNote(launch, s, labels) {
   const note = launch.desktop && accountDesktopNote(s, labels);

@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import readline from 'node:readline';
+import zlib from 'node:zlib';
 import { DatabaseSync } from 'node:sqlite';
 
 export function exists(p) {
@@ -108,24 +109,55 @@ export async function* readJsonLinesFrom(p, start = 0) {
   }
 }
 
+// Codex (0.164) compresses idle rollouts to `<rollout>.jsonl.zst` while its state DB keeps
+// the `.jsonl` path. The file to read for a log path: the compressed twin when only it exists.
+export function rolloutFile(p) {
+  if (!p || !p.endsWith('.jsonl') || !zlib.createZstdDecompress || exists(p)) return p;
+  return exists(`${p}.zst`) ? `${p}.zst` : p;
+}
+
+// The last `keep` bytes of a zstd file's content and the content's size, decompressed as a
+// stream so a large log is never held whole.
+export async function zstdTail(p, keep) {
+  const chunks = [];
+  let held = 0, size = 0;
+  for await (const chunk of fs.createReadStream(p, { flags: 'r' }).pipe(zlib.createZstdDecompress())) {
+    chunks.push(chunk);
+    held += chunk.length;
+    size += chunk.length;
+    while (held - chunks[0].length >= keep) held -= chunks.shift().length;
+  }
+  const buf = Buffer.concat(chunks);
+  return { buf: buf.subarray(Math.max(0, buf.length - keep)), size };
+}
+
+function parseTail(text, partial) {
+  let lines = text.split('\n');
+  if (partial) lines = lines.slice(1); // first line is likely partial
+  const out = [];
+  for (const line of lines) {
+    if (!line) continue;
+    try {
+      out.push(JSON.parse(line));
+    } catch {}
+  }
+  return out;
+}
+
 // Read the last `bytes` bytes of a file and return complete JSON lines from it.
 export async function readTailJsonLines(p, bytes = 256 * 1024) {
+  p = rolloutFile(p);
+  if (p.endsWith('.zst')) {
+    const { buf, size } = await zstdTail(p, bytes);
+    return parseTail(buf.toString('utf8'), size > buf.length);
+  }
   const fh = await fsp.open(p, 'r');
   try {
     const { size } = await fh.stat();
     const start = Math.max(0, size - bytes);
     const buf = Buffer.alloc(size - start);
     await fh.read(buf, 0, buf.length, start);
-    let lines = buf.toString('utf8').split('\n');
-    if (start > 0) lines = lines.slice(1); // first line is likely partial
-    const out = [];
-    for (const line of lines) {
-      if (!line) continue;
-      try {
-        out.push(JSON.parse(line));
-      } catch {}
-    }
-    return out;
+    return parseTail(buf.toString('utf8'), start > 0);
   } finally {
     await fh.close();
   }

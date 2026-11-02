@@ -54,22 +54,76 @@ export function uploadImage(dir, { id, offset = 0, data, name, mime, size }) {
   return { ...meta, offset: nextOffset, complete: !!meta.sha256 };
 }
 
+function readImageFile(file, maxBytes) {
+  const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+  try {
+    const before = fs.fstatSync(fd, { bigint: true });
+    if (!before.isFile() || before.nlink !== 1n || process.getuid && before.uid !== BigInt(process.getuid()) || before.size > BigInt(maxBytes)) throw new Error('保存された画像が変更されています。もう一度追加してください');
+    const bytes = Buffer.alloc(Number(before.size) + 1);
+    let total = 0, read;
+    while (total < bytes.length && (read = fs.readSync(fd, bytes, total, bytes.length-total, total))) total += read;
+    const after = fs.fstatSync(fd, { bigint: true });
+    if (BigInt(total) !== before.size || after.size !== before.size || after.mtimeNs !== before.mtimeNs || after.ctimeNs !== before.ctimeNs) throw new Error('保存された画像が変更されています。もう一度追加してください');
+    return bytes.subarray(0,total);
+  } finally { fs.closeSync(fd); }
+}
+function imageMetadata(dir, id) {
+  const file = imagePath(dir, id, 'json');
+  const root = fs.lstatSync(imageDir(dir));
+  if (!root.isDirectory() || root.isSymbolicLink() || process.getuid && root.uid !== process.getuid()) throw new Error('画像の保存先を確認できません');
+  const meta = JSON.parse(readImageFile(file,4096).toString('utf8'));
+  if (!meta.sha256 || !TYPES[meta.mime]) throw new Error('アップロードが完了していない画像です');
+  if (meta.id !== id || !Number.isInteger(meta.size) || meta.size < 1 || meta.size > IMAGE_MAX_BYTES || !/^[a-f0-9]{64}$/.test(meta.sha256)) throw new Error('画像の指定・サイズが不正です');
+  return { ...meta, path: imagePath(dir, id, TYPES[meta.mime]) };
+}
 export function promptImages(dir, ids = []) {
   if (!Array.isArray(ids) || ids.length > IMAGE_MAX_COUNT) throw new Error('画像は8枚までです');
   return [...new Set(ids)].map(id => {
-    const meta = JSON.parse(fs.readFileSync(imagePath(dir, id, 'json'), 'utf8'));
-    if (!meta.sha256 || !TYPES[meta.mime]) throw new Error('アップロードが完了していない画像です');
-    const file = imagePath(dir, id, TYPES[meta.mime]);
-    const data = fs.readFileSync(file);
-    if (data.length !== meta.size || crypto.createHash('sha256').update(data).digest('hex') !== meta.sha256) throw new Error('保存された画像が変更されています。もう一度追加してください');
-    return { ...meta, path: file };
+    const meta = imageMetadata(dir,id), data = readImageFile(meta.path,IMAGE_MAX_BYTES);
+    if (data.length !== meta.size || crypto.createHash('sha256').update(data).digest('hex') !== meta.sha256 || imageType(data) !== meta.mime) throw new Error('保存された画像が変更されています。もう一度追加してください');
+    return meta;
   });
+}
+
+// Cache only validated file generations, never image bytes. A restarted MCP host
+// revalidates once; every returned chunk is still bounded and bound to its hash.
+const imageGenerations = new Map();
+const imageStamp = file => {
+  const s = fs.lstatSync(file,{bigint:true});
+  if (!s.isFile() || s.isSymbolicLink() || s.nlink !== 1n || process.getuid && s.uid !== BigInt(process.getuid())) throw new Error('画像の保存先が変更されています');
+  return `${s.dev}:${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
+};
+export function readPromptImageChunk(dir, { id, offset = 0, maxBytes = 128*1024, expectedSha256 } = {}) {
+  if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(maxBytes) || maxBytes < 1 || maxBytes > 128*1024 || offset > 0 && !/^[a-f0-9]{64}$/.test(expectedSha256 || '')) throw new Error('画像の読込み範囲・ハッシュが不正です');
+  const meta = imageMetadata(dir,id);
+  if (offset > meta.size || expectedSha256 && expectedSha256 !== meta.sha256) throw new Error('画像の内容が変更されています');
+  const key = `${fs.realpathSync(dir)}:${id}`, stamp = imageStamp(meta.path) + ':' + imageStamp(imagePath(dir,id,'json'));
+  const cached = imageGenerations.get(key);
+  if (cached && cached !== stamp && offset > 0) throw new Error('読込み途中で画像が変更されています');
+  if (cached !== stamp) {
+    promptImages(dir,[id]);
+    imageGenerations.set(key,stamp);
+    if (imageGenerations.size > 256) imageGenerations.delete(imageGenerations.keys().next().value);
+  }
+  const bytes = Buffer.alloc(Math.min(maxBytes, meta.size-offset));
+  const fd = fs.openSync(meta.path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+  let total = 0;
+  try {
+    while (total < bytes.length) {
+      const n = fs.readSync(fd,bytes,total,bytes.length-total,offset+total);
+      if (!n) throw new Error('画像を最後まで読み込めません');
+      total += n;
+    }
+  } finally { fs.closeSync(fd); }
+  if (imageStamp(meta.path) + ':' + imageStamp(imagePath(dir,id,'json')) !== stamp) throw new Error('読込み途中で画像が変更されています');
+  return { id, name: meta.name, mime: meta.mime, size: meta.size, sha256: meta.sha256, offset, nextOffset: offset+total, complete: offset+total===meta.size, data: bytes.toString('base64') };
 }
 
 export function skillRoots({ agent = 'codex', cwd = '', homeDir } = {}) {
   if (!['codex', 'claude'].includes(agent)) throw new Error('未対応のAI Appです');
   const home = homeDir || (agent === 'codex' ? codexHome() : claudeHome());
   const roots = [path.join(home, 'skills'), path.join(home, 'plugins', 'cache')];
+  if (agent === 'codex') roots.unshift(path.resolve(import.meta.dirname, '..', 'skills'));
   if (agent === 'codex') roots.push(path.join(os.homedir(), '.agents', 'skills'));
   if (cwd) {
     if (!path.isAbsolute(cwd)) throw new Error('作業フォルダは絶対パスで指定してください');
@@ -110,7 +164,25 @@ export function listSkills(context = {}) {
 export function withSkills(prompt, skills = []) {
   if (!Array.isArray(skills) || skills.length > 20 || skills.some(s => !s || !/^[\w.:-]+$/.test(s.name) || typeof s.path !== 'string' || !path.isAbsolute(s.path) || path.basename(s.path) !== 'SKILL.md' || /[\r\n]/.test(s.path))) throw new Error('スキルの指定が不正です');
   if (!skills.length) return String(prompt || '').trim();
-  return `${String(prompt || '').trim()}\n\n使用するスキル（各 SKILL.md を読み、適用してください）:\n${skills.map(s => `$${s.name} — ${JSON.stringify(s.path)}`).join('\n')}`.trim();
+  const apps = new Set(skills.flatMap(s => skillApps(s.path)));
+  const mentions = apps.size ? `\n\n使用する接続アプリ:\n${[...apps].map(id => `[$${id}](app://${id})`).join('\n')}` : '';
+  return `${String(prompt || '').trim()}\n\n使用するスキル（各 SKILL.md を読み、適用してください）:\n${skills.map(s => `$${s.name} — ${JSON.stringify(s.path)}`).join('\n')}${mentions}`.trim();
+}
+
+// Read dependencies from the installed plugin that owns this skill. The UI sends
+// only the skill path; app IDs are resolved on the executing machine, not trusted
+// from client input. This also works for a plugin served by a Chrome native host.
+function skillApps(file) {
+  const root = path.resolve(path.dirname(file), '..', '..');
+  if (path.dirname(file) !== path.join(root, 'skills', path.basename(path.dirname(file)))) return [];
+  try {
+    const plugin = JSON.parse(fs.readFileSync(path.join(root, '.codex-plugin', 'plugin.json'), 'utf8'));
+    if (path.resolve(root, plugin.skills || 'skills') !== path.join(root, 'skills') || !plugin.apps) return [];
+    const manifest = path.resolve(root, plugin.apps);
+    if (manifest !== path.join(root, '.app.json')) return [];
+    const apps = JSON.parse(fs.readFileSync(manifest, 'utf8')).apps;
+    return Object.values(apps || {}).map(app => app?.id).filter(id => typeof id === 'string' && /^connector_[A-Za-z0-9_]+$/.test(id));
+  } catch { return []; }
 }
 
 export function withImagePaths(prompt, images) {

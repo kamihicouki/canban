@@ -1,0 +1,54 @@
+{
+  "date": "2026-10-30",
+  "kind": "AI-generated static concept sketches",
+  "records": [
+    {
+      "name": "01-life-weave",
+      "title": "人生の織物",
+      "file": "sketches/01-life-weave.png",
+      "original": "exec-cced7157-0c0f-423c-8b81-a2cff513e7a9.png",
+      "sha256": "7c5145dc0753916362a5c598293c00bde8e97a895c485d835e03e6336dc65015",
+      "bytes": 2041927
+    },
+    {
+      "name": "02-time-garden",
+      "title": "時間の庭",
+      "file": "sketches/02-time-garden.png",
+      "original": "exec-eef972f0-df51-4b10-ac79-48171ca68bec.png",
+      "sha256": "e7d402900a2675ca0c5dd9eb5447f3dbd4ff414f03e1b90e84e5d96f5542f347",
+      "bytes": 2172897
+    },
+    {
+      "name": "03-life-atlas",
+      "title": "人生のアトラス",
+      "file": "sketches/03-life-atlas.png",
+      "original": "exec-bf9a5822-f7a5-4cd4-a872-6aabe1ab6172.png",
+      "sha256": "3d4402d1b948e0d27e396d25b10bec6caa9aa195800ae0c71495a62058d76245",
+      "bytes": 3347244
+    },
+    {
+      "name": "04-life-score",
+      "title": "暮らしのスコア",
+      "file": "sketches/04-life-score.png",
+      "original": "exec-b4c22cb9-5022-46d8-a7d5-6638095cbdec.png",
+      "sha256": "a3addc010d16808ec735dd5d59dc87771358af29a36038c690632b96c29daa73",
+      "bytes": 1943170
+    },
+    {
+      "name": "05-life-transit",
+      "title": "人生の路線図",
+      "file": "sketches/05-life-transit.png",
+      "original": "exec-7090a5fa-3f4e-4d30-83ce-802992fe1635.png",
+      "sha256": "ccf351e5a99b9e979df7f3d3fb193297443733ab247de2d6090cd9d6313d83f6",
+      "bytes": 1916783
+    },
+    {
+      "name": "06-life-story",
+      "title": "人生の見開き",
+      "file": "sketches/06-life-story.png",
+      "original": "exec-e468ce85-5e07-4259-8525-fdc688bfee4f.png",
+      "sha256": "7bfb08acc6be9b0a24b21dbdb8c9e4ebdc9eb0e88ec362ae4215198a4d159512",
+      "bytes": 2711103
+    }
+  ]
+}
