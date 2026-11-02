@@ -165,7 +165,8 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
     updatedAt,
     archived: dm?.isArchived === true,
     subagent: false,
-    automation: false,
+    // Claude Desktop 3.x marks a session started by a scheduled task with its task id.
+    automation: typeof dm?.scheduledTaskId === 'string' && dm.scheduledTaskId.trim() !== '',
     pinnedInAgent: false,
     preview: clip(firstPrompt, 280),
     sourcePath: s.file || null,

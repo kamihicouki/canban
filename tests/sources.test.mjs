@@ -123,6 +123,15 @@ test('Claude sessions without desktop metadata are not claimed to be unarchived'
   assert.equal(normalizeClaudeSummary(sum, { isArchived: true }).desktopKnown, true);
 });
 
+test('Claude Desktop scheduled-task sessions are marked as automation', async () => {
+  const { normalizeClaudeSummary, newSummary } = await import('../server/sources/claude.mjs');
+  const sum = { ...newSummary('x'), prompts: ['hi'], turns: 1 };
+  assert.equal(normalizeClaudeSummary(sum, { scheduledTaskId: 'canban-crud-maintenance' }).automation, true);
+  assert.equal(normalizeClaudeSummary(sum, { scheduledTaskId: '' }).automation, false);
+  assert.equal(normalizeClaudeSummary(sum, {}).automation, false);
+  assert.equal(normalizeClaudeSummary(sum, undefined).automation, false);
+});
+
 test('Claude groups keep actual account/org scope and never become named environments', async () => {
   const { sessionSourceView } = await import('../server/source-model.mjs');
   const summary = { ...newSummary('source-test'), prompts: ['hello'], turns: 1 };
