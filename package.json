@@ -30,6 +30,7 @@
     "export:json": "node --no-warnings scripts/migrate-sqlite.mjs --export",
     "update:chrome": "node scripts/update-local-chrome.mjs",
     "build:plugin": "node scripts/build-local-plugin.mjs",
-    "update:local": "npm run build:plugin && npm run update:chrome && codex plugin add canban@personal --json"
+    "update:local": "npm run build:plugin && npm run update:chrome && codex plugin add canban@personal --json",
+    "bump": "node scripts/bump-version.mjs"
   }
 }
