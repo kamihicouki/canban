@@ -5,10 +5,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
+import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { claudeItems, codexItems, foldResults, activityOf, readLines, readFeed, readFeedDelta } from '../server/feed.mjs';
 import { Store } from '../server/store.mjs';
+import { rolloutFile, readTailJsonLines } from '../server/sources/readonly.mjs';
 import { LiveHub } from '../server/live.mjs';
 import { makeFixtures } from './helpers.mjs';
 
@@ -120,6 +122,34 @@ test('readLines continues from an offset and leaves a partial line for later', a
   assert.deepEqual(d.items.map((i) => i.k), ['user']);
   const tail = await readLines(f, { tailBytes: 5 });
   assert.equal(tail.records.length, 0);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a rollout compressed to .jsonl.zst is read through its .jsonl path', { skip: !zlib.zstdCompressSync }, async () => {
+  const dir = tmp();
+  const f = path.join(dir, 'rollout-a.jsonl');
+  const recs = [
+    { type: 'event_msg', payload: { type: 'user_message', message: 'やって' } },
+    { type: 'event_msg', payload: { type: 'agent_message', message: 'x'.repeat(4000) } },
+    { type: 'event_msg', payload: { type: 'agent_message', message: 'はい' } },
+  ];
+  const text = recs.map(line).join('');
+  fs.writeFileSync(`${f}.zst`, zlib.zstdCompressSync(Buffer.from(text)));
+  assert.equal(rolloutFile(f), `${f}.zst`);
+  const session = { agent: 'codex', sourcePath: f };
+  const first = await readFeed(session);
+  assert.deepEqual(first.items.map((i) => i.k), ['user', 'assistant', 'assistant']);
+  assert.deepEqual([first.offset, first.size], [Buffer.byteLength(text), Buffer.byteLength(text)]);
+  assert.deepEqual((await readFeedDelta(session, first.offset)).items, []);
+  // A tail shorter than the content drops the cut first line.
+  const tail = await readLines(f, { tailBytes: 200 });
+  assert.deepEqual(tail.records.map((r) => r.payload.message), ['はい']);
+  assert.deepEqual((await readTailJsonLines(f, 200)).map((r) => r.payload.message), ['はい']);
+  assert.equal((await readTailJsonLines(f)).length, 3);
+  // The plain log wins while it is still there.
+  fs.writeFileSync(f, line(recs[0]));
+  assert.equal(rolloutFile(f), f);
+  assert.equal((await readTailJsonLines(f)).length, 1);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

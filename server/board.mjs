@@ -7,7 +7,7 @@ import { leaderFor } from './leader.mjs';
 // Canban store into a board snapshot.
 import { listCodexSessions, codexMessagesFromRecords } from './sources/codex.mjs';
 import { listClaudeSessions, claudeMessagesFromRecords } from './sources/claude.mjs';
-import { exists } from './sources/readonly.mjs';
+import { exists, rolloutFile } from './sources/readonly.mjs';
 import { readLines, itemsFor, foldResults } from './feed.mjs';
 import { permissionFor } from './permissions.mjs';
 import { RequestStore, requestSummary } from './requests.mjs';
@@ -675,7 +675,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   let feed = null; // local: the live conversation and where canban_watch continues it
   try {
     if (host) recent = await pool.messages(host, s, messages);
-    else if (s.sourcePath && exists(s.sourcePath)) {
+    else if (s.sourcePath && exists(rolloutFile(s.sourcePath))) {
       // One tail read serves the messages, the live feed and the permissions shown for sending.
       const { records, offset, size } = await readLines(s.sourcePath, { tailBytes: 768 * 1024 });
       recent = s.agent === 'codex' ? codexMessagesFromRecords(records, messages) : claudeMessagesFromRecords(records, messages);

@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { stat, readTailJsonLines } from './sources/readonly.mjs';
+import { stat, readTailJsonLines, rolloutFile } from './sources/readonly.mjs';
 import { codexMessagesFromRecords } from './sources/codex.mjs';
 import { claudeMessagesFromRecords } from './sources/claude.mjs';
 
@@ -45,7 +45,7 @@ export class SearchIndex {
       let done = 0;
       let fresh = 0;
       for (const s of local) {
-        const st = await stat(s.sourcePath);
+        const st = await stat(rolloutFile(s.sourcePath));
         if (!st) continue;
         const k = known.get(s.id);
         if (k && k.mtime === st.mtimeMs && k.size === st.size) {
