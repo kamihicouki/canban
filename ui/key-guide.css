@@ -20,6 +20,11 @@
 .key-guide[data-dock="bottom"] .kg-title { display: none; }
 .key-guide[data-dock="bottom"] .kg-keys { flex-direction: row; flex-wrap: wrap; gap: 2px 12px; padding: 3px 10px 3px 4px; }
 .key-guide[data-dock="bottom"] .kg-keys .shortcut-hint { width: auto; white-space: nowrap; }
+/* Reaching under the strip (key-guide.js): it fades and lets clicks through to the card; the grip stays to move or fold it. */
+.key-guide, .kg-keys { transition: opacity .12s, background-color .12s; }
+.key-guide.peek { pointer-events: none; background: transparent; box-shadow: none; backdrop-filter: none; }
+.key-guide.peek .kg-keys { opacity: .15; }
+.key-guide.peek .kg-head { pointer-events: auto; }
 .key-guide[data-min="true"] { width: max-content; }
 .key-guide[data-min="true"] .kg-keys { display: none; }
 .key-guide[data-min="true"] .kg-title { display: inline; }
@@ -29,4 +34,4 @@
 .kg-zone { position: fixed; display: grid; place-items: center; border: 2px dashed var(--on-board-dim); border-radius: 10px;
   background: color-mix(in srgb, var(--on-board) 12%, transparent); color: var(--on-board); font-size: 12px; font-weight: 700; }
 .kg-zone.hot { border-style: solid; border-color: var(--focus); background: color-mix(in srgb, var(--focus) 40%, transparent); }
-@media (prefers-reduced-motion: reduce) { .key-guide { backdrop-filter: none; } }
+@media (prefers-reduced-motion: reduce) { .key-guide { backdrop-filter: none; } .key-guide, .kg-keys { transition: none; } }

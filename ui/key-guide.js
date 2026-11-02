@@ -70,6 +70,15 @@ keyGuideHead.addEventListener('pointerdown', (e) => {
   };
   keyGuideHead.addEventListener('pointermove', move); keyGuideHead.addEventListener('pointerup', end); keyGuideHead.addEventListener('pointercancel', end);
 });
+// Along the foot the strip lies over the open card's composer and its buttons. Reaching under it (anywhere but
+// its grip) fades it and lets the pointer through, so it still takes no room and never hides a control.
+const inRect = (r, x, y) => x >= r.left && x < r.right && y >= r.top && y < r.bottom;
+addEventListener('pointermove', (e) => {
+  const strip = keyGuide.dataset.dock === 'bottom' && !keyGuide.hidden && !keyGuidePlace.min && !keyGuide.classList.contains('dragging');
+  if (!strip && !keyGuide.classList.contains('peek')) return;
+  keyGuide.classList.toggle('peek', strip && inRect(keyGuide.getBoundingClientRect(), e.clientX, e.clientY) && !inRect(keyGuideHead.getBoundingClientRect(), e.clientX, e.clientY));
+}, { passive: true });
+document.documentElement.addEventListener('pointerleave', () => keyGuide.classList.remove('peek'));
 function placeKeyGuideZone(zone, r) {
   const gap = 8, w = KEY_GUIDE_WIDTH, h = Math.min(160, r.height / 3), s = zone.style;
   const box = {
