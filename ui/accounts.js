@@ -250,7 +250,7 @@ function accountsMenu(anchor) {
       h('div', { class: 'acct-name-line' }, h('strong', { text: a.label }), h('span', { class: `badge ${a.agent}`, text: a.agent === 'codex' ? 'Codex' : 'Claude' }), a.plan ? h('span', { class: 'muted', text: a.plan }) : null),
       a.email && a.email !== a.label ? h('div', { class: 'muted', text: a.email }) : null);
     row.append(h('div', { class: 'acct-identity' }, check, ringFor(a), identity,
-      h('button', { class: 'icon-btn', title: '名前・頭文字・色・保存先を変更', 'aria-label': `${a.label} の設定`, text: '⚙', onclick: () => edit(a, row) })),
+      h('button', { class: 'icon-btn', title: '名前・頭文字・色・保存先を変更', 'aria-label': `${a.label} の設定`, html: picon('gear'), onclick: () => edit(a, row) })),
       h('div', { class: 'acct-detail' },
         h('div', { class: 'muted acct-connection', text: a.signedIn.length ? `ログイン中 · ${signedText(a)} · ${a.count} 件` : `ログインの記録なし · ${a.count} 件` }),
         h('div', { class: 'acct-usage-block' }, accountUsageContent(a)),

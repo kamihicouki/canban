@@ -211,7 +211,7 @@ function labelsManager(anchor) {
       color.onchange = () => act('canban_update_label', { labelId: l.id, color: color.value }).then(render_);
       return h('div', { class: 'row', style: { marginBottom: '6px' }, 'data-key': `${l.name} ${COLOR_NAMES[l.color] || ''}` },
         h('span', { class: 'swatch', style: { width: '20px', height: '20px', background: colorVar(l.color), flex: 'none' } }), name, color,
-        h('button', { class: 'icon-btn', 'aria-label': `${l.name} を削除`, text: '🗑', onclick: () => act('canban_delete_label', { labelId: l.id }).then(render_) }));
+        h('button', { class: 'icon-btn', 'aria-label': `${l.name} を削除`, html: picon('trash'), onclick: () => act('canban_delete_label', { labelId: l.id }).then(render_) }));
     });
     const newName = h('input', { class: 'text-input', placeholder: '新しいラベル' });
     const newColor = h('select', { class: 'text-input', style: { width: '96px' } }, COLORS.map((c) => h('option', { value: c, text: COLOR_NAMES[c] })));

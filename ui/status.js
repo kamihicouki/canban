@@ -163,7 +163,7 @@ function rulesMenu(anchor) {
       h('button', { class: 'btn rule-run', 'data-run-rule': r.id, disabled: runningRules.has(r.id), 'aria-busy': String(runningRules.has(r.id)),
         'aria-label': `${triggerLabel(r.trigger)}の自動化を今すぐ実行`, title: '現在の条件に一致するカードに適用します。自動実行が無効でも実行できます。',
         text: runningRules.has(r.id) ? '実行中…' : '今すぐ実行', onclick: () => runRuleNow(r.id) }),
-      h('button', { class: 'icon-btn', 'aria-label': `この${T.automation}を削除`, text: '🗑', onclick: () => act('canban_delete_rule', { ruleId: r.id }).then(() => rulesMenu(anchor)) }))));
+      h('button', { class: 'icon-btn', 'aria-label': `この${T.automation}を削除`, html: picon('trash'), onclick: () => act('canban_delete_rule', { ruleId: r.id }).then(() => rulesMenu(anchor)) }))));
   const trig = pickerButton({ title: 'きっかけ', value: 'status:completed', items: () => [...Object.entries(TRIGGER_LABELS).map(([value, label]) => ({ value, label })),
     ...(b.codexSections || []).map((x) => ({ value: `section:${x.id}`, label: triggerLabel(`section:${x.id}`), group: 'Codex セクション' }))] });
   const from = listSelect('any', true);

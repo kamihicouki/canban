@@ -20,7 +20,7 @@ function settingsMenu(anchor) {
     h('div', { class: 'field-label', text: 'ショートカット' }),
     h('div', { class: 'muted', style: { whiteSpace: 'pre-line' }, text:
       '再開ボタン: クリック=既定 / ⌥=もう一方の経路 / ⇧=新規ウィンドウ / ⌘=新規タブ / ⌃=既存ウィンドウ\nキーボード操作の一覧は ? キーで表示します。\nリモートのセッションは ssh 経由でターミナルに開きます。\n※ ターミナルの「新規タブ」はアクセシビリティ許可が必要な場合があります。' }),
-    h('button', { class: 'menu-item', text: '⌨ キーボードショートカット一覧（?）', onclick: showShortcuts }),
+    h('button', { class: 'menu-item', text: 'キーボードショートカット一覧（?）', onclick: showShortcuts }),
     h('div', { class: 'sep' }),
     dispatchSettings(anchor),
   );
