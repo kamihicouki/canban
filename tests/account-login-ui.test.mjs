@@ -15,7 +15,7 @@ function menu(profiles = [], accounts = []) {
   const state = { filters: {}, board: { accounts: { accounts, profiles, homes: [], colors: [], unknown: { codex: 0, claude: 0 }, refresh: { enabled: false, intervalMinutes: 5 } } } };
   const context = vm.createContext({ state, h, workspace: { hasDrafts: () => false },
     popover() {}, updateAccountMenuUsage() {}, refreshAccountUsage() {}, accountScheduleText: () => '',
-    usageTitle: () => '', ringFor: () => h('span'), accountUsageContent: () => h('div'), accountUpdateText: () => '',
+    usageTitle: () => '', ringFor: () => h('span'), picon: () => '', accountUsageContent: () => h('div'), accountUpdateText: () => '',
     setTimeout() {}, clearTimeout() {}, toast() {},
     act: async (name, args) => { calls.push({ name, args }); return { result: {} }; },
     bridge: { callTool: async () => ({ result: {} }) },

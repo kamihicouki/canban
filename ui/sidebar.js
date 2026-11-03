@@ -334,7 +334,7 @@ function viewsMenu(anchor) {
   name.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) save(); };
   const rows = views.map((v, i) => h('div', { class: 'rule-row', 'data-key': v.name },
       h('button', { class: 'menu-item', onclick: () => { closePopover(); applyView(v); } }, h('span', { class: 'kbd', text: i < 9 ? String(i + 1) : '' }), ` ${v.name}`),
-      h('button', { class: 'icon-btn', 'aria-label': `${v.name} を削除`, text: '🗑', onclick: () => act('canban_delete_view', { viewId: v.id }).then(() => viewsMenu(anchor)) })));
+      h('button', { class: 'icon-btn', 'aria-label': `${v.name} を削除`, html: picon('trash'), onclick: () => act('canban_delete_view', { viewId: v.id }).then(() => viewsMenu(anchor)) })));
   popover(anchor, 'ビュー', h('div', {},
     views.length > 5 ? rowFilter(rows) : null,
     rows.length ? rows : h('p', { class: 'muted', text: '保存したビューはまだありません' }),

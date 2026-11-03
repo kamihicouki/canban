@@ -166,7 +166,7 @@ function requestRow(s,r,{index=-1,queue=[],review=null}={}) {
       h('button', { text: '編集', onclick: (e) => editRequest(e.currentTarget.closest('.req-row'), r, refresh) }),
       h('button', { text: '取消', onclick: () => act('canban_cancel_request', { requestId: r.id }, { okMsg: '取り消しました' }).then(refresh) })].filter(Boolean));
   } else if (r.state === 'running' || r.state === 'starting') {
-    btns.append(h('button', { text: '⏹ 停止', onclick: () => act('canban_stop_request', { requestId: r.id }, { okMsg: '停止を送りました' }).then(refresh) }));
+    btns.append(h('button', { text: '停止', onclick: () => act('canban_stop_request', { requestId: r.id }, { okMsg: '停止を送りました' }).then(refresh) }));
   }
   if (review && ['blocked','interrupted','failed'].includes(r.state)) btns.append(h('button',{text:'再送内容を確認',onclick:review}));
   if (r.logPath) btns.append(h('button', { title: '実行ログのパスをコピー', text: '⧉ ログ', onclick: () => copyText(r.logPath, 'ログのパス') }));
