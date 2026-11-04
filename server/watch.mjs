@@ -3,7 +3,7 @@
 //   reload    the board changed in a way only a rebuild shows (store edits from another
 //             app, a new session, Codex app state, a Claude desktop rename / archive / status)
 //   requests  requests.json changed (queue / run state of sent prompts)
-//   patches   [{ id, status, updatedAt, activity, signals }] for sessions whose log grew;
+//   patches   [{ id, status, updatedAt, activity, ask, signals }] for sessions whose log grew;
 //             no listing, just one cached tail read per changed log
 //   feed      items appended to the open session's log since `offset`
 //   feeds     the same for every session open in a detail pane: { [cardId]: feed } (`feed` is the first)
@@ -14,6 +14,7 @@ import path from 'node:path';
 import { stat, readJson } from './sources/readonly.mjs';
 import { LOCAL_HOST, sessionKey } from './sources/util.mjs';
 import { listCodexSessions } from './sources/codex.mjs';
+import { desktopSummaryOf } from './sources/claude.mjs';
 import { localStatus } from './status.mjs';
 import { readFeedDelta } from './feed.mjs';
 import { onSessions, dropLocalCache } from './board.mjs';
@@ -84,7 +85,7 @@ export function createWatch(hub, { presence = null } = {}) {
     // patch only takes what is known.
     if ((busy || focused) && s.cwd) kickGit(s.cwd, grew);
     const git = (busy || focused) && s.cwd ? peekGit(s.cwd) : null;
-    return { id: s.id, status, updatedAt: probe.updatedAt, activity: probe.activity || null, signals: cardSignals(probe.signals), git, full: probe.signals || null };
+    return { id: s.id, status, updatedAt: probe.updatedAt, activity: probe.activity || null, ask: probe.ask || null, signals: cardSignals(probe.signals), git, full: probe.signals || null };
   }
 
   async function codexChanges() {
@@ -116,8 +117,9 @@ export function createWatch(hub, { presence = null } = {}) {
     }
     const s = j?.cliSessionId && byId.get(sessionKey('claude', LOCAL_HOST, j.cliSessionId));
     if (!s) return false; // a new session appears through its log
-    const status = j.postTurnSummary?.status_category ?? j.statusCategory ?? null;
-    return !s.desktopKnown || (j.isArchived === true) !== !!s.archived || (j.title ?? null) !== (s.desktopTitle ?? null) || status !== (s.desktopStatus ?? null);
+    const summary = desktopSummaryOf(j);
+    const ask = summary.needsAction !== (s.desktopNeedsAction ?? null) || (!!summary.needsAction && summary.summaryFor !== (s.desktopSummaryFor ?? null));
+    return !s.desktopKnown || (j.isArchived === true) !== !!s.archived || (j.title ?? null) !== (s.desktopTitle ?? null) || summary.status !== (s.desktopStatus ?? null) || ask;
   }
 
   // feeds: the sessions open in detail panes, [{ cardId, offset, size, codexItems }]
@@ -200,7 +202,7 @@ export function createWatch(hub, { presence = null } = {}) {
         try {
           const feed = await readFeedDelta(f.s, Number(f.offset), { codexItems: !!f.codexItems });
           const p = res.patches.find((x) => x.id === f.s.id) || (await patchFor(f.s, { focused: true }));
-          if (p) Object.assign(feed, { status: p.status, activity: p.activity, signals: p.full, git: p.git });
+          if (p) Object.assign(feed, { status: p.status, activity: p.activity, ask: p.ask, signals: p.full, git: p.git });
           res.feeds[f.cardId] = feed;
         } catch {}
       }

@@ -34,6 +34,7 @@ function faceLabels(card) {
 }
 // The line under the title: what it does now (a shimmer while it runs), what it waits for, or its last word.
 function faceNow(card) {
+  if (card.ask && card.status !== 'running') return h('div', { class: 'fnow fnow-wait', title: card.ask, text: card.ask });
   const busy = card.status === 'running' || card.status === 'waiting';
   if (busy) {
     const text = activityText(card.activity, card.status, card.signals) || (card.status === 'running' ? '作業中…' : STATUS_LABELS.waiting);
@@ -195,7 +196,7 @@ function peekContent(card, d, { limit = 3, onSent, onClose }) {
   }
   if (!said.length) out.push(h('div', { class: 'muted', text: d.messagesError ? `メッセージを取得できませんでした: ${d.messagesError}` : 'メッセージはありません' }));
   if (s.status === 'waiting') {
-    const what = activityText(s.activity, 'waiting', s.signals) || STATUS_LABELS.waiting;
+    const what = s.ask || activityText(s.activity, 'waiting', s.signals) || STATUS_LABELS.waiting;
     out.push(h('div', { class: 'pwait' }, h('b', { text: what }), h('span', { text: 'Canban からは答えられません。アプリで答えてください。' }),
       h('div', { class: 'row' }, d.launch?.desktop ? h('button', { class: 'btn-primary', type: 'button', text: 'アプリで開く', onclick: () => resume(card.id, { route: 'desktop' }) }) : null,
         h('button', { class: 'btn', type: 'button', text: '詳細を開く', onclick: () => openCard(card.id) }))));

@@ -130,6 +130,18 @@ async function summarizeTranscript(file) {
   return s;
 }
 
+// The desktop app's post-turn summary of one session: its status, the transcript message it
+// describes (a later turn leaves it behind) and what the user has to do next, in the app's words.
+export function desktopSummaryOf(dm) {
+  const summary = dm?.postTurnSummary;
+  const needs = typeof summary?.needs_action === 'string' ? summary.needs_action.trim() : '';
+  return {
+    status: summary?.status_category ?? dm?.statusCategory ?? null,
+    summaryFor: typeof summary?.summarizes_uuid === 'string' ? summary.summarizes_uuid : null,
+    needsAction: needs ? clip(needs, 200) : null,
+  };
+}
+
 export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
   const firstPrompt = (s.prompts || []).map((p) => cleanPrompt(p)).find(Boolean) || '';
   if (!firstPrompt && !s.turns && !s.customTitle) return null;
@@ -138,6 +150,7 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
   const updatedAt = Math.max(s.updatedAt ?? s.fileMtimeMs ?? 0, lastActivity) || null;
   const cwd = s.cwd || dm?.cwd || null;
   const group = dm?.group;
+  const summary = desktopSummaryOf(dm);
   const groupName = typeof group === 'string' ? group.trim() : typeof group?.name === 'string' ? group.name.trim() : typeof dm?.groupName === 'string' ? dm.groupName.trim() : '';
   return {
     id: sessionKey('claude', host, s.sessionId),
@@ -173,7 +186,9 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
     prUrl: s.prUrl || null,
     agentName: s.agentName || null,
     tokens: s.tokens || 0,
-    desktopStatus: dm?.postTurnSummary?.status_category ?? dm?.statusCategory ?? null,
+    desktopStatus: summary.status,
+    desktopSummaryFor: summary.summaryFor,
+    desktopNeedsAction: summary.needsAction,
     // Claude desktop metadata is often not on disk: archived / title / status from it are then unknown.
     desktopKnown: !!dm && !dm._ambiguous,
     desktopAmbiguous: dm?._ambiguous === true,

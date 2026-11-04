@@ -51,11 +51,25 @@ function contentList(o) {
   return Array.isArray(c) ? c : [];
 }
 
-export function claudeStatusFromRecords(records, mtimeMs, now = Date.now(), desktopStatus = null) {
-  return settle(claudeRawStatus(records, desktopStatus), mtimeMs, now);
+export function claudeStatusFromRecords(records, mtimeMs, now = Date.now(), desktopStatus = null, summaryFor = null) {
+  return settle(claudeRawStatus(records, desktopStatus, summaryFor), mtimeMs, now);
 }
 
-export function claudeRawStatus(records, desktopStatus = null) {
+// The desktop app writes its post-turn summary a moment after the turn, naming the message it
+// describes: until the new one arrives (or when none does) the file still holds an older turn's.
+// A message missing from the tail lies far behind it. Without a name there is nothing to compare.
+export function summaryOutdated(records, summaryFor) {
+  if (!summaryFor) return false;
+  let found = false;
+  for (const o of records) {
+    if (!o || o.isSidechain) continue;
+    if (o.uuid === summaryFor) found = true;
+    else if (found && (o.type === 'assistant' || (o.type === 'user' && !o.isMeta))) return true;
+  }
+  return !found;
+}
+
+export function claudeRawStatus(records, desktopStatus = null, summaryFor = null) {
   let state = 'idle';
   const asks = new Set();
   for (const o of records) {
@@ -72,10 +86,11 @@ export function claudeRawStatus(records, desktopStatus = null) {
     }
   }
   if (state === 'running' && asks.size) state = 'waiting';
-  return refineClaude(state, desktopStatus);
+  return refineClaude(state, summaryOutdated(records, summaryFor) ? null : desktopStatus);
 }
 
-// The Claude desktop app's post-turn summary refines a finished turn.
+// The Claude desktop app's post-turn summary refines a finished turn. Remote sessions come here
+// without the freshness check: their raw status is computed on the remote machine.
 export function refineClaude(state, desktopStatus) {
   if (state !== 'completed' || !desktopStatus) return state;
   const d = String(desktopStatus).toLowerCase();
@@ -85,7 +100,7 @@ export function refineClaude(state, desktopStatus) {
 }
 
 // ---- local sessions -------------------------------------------------------
-const cache = new Map(); // path -> { mtimeMs, size, desktopStatus, raw, activity, signals }
+const cache = new Map(); // path -> { mtimeMs, size, desktopStatus, summaryFor, needsAction, raw, activity, signals, ask }
 const sigAcc = new Map(); // path -> { offset, acc }: signals folded up to `offset`
 
 // Signals follow the whole log since it was first read (a turn's edited files can lie
@@ -109,28 +124,32 @@ async function signalsOf(session, tail) {
 }
 
 // Status (and, while it runs, what the session is doing) from the log tail.
-// Sets `session.activity` and `session.signals`; the tail is only re-read when the log changed.
+// Sets `session.activity`, `session.signals` and `session.ask` (what the desktop app says the user
+// has to do next; it outlives the 15 minutes of "waiting"); the tail is only re-read when the log changed.
 export async function localStatus(session, now = Date.now()) {
   session.activity = null;
   session.signals = null;
   session.lastSaid = null;
+  session.ask = null;
   if (!session.sourcePath || (session.updatedAt || 0) < now - RECENT_MS) return 'idle';
   const st = await stat(session.sourcePath);
   if (!st) return 'idle';
   let hit = cache.get(session.sourcePath);
-  if (!hit || hit.mtimeMs !== st.mtimeMs || hit.size !== st.size || hit.desktopStatus !== session.desktopStatus) {
+  if (!hit || hit.mtimeMs !== st.mtimeMs || hit.size !== st.size || hit.desktopStatus !== session.desktopStatus || hit.summaryFor !== session.desktopSummaryFor || hit.needsAction !== session.desktopNeedsAction) {
     const tail = await readLines(session.sourcePath, { tailBytes: TAIL_BYTES });
     const { records } = tail;
-    const raw = session.agent === 'codex' ? codexRawStatus(records) : claudeRawStatus(records, session.desktopStatus);
+    const raw = session.agent === 'codex' ? codexRawStatus(records) : claudeRawStatus(records, session.desktopStatus, session.desktopSummaryFor);
+    const ask = raw === 'waiting' && session.desktopNeedsAction && !summaryOutdated(records, session.desktopSummaryFor) ? session.desktopNeedsAction : null;
     const items = itemsFor(session.agent, records.slice(-200), {});
     const activity = raw === 'running' || raw === 'waiting' ? activityOf(items) : null;
     const signals = await signalsOf(session, tail);
-    hit = { mtimeMs: st.mtimeMs, size: st.size, desktopStatus: session.desktopStatus, raw, activity, signals, lastSaid: lastSaidOf(items) };
+    hit = { mtimeMs: st.mtimeMs, size: st.size, desktopStatus: session.desktopStatus, summaryFor: session.desktopSummaryFor, needsAction: session.desktopNeedsAction, raw, activity, signals, lastSaid: lastSaidOf(items), ask };
     cache.set(session.sourcePath, hit);
   }
   const status = settle(hit.raw, st.mtimeMs, now);
   session.signals = hit.signals;
   session.lastSaid = hit.lastSaid;
+  session.ask = hit.ask;
   if (status === 'running' || status === 'waiting') session.activity = hit.activity;
   return status;
 }
