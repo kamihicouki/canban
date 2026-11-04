@@ -120,7 +120,7 @@ function paintHud(b) {
     waiting ? h('span', { class: 'hud-wait', text: `${waiting} 件 入力待ち` }) : null);
   if (!live.length) { layoutParts.hud.replaceChildren(head, h('span', { class: 'hud-empty', text: '実行中・入力待ちのセッションはありません' })); return; }
   layoutParts.hud.replaceChildren(head, ...live.slice(0, 12).map((c) => {
-    const doing = activityText(c.activity, c.status, c.signals);
+    const doing = (c.status === 'waiting' && c.ask) || activityText(c.activity, c.status, c.signals);
     return h('button', { class: `hud-tile${c.status === 'waiting' ? ' is-waiting' : ''}`, type: 'button', title: c.title, onclick: () => openCard(c.id) },
       h('span', { class: 'hud-r1' }, faceGlyph(c.status), h('span', { text: STATUS_LABELS[c.status] || STATUS_LABELS.idle }), faceWho(c.agent)),
       h('span', { class: 'hud-t', text: c.title }),

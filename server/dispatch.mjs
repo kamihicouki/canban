@@ -192,7 +192,7 @@ export async function inspect(session, host) {
 }
 
 export function liveStatus(session, insp, now = Date.now()) {
-  const raw = session.agent === 'codex' ? codexRawStatus(insp.records) : claudeRawStatus(insp.records, session.desktopStatus);
+  const raw = session.agent === 'codex' ? codexRawStatus(insp.records) : claudeRawStatus(insp.records, session.desktopStatus, session.desktopSummaryFor);
   return settle(raw, insp.mtimeMs, now);
 }
 
