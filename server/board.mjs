@@ -703,6 +703,10 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     : [];
   const children = (s.children || []).map((id) => byId.get(id)).filter(Boolean)
     .map((c) => ({ id: c.id, title: c.title, status: c.status || 'idle', updatedAt: c.updatedAt, agentName: c.agentName || null }));
+  const origin = s.derivedFrom && byId.get(s.derivedFrom.id);
+  const derivedFrom = origin ? { id: origin.id, title: origin.title, status: origin.status || 'idle', updatedAt: origin.updatedAt, kind: s.derivedFrom.kind } : null;
+  const derived = all.filter((x) => x.derivedFrom?.id === s.id).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 20)
+    .map((x) => ({ id: x.id, title: x.title, status: x.status || 'idle', updatedAt: x.updatedAt, kind: x.derivedFrom.kind }));
   const { host: h, ...rest } = s;
   const labels = state.settings.accounts.labels;
   const claudeProfiles = await claudeResumeAccounts(s, labels);
@@ -721,6 +725,8 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     pr: s.pr || null,
     repo: s.repo || null,
     parentId: s.parentId || null,
+    derivedFrom,
+    derived,
     tasks: taskEntries(state).map(([id, t]) => ({ id, title: t.title })),
     launch: { ...withAccountNote(launchInfo(s), s, labels), claudeAccounts: claudeProfiles, claudeExecutionAccounts, claudeExecution: normalizeClaudeExecution(card.claudeExecution) },
     settings: state.settings,

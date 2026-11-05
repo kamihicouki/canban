@@ -361,6 +361,7 @@ document.addEventListener('keydown', e => {
     else if (/^[1-9]$/.test(k) && PANE_MODES[k - 1]) run = () => setPaneMode(PANE_MODES[k - 1][0]);
     else if (k === 'i') run = () => focusPrompt(p);
     else if ((p.kind === 'session' && (k === 'd' || (k === 'f' && !sessionHost(p)))) || (p.kind === 'task' && k === 'd')) run = () => toggleThreadSide(p, k === 'd' ? 'details' : 'changes');
+    else if (e.shiftKey && k === 'U' && p.d?.derivedFrom) run = () => openCard(p.d.derivedFrom.id);
     else if (e.shiftKey && k === 'R' && terminalAvailable(p) && cardTerms.get(p.id)?.closed) run = () => restartTerminal(p);
     else if (e.shiftKey && k === 'X' && terminalAvailable(p) && cardTerms.get(p.id)?.id && !cardTerms.get(p.id)?.closed) run = () => endTerminal(p);
     else if (k === 't' && terminalAvailable(p)) run = () => toggleThreadSide(p, 'terminal');
@@ -788,6 +789,9 @@ function renderPane(p, d) {
     ? d.recentMessages.map((m) => h('div', { class: `msg ${m.role}` }, h('div', { class: 'who', text: `${m.role === 'user' ? 'ユーザー' : 'エージェント'}${m.at ? ` · ${fmtDate(Date.parse(m.at))}` : ''}` }), m.text))
     : [h('p', { class: 'muted', text: d.messagesError ? `メッセージを取得できませんでした: ${d.messagesError}` : 'メッセージはありません' })];
 
+  const derivedRow = (c) => h('button', { class: 'sub-row', onclick: () => openCard(c.id) },
+    h('span', { class: `sdot s-${c.status}` }), c.isOrigin ? null : h('span', { class: 'pill muted', text: DERIVED_KINDS[c.kind].label }),
+    h('span', { class: 'ellipsis grow', text: c.title }), h('span', { class: 'muted', text: relTime(c.updatedAt) }));
   const related = [
     d.task ? h('div', { class: 'msg' }, `このセッションは${T.taskCard} `, h('button', { class: 'link-btn', text: `「${d.task.title}」`, onclick: () => openCard(d.task.id) }), ' に紐付いています。') : null,
     d.children && d.children.length ? h('div', { class: 'sub-h', text: `サブエージェント（${d.children.length}）` }) : null,
@@ -795,6 +799,10 @@ function renderPane(p, d) {
       h('span', { class: `sdot s-${c.status}` }), h('span', { class: 'ellipsis grow', text: c.agentName ? `${c.agentName}: ${c.title}` : c.title }),
       h('span', { class: 'muted', text: relTime(c.updatedAt) }))),
     d.parentId ? h('div', { class: 'msg' }, h('button', { class: 'link-btn', text: '↑ 親セッションを開く', onclick: () => openCard(d.parentId) })) : null,
+    d.derivedFrom ? h('div', { class: 'sub-h' }, `${DERIVED_KINDS[d.derivedFrom.kind].from} `, ...keycap('Shift+U')) : null,
+    d.derivedFrom ? derivedRow({ ...d.derivedFrom, isOrigin: true }) : null,
+    d.derived?.length ? h('div', { class: 'sub-h', text: `このセッションから派生（${d.derived.length}）` }) : null,
+    ...(d.derived || []).map(derivedRow),
     d.sameBranch && d.sameBranch.length ? h('div', { class: 'sub-h', text: `同じブランチのセッション（${d.sameBranch.length}）` }) : null,
     ...(d.sameBranch || []).map((c) => h('button', { class: 'sub-row', onclick: () => openCard(c.id) },
       h('span', { class: `sdot s-${c.status}` }), h('span', { class: `badge ${c.agent}`, text: c.agent === 'codex' ? 'Codex' : 'Claude' }),
