@@ -187,6 +187,17 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
   };
 }
 
+// Where the desktop app says a session came from: a fork, a side session or one started from
+// another session. Desktop ids only here; listClaudeSessions resolves them to cards.
+const DESKTOP_ID = /^local_[A-Za-z0-9-]{1,64}$/;
+export function desktopOriginOf(dm) {
+  const from = dm?.spawnedFrom && typeof dm.spawnedFrom === 'object' ? dm.spawnedFrom : null;
+  const desktopId = [from?.sessionId, dm?.forkedFromSessionId].find((id) => typeof id === 'string' && DESKTOP_ID.test(id));
+  if (!desktopId) return null;
+  const kind = from?.userFork === true || typeof dm?.forkedFromSessionId === 'string' ? 'fork' : from?.sideSession === true ? 'side' : 'spawned';
+  return { desktopId, kind };
+}
+
 // Desktop app metadata keyed by CLI session id, from every desktop profile (see
 // accounts.mjs). _account: the account folder it really lives in; _reach: the accounts
 // that see it (a folder linked into several accounts). A session kept by two profiles
@@ -281,7 +292,15 @@ export async function listClaudeSessions({ home = null, desktopDir = claudeDeskt
     }
     reportSummaries(seen);
     const sessions = [...byId.values()];
-    for (const s of sessions) s.account = sessionAccount(s);
+    const cliByDesktopId = new Map();
+    for (const [cliId, dm] of desktop) if (dm.sessionId) cliByDesktopId.set(dm.sessionId, cliId);
+    for (const s of sessions) {
+      s.account = sessionAccount(s);
+      const origin = desktopOriginOf(desktop.get(s.nativeId));
+      const parentId = origin && cliByDesktopId.has(origin.desktopId) ? sessionKey('claude', s.host, cliByDesktopId.get(origin.desktopId)) : null;
+      // A parent without a transcript has no card to point at.
+      if (parentId && parentId !== s.id && byId.has(parentId)) s.derivedFrom = { id: parentId, kind: origin.kind };
+    }
     return { sessions, error: null };
   } catch (err) {
     return { sessions: [], error: `Claude セッション読み取り失敗: ${err.message}` };

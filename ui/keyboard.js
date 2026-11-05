@@ -101,6 +101,7 @@ function refreshShortcutHints() {
       ['⇧←', '左のリストへ', !adjacentPaneList(focusedPane(), -1)], ['⇧→', '右のリストへ', !adjacentPaneList(focusedPane(), 1)],
       ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
       ...(focusedPane()?.kind === 'session' ? [['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
+      ...(focusedPane()?.d?.derivedFrom ? [['Shift+U', DERIVED_KINDS[focusedPane().d.derivedFrom.kind].from]] : []),
       ...(panePromptInput() ? [['i', '指示欄']] : []), ...(panes.some(x => x.choices?.length) ? [['Alt+1〜9', '選択肢で答える']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ['f', '変更'], ...(terminalAvailable(focusedPane()) ? [['t', 'ターミナル'], ...(cardTerms.get(focusedPane().id)?.closed ? [['Shift+R', '開き直す']] : cardTerms.get(focusedPane().id)?.id ? [['Shift+X', 'シェルを終了']] : [])] : [])] : []), ['r', '更新'], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys,
       ...(exchangeTrail ? [['Shift+1 / 2 / 3', '関連カードのビュー'], ['Esc / Shift+Esc', '訪問を戻る / 進む'], ['Shift+Home', '起点へ']] : docked ? [['Enter', '大きく開く'], ['Esc', '一覧へ戻る']] : [['Esc', timelineOn() ? '時間軸へ戻す' : '閉じる']])];
   }
@@ -142,6 +143,7 @@ const SHORTCUTS = [
     ['Alt+a', 'Claude の実行アカウントを選ぶ（このマシンのセッション）/ タスク: 開始するアカウントを選ぶ'],
     ['Shift+← / →', '左右の隣のリストへ移動（端で停止、入力中・配置調整中は無効）'],
     ['j / k', '表示リストの次 / 前のカードを開く（端で停止）'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'],
+    ['Shift+U', 'フォーク元・起動元のセッションを開く（Claude Desktop のフォーク・サイドセッション）'],
     ['z', 'エージェントのセッションをアーカイブ / 復元'], ['Delete', 'セッションと会話履歴を削除（確認あり）'], ['i', '指示の入力欄へ'], ['Tab / Enter', 'タスクの開始メニュー: 新しい依頼に切り替える（開始は⌘Enter）'], ['Alt+1〜9', 'エージェントの選択肢を入力欄へ（送信は ⌘Enter）'], ['$', '入力欄: スキルを選ぶ（⌘Kからも選択）'], ['d / f / t', 'スレッド表示: 詳細パネル / 変更 / ターミナルを開閉'], ['Shift+Esc', 'ターミナル: カードのキーへ戻る（Esc はシェルへ送る）'], ['Shift+R / Shift+X', 'カード: 終了したターミナルを開き直す / シェルを終了'], ['⌥Enter', '入力欄: キューに追加（⌘Enter は送信）'], ['o', '再開'], ['l g m', 'ラベル / ' + T.category + ' / リスト移動'], ['c', '作成ダイアログを開く'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
   ]],
   ['作成ダイアログ', [['⌘Enter / Ctrl+Enter', 'タスクを作成 / アプリを開く'], ['Alt+D', 'Claude Desktop の起動アカウントを選ぶ'], ['Enter', 'タイトル欄: タスクを作成'], ['Esc', '下書きを残して閉じる']]],
@@ -188,6 +190,7 @@ async function commandPalette() {
           input?.closest('.prompt-composer')?.scrollIntoView({ block: 'nearest' });
         }, hint: '$' },
       ] : []),
+      ...(focusedPane()?.d?.derivedFrom ? [{ label: `${DERIVED_KINDS[focusedPane().d.derivedFrom.kind].from}を開く`, run: () => openCard(focusedPane().d.derivedFrom.id), hint: 'Shift+U' }] : []),
       { label: 'カードを閉じる', run: closeCards, hint: 'Esc' },
     ] : []),
     ...DRAWER_PAGES.map((page) => ({ label: `${WORKSPACE_PAGES.find(([id]) => id === page)[1]}を開く`, run: () => workspace.navigate(page) })),

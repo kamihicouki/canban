@@ -5,6 +5,8 @@
 // Small key caps: keycap('j', 'k') for the keys alone, keyHint(['Esc'], '閉じる') for keys with what they do.
 const keycap = (...keys) => keys.map((k) => h('kbd', { class: 'keycap', text: k }));
 const keyHint = (keys, label, cls = '') => h('span', { class: `key-hint ${cls}`.trim() }, ...keycap(...keys), label);
+// How a Claude Desktop session came from another one (server: desktopOriginOf).
+const DERIVED_KINDS = { fork: { label: 'フォーク', from: 'フォーク元のセッション' }, side: { label: 'サイド', from: 'サイドセッションの起動元' }, spawned: { label: '起動', from: '起動元のセッション' } };
 const PANE_MODES = [['text', 'テキスト'], ['preview', 'プレビュー'], ['digest', '要点']];
 const PANE_DEF = { mode: 'preview' };
 const oneOf = (v, list, d) => (list.some(([k]) => k === v) ? v : d);
