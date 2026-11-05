@@ -130,17 +130,6 @@ async function summarizeTranscript(file) {
   return s;
 }
 
-// Where the desktop app says a session came from: a fork, a side session or one started from
-// another session. Desktop ids only here; listClaudeSessions resolves them to cards.
-const DESKTOP_ID = /^local_[A-Za-z0-9-]{1,64}$/;
-export function desktopOriginOf(dm) {
-  const from = dm?.spawnedFrom && typeof dm.spawnedFrom === 'object' ? dm.spawnedFrom : null;
-  const desktopId = [from?.sessionId, dm?.forkedFromSessionId].find((id) => typeof id === 'string' && DESKTOP_ID.test(id));
-  if (!desktopId) return null;
-  const kind = from?.userFork === true || typeof dm?.forkedFromSessionId === 'string' ? 'fork' : from?.sideSession === true ? 'side' : 'spawned';
-  return { desktopId, kind };
-}
-
 export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
   const firstPrompt = (s.prompts || []).map((p) => cleanPrompt(p)).find(Boolean) || '';
   if (!firstPrompt && !s.turns && !s.customTitle) return null;
@@ -196,6 +185,17 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
     desktopAccount: dm?._account ?? null,
     desktopReach: dm?._reach?.length > 1 ? dm._reach : undefined,
   };
+}
+
+// Where the desktop app says a session came from: a fork, a side session or one started from
+// another session. Desktop ids only here; listClaudeSessions resolves them to cards.
+const DESKTOP_ID = /^local_[A-Za-z0-9-]{1,64}$/;
+export function desktopOriginOf(dm) {
+  const from = dm?.spawnedFrom && typeof dm.spawnedFrom === 'object' ? dm.spawnedFrom : null;
+  const desktopId = [from?.sessionId, dm?.forkedFromSessionId].find((id) => typeof id === 'string' && DESKTOP_ID.test(id));
+  if (!desktopId) return null;
+  const kind = from?.userFork === true || typeof dm?.forkedFromSessionId === 'string' ? 'fork' : from?.sideSession === true ? 'side' : 'spawned';
+  return { desktopId, kind };
 }
 
 // Desktop app metadata keyed by CLI session id, from every desktop profile (see
