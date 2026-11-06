@@ -148,7 +148,10 @@ def claude_raw_status(records, desktop_status=None):
             for it in items:
                 if isinstance(it, dict) and it.get("type") == "tool_use" and it.get("name") in ASK_TOOLS and it.get("id"):
                     asks.add(it["id"])
-            state = "completed" if msg.get("stop_reason") in ("end_turn", "stop_sequence") else "running"
+            if o.get("isApiErrorMessage") is True:
+                state = "aborted"
+            else:
+                state = "completed" if msg.get("stop_reason") in ("end_turn", "stop_sequence") else "running"
         else:
             for it in items:
                 if isinstance(it, dict) and it.get("type") == "tool_result" and it.get("tool_use_id"):

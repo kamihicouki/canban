@@ -31,6 +31,10 @@ const CLAUDE = [
   [[user('hi'), asst('tool_use', [{ type: 'tool_use', id: 'q1', name: 'AskUserQuestion' }])], 'waiting'],
   [[user('hi'), asst('tool_use', [{ type: 'tool_use', id: 'q1', name: 'AskUserQuestion' }]), user([{ type: 'tool_result', tool_use_id: 'q1' }])], 'running'],
   [[user('hi'), { ...asst('end_turn'), isSidechain: true }], 'running'],
+  [[user('hi'), { ...asst('stop_sequence'), isApiErrorMessage: true, error: 'rate_limit' }], 'aborted'],
+  [[user('hi'), { ...asst('stop_sequence'), isApiErrorMessage: true }, user('続けて')], 'running'],
+  [[user('hi'), { ...asst('stop_sequence'), isApiErrorMessage: true }, user('続けて'), asst('end_turn')], 'completed'],
+  [[user('hi'), asst('end_turn'), { ...asst('stop_sequence'), isApiErrorMessage: true, isSidechain: true }], 'completed'],
 ];
 
 test('codex status rules', () => {

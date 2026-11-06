@@ -70,6 +70,8 @@ test('claude records become messages, tool calls with results, and turn ends', a
   const done = claudeItems([{ type: 'assistant', message: { stop_reason: 'end_turn', content: [{ type: 'text', text: '直しました' }] } }]);
   assert.deepEqual(done.map((i) => i.k), ['assistant', 'turn']);
   assert.equal(activityOf(done), null);
+  const limited = claudeItems([{ type: 'assistant', isApiErrorMessage: true, error: 'rate_limit', message: { stop_reason: 'stop_sequence', content: [{ type: 'text', text: "You've hit your session limit" }] } }]);
+  assert.deepEqual(limited.map((i) => [i.k, i.state]), [['assistant', undefined], ['turn', 'aborted']]);
 });
 
 test('codex records: item_completed messages, shell / patch calls and their outputs', async () => {

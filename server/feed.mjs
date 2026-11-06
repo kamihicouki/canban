@@ -229,7 +229,8 @@ export function claudeItems(records) {
       }
     }
     const stop = o.message?.stop_reason;
-    if (stop === 'end_turn' || stop === 'stop_sequence') out.push({ k: 'turn', at, state: 'completed' });
+    if (o.isApiErrorMessage === true) out.push({ k: 'turn', at, state: 'aborted' });
+    else if (stop === 'end_turn' || stop === 'stop_sequence') out.push({ k: 'turn', at, state: 'completed' });
   }
   return out;
 }
