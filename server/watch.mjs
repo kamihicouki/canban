@@ -14,6 +14,7 @@ import path from 'node:path';
 import { stat, readJson } from './sources/readonly.mjs';
 import { LOCAL_HOST, sessionKey } from './sources/util.mjs';
 import { listCodexSessions } from './sources/codex.mjs';
+import { desktopErrorOf } from './sources/claude.mjs';
 import { localStatus } from './status.mjs';
 import { readFeedDelta } from './feed.mjs';
 import { onSessions, dropLocalCache } from './board.mjs';
@@ -84,7 +85,7 @@ export function createWatch(hub, { presence = null } = {}) {
     // patch only takes what is known.
     if ((busy || focused) && s.cwd) kickGit(s.cwd, grew);
     const git = (busy || focused) && s.cwd ? peekGit(s.cwd) : null;
-    return { id: s.id, status, updatedAt: probe.updatedAt, activity: probe.activity || null, signals: cardSignals(probe.signals), git, full: probe.signals || null };
+    return { id: s.id, status, updatedAt: probe.updatedAt, activity: probe.activity || null, signals: cardSignals(probe.signals), git, full: probe.signals || null, stopReason: probe.stopReason || null };
   }
 
   async function codexChanges() {
@@ -117,7 +118,7 @@ export function createWatch(hub, { presence = null } = {}) {
     const s = j?.cliSessionId && byId.get(sessionKey('claude', LOCAL_HOST, j.cliSessionId));
     if (!s) return false; // a new session appears through its log
     const status = j.postTurnSummary?.status_category ?? j.statusCategory ?? null;
-    return !s.desktopKnown || (j.isArchived === true) !== !!s.archived || (j.title ?? null) !== (s.desktopTitle ?? null) || status !== (s.desktopStatus ?? null);
+    return !s.desktopKnown || (j.isArchived === true) !== !!s.archived || (j.title ?? null) !== (s.desktopTitle ?? null) || status !== (s.desktopStatus ?? null) || desktopErrorOf(j)?.at !== s.desktopError?.at;
   }
 
   // feeds: the sessions open in detail panes, [{ cardId, offset, size, codexItems }]
@@ -200,7 +201,7 @@ export function createWatch(hub, { presence = null } = {}) {
         try {
           const feed = await readFeedDelta(f.s, Number(f.offset), { codexItems: !!f.codexItems });
           const p = res.patches.find((x) => x.id === f.s.id) || (await patchFor(f.s, { focused: true }));
-          if (p) Object.assign(feed, { status: p.status, activity: p.activity, signals: p.full, git: p.git });
+          if (p) Object.assign(feed, { status: p.status, activity: p.activity, signals: p.full, git: p.git, stopReason: p.stopReason });
           res.feeds[f.cardId] = feed;
         } catch {}
       }

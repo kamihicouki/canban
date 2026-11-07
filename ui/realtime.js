@@ -33,7 +33,7 @@ function renderFeed(d, p) {
   const list = h('div', { class: 'feed', role: 'log', 'aria-live': 'polite', 'aria-label': 'セッションの会話' });
   const foot = h('div', { class: 'feed-foot' });
   const newBtn = h('button', { class: 'feed-new', text: '↓ 新着', hidden: true, onclick: () => scrollFeedToEnd(f) });
-  const f = { pane: p, cardId: d.session.id, offset: d.feed.offset, size: d.feed.size, codexItems: d.feed.codexItems, list, foot, newBtn, tools: new Map(), status: d.session.status || 'idle', activity: d.session.activity || null, signals: d.session.signals || null, git: d.git || null };
+  const f = { pane: p, cardId: d.session.id, offset: d.feed.offset, size: d.feed.size, codexItems: d.feed.codexItems, list, foot, newBtn, tools: new Map(), status: d.session.status || 'idle', activity: d.session.activity || null, signals: d.session.signals || null, stopReason: d.session.stopReason || null, git: d.git || null };
   list.addEventListener('scroll', () => { if (atFeedEnd(list)) newBtn.hidden = true; });
   list.append(editSummary(f).el);
   for (const it of d.feed.items) feedPush(f, it);
@@ -61,7 +61,10 @@ function paintFeedFoot(f) {
   const st = f.status;
   if (st === 'running') f.foot.replaceChildren(h('span', { class: 'sdot s-running' }), h('span', { class: 'grow', title: f.activity || '' }, h('span', { class: 'dots', text: '作業中' }), h('span', { class: 'elapsed num', text: f.turnStart ? ` ${fmtElapsed(Date.now() - f.turnStart)}` : '' }), f.activity ? `  ${f.activity}` : ''));
   else if (st === 'waiting') f.foot.replaceChildren(h('span', { class: 'sdot s-waiting' }), h('span', { class: 'grow', text: `${WAIT_TEXT[f.signals?.wait] || '入力待ち'}${f.activity ? `  ${f.activity}` : ''}（アプリで答えてください）` }));
-  else f.foot.replaceChildren(h('span', { class: `sdot s-${st}` }), h('span', { class: 'grow', text: STATUS_LABELS[st] || '' }));
+  else {
+    const why = st === 'aborted' ? f.stopReason : null;
+    f.foot.replaceChildren(h('span', { class: `sdot s-${st}` }), h('span', { class: 'grow', title: why || '', text: why ? `${STATUS_LABELS[st]} · ${why}` : STATUS_LABELS[st] || '' }));
+  }
   const p = f.pane;
   const hdr = p.el.querySelector('.pane-status');
   if (hdr) hdr.replaceChildren(h('span', { class: `sdot s-${st}` }), STATUS_LABELS[st] || '');
@@ -99,6 +102,7 @@ function applyFeed(f, feed) {
     f.status = feed.status;
     f.activity = feed.activity || null;
     f.signals = feed.signals || null;
+    f.stopReason = feed.stopReason || null;
     if (feed.git) { f.git = feed.git; paintThreadStat(f.pane, f.git); }
     paintFeedFoot(f);
     f.edits?.paint();

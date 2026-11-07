@@ -130,6 +130,12 @@ async function summarizeTranscript(file) {
   return s;
 }
 
+// Why the desktop app says the session stopped (a usage limit, a crash), in the app's words.
+export function desktopErrorOf(dm) {
+  const text = typeof dm?.error === 'string' ? dm.error.trim() : '';
+  return text && Number.isFinite(dm?.errorAt) ? { text: clip(text, 200), at: dm.errorAt } : null;
+}
+
 export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
   const firstPrompt = (s.prompts || []).map((p) => cleanPrompt(p)).find(Boolean) || '';
   if (!firstPrompt && !s.turns && !s.customTitle) return null;
@@ -174,6 +180,7 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
     agentName: s.agentName || null,
     tokens: s.tokens || 0,
     desktopStatus: dm?.postTurnSummary?.status_category ?? dm?.statusCategory ?? null,
+    desktopError: desktopErrorOf(dm),
     // Claude desktop metadata is often not on disk: archived / title / status from it are then unknown.
     desktopKnown: !!dm && !dm._ambiguous,
     desktopAmbiguous: dm?._ambiguous === true,

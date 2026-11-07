@@ -3,7 +3,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { codexRawStatus, claudeRawStatus, settle, refineClaude, STALE_MS } from '../server/status.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import { codexRawStatus, claudeRawStatus, settle, refineClaude, stopReasonOf, localStatus, STALE_MS } from '../server/status.mjs';
+import { desktopErrorOf } from '../server/sources/claude.mjs';
 import { RemotePool } from '../server/remote/pool.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -59,5 +62,44 @@ test('python collector agrees on every case', async () => {
       const res = await pool.run(host, { mode: 'status', agent, records });
       assert.equal(res.raw, want, `${agent} ${JSON.stringify(records)}`);
     }
+  }
+});
+
+test('desktop error stops a session until a later message', async () => {
+  const at = Date.parse('2026-11-06T12:06:28.866Z');
+  const error = { text: 'hit your weekly limit', at };
+  const said = (type, timestamp, extra = {}) => ({ type, timestamp, message: { role: type, content: 'x', stop_reason: type === 'assistant' ? 'end_turn' : undefined }, ...extra });
+  const before = said('assistant', '2026-11-06T12:06:28.853Z');
+  assert.equal(stopReasonOf([before], null), null);
+  assert.equal(stopReasonOf([before], error), error.text);
+  assert.equal(stopReasonOf([before, { type: 'cost-state' }, said('user', '2026-11-06T13:00:00Z', { isMeta: true })], error), error.text, 'bookkeeping is not a new turn');
+  assert.equal(stopReasonOf([before, said('assistant', '2026-11-06T13:00:00Z', { isSidechain: true })], error), error.text, 'a subagent is not a new turn');
+  assert.equal(stopReasonOf([before, said('user', '2026-11-06T13:00:00Z')], error), null);
+
+  assert.deepEqual(desktopErrorOf({ error: ` ${error.text} `, errorAt: at }), error);
+  for (const dm of [null, {}, { error: '', errorAt: at }, { error: 'x' }, { error: 'x', errorAt: String(at) }, { error: {}, errorAt: at }]) assert.equal(desktopErrorOf(dm), null);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-stop-'));
+  try {
+    const sourcePath = path.join(dir, 'a.jsonl');
+    const write = (...rows) => fs.writeFileSync(sourcePath, rows.map((r) => `${JSON.stringify(r)}\n`).join(''));
+    const now = at + 60e3;
+    const session = (desktopError) => ({ agent: 'claude', sourcePath, updatedAt: now, desktopStatus: null, desktopError });
+    write(before);
+    let s = session(null);
+    assert.equal(await localStatus(s, now), 'completed', 'finished turn without an error');
+    assert.equal(s.stopReason, null);
+    s = session(error);
+    assert.equal(await localStatus(s, now), 'aborted', 'the error arriving later is noticed for an unchanged log');
+    assert.equal(s.stopReason, error.text);
+    write(before, said('assistant', '2026-11-06T13:00:00Z'));
+    s = session(error);
+    assert.equal(await localStatus(s, Date.parse('2026-11-06T13:01:00Z')), 'completed', 'a later turn leaves the error behind');
+    assert.equal(s.stopReason, null);
+    s = { ...session(error), updatedAt: now - 25 * 3600e3 };
+    assert.equal(await localStatus(s, now), 'idle', 'old sessions stay idle');
+    assert.equal(s.stopReason, null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

@@ -39,7 +39,10 @@ function faceNow(card) {
     const text = activityText(card.activity, card.status, card.signals) || (card.status === 'running' ? '作業中…' : STATUS_LABELS.waiting);
     return h('div', { class: `fnow fnow-${FACE_TONE[card.status]}`, title: text }, h('span', { class: card.status === 'running' ? 'shimmer' : '', text }));
   }
-  if (card.status === 'aborted') return h('div', { class: 'fnow fnow-err', title: card.last || '', text: card.last ? `中断 · ${card.last}` : '中断しました' });
+  if (card.status === 'aborted') {
+    const why = card.stopReason || card.last;
+    return h('div', { class: 'fnow fnow-err', title: why || '', text: why ? `中断 · ${why}` : '中断しました' });
+  }
   if (card.last) return h('div', { class: 'fnow', title: card.last, text: card.last });
   return null;
 }
@@ -199,7 +202,7 @@ function peekContent(card, d, { limit = 3, onSent, onClose }) {
     out.push(h('div', { class: 'pwait' }, h('b', { text: what }), h('span', { text: 'Canban からは答えられません。アプリで答えてください。' }),
       h('div', { class: 'row' }, d.launch?.desktop ? h('button', { class: 'btn-primary', type: 'button', text: 'アプリで開く', onclick: () => resume(card.id, { route: 'desktop' }) }) : null,
         h('button', { class: 'btn', type: 'button', text: '詳細を開く', onclick: () => openCard(card.id) }))));
-  } else if (s.status === 'aborted') out.push(h('div', { class: 'pwait pwait-err' }, h('b', { text: '中断しました' }), h('span', { text: '続けるには指示を送ってください。' })));
+  } else if (s.status === 'aborted') out.push(h('div', { class: 'pwait pwait-err' }, h('b', { text: s.stopReason || '中断しました' }), h('span', { text: '続けるには指示を送ってください。' })));
   if (D.unavailableReason || !D.settings.enabled) {
     out.push(h('div', { class: 'muted', text: D.unavailableReason || '指示の送信は設定でオフになっています。' }));
     if (d.launch?.desktop) out.push(h('button', { class: 'btn', type: 'button', text: s.agent === 'codex' ? 'Codexで開く' : 'Claudeで開く', onclick: () => resume(card.id, { route: 'desktop' }) }));

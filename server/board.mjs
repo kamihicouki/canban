@@ -453,6 +453,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       status: s.status || 'idle',
       activity: s.activity || null,
       last: s.lastSaid || null,
+      stopReason: s.stopReason || null,
       signals: cardSignals(s.signals),
       git: s.status === 'running' || s.status === 'waiting' ? peekGit(s.cwd) : null,
       unread: (s.updatedAt || 0) > Math.max(seenAll, card?.seenAt || 0),
