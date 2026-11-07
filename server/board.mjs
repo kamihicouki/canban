@@ -292,6 +292,8 @@ export function matchPending(state, sessions) {
   return resolved;
 }
 
+const kidCount = (kids) => (kids.length ? { total: kids.length, running: kids.filter((k) => k.status === 'running' || k.status === 'waiting').length } : null);
+
 const STATUS_RANK = { running: 4, waiting: 5, aborted: 3, completed: 2, idle: 1 };
 function aggregateStatus(list) {
   return list.reduce((best, s) => (STATUS_RANK[s] > STATUS_RANK[best] ? s : best), 'idle');
@@ -461,7 +463,8 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       pinnedInAgent: !!s.pinnedInAgent,
       codexSection: s.codexSection || null,
       autoMoved: card?.movedBy ? { ruleId: card.movedBy.ruleId, at: card.movedBy.at } : null,
-      subagents: kids.length ? { total: kids.length, running: kids.filter((k) => k.status === 'running' || k.status === 'waiting').length } : null,
+      subagents: kidCount(kids.filter((k) => !k.sideChat)),
+      sideChats: kidCount(kids.filter((k) => k.sideChat)),
       exchanges: s.agent === 'codex' ? exchangeIndex.summary(s.id) : null,
       repo: s.repo || null,
       pr: prView(s.pr),
@@ -702,7 +705,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
         .map((x) => ({ id: x.id, agent: x.agent, title: x.title, status: x.status || 'idle', updatedAt: x.updatedAt }))
     : [];
   const children = (s.children || []).map((id) => byId.get(id)).filter(Boolean)
-    .map((c) => ({ id: c.id, title: c.title, status: c.status || 'idle', updatedAt: c.updatedAt, agentName: c.agentName || null }));
+    .map((c) => ({ id: c.id, title: c.title, status: c.status || 'idle', updatedAt: c.updatedAt, agentName: c.agentName || null, sideChat: !!c.sideChat }));
   const { host: h, ...rest } = s;
   const labels = state.settings.accounts.labels;
   const claudeProfiles = await claudeResumeAccounts(s, labels);

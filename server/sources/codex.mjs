@@ -15,7 +15,7 @@ export const CODEX_COLUMNS = [
   'id', 'rollout_path', 'created_at', 'updated_at', 'created_at_ms', 'updated_at_ms', 'source', 'thread_source',
   'cwd', 'title', 'name', 'archived', 'git_branch', 'model', 'first_user_message', 'preview', 'agent_role',
   'agent_nickname', 'is_pinned', 'git_origin_url', 'tokens_used', 'sandbox_policy', 'approval_mode', 'thread_section_id',
-  'creator_account_id',
+  'creator_account_id', 'attached_thread_parent_id',
 ];
 
 // Pick the highest-numbered state_<n>.sqlite so a schema bump keeps working.
@@ -61,7 +61,9 @@ export function normalizeCodexRow(r, host = LOCAL_HOST) {
     createdAt,
     updatedAt,
     archived: !!r.archived,
-    subagent: isSubagent(r),
+    // A side conversation (attached thread) is listed only under its parent in the Codex app.
+    subagent: isSubagent(r) || !!r.attached_thread_parent_id,
+    sideChat: !!r.attached_thread_parent_id,
     automation: r.thread_source === 'automation',
     threadSource: r.thread_source || null,
     pinnedInAgent: !!r.is_pinned,
@@ -157,6 +159,7 @@ function readThreads(dbPath, prev, sig, now) {
     const want = CODEX_COLUMNS.filter((c) => cols.has(c));
     const hasEdges = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='thread_spawn_edges'").get();
     const edges = hasEdges ? db.prepare('SELECT parent_thread_id AS parent, child_thread_id AS child FROM thread_spawn_edges').all() : [];
+    if (cols.has('attached_thread_parent_id')) edges.push(...db.prepare('SELECT attached_thread_parent_id AS parent, id AS child FROM threads WHERE attached_thread_parent_id IS NOT NULL').all());
     const maxU = db.prepare('SELECT max(updated_at) AS u FROM threads').get()?.u ?? 0;
     // Section membership is re-read on every change (moving a thread between sections
     // does not necessarily bump updated_at); a partial covering index makes it ~1 ms.
@@ -188,7 +191,7 @@ function readThreads(dbPath, prev, sig, now) {
   });
 }
 
-// Link sub-agent threads to their parent (same host): parent.children / child.parentId.
+// Link sub-agent threads and side conversations to their parent (same host): parent.children / child.parentId.
 export function attachSpawnEdges(sessions, edges, host = LOCAL_HOST) {
   if (!edges?.length) return;
   const byNative = new Map(sessions.filter((s) => s.agent === 'codex').map((s) => [s.nativeId, s]));

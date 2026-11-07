@@ -201,7 +201,7 @@ export function staticProblem(session) {
   if (isCloudSession(session)) return CLOUD_OPERATION_REASON;
   if (!headlessArgs(session, { sandbox: 'read-only', mode: 'default' })) return 'このエージェントには送れません';
   if (!NATIVE_ID.test(session.nativeId || '')) return 'セッション ID が不正です';
-  if (session.subagent) return 'サブエージェントには送れません。親セッションに送ってください';
+  if (session.subagent && !session.sideChat) return 'サブエージェントには送れません。親セッションに送ってください';
   if (session.archived) return 'アーカイブ済みのセッションには送れません';
   if (!session.cwd) return '作業フォルダが分からないセッションには送れません';
   if (session.host?.local !== false && !fs.existsSync(session.cwd)) return `作業フォルダがありません: ${session.cwd}`;
