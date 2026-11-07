@@ -26,7 +26,7 @@ CODEX_COLUMNS = [
     "id", "rollout_path", "created_at", "updated_at", "created_at_ms", "updated_at_ms", "source", "thread_source",
     "cwd", "title", "name", "archived", "git_branch", "model", "first_user_message", "preview", "agent_role",
     "agent_nickname", "is_pinned", "git_origin_url", "tokens_used", "sandbox_policy", "approval_mode", "thread_section_id",
-    "creator_account_id",
+    "creator_account_id", "attached_thread_parent_id",
 ]
 SUMMARY_PROMPTS = 3
 TAIL_BYTES = 768 * 1024
@@ -94,6 +94,8 @@ def codex_rows():
             edges = []
             if con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='thread_spawn_edges'").fetchone():
                 edges = [{"parent": p, "child": c} for p, c in con.execute("SELECT parent_thread_id, child_thread_id FROM thread_spawn_edges")]
+            if "attached_thread_parent_id" in cols:
+                edges += [{"parent": r["attached_thread_parent_id"], "child": r["id"]} for r in rows if r.get("attached_thread_parent_id")]
         finally:
             con.close()
         now = now_ms()

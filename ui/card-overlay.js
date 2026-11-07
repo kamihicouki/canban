@@ -788,12 +788,17 @@ function renderPane(p, d) {
     ? d.recentMessages.map((m) => h('div', { class: `msg ${m.role}` }, h('div', { class: 'who', text: `${m.role === 'user' ? 'ユーザー' : 'エージェント'}${m.at ? ` · ${fmtDate(Date.parse(m.at))}` : ''}` }), m.text))
     : [h('p', { class: 'muted', text: d.messagesError ? `メッセージを取得できませんでした: ${d.messagesError}` : 'メッセージはありません' })];
 
+  const childRow = (c) => h('button', { class: 'sub-row', onclick: () => openCard(c.id) },
+    h('span', { class: `sdot s-${c.status}` }), h('span', { class: 'ellipsis grow', text: c.agentName ? `${c.agentName}: ${c.title}` : c.title }),
+    h('span', { class: 'muted', text: relTime(c.updatedAt) }));
+  const subagents = (d.children || []).filter((c) => !c.sideChat);
+  const sideChats = (d.children || []).filter((c) => c.sideChat);
   const related = [
     d.task ? h('div', { class: 'msg' }, `このセッションは${T.taskCard} `, h('button', { class: 'link-btn', text: `「${d.task.title}」`, onclick: () => openCard(d.task.id) }), ' に紐付いています。') : null,
-    d.children && d.children.length ? h('div', { class: 'sub-h', text: `サブエージェント（${d.children.length}）` }) : null,
-    ...(d.children || []).map((c) => h('button', { class: 'sub-row', onclick: () => openCard(c.id) },
-      h('span', { class: `sdot s-${c.status}` }), h('span', { class: 'ellipsis grow', text: c.agentName ? `${c.agentName}: ${c.title}` : c.title }),
-      h('span', { class: 'muted', text: relTime(c.updatedAt) }))),
+    subagents.length ? h('div', { class: 'sub-h', text: `サブエージェント（${subagents.length}）` }) : null,
+    ...subagents.map(childRow),
+    sideChats.length ? h('div', { class: 'sub-h', text: `サイド会話（${sideChats.length}）` }) : null,
+    ...sideChats.map(childRow),
     d.parentId ? h('div', { class: 'msg' }, h('button', { class: 'link-btn', text: '↑ 親セッションを開く', onclick: () => openCard(d.parentId) })) : null,
     d.sameBranch && d.sameBranch.length ? h('div', { class: 'sub-h', text: `同じブランチのセッション（${d.sameBranch.length}）` }) : null,
     ...(d.sameBranch || []).map((c) => h('button', { class: 'sub-row', onclick: () => openCard(c.id) },

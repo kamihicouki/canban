@@ -53,6 +53,19 @@ function faceFlags(card) {
   ].filter(Boolean);
   return flags.length ? h('span', { class: 'fflags' }, ...flags) : null;
 }
+
+// Sub-agents and side conversations share one pill: the attribute row has no room for two.
+function childCountPill({ subagents: sub, sideChats: side }) {
+  if (!sub && !side) return null;
+  const running = (sub?.running || 0) + (side?.running || 0);
+  const count = sub && side ? `サブ ${sub.total}＋${side.total}` : sub ? `サブ ${sub.total}` : `サイド ${side.total}`;
+  return h('span', {
+    class: 'pill child-count',
+    title: [sub && `このセッションが起動したサブエージェント ${sub.total}`, side && `このセッションから開いたサイド会話 ${side.total}`, running && `動いている ${running}`].filter(Boolean).join('\n'),
+    text: running ? `${count}（${running}）` : count,
+  });
+}
+
 function faceExtras(card) {
   const out = [];
   if (card.priority) out.push(h('span', { class: `pill prio-${card.priority}`, text: { high: '優先度 高', medium: '優先度 中', low: '優先度 低' }[card.priority] }));
@@ -60,7 +73,8 @@ function faceExtras(card) {
   if (card.note) out.push(h('span', { title: 'メモあり', html: picon('note', 12) }));
   if (card.requests) out.push(requestPill(card.requests));
   if (card.grouped?.length) out.push(h('span', { class: 'pill', title: card.grouped.map((g) => g.title).join('\n'), text: `＋${card.grouped.length}` }));
-  if (card.subagents) out.push(h('span', { class: 'pill', title: 'このセッションが起動したサブエージェント', text: `サブ ${card.subagents.total}${card.subagents.running ? `（${card.subagents.running}）` : ''}` }));
+  const children = childCountPill(card);
+  if (children) out.push(children);
   if (card.archived) out.push(h('span', { text: 'アーカイブ済' }));
   if (card.hidden) out.push(h('span', { text: '非表示' }));
   return out;
