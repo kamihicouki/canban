@@ -84,8 +84,19 @@ export function refineClaude(state, desktopStatus) {
   return state;
 }
 
+// The desktop app keeps its error until a new turn replaces it. The log's mtime says nothing about
+// that (the CLI appends bookkeeping lines long after), so a later message is what makes it old.
+export function stopReasonOf(records, desktopError) {
+  if (!desktopError) return null;
+  for (const o of records) {
+    if (!o || o.isSidechain || (o.type !== 'user' && o.type !== 'assistant') || o.isMeta) continue;
+    if (Date.parse(o.timestamp) > desktopError.at) return null;
+  }
+  return desktopError.text;
+}
+
 // ---- local sessions -------------------------------------------------------
-const cache = new Map(); // path -> { mtimeMs, size, desktopStatus, raw, activity, signals }
+const cache = new Map(); // path -> { mtimeMs, size, desktopStatus, errorAt, raw, activity, signals, stopReason }
 const sigAcc = new Map(); // path -> { offset, acc }: signals folded up to `offset`
 
 // Signals follow the whole log since it was first read (a turn's edited files can lie
@@ -109,28 +120,31 @@ async function signalsOf(session, tail) {
 }
 
 // Status (and, while it runs, what the session is doing) from the log tail.
-// Sets `session.activity` and `session.signals`; the tail is only re-read when the log changed.
+// Sets `session.activity`, `session.signals` and `session.stopReason`; the tail is only re-read when the log changed.
 export async function localStatus(session, now = Date.now()) {
   session.activity = null;
   session.signals = null;
   session.lastSaid = null;
+  session.stopReason = null;
   if (!session.sourcePath || (session.updatedAt || 0) < now - RECENT_MS) return 'idle';
   const st = await stat(session.sourcePath);
   if (!st) return 'idle';
   let hit = cache.get(session.sourcePath);
-  if (!hit || hit.mtimeMs !== st.mtimeMs || hit.size !== st.size || hit.desktopStatus !== session.desktopStatus) {
+  if (!hit || hit.mtimeMs !== st.mtimeMs || hit.size !== st.size || hit.desktopStatus !== session.desktopStatus || hit.errorAt !== session.desktopError?.at) {
     const tail = await readLines(session.sourcePath, { tailBytes: TAIL_BYTES });
     const { records } = tail;
-    const raw = session.agent === 'codex' ? codexRawStatus(records) : claudeRawStatus(records, session.desktopStatus);
+    const stopReason = session.agent === 'claude' ? stopReasonOf(records, session.desktopError) : null;
+    const raw = session.agent === 'codex' ? codexRawStatus(records) : stopReason ? 'aborted' : claudeRawStatus(records, session.desktopStatus);
     const items = itemsFor(session.agent, records.slice(-200), {});
     const activity = raw === 'running' || raw === 'waiting' ? activityOf(items) : null;
     const signals = await signalsOf(session, tail);
-    hit = { mtimeMs: st.mtimeMs, size: st.size, desktopStatus: session.desktopStatus, raw, activity, signals, lastSaid: lastSaidOf(items) };
+    hit = { mtimeMs: st.mtimeMs, size: st.size, desktopStatus: session.desktopStatus, errorAt: session.desktopError?.at, raw, activity, signals, lastSaid: lastSaidOf(items), stopReason };
     cache.set(session.sourcePath, hit);
   }
   const status = settle(hit.raw, st.mtimeMs, now);
   session.signals = hit.signals;
   session.lastSaid = hit.lastSaid;
+  session.stopReason = hit.stopReason;
   if (status === 'running' || status === 'waiting') session.activity = hit.activity;
   return status;
 }
