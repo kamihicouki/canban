@@ -38,7 +38,9 @@ function moreMenu(anchor) {
       ...[...el.querySelectorAll('button')].map((b) => h('button', { 'aria-pressed': b.getAttribute('aria-pressed'), text: b.getAttribute('aria-label'), onclick: go(() => b.click()) }))));
     if (el.classList.contains('ft-toggle')) {
       const cb = $('#fulltext');
-      return h('button', { class: 'menu-item', onclick: go(() => { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }) }, `${cb.checked ? '☑' : '☐'} 本文も検索`);
+      // A toggle row: pressed state for assistive tech, a line check (an empty slot of the same width when off).
+      return h('button', { class: 'menu-item menu-toggle', 'aria-pressed': String(cb.checked), title: cb.closest('.ft-toggle')?.title, onclick: go(() => { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }) },
+        h('span', { class: 'menu-check', 'aria-hidden': 'true', html: cb.checked ? picon('check', 16) : '' }), '本文も検索');
     }
     const label = el.querySelector('.lbl')?.textContent.replace(/\s*▾$/, '') || el.textContent.replace(/\s*▾$/, '') || el.getAttribute('aria-label') || el.title;
     // Menus opened from here anchor to ⋯ (the folded button has no place on screen); plain buttons are pressed as they are.
