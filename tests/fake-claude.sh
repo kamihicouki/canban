@@ -20,4 +20,6 @@ const fail = process.env.FAKE_AGENT_FAIL === "1";
 process.stdout.write(JSON.stringify({ type: "result", subtype: "success", is_error: fail, result: fail ? "Failed to authenticate" : "done: " + prompt.slice(0, 40) }) + "\n");
 ' "$prompt" "$@"
 [ "$FAKE_AGENT_FAIL" = "1" ] && exit 1
+# Claude Code 2.1.317+: a success result, then an error and exit 1 (e.g. the transcript write failed).
+if [ -n "$FAKE_AGENT_EXIT" ]; then echo "Error: could not save the session transcript" >&2; exit "$FAKE_AGENT_EXIT"; fi
 exit 0

@@ -259,6 +259,24 @@ test('queue: one at a time per session, FIFO, waits while the session is busy', 
   assert.deepEqual(runs()[0].argv.slice(-2), ['--permission-mode', 'acceptEdits']);
 });
 
+test('claude: a success result followed by a non-zero exit is a failure (Claude Code 2.1.317+)', async () => {
+  const d = freshDispatcher();
+  process.env.FAKE_AGENT_EXIT = '1';
+  let a;
+  try {
+    a = await d.submit({ cardId: 'claude:cl-ok', prompt: 'lost turn', when: 'now' });
+    assert.equal((await finished(d, a.id)).state, 'failed');
+  } finally {
+    delete process.env.FAKE_AGENT_EXIT;
+  }
+  const r = await d.requests.get(a.id);
+  assert.equal(r.exitCode, 1);
+  assert.equal(r.error, '終了コード 1: Error: could not save the session transcript');
+  assert.match(r.resultText, /^done: lost turn/);
+  assert.match((await d.requests.load()).paused['claude:cl-ok'].reason, /失敗/);
+  assert.equal(M.plainLines('{"type":"result"}\nwarn a\n\n42\nwarn b\n'), 'warn a\n42\nwarn b');
+});
+
 test('a failed run pauses the queue until resumed', async () => {
   const d = freshDispatcher();
   process.env.FAKE_AGENT_FAIL = '1';

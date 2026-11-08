@@ -137,6 +137,15 @@ export function parseRunLog(agent, text) {
   return { done, ok, text: msg.slice(0, 2000), error: error && String(error).slice(0, 500) };
 }
 
+// The last lines the agent wrote outside its JSON events (its stderr shares the log).
+export function plainLines(text, count = 3) {
+  const plain = String(text || '').split('\n').map((l) => l.trim()).filter((l) => {
+    if (!l) return false;
+    try { const o = JSON.parse(l); return !o || typeof o !== 'object'; } catch { return true; }
+  });
+  return plain.slice(-count).join('\n').slice(0, 500);
+}
+
 function readTail(file, bytes = RESULT_BYTES) {
   try {
     const fd = fs.openSync(file, 'r');
@@ -381,8 +390,15 @@ export class Dispatcher {
   async finish(id, { exitCode = null, signal = null, text = null, forceState = null,error = null,confirmedStopped = true,owner = null,generation = null } = {}) {
     const cur = (await this.requests.get(id));
     if (!cur || !ACTIVE_STATES.has(cur.state)) return null;
-    const parsed = forceState ? { done: true, ok: false, text: '', error } : parseRunLog(cur.agent, text ?? readTail(this.requests.logPath(id)));
+    const log = forceState ? '' : text ?? readTail(this.requests.logPath(id));
+    const parsed = forceState ? { done: true, ok: false, text: '', error } : parseRunLog(cur.agent, log);
     let state = forceState || (parsed.done && parsed.ok ? 'succeeded' : parsed.done ? 'failed' : 'interrupted');
+    // Claude Code 2.1.317+ exits 1 when the turn was lost or refused even though it already
+    // printed a success result (transcript write failed, auto mode refused actions, ...).
+    if (state === 'succeeded' && Number.isInteger(exitCode) && exitCode !== 0) {
+      state = 'failed';
+      parsed.error = [`終了コード ${exitCode}`, plainLines(log)].filter(Boolean).join(': ');
+    }
     if (owner && (cur.ownerUuid !== owner || cur.leaseGeneration !== generation)) return null;
     if (!forceState && state === 'failed' && (cur.stopRequested || signal === 'SIGINT' || signal === 'SIGTERM')) state = 'interrupted';
     const errMsg = state === 'succeeded' ? null : error || parsed.error || (exitCode != null ? `終了コード ${exitCode}` : '結果を確認できませんでした');
