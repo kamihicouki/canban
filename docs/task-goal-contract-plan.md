@@ -125,7 +125,7 @@ loop.cycles[].criteria[] = { id, text, verify?: { kind, value } }    // verify �
 | 周回の開始・`canban_send_loop` | L2 で不足あり | サーバーで拒否（既存の UI トークン境界はそのまま） |
 | タスクから「新しいセッションを開始」 | L1 以上で不足あり | 入力欄の上に不足を示すが止めない（人が対話で始める操作のため） |
 
-- 列に `requiresContract: boolean` を足す。**新しいボードでは「進行中」を true**、既存のボードは false のままにし、リストメニューの「着手の関門」で切り替える。列の意味を Canban が決めつけないため。
+- 列に `requiresContract: boolean` を足す。**新しいボードでは「進行中」を true**（上書きの確認ダイアログが入る PR3 で既定にする。PR1 では列ごとに有効にしたときだけ働く）、既存のボードは false のままにし、リストメニューの「着手の関門」で切り替える。列の意味を Canban が決めつけないため。
 - L0 のカードは関門の対象外。
 - 現在はボードのドラッグ（`ui/drag.js`）、カード詳細（`ui/card-overlay.js`）、エージェントの MCP 呼び出しが同じ `canban_move_card` を使い、呼び出し元を区別できない。そこで `canban_move_card` は不足があれば常に拒否し、不足の一覧を返す。「このまま移す」は UI 専用の `canban_move_card_override`（`uiToken` 必須、改善ループの確認と同じ `requireLoopUi` の境界）で行う。この境界は UI 経路の確認であり、本人の認証ではない（[loop-engineering-plan.md](loop-engineering-plan.md) と同じ注意）。
 

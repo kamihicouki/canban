@@ -13,6 +13,7 @@ import { sessionSourceView, sourceKey } from './source-model.mjs';
 import { validateSourceFilterCompatibility } from './source-filters.mjs';
 import { attachSlackReference } from './slack-store.mjs';
 import { loopRecord, applyLoopCommand, loopProgress } from './loop.mjs';
+import { normalizeContract, contractReadiness, contractMissingText, contractCycle } from './task-contract.mjs';
 
 export const STORE_VERSION = 1;
 export const LIST_COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
@@ -295,7 +296,7 @@ export class Store {
     });
   }
 
-  updateList({ listId, title, color, wipLimit }) {
+  updateList({ listId, title, color, wipLimit, requiresContract }) {
     return this.mutate((s) => {
       const list = s.lists.find((l) => l.id === listId);
       if (!list) throw new Error('リストが見つかりません');
@@ -308,6 +309,10 @@ export class Store {
       if (wipLimit !== undefined) {
         const n = wipLimit == null || wipLimit === '' ? null : Math.floor(Number(wipLimit));
         list.wipLimit = n && n > 0 ? n : null;
+      }
+      if (requiresContract !== undefined) {
+        if (requiresContract) list.requiresContract = true;
+        else delete list.requiresContract;
       }
       return list;
     });
@@ -365,10 +370,23 @@ export class Store {
 
   // `order` is a number in the same space as the implicit order (-updatedAt),
   // computed by the caller from its neighbours.
-  moveCard({ cardId, toListId, order }) {
+  // A list with `requiresContract` is where work starts: a task whose goal contract is short of its level stops at the door.
+  // `override` (the board UI only, through canban_move_card_override) moves it anyway and keeps a record.
+  moveCard({ cardId, toListId, order, override = false }) {
     return this.mutate((s) => {
-      if (!s.lists.some((l) => l.id === toListId)) throw new Error('移動先のリストが見つかりません');
+      const list = s.lists.find((l) => l.id === toListId);
+      if (!list) throw new Error('移動先のリストが見つかりません');
       const card = (s.cards[cardId] ||= {});
+      if (list.requiresContract && card.kind === 'task' && card.listId !== toListId) {
+        const saved = db().prepare('SELECT payload FROM loop_state WHERE task_id=?').get(cardId);
+        const cycle = contractCycle(saved && JSON.parse(saved.payload));
+        const readiness = contractReadiness(card.contract, cycle);
+        if (!readiness.ready) {
+          const missing = contractMissingText(readiness, cycle?.criteria);
+          if (!override) throw Object.assign(new Error(`「${list.title}」へ移す前にゴールの契約を書いてください: ${missing}`), { code: 'contract_missing', missing: readiness.missing });
+          card.contract.overrides = [...(card.contract.overrides || []), { at: new Date().toISOString(), by: 'human', missing: readiness.missing, to: toListId }].slice(-20);
+        }
+      }
       placeCard(card, toListId, order);
       delete card.movedBy; // a manual move supersedes an automatic one
       return { cardId, ...card };
@@ -405,11 +423,18 @@ export class Store {
   }
 
   // ---- task cards (not backed by a session) -------------------------------
-  async createTask({ title, listId, description = '', directory, labels, context, sourceContext, clientRequestId, slackSource }) {
+  // `contract` ({ level, goal, criteria, principles, maxRounds, timeLimitMin, gates }) is saved on the card; with criteria it also
+  // configures the task's top-level loop in the same transaction, so a failure leaves neither the card nor the loop.
+  async createTask({ title, listId, description = '', directory, labels, context, sourceContext, clientRequestId, slackSource, contract }) {
     title = String(title || '').trim();
     if (!title) throw new Error('カード名を入力してください');
     if (clientRequestId !== undefined && (typeof clientRequestId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(clientRequestId))) throw new Error('作成リクエストが不正です');
-    return this.mutate((s) => {
+    const terms = contract == null ? null : normalizeContract(contract);
+    const criteria = contract?.criteria ?? [];
+    if (!Array.isArray(criteria)) throw new Error('完了の条件が正しくありません');
+    if (criteria.length && !terms.goal) throw new Error('完了の条件には目標が必要です');
+    return transaction(() => {
+      const s = this.load();
       if (clientRequestId) {
         const existing = Object.entries(s.cards).find(([, c]) => c.kind === 'task' && c.clientRequestId === clientRequestId);
         if (existing) return { cardId: existing[0], ...existing[1] };
@@ -420,10 +445,14 @@ export class Store {
       const id = `task:${crypto.randomBytes(6).toString('hex')}`;
       const card = { kind: 'task', title: title.slice(0, 300), description: String(description).slice(0, 20000), createdAt: Date.now(), links: [], pending: [], ...attrs, ...(clientRequestId ? { clientRequestId } : {}) };
       placeCard(card, lid, Date.now()); // positive orders sort after session cards: new tasks go to the bottom
+      if (terms) card.contract = terms;
       s.cards[id] = card;
       if (slackSource) attachSlackReference(s, id, slackSource);
+      writeBoard(s);
+      if (criteria.length) this.#applyLoop({ taskId: id, expectedRevision: 0, commandId: `create-${id}`, source: 'human',
+        command: { type: 'configure', goal: terms.goal, criteria, principles: contract.principles, maxRounds: contract.maxRounds } });
       return { cardId: id, ...card };
-    });
+    }, { fence: currentFence });
   }
 
   linkSlack({ cardId, key, sourceTitle }) {
@@ -435,7 +464,7 @@ export class Store {
     return this.mutate(s => { const card = s.cards[cardId]; if (card) card.slackRefs = (card.slackRefs || []).filter(k => k !== key); return { cardId, key }; });
   }
 
-  updateTask({ cardId, title, description, target, context, sourceContext, directory, labels }) {
+  updateTask({ cardId, title, description, target, context, sourceContext, directory, labels, contract }) {
     return this.mutate((s) => {
       const card = s.cards[cardId];
       if (card?.kind !== 'task') throw new Error('タスクカードが見つかりません');
@@ -447,6 +476,13 @@ export class Store {
         card.title = t.slice(0, 300);
       }
       if (description !== undefined) card.description = String(description ?? '').slice(0, 20000);
+      // level / goal / time limit / gates only; criteria and the round limit change through the loop's own configure.
+      if (contract !== undefined) {
+        if (contract?.criteria !== undefined || contract?.principles !== undefined || contract?.maxRounds !== undefined) throw new Error('条件・原則・周回の上限は改善ループで変更してください');
+        const next = contract && normalizeContract({ ...(card.contract || {}), ...contract });
+        if (next) card.contract = { ...next, ...(card.contract?.overrides ? { overrides: card.contract.overrides } : {}) };
+        else delete card.contract;
+      }
       if (target !== undefined) {
         card.target = target && typeof target === 'object'
           ? { agent: ['codex', 'claude'].includes(target.agent) ? target.agent : 'codex', hostId: typeof target.hostId === 'string' ? target.hostId : 'local', cwd: typeof target.cwd === 'string' ? target.cwd : '',
@@ -493,10 +529,16 @@ export class Store {
   }
 
   loopCommand(args) {
-    return transaction(() => {
+    return transaction(() => this.#applyLoop(args), { fence: currentFence });
+  }
+
+  // Runs inside the caller's write transaction (loopCommand, or createTask with a contract).
+  #applyLoop(args) {
+    {
       const record = this.getLoop(args);
       const saved = db().prepare('SELECT payload FROM loop_state WHERE task_id=?').get(args.taskId);
-      const task = { kind: 'task', loop: { ...(saved ? JSON.parse(saved.payload) : {}), ...record } };
+      const card = JSON.parse(db().prepare("SELECT payload FROM board_records WHERE kind='cards' AND id=?").get(args.taskId)?.payload || 'null');
+      const task = { kind: 'task', contract: card?.contract || null, loop: { ...(saved ? JSON.parse(saved.payload) : {}), ...record } };
       const result = applyLoopCommand(task, args.taskId, args);
       if (result.conflict || result.duplicate) return result;
       for (const c of task.loop.cycles) for (const r of c.rounds) {
@@ -510,7 +552,7 @@ export class Store {
       db().prepare('INSERT INTO loop_state VALUES(?,?) ON CONFLICT(task_id) DO UPDATE SET payload=excluded.payload').run(args.taskId, payload);
       bump('board');
       return result;
-    }, { fence: currentFence });
+    }
   }
 
   saveTaskDashboard({ taskId, expectedRevision, state }) {

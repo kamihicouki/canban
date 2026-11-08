@@ -1,6 +1,7 @@
 // Task card tools: create, update, link sessions, and session card lifecycle.
 import { allSessions, findSession, dropLocalCache } from '../board.mjs';
 import { taskContextSchema } from '../task-context.mjs';
+import { contractSchema } from '../task-contract.mjs';
 import { sourceSelectionSchema } from '../category-bindings.mjs';
 import { codexLifecycle } from '../session-actions.mjs';
 import { appOnly, appAndModel, appTool, resolveList } from './shared.mjs';
@@ -10,12 +11,12 @@ export function createTaskTools({ store }) {
   {
     name: 'canban_create_task',
     title: 'タスクカードを追加',
-    description: 'セッションに紐づかないタスクカードを作る（Trello のカードと同じ）。list はリスト ID か名前（省略時は既定のリスト）。',
-    inputSchema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, list: { type: 'string' }, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } }, context: taskContextSchema, sourceContext: { anyOf: [sourceSelectionSchema, { type: 'null' }] }, clientRequestId: { type: 'string', maxLength: 128 }, slackSource: { type: 'string', maxLength: 120 } }, required: ['title'], additionalProperties: false },
+    description: 'セッションに紐づかないタスクカードを作る（Trello のカードと同じ）。list はリスト ID か名前（省略時は既定のリスト）。contract はゴールの契約: level（0 メモ / 1 1回の依頼 / 2 ゴールのループ）、goal、criteria（文字列か { text, verify: { kind: command|ci|ui|human, value } }）、principles、maxRounds、timeLimitMin、gates。criteria があれば改善ループも同時に設定する。',
+    inputSchema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, list: { type: 'string' }, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } }, context: taskContextSchema, sourceContext: { anyOf: [sourceSelectionSchema, { type: 'null' }] }, clientRequestId: { type: 'string', maxLength: 128 }, slackSource: { type: 'string', maxLength: 120 }, contract: contractSchema }, required: ['title'], additionalProperties: false },
     _meta: appAndModel,
-    handler: async ({ title, description, list, directory, labels, context, sourceContext, clientRequestId, slackSource }) => {
+    handler: async ({ title, description, list, directory, labels, context, sourceContext, clientRequestId, slackSource, contract }) => {
       const l = list ? resolveList((await store.load()).lists, list) : null;
-      const res = await store.createTask({ title, description, listId: l?.id || list, directory, labels, context, sourceContext, clientRequestId, slackSource });
+      const res = await store.createTask({ title, description, listId: l?.id || list, directory, labels, context, sourceContext, clientRequestId, slackSource, contract });
       return { text: `タスクカード「${res.title}」を作成しました（${res.cardId}）`, structured: res };
     },
   },
@@ -39,7 +40,7 @@ export function taskTools({ store }) {
     },
   },
   appTool('canban_unlink_session', 'セッションの紐付けを解除', { taskId: { type: 'string' }, sessionId: { type: 'string' } }, ['taskId', 'sessionId'], (a) => store.unlinkSession(a)),
-  appTool('canban_update_task', 'タスクカードを更新', { cardId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, context: taskContextSchema, sourceContext: { anyOf: [sourceSelectionSchema, { type: 'null' }] }, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } } }, ['cardId'], (a) => store.updateTask(a)),
+  appTool('canban_update_task', 'タスクカードを更新', { cardId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, context: taskContextSchema, sourceContext: { anyOf: [sourceSelectionSchema, { type: 'null' }] }, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } }, contract: { anyOf: [{ type: 'object', properties: { level: contractSchema.properties.level, goal: contractSchema.properties.goal, timeLimitMin: { type: ['integer', 'null'] }, gates: contractSchema.properties.gates }, additionalProperties: false }, { type: 'null' }] } }, ['cardId'], (a) => store.updateTask(a)),
   {
     name: 'canban_set_session_card_state',
     title: 'セッションカードを整理',

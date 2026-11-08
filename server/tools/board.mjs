@@ -5,7 +5,18 @@ import { computeStats } from '../stats.mjs';
 import { sourceSelectionSchema } from '../category-bindings.mjs';
 import { appOnly, appAndModel, filterProps, appTool, resolveList } from './shared.mjs';
 
-export function boardTools({ store, ICONS, UI_URI }) {
+export function boardTools({ store, ICONS, UI_URI, requireLoopUi }) {
+  const moveCard = async ({ cardId, toList, order, position, override = false }) => {
+    const state = (await store.load());
+    const list = resolveList(state.lists, toList);
+    if (!list) throw new Error(`リストが見つかりません: ${toList}`);
+    const { sessions } = await allSessions(state);
+    const isTask = state.cards[cardId]?.kind === 'task';
+    if (!isTask && !sessions.some((s) => s.id === cardId)) throw new Error(`カードが見つかりません: ${cardId}`);
+    if (typeof order !== 'number') order = edgeOrder(state, sessions, list.id, cardId, position || 'top');
+    const res = await store.moveCard({ cardId, toListId: list.id, order, override });
+    return { text: `${cardId} を「${list.title}」へ移動しました`, structured: res };
+  };
   return [
   {
     name: 'open_canban',
@@ -127,17 +138,15 @@ export function boardTools({ store, ICONS, UI_URI }) {
       additionalProperties: false,
     },
     _meta: appAndModel,
-    handler: async ({ cardId, toList, order, position }) => {
-      const state = (await store.load());
-      const list = resolveList(state.lists, toList);
-      if (!list) throw new Error(`リストが見つかりません: ${toList}`);
-      const { sessions } = await allSessions(state);
-      const isTask = state.cards[cardId]?.kind === 'task';
-      if (!isTask && !sessions.some((s) => s.id === cardId)) throw new Error(`カードが見つかりません: ${cardId}`);
-      if (typeof order !== 'number') order = edgeOrder(state, sessions, list.id, cardId, position || 'top');
-      const res = await store.moveCard({ cardId, toListId: list.id, order });
-      return { text: `${cardId} を「${list.title}」へ移動しました`, structured: res };
-    },
+    handler: async (a) => moveCard(a),
+  },
+  {
+    name: 'canban_move_card_override',
+    title: 'ゴールの契約が足りないまま移動（UI）',
+    description: '着手の関門がある列へ、足りない項目を確認したうえで移す。移した記録をタスクに残す。ボードUIからのみ。',
+    inputSchema: { type: 'object', properties: { cardId: { type: 'string' }, toList: { type: 'string' }, order: { type: 'number' }, position: { type: 'string', enum: ['top', 'bottom'] }, uiToken: { type: 'string' } }, required: ['cardId', 'toList', 'uiToken'], additionalProperties: false },
+    _meta: appOnly,
+    handler: async (a) => moveCard({ ...requireLoopUi(a), override: true }),
   },
   {
     name: 'canban_update_card',
@@ -205,7 +214,7 @@ export function boardConfigTools({ store }) {
   appTool('canban_undo_move', '自動移動を元に戻す', { cardId: { type: 'string' } }, ['cardId'], (a) => store.undoAutoMove(a)),
   appTool('canban_mark_all_seen', 'すべて既読にする', {}, [], () => store.markAllSeen()),
   appTool('canban_create_list', 'リストを追加', { title: { type: 'string' }, color: { type: 'string' }, afterListId: { type: 'string' } }, ['title'], (a) => store.createList(a)),
-  appTool('canban_update_list', 'リストを更新', { listId: { type: 'string' }, title: { type: 'string' }, color: { type: ['string', 'null'] }, wipLimit: { type: ['number', 'null'] } }, ['listId'], (a) => store.updateList(a)),
+  appTool('canban_update_list', 'リストを更新', { listId: { type: 'string' }, title: { type: 'string' }, color: { type: ['string', 'null'] }, wipLimit: { type: ['number', 'null'] }, requiresContract: { type: 'boolean' } }, ['listId'], (a) => store.updateList(a)),
   appTool('canban_delete_list', 'リストを削除', { listId: { type: 'string' }, moveCardsTo: { type: 'string' } }, ['listId'], (a) => store.deleteList(a)),
   appTool('canban_reorder_lists', 'リストを並べ替え', { listIds: { type: 'array', items: { type: 'string' } } }, ['listIds'], (a) => store.reorderLists(a)),
   appTool('canban_set_default_list', '既定リストを設定', { listId: { type: 'string' } }, ['listId'], (a) => store.setDefaultList(a)),

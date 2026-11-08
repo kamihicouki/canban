@@ -26,6 +26,7 @@
     "canban_exchanges",
     "canban_get_session",
     "canban_move_card",
+    "canban_move_card_override",
     "canban_update_card",
     "canban_set_claude_execution",
     "canban_open_session",
@@ -129,6 +130,7 @@
     "canban_exchanges": "e86aac5979df10975d6f7aaaef189361070bdafe0e0b038918ac61c7f12f8454",
     "canban_get_session": "01ab55355d395e11ed7ba0caa63e6708ddcacf5b392addeeebeea9ab8783634d",
     "canban_move_card": "270bf995a56a4a11458dc0b283c4cc39eb432cfb88c6fada99224091baa8ee07",
+    "canban_move_card_override": "ad2bef3a9217928c0241ba8c69c6bd066a0ac5c66ffb0f72bcfc25e513507787",
     "canban_update_card": "a7ed83963728449a95b5884bbb506229e2cb4b3214bfebf2b208b88ed9081a69",
     "canban_set_claude_execution": "5feffdc60dc2ea149d27b0f15feaf25a15f87a5f24fb6c9415fdb4c81a4e3891",
     "canban_open_session": "5e729eb36a74ffc8af78fff39479d3018d6993698fce990e814975b1a7460a37",
@@ -160,7 +162,7 @@
     "canban_move_account_home": "1068041ea1d84ed7cda63843acbc75f76e55faf4cfd70fe77abef5b856f27099",
     "canban_update_settings": "28d878805f73f6c2f7f0594ba41b197a3972a37341d2d9d7c32aec1f1138e72e",
     "canban_open_external": "10ec814446e14ad2f0cd18c662bad43740d57e217f4c6d3bf9f2317faaee2141",
-    "canban_create_task": "b9ddcd7266f40b01b280edf77a41978c7aeb4d8c6e50eb9b3171f0b345438889",
+    "canban_create_task": "3cbb160fc40f3a2ab074733c9585074ce876841722661167eac6d87363a23824",
     "canban_launch_targets": "60361730485c75c0478ba32e721cc948cc2f420c47cc64dc19f41c7a64cf7b76",
     "canban_start_session": "dc43ab9efd1cb1b7f2a3a401ddde0382ac0b28569c69475069727d3fbaf67c05",
     "canban_read_prompt_image": "0a5bd0048c016191575214f069ddce07613a8f8783cab9d268646e275614fbfe",
@@ -173,7 +175,7 @@
     "canban_get_desktop_launch_draft": "8f20ef2d8a8de25b9cacf4acddc80882f3e9a8494389aa41d87e252af9255812",
     "canban_link_session": "784fab9db64f0b4be5b0347a489418659bdaf687d09bb105dbd5e63fec83dfff",
     "canban_unlink_session": "3d3ada4a8ba24f820ce0c64195c94998f70a6e81275f735e817d60d702889fbc",
-    "canban_update_task": "f767409effa644702035ec17c961b888547efcbd7362c9f5d88b211445d06cd6",
+    "canban_update_task": "ac6b5e3987c52fecad2756b3394639693d80f5741b2dbdd46ab8c0465f7ee357",
     "canban_set_session_card_state": "85f761f06b3337a1da8a018baad8aa4dcaefce3e2292994e294441ac26e74647",
     "canban_delete_task": "8d406e11c25744a5e1d3a92c8669de593d7d89f96bd1c8de6289ce98b9e1f809",
     "canban_clear_pending": "d68776fe887df745d11c8547abebd18655ad1e437972abc6a5b2f413ab812571",
@@ -192,7 +194,7 @@
     "canban_undo_move": "305568071564959280fdd69210863b82e5c27cacb529955e69154e9fc7263790",
     "canban_mark_all_seen": "dea04d1e92e8b35bd592bd341e06f36284c2192d0f6b28429dc617e83ff0099d",
     "canban_create_list": "84635be2acce2b65634600c7ec2c49f0943fd4fb98d03cc2678c28bf81ddcce2",
-    "canban_update_list": "41936f60139cad45b7efbdc15679953605da554d61f1fd7a4e4998ef458ffeb8",
+    "canban_update_list": "931f5bbd45518b0bea85399fff2e0788f6bb20bebe59f56d9d06dda4cf156034",
     "canban_delete_list": "865e8fc9fb6cd250df199d92291e787973ee9db14801b5a594f43d40d245fc7c",
     "canban_reorder_lists": "d85d0932e6e71bc3371e4d427bd8b1ffb683ad6529a7a6baccf9b1945376d275",
     "canban_set_default_list": "ddeb45672acc3044efc448daa9842114cb913099fe52c8bb0065070885b4c68a",
@@ -205,5 +207,5 @@
     "canban_get_ui_state": "3805f9b9bd60f6dc1df6bd8e58b00fcf0e0065e0354aa4e8e515df843f33b521",
     "canban_save_ui_state": "3e75c3bdc052134c461074b189d68c3520787c65e382eaf1f4391e85b0298859"
   },
-  "all": "2356b3a9b73171c8faa31759b9d5cbc3e84ba33a56e709cf63456558c1bb27b6"
+  "all": "05c944c49e066f2363b9e28a28222a78ce83706a5c85f831d8b16c8280d62f52"
 }
