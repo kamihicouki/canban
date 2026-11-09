@@ -52,6 +52,30 @@
 .creation-route-note { margin: -4px 0 8px; font-size: 13px; line-height: 1.5; color: var(--list-muted); }
 .task-context-summary { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0; }
 .task-context-summary span { padding: 3px 6px; font-size: 12px; border-radius: 5px; background: var(--modal-panel); }
+/* Goal contract (task creation) */
+.contract-levels { margin: 0 0 14px; padding: 0; border: 0; min-width: 0; }
+.contract-levels legend { margin-bottom: 8px; padding: 0; }
+.contract-level-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.contract-level-choices .session-choice { align-items: flex-start; }
+.contract-criteria { display: flex; flex-direction: column; gap: 10px; }
+.contract-criterion { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; gap: 6px 8px; align-items: center; }
+.contract-criterion select { min-height: 38px; padding: 7px 9px; font: inherit; font-size: 14px; border: 1px solid var(--input-border); border-radius: 6px; color: var(--list-fg); background: var(--input-bg); min-width: 0; }
+.contract-criterion .icon-btn { min-height: 38px; }
+.contract-criterion .contract-warning, .contract-criterion > input:nth-of-type(2) { grid-column: 1 / -1; }
+.contract-warning { margin: 0; font-size: 12px; line-height: 1.5; color: var(--warn-fg); overflow-wrap: anywhere; }
+.contract-add { align-self: flex-start; }
+.contract-gates { margin: 0 0 12px; padding: 0; border: 0; min-width: 0; }
+.contract-gates legend { margin-bottom: 8px; padding: 0; }
+.contract-gate-boxes { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 8px; }
+.contract-gate-boxes label { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; font-size: 14px; }
+.contract-readiness { margin: 0 0 14px; font-size: 13px; color: var(--list-muted); }
+.contract-readiness.short { color: var(--list-fg); font-weight: 600; }
+@media (max-width: 540px) {
+  .contract-level-choices { grid-template-columns: minmax(0, 1fr); }
+  .contract-criterion { grid-template-columns: minmax(0, 1fr) auto; }
+  .contract-criterion select { grid-column: 1 / -1; }
+  .contract-criterion .icon-btn { grid-column: 2; grid-row: 1; }
+}
 @media (max-width: 540px) {
   .task-quick-dialog { padding: 16px; max-height: calc(100dvh - 80px); }
   .task-attributes, .creation-environment { grid-template-columns: minmax(0, 1fr); }

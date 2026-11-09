@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import vm from 'node:vm';
 import { Store } from '../server/store.mjs';
 import { loopPrompt } from '../server/loop.mjs';
 import { contractReadiness, criterionWarning, normalizeContract, contractMissingText } from '../server/task-contract.mjs';
@@ -139,4 +140,53 @@ test('updating the level keeps overrides and refuses criteria outside the loop',
   assert.equal(up.contract.level, 2); assert.equal(up.contract.goal, '直す'); assert.equal(up.contract.overrides.length, 1);
   await assert.rejects(store.updateTask({ cardId: task.cardId, contract: { criteria: ['x'] } }), /改善ループ/);
   assert.equal((await store.updateTask({ cardId: task.cardId, contract: null })).contract, undefined);
+});
+
+// ---- the creation dialog's draft (ui/task-contract-model.js, run the way board.html runs it) ----
+const draftModel = vm.runInNewContext(`${fs.readFileSync(new URL('../ui/task-contract-model.js', import.meta.url), 'utf8')}
+({ contractDraftDefaults, contractDraftHasContent, contractDraftReadiness, contractDraftArgs, contractBudgetSummary })`);
+const draft = (patch = {}, rows) => { const d = draftModel.contractDraftDefaults(2); Object.assign(d, patch); if (rows) d.criteria = rows; return d; };
+
+test('a memo sends no contract; the goal falls back to the title', () => {
+  assert.deepEqual(plain(draftModel.contractDraftArgs(draft({ level: 0 }), 't')), { contract: null });
+  assert.deepEqual(plain(draftModel.contractDraftArgs(draftModel.contractDraftDefaults(1), '調べる')), { contract: { level: 1, goal: '調べる' } });
+  assert.equal(draftModel.contractDraftArgs(draftModel.contractDraftDefaults(1), '調べる').error, undefined);
+});
+
+test('an L2 draft becomes criteria with checks, a round limit, a time limit and gates', () => {
+  const rows = [{ text: ' 試験が通る ', kind: 'command', value: ' npm test ' }, { text: '文言を読む', kind: '', value: '' }, { text: '', kind: '', value: '' }];
+  const d = draft({ goal: ' リリース ', principles: ' 触らない: DB ', maxRounds: 3, timeLimitMin: 60, gates: ['merge'], gateText: ' DB変更の前 ' }, rows);
+  assert.deepEqual(plain(draftModel.contractDraftArgs(d, 'x').contract), { level: 2, goal: 'リリース', principles: '触らない: DB', maxRounds: 3, timeLimitMin: 60,
+    criteria: [{ text: '試験が通る', verify: { kind: 'command', value: 'npm test' } }, '文言を読む'], gates: ['merge', { text: 'DB変更の前' }] });
+});
+
+test('values that cannot be sent name the control to fix', () => {
+  const err = (d, title = 't') => plain(draftModel.contractDraftArgs(d, title).error);
+  assert.deepEqual(err(draft({}, [{ text: '通る', kind: 'ci', value: ' ' }])), { message: '条件1の確かめ方の内容を入力してください。', selector: '[data-verify-value="0"]' });
+  assert.deepEqual(err(draft({}, [{ text: '', kind: 'ui', value: 'x' }])), { message: '条件1の文章を入力してください。', selector: '[data-criterion="0"]' });
+  assert.equal(err(draft({ maxRounds: 0 }, [{ text: '通る', kind: '', value: '' }])).selector, '.contract-max-rounds');
+  assert.equal(err(draft({ timeLimitMin: 2 })).selector, '.contract-time-limit');
+  assert.equal(err(draft({ principles: '触らない' })).selector, '[data-criterion="0"]'); // a scope needs a criterion to be kept with
+  assert.equal(err(draft({ goal: 'あ'.repeat(501) })).selector, '.contract-goal');
+});
+
+test('draft readiness matches what the server will compute for the saved card', async t => {
+  const rows = [{ text: '`npm test` が通る', kind: 'command', value: 'npm test' }, { text: '文言をきれいに', kind: '', value: '' }];
+  const d = draft({}, rows);
+  const r = plain(draftModel.contractDraftReadiness(d, 'タイトル'));
+  assert.equal(r.text, '契約 4/5 · 条件2の確かめ方が未設定'); assert.equal(r.ready, false);
+  const store = await setup(t);
+  const saved = await store.createTask({ title: 'タイトル', contract: draftModel.contractDraftArgs(d, 'タイトル').contract });
+  const server = contractReadiness(saved.contract, (await store.getLoop({ taskId: saved.cardId })).cycles[0]);
+  assert.deepEqual([server.filled, server.required, plain(server.missing)], [r.filled, r.required, r.missing]);
+  assert.equal(draftModel.contractDraftReadiness(draft({ level: 0 }), 't'), null);
+  assert.equal(draftModel.contractDraftReadiness(draftModel.contractDraftDefaults(1), '').text, '契約 0/1 · 目標が未設定');
+});
+
+test('draft content tells a started contract from a fresh one', () => {
+  assert.equal(draftModel.contractDraftHasContent(draftModel.contractDraftDefaults(2)), false);
+  assert.equal(draftModel.contractDraftHasContent(draft({ goal: '直す' })), true);
+  assert.equal(draftModel.contractDraftHasContent(draft({}, [{ text: '', kind: 'ci', value: '' }])), true);
+  assert.equal(draftModel.contractDraftHasContent(draft({ maxRounds: 9 })), false); // a changed default alone is not content
+  assert.match(draftModel.contractBudgetSummary(draft({ timeLimitMin: 30, gates: ['production'] })), /周回 5 · 時間 30分 · 関門 本番の前/);
 });

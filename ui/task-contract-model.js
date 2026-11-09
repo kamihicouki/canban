@@ -114,3 +114,67 @@ function contractMissingLabel(key, criteria = []) {
 function contractMissingText(readiness, criteria = []) {
   return readiness.missing.map(k => contractMissingLabel(k, criteria)).join('、');
 }
+
+// ---- the creation dialog's draft ---------------------------------------------------------------
+// A draft row is { text, kind, value }: kind '' means no check chosen. The goal falls back to the title.
+const CONTRACT_MAX_CRITERIA = 20;
+const VERIFY_PLACEHOLDERS = { command: '例：npm test', ci: '例：test (ubuntu)', ui: '例：ボードで c → 作成 → 受信箱に出る', human: '例：文言を人が読んで確認する' };
+const contractEmptyRow = () => ({ text: '', kind: '', value: '' });
+
+function contractDraftDefaults(level = 1) {
+  return { level, goal: '', criteria: [contractEmptyRow()], principles: '', maxRounds: 5, timeLimitMin: null, gates: [], gateText: '' };
+}
+
+function contractDraftHasContent(contract) {
+  return !!contract && !!(contract.goal.trim() || contract.principles.trim() || contract.gateText.trim() || contract.gates.length || contract.timeLimitMin != null
+    || contract.criteria.some(r => r.text.trim() || r.kind));
+}
+
+const contractDraftRows = contract => contract.criteria.filter(r => r.text.trim() || r.kind || r.value.trim());
+
+// How ready the draft is, judged by the same rules the server applies to the saved card.
+function contractDraftReadiness(contract, title) {
+  if (!contract || contract.level === 0) return null;
+  const rows = contractDraftRows(contract);
+  const criteria = rows.map((r, i) => ({ id: `c${i + 1}`, text: r.text.trim(), verify: r.kind && r.value.trim() ? { kind: r.kind, value: r.value.trim() } : null }));
+  const goal = contract.goal.trim() || String(title || '').trim();
+  const maxRounds = Number.isSafeInteger(contract.maxRounds) && contract.maxRounds >= 1 && contract.maxRounds <= 20 ? contract.maxRounds : null;
+  const readiness = contractReadiness({ level: contract.level }, { goal, criteria, maxRounds });
+  const text = `契約 ${readiness.filled}/${readiness.required}${readiness.missing.length ? ` · ${contractMissingText(readiness, criteria)}が未設定` : ''}`;
+  return { ...readiness, text };
+}
+
+// What the dialog sends as `contract`: null for a memo. `error` names the control to focus when a value cannot be sent.
+function contractDraftArgs(contract, title) {
+  if (!contract || contract.level === 0) return { contract: null };
+  const goal = contract.goal.trim() || String(title || '').trim();
+  const rows = contractDraftRows(contract);
+  const fail = (message, selector) => ({ contract: null, error: { message, selector } });
+  if (goal.length > 500) return fail('目標は500文字以内にしてください。', '.contract-goal');
+  const criteria = [];
+  for (const [i, row] of rows.entries()) {
+    const text = row.text.trim();
+    if (!text) return fail(`条件${i + 1}の文章を入力してください。`, `[data-criterion="${i}"]`);
+    if (row.kind && !row.value.trim()) return fail(`条件${i + 1}の確かめ方の内容を入力してください。`, `[data-verify-value="${i}"]`);
+    criteria.push(row.kind ? { text, verify: { kind: row.kind, value: row.value.trim() } } : text);
+  }
+  const out = { level: contract.level, goal };
+  if (criteria.length) {
+    out.criteria = criteria;
+    if (contract.principles.trim()) out.principles = contract.principles.trim();
+    if (!Number.isSafeInteger(contract.maxRounds) || contract.maxRounds < 1 || contract.maxRounds > 20) return fail('周回の上限は1〜20です。', '.contract-max-rounds');
+    out.maxRounds = contract.maxRounds;
+  } else if (contract.principles.trim()) return fail('範囲・触らないものは、完了の条件と一緒に保存されます。条件を1件書くか、範囲を空にしてください。', '[data-criterion="0"]');
+  if (contract.timeLimitMin != null) {
+    if (!Number.isSafeInteger(contract.timeLimitMin) || contract.timeLimitMin < 5 || contract.timeLimitMin > 1440) return fail('時間の上限は5〜1440分です。', '.contract-time-limit');
+    out.timeLimitMin = contract.timeLimitMin;
+  }
+  const gates = [...contract.gates, ...(contract.gateText.trim() ? [{ text: contract.gateText.trim() }] : [])];
+  if (gates.length) out.gates = gates;
+  return { contract: out };
+}
+
+function contractBudgetSummary(contract) {
+  const gates = [...contract.gates.map(g => CONTRACT_GATES[g]), ...(contract.gateText.trim() ? [contract.gateText.trim()] : [])];
+  return `範囲と予算（周回 ${contract.maxRounds ?? '—'} · 時間 ${contract.timeLimitMin != null ? `${contract.timeLimitMin}分` : '—'} · 関門 ${gates.length ? gates.join('・') : 'なし'}）`;
+}

@@ -122,6 +122,7 @@ async function saveQuickTaskDraft(draft, { callTool, refresh, newRequestId }) {
     labels: [...draft.labels], context: { ...draft.context }, clientRequestId: draft.clientRequestId };
   if (draft.sourceContext) args.sourceContext = draft.sourceContext;
   if (draft.slackSource) args.slackSource = draft.slackSource;
+  if (draft.contractArgs) args.contract = draft.contractArgs; // built by the dialog from the contract fields (null for a memo)
   draft.submitting = true;
   try {
     const result = await callTool('canban_create_task', args);
