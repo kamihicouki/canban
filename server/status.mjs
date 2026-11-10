@@ -86,6 +86,10 @@ export function refineClaude(state, desktopStatus) {
 
 export function multiAgentRawStatus(session, records) {
   if (session.sourceMetadata?.cursorStats?.hasBlockingPendingActions) return 'waiting';
+  if (session.agent === 'antigravity') {
+    if (session.sourceMetadata?.isKilled) return 'aborted';
+    if (session.sourceMetadata?.isRunning) return 'running';
+  }
   let state = 'idle';
   let waitingQuestion = false;
   for (const r of records) {

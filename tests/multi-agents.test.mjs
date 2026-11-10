@@ -245,6 +245,92 @@ test('Gemini CLI・ChatGPT Desktop・Grok CLI のセッションを正規化し�
   assert.equal((await multiAgentSessionMessages(grokSessions[0])).length, 2);
 });
 
+test('Antigravity conversation_summaries.db と projects/*.json から正式タイトル・プロジェクト・環境を解決する', async () => {
+  const tmpGemini = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-agy-full-'));
+  const agyDir = path.join(tmpGemini, 'antigravity');
+  const configProjectsDir = path.join(tmpGemini, 'config', 'projects');
+  const annotationsDir = path.join(agyDir, 'annotations');
+  const brainDir = path.join(agyDir, 'brain');
+  fs.mkdirSync(agyDir, { recursive: true });
+  fs.mkdirSync(configProjectsDir, { recursive: true });
+  fs.mkdirSync(annotationsDir, { recursive: true });
+  fs.mkdirSync(brainDir, { recursive: true });
+
+  const projId = '73bb22cf-235e-42d5-8a58-40d0e0e0bbc4';
+  fs.writeFileSync(
+    path.join(configProjectsDir, `${projId}.json`),
+    JSON.stringify({
+      id: projId,
+      name: 'field-finder',
+      projectResources: {
+        resources: [{ gitFolder: { folderUri: 'file:///Users/test/ChatGPT/field-finder', defaultBranch: 'main' } }],
+      },
+      environments: {
+        environments: [
+          {
+            id: 'env-1',
+            name: 'refactor_scraping_architecture',
+            resources: { resources: [{ folderUri: 'file:///Users/test/.gemini/antigravity/worktrees/field-finder/refactor_scraping_architecture' }] },
+          },
+        ],
+      },
+    }),
+  );
+
+  const convId = '0cd0a3eb-f78e-4d35-b4b0-bdd616662467';
+  fs.writeFileSync(
+    path.join(annotationsDir, `${convId}.pbtxt`),
+    'title:"Admin Dashboard Architecture Redesign"  last_user_view_time:{seconds:1794306123}\n',
+  );
+
+  const dbPath = path.join(agyDir, 'conversation_summaries.db');
+  const db = new DatabaseSync(dbPath);
+  db.exec(`
+    CREATE TABLE conversation_summaries (
+      conversation_id text PRIMARY KEY,
+      title text NOT NULL DEFAULT "",
+      preview text NOT NULL DEFAULT "",
+      step_count integer NOT NULL DEFAULT 0,
+      last_modified_time datetime NOT NULL,
+      workspace_uris text NOT NULL,
+      status text NOT NULL DEFAULT "",
+      project_id text NOT NULL DEFAULT "",
+      agent_name text NOT NULL DEFAULT "",
+      killed numeric NOT NULL DEFAULT 0,
+      not_fully_idle numeric NOT NULL DEFAULT 0,
+      last_user_input_time datetime NOT NULL
+    );
+  `);
+  db.prepare(`
+    INSERT INTO conversation_summaries (conversation_id, title, preview, step_count, last_modified_time, workspace_uris, status, project_id, agent_name, killed, not_fully_idle, last_user_input_time)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    convId,
+    'Admin Dashboard Architecture Redesign',
+    'スクレイピングの高速化を行いました',
+    12,
+    '2026-11-10 10:19:15+00:00',
+    JSON.stringify(['file:///Users/test/.gemini/antigravity/worktrees/field-finder/refactor_scraping_architecture']),
+    'CASCADE_RUN_STATUS_IDLE',
+    projId,
+    '',
+    0,
+    0,
+    '2026-11-10 10:18:00+00:00',
+  );
+  db.close();
+
+  const { sessions } = await listAntigravitySessions(agyDir);
+  assert.equal(sessions.length, 1);
+  const s = sessions[0];
+  assert.equal(s.nativeId, convId);
+  assert.equal(s.title, 'Admin Dashboard Architecture Redesign');
+  assert.equal(s.project, 'field-finder');
+  assert.equal(s.branch, 'refactor_scraping_architecture');
+  assert.equal(s.cwd, '/Users/test/.gemini/antigravity/worktrees/field-finder/refactor_scraping_architecture');
+  assert.equal(s.surface, 'ide');
+});
+
 test('UI バンドルにマルチエージェントメタデータと利用面バッジ・動的 AI Apps フィルタが含まれる', () => {
   const html = boardHtml();
   assert.match(html, /AGENT_META/);

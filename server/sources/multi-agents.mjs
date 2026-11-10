@@ -94,6 +94,63 @@ function parseMarkdownChecklist(mdText) {
   return steps.length ? steps : null;
 }
 
+function fileUriToPath(uri) {
+  if (!uri || typeof uri !== 'string') return null;
+  if (uri.startsWith('/')) return uri;
+  try {
+    const parsed = new URL(uri);
+    return decodeURIComponent(parsed.pathname);
+  } catch {
+    return decodeURIComponent(uri.replace(/^[a-z0-9+-.]+:\/\/[^/]+/i, ''));
+  }
+}
+
+async function readAnnotationTitle(annotationPath) {
+  if (!exists(annotationPath)) return null;
+  try {
+    const text = await readText(annotationPath, 4096);
+    const m = /title:\s*"([^"]+)"/.exec(text);
+    return m ? m[1].trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadAntigravityProjects(configProjectsDir) {
+  const projects = new Map();
+  if (!configProjectsDir || !exists(configProjectsDir)) return projects;
+  try {
+    const files = await listDir(configProjectsDir);
+    for (const f of files) {
+      if (!f.isFile() || !f.name.endsWith('.json')) continue;
+      const filePath = path.join(configProjectsDir, f.name);
+      try {
+        const data = await readJson(filePath);
+        if (!data || !data.id) continue;
+        const mainUri = data.projectResources?.resources?.[0]?.gitFolder?.folderUri || null;
+        const mainCwd = fileUriToPath(mainUri);
+        const envs = new Map();
+        if (Array.isArray(data.environments?.environments)) {
+          for (const env of data.environments.environments) {
+            const envUri = env.resources?.resources?.[0]?.folderUri || null;
+            const envPath = fileUriToPath(envUri);
+            if (env.id) envs.set(env.id, { id: env.id, name: env.name, path: envPath });
+            if (env.name) envs.set(env.name, { id: env.id, name: env.name, path: envPath });
+          }
+        }
+        projects.set(data.id, {
+          id: data.id,
+          name: data.name || path.basename(filePath, '.json'),
+          mainCwd,
+          defaultBranch: data.projectResources?.resources?.[0]?.gitFolder?.defaultBranch || 'main',
+          environments: envs,
+        });
+      } catch {}
+    }
+  } catch {}
+  return projects;
+}
+
 // ============================================================================
 // 1. Antigravity IDE / Brain reader (agent: 'antigravity')
 // ============================================================================
@@ -101,16 +158,25 @@ export async function listAntigravitySessions(rawOpts = {}) {
   const opts = typeof rawOpts === 'string' ? { antigravityDir: rawOpts } : rawOpts || {};
   const host = opts.host || LOCAL_HOST;
   const roots = resolveSourceDir(opts.antigravityDir || opts.dir, 'CANBAN_ANTIGRAVITY_DIR', [
-    path.join(os.homedir(), '.gemini', 'antigravity', 'brain'),
+    path.join(os.homedir(), '.gemini', 'antigravity'),
   ]);
   const sessions = [];
+  const seenIds = new Set();
+
   for (const root of roots) {
-    const brainDir = exists(path.join(root, 'brain')) ? path.join(root, 'brain') : root;
-    if (!exists(brainDir)) continue;
-    const convIds = await listSubdirs(brainDir);
-    for (const convId of convIds) {
-      if (convId.startsWith('.')) continue;
+    const agyRoot = root.endsWith('brain') ? path.dirname(root) : root;
+    const brainDir = exists(path.join(agyRoot, 'brain')) ? path.join(agyRoot, 'brain') : (exists(root) ? root : null);
+    const csDbPath = path.join(agyRoot, 'conversation_summaries.db');
+    const annotationsDir = path.join(agyRoot, 'annotations');
+    const projectsDir = path.join(path.dirname(agyRoot), 'config', 'projects');
+
+    const projectMap = await loadAntigravityProjects(projectsDir);
+
+    // Helper to read conversation brain data (transcript & task.md)
+    async function readBrainData(convId) {
+      if (!brainDir) return null;
       const convPath = path.join(brainDir, convId);
+      if (!exists(convPath)) return null;
       const logDir = path.join(convPath, '.system_generated', 'logs');
       const transcriptPath = exists(path.join(logDir, 'transcript.jsonl'))
         ? path.join(logDir, 'transcript.jsonl')
@@ -119,64 +185,148 @@ export async function listAntigravitySessions(rawOpts = {}) {
           : exists(path.join(convPath, 'transcript.jsonl'))
             ? path.join(convPath, 'transcript.jsonl')
             : null;
-      if (!transcriptPath) continue;
-      const st = await stat(transcriptPath);
-      if (!st) continue;
 
       let firstPrompt = '';
       let lastPrompt = '';
       let lastMessage = '';
-      let cwd = null;
-      let createdAt = st.birthtimeMs || st.mtimeMs;
-      let updatedAt = st.mtimeMs;
+      let detectedCwd = null;
       let turns = 0;
       let lastStep = null;
       let model = 'gemini';
+      let transcriptUpdatedAt = 0;
 
-      for await (const step of readJsonLines(transcriptPath)) {
-        if (!step || typeof step !== 'object') continue;
-        lastStep = step;
-        const ts = toMs(step.created_at, 0);
-        if (ts) {
-          if (!turns && step.step_index === 0) createdAt = ts;
-          if (ts > updatedAt) updatedAt = ts;
-        }
-        if (step.model && typeof step.model === 'string') model = step.model;
-        if (step.type === 'USER_INPUT' || step.source === 'USER_EXPLICIT') {
-          const detectedCwd = extractAntigravityCwd(step.content);
-          if (detectedCwd) cwd = detectedCwd;
-          const clean = extractAntigravityUserText(step.content);
-          if (clean) {
-            if (!firstPrompt) firstPrompt = clean;
-            lastPrompt = clean;
-            turns++;
-          }
-        } else if (step.type === 'PLANNER_RESPONSE' || step.source === 'MODEL') {
-          if (typeof step.content === 'string' && step.content.trim()) {
-            lastMessage = step.content.trim();
+      if (transcriptPath) {
+        const st = await stat(transcriptPath);
+        if (st) transcriptUpdatedAt = st.mtimeMs;
+        for await (const step of readJsonLines(transcriptPath)) {
+          if (!step || typeof step !== 'object') continue;
+          lastStep = step;
+          const ts = toMs(step.created_at, 0);
+          if (ts && ts > transcriptUpdatedAt) transcriptUpdatedAt = ts;
+          if (step.model && typeof step.model === 'string') model = step.model;
+          if (step.type === 'USER_INPUT' || step.source === 'USER_EXPLICIT') {
+            const cwdFromStep = extractAntigravityCwd(step.content);
+            if (cwdFromStep) detectedCwd = cwdFromStep;
+            const clean = extractAntigravityUserText(step.content);
+            if (clean) {
+              if (!firstPrompt) firstPrompt = clean;
+              lastPrompt = clean;
+              turns++;
+            }
+          } else if (step.type === 'PLANNER_RESPONSE' || step.source === 'MODEL') {
+            if (typeof step.content === 'string' && step.content.trim()) {
+              lastMessage = step.content.trim();
+            }
           }
         }
       }
 
-      // Inspect artifacts (task.md, implementation_plan.md, walkthrough.md) in the conversation brain directory
-      const dirEntries = await listDir(convPath);
-      const artifacts = dirEntries
-        .filter((e) => e.isFile() && e.name.endsWith('.md'))
-        .map((e) => e.name);
       let planSteps = null;
       let taskHeading = '';
-      if (artifacts.includes('task.md')) {
-        try {
+      let artifacts = [];
+      try {
+        const dirEntries = await listDir(convPath);
+        artifacts = dirEntries
+          .filter((e) => e.isFile() && e.name.endsWith('.md'))
+          .map((e) => e.name);
+        if (artifacts.includes('task.md')) {
           const taskText = await readText(path.join(convPath, 'task.md'), 32 * 1024);
           planSteps = parseMarkdownChecklist(taskText);
           const hMatch = /^#\s+(.+)$/m.exec(taskText);
           if (hMatch) taskHeading = hMatch[1].trim();
-        } catch {}
+        }
+      } catch {}
+
+      return {
+        convPath,
+        transcriptPath,
+        firstPrompt,
+        lastPrompt,
+        lastMessage,
+        detectedCwd,
+        turns,
+        lastStep,
+        model,
+        transcriptUpdatedAt,
+        planSteps,
+        taskHeading,
+        artifacts,
+      };
+    }
+
+    // 1. Primary: load from conversation_summaries.db
+    let csRows = [];
+    if (exists(csDbPath)) {
+      try {
+        csRows = queryReadOnly(csDbPath, (db) =>
+          db
+            .prepare(`
+              SELECT conversation_id, title, preview, step_count, last_modified_time, last_user_input_time,
+                     workspace_uris, status, project_id, agent_name, killed, not_fully_idle
+              FROM conversation_summaries
+              ORDER BY last_modified_time DESC
+            `)
+            .all()
+        ) || [];
+      } catch {}
+    }
+
+    for (const row of csRows) {
+      const convId = row.conversation_id;
+      if (!convId || seenIds.has(convId)) continue;
+      seenIds.add(convId);
+
+      const brain = await readBrainData(convId);
+
+      let annoTitle = null;
+      if (exists(annotationsDir)) {
+        annoTitle = await readAnnotationTitle(path.join(annotationsDir, `${convId}.pbtxt`));
+      }
+      const dbTitle = row.title ? row.title.trim() : null;
+      const titleCandidate = annoTitle || dbTitle || brain?.taskHeading || firstLine(brain?.firstPrompt) || firstLine(row.preview) || convId;
+      const title = clip(titleCandidate, 120);
+
+      const proj = projectMap.get(row.project_id);
+      let uris = [];
+      try {
+        uris = typeof row.workspace_uris === 'string' ? JSON.parse(row.workspace_uris) : (row.workspace_uris || []);
+      } catch {}
+      const firstUri = Array.isArray(uris) && uris[0] ? uris[0] : null;
+      const wsPath = fileUriToPath(firstUri);
+
+      let cwd = wsPath || brain?.detectedCwd || proj?.mainCwd || null;
+      let branch = null;
+      if (wsPath) {
+        const wtMatch = /worktrees\/[^/]+\/([^/]+)/.exec(wsPath);
+        if (wtMatch) branch = wtMatch[1];
+      }
+      if (!branch && proj && wsPath) {
+        for (const env of proj.environments.values()) {
+          if (env.path === wsPath) {
+            branch = env.name;
+            break;
+          }
+        }
+      }
+      if (!branch && proj?.defaultBranch) {
+        branch = proj.defaultBranch;
       }
 
-      if (!firstPrompt && !lastMessage && !taskHeading) continue;
-      const titleSource = taskHeading || firstLine(firstPrompt) || firstLine(lastMessage) || convId;
-      const brainName = projectName(cwd) || clip(titleSource, 40) || convId.slice(0, 8);
+      const projName = proj ? proj.name : (row.project_id && row.project_id !== 'outside-of-project' ? row.project_id.slice(0, 8) : null);
+      const displayProject = projName || (cwd ? projectName(cwd) : 'Antigravity');
+
+      const createdAt = toMs(row.last_user_input_time || row.last_modified_time, Date.now());
+      let updatedAt = toMs(row.last_modified_time, Date.now());
+      if (brain?.transcriptUpdatedAt && brain.transcriptUpdatedAt > updatedAt) {
+        updatedAt = brain.transcriptUpdatedAt;
+      }
+
+      const isRunning = row.status === 'CASCADE_RUN_STATUS_RUNNING' || Boolean(row.not_fully_idle);
+      const isKilled = Boolean(row.killed);
+
+      const firstPrompt = brain?.firstPrompt || cleanPrompt(row.preview) || null;
+      const lastPrompt = brain?.lastPrompt || firstPrompt;
+      const lastMessage = brain?.lastMessage || null;
 
       sessions.push({
         id: sessionKey('antigravity', host, convId),
@@ -185,41 +335,108 @@ export async function listAntigravitySessions(rawOpts = {}) {
         surface: 'ide',
         entrypoint: 'antigravity',
         host,
-        title: clip(titleSource, 120),
+        title,
         firstPrompt: clip(firstPrompt, 240) || null,
         lastPrompt: clip(lastPrompt, 240) || null,
         lastMessage: clip(firstLine(lastMessage), 200) || null,
-        cwd: cwd || null,
-        project: projectName(cwd) || 'Antigravity Brain',
-        branch: null,
-        model,
+        cwd,
+        project: displayProject,
+        branch,
+        model: brain?.model || 'gemini',
         reasoningEffort: null,
         createdAt: Math.round(createdAt),
         updatedAt: Math.round(updatedAt),
-        archived: false,
+        archived: isKilled,
         subagent: false,
-        turns: Math.max(1, turns),
-        sourcePath: transcriptPath,
+        turns: Math.max(1, brain?.turns || row.step_count || 1),
+        sourcePath: brain?.transcriptPath || (exists(csDbPath) ? `${csDbPath}#${convId}` : null),
         sourceMetadata: {
           antigravityBrain: makeEntityObservation({
             provider: 'antigravity',
-            scopeId: brainDir,
+            scopeId: brainDir || agyRoot,
             kind: 'brain',
             nativeId: convId,
-            name: brainName,
+            name: displayProject,
             product: 'Antigravity',
             surface: 'ide',
             cwd,
             hostId: host.id || 'local',
             updatedAt,
           }),
-          artifacts,
-          planSteps,
-          lastStepType: lastStep?.type || null,
-          lastStepStatus: lastStep?.status || null,
-          lastToolCalls: Array.isArray(lastStep?.tool_calls) ? lastStep.tool_calls : null,
+          artifacts: brain?.artifacts || [],
+          planSteps: brain?.planSteps || null,
+          lastStepType: brain?.lastStep?.type || null,
+          lastStepStatus: brain?.lastStep?.status || null,
+          lastToolCalls: Array.isArray(brain?.lastStep?.tool_calls) ? brain.lastStep.tool_calls : null,
+          status: row.status,
+          isRunning,
+          isKilled,
+          environment: branch,
+          projectId: row.project_id,
         },
       });
+    }
+
+    // 2. Fallback: inspect brain directory for any conversations not present in csDb
+    if (brainDir && exists(brainDir)) {
+      const convIds = await listSubdirs(brainDir);
+      for (const convId of convIds) {
+        if (convId.startsWith('.') || seenIds.has(convId)) continue;
+        seenIds.add(convId);
+        const brain = await readBrainData(convId);
+        if (!brain || (!brain.firstPrompt && !brain.lastMessage && !brain.taskHeading)) continue;
+
+        let annoTitle = null;
+        if (exists(annotationsDir)) {
+          annoTitle = await readAnnotationTitle(path.join(annotationsDir, `${convId}.pbtxt`));
+        }
+        const titleSource = annoTitle || brain.taskHeading || firstLine(brain.firstPrompt) || firstLine(brain.lastMessage) || convId;
+        const cwd = brain.detectedCwd || null;
+        const brainName = projectName(cwd) || clip(titleSource, 40) || convId.slice(0, 8);
+
+        sessions.push({
+          id: sessionKey('antigravity', host, convId),
+          nativeId: convId,
+          agent: 'antigravity',
+          surface: 'ide',
+          entrypoint: 'antigravity',
+          host,
+          title: clip(titleSource, 120),
+          firstPrompt: clip(brain.firstPrompt, 240) || null,
+          lastPrompt: clip(brain.lastPrompt, 240) || null,
+          lastMessage: clip(firstLine(brain.lastMessage), 200) || null,
+          cwd,
+          project: projectName(cwd) || 'Antigravity',
+          branch: null,
+          model: brain.model || 'gemini',
+          reasoningEffort: null,
+          createdAt: Math.round(brain.transcriptUpdatedAt || Date.now()),
+          updatedAt: Math.round(brain.transcriptUpdatedAt || Date.now()),
+          archived: false,
+          subagent: false,
+          turns: Math.max(1, brain.turns),
+          sourcePath: brain.transcriptPath,
+          sourceMetadata: {
+            antigravityBrain: makeEntityObservation({
+              provider: 'antigravity',
+              scopeId: brainDir,
+              kind: 'brain',
+              nativeId: convId,
+              name: brainName,
+              product: 'Antigravity',
+              surface: 'ide',
+              cwd,
+              hostId: host.id || 'local',
+              updatedAt: brain.transcriptUpdatedAt,
+            }),
+            artifacts: brain.artifacts,
+            planSteps: brain.planSteps,
+            lastStepType: brain.lastStep?.type || null,
+            lastStepStatus: brain.lastStep?.status || null,
+            lastToolCalls: Array.isArray(brain.lastStep?.tool_calls) ? brain.lastStep.tool_calls : null,
+          },
+        });
+      }
     }
   }
   return { sessions, error: null };
@@ -426,16 +643,6 @@ export async function listGeminiSessions(rawOpts = {}) {
 // ============================================================================
 // 3. Cursor IDE & CLI reader (agent: 'cursor')
 // ============================================================================
-function fileUriToPath(uri) {
-  if (!uri || typeof uri !== 'string') return null;
-  if (uri.startsWith('/')) return uri;
-  if (!uri.startsWith('file://')) return null;
-  try {
-    return decodeURIComponent(new URL(uri).pathname);
-  } catch {
-    return uri.replace(/^file:\/\//, '');
-  }
-}
 
 export async function listCursorSessions(rawOpts = {}, extraWsDir = null) {
   const opts = typeof rawOpts === 'string' ? { cursorHome: rawOpts, cursorWorkspaceDir: extraWsDir } : rawOpts || {};

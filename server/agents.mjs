@@ -60,9 +60,16 @@ export const AGENTS = {
   antigravity: {
     label: 'Antigravity',
     app: 'Antigravity',
-    cli: (s) => `agy ${shq(s.cwd || '.')}`,
+    cli: (s) => (s.nativeId ? `agy --conversation ${shq(s.nativeId)}` : `agy ${shq(s.cwd || '.')}`),
     desktop(s) {
       if (s.host && !s.host.local) return null;
+      if (s.nativeId) {
+        return {
+          url: `antigravity://conversation/${encodeURIComponent(s.nativeId)}`,
+          exact: true,
+          label: 'Antigravity で開く',
+        };
+      }
       if (s.cwd) {
         return {
           url: `antigravity://file${s.cwd.startsWith('/') ? s.cwd : `/${s.cwd}`}`,
@@ -70,11 +77,7 @@ export const AGENTS = {
           label: 'Antigravity で開く',
         };
       }
-      return {
-        url: `antigravity://conversation/${encodeURIComponent(s.nativeId)}`,
-        exact: true,
-        label: 'Antigravity で開く',
-      };
+      return { url: 'antigravity:', exact: false, label: 'Antigravity で開く' };
     },
   },
   cursor: {
