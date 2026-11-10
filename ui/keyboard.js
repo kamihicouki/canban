@@ -90,7 +90,10 @@ function refreshShortcutHints() {
   if (upper) entries = [];
   else if (inCard && input.closest('.term-host')) entries = [['Shift+Esc', 'カードのキーへ戻る'], [`${modKey}K`, 'コマンド']];
   else if (inCard && typing) entries = [
-    ...(input.closest('[data-sec="send"]') && input.closest('.prompt-composer') ? [[`${modKey}Enter`, input.closest('.pane').dataset.kind === 'task' ? 'セッション開始' : '送信']] : []),
+    ...(input.closest('[data-sec="send"]') && input.closest('.prompt-composer') ? [
+      [`${modKey}Enter`, input.closest('.pane').dataset.kind === 'task' ? 'セッション開始' : '送信'],
+      ['Alt+M', '音声入力'],
+    ] : []),
     ['Esc', '入力を抜ける'], [`${modKey}K`, 'コマンド'],
   ];
   else if (inCard && panes[0]?.kind === 'view') entries = [[{ analytics: 'a', usage: 'u', orbit: 'Shift+O' }[openViewKind()], '閉じる'], ['r', '更新'], ...globalKeys, ['Esc', '閉じる']];
@@ -217,6 +220,7 @@ async function commandPalette() {
     ...(!laneHides('directory') ? [{ label: 'すべてのカテゴリを選ぶ', run: () => openCategoryPicker(), hint: 'Alt+C' }] : []),
     ...(!laneHides('directory') && state.filters.directory ? [{ label: `選択中のカテゴリを${categoryIsPinned(state.filters.directory) ? '固定解除' : '固定'}`, run: () => setCategoryPin(state.filters.directory), hint: '一覧内 Alt+P' }] : []),
     { label: 'Slack資料の追加ボタンへ', run: () => focusedPane()?.el.querySelector('.slack-add-prompt')?.focus(), hint: 'Alt+s' },
+    ...(document.querySelector('.prompt-mic') ? [{ label: document.querySelector('.prompt-mic.listening') ? '音声入力を停止' : '音声入力', run: () => document.querySelector('.prompt-mic')?.click(), hint: 'Alt+M' }] : []),
     ...(!paneLayer.hidden && focusedPane()?.kind !== 'view' ? [
       ...[-1, 1].filter(step => adjacentPaneList(focusedPane(), step)).map(step => {
         const p = focusedPane(), target = adjacentPaneList(p, step);

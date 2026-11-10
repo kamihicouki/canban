@@ -19,7 +19,15 @@ function promptComposer(input, { key, context, submit, placeholder, leading = []
   if (placeholder) input.placeholder = placeholder;
   const imageButton = h('button', { type: 'button', class: 'cx-ico', title: '画像を添付（貼り付け・ドロップも可）', 'aria-label': '画像を添付', html: picon('plus', 16), onclick: () => fileInput.click() });
   const skillButton = h('button', { type: 'button', class: 'cx-ico', title: 'スキルを選ぶ（$）', 'aria-label': 'スキルを選ぶ', 'aria-expanded': 'false', 'aria-controls': picker.id, text: '$', onclick: () => toggleSkills() });
-  const toolbar = h('div', { class: 'prompt-toolbar' }, imageButton, skillButton, ...leading, h('span', { class: 'grow' }), ...actions);
+  const SpeechRecognition = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
+  let recognition = null, recognizing = false;
+  const micButton = h('button', {
+    type: 'button', class: 'cx-ico prompt-mic',
+    title: SpeechRecognition ? '音声入力（Alt+M）' : '音声認識はお使いの環境でサポートされていません',
+    'aria-label': '音声入力', html: picon('mic', 16),
+    onclick: () => toggleSpeech(),
+  });
+  const toolbar = h('div', { class: 'prompt-toolbar' }, imageButton, skillButton, ...leading, h('span', { class: 'grow' }), micButton, ...actions);
   picker.append(h('div', { class: 'row' }, search, h('button', { type: 'button', class: 'icon-btn', text: '✕', 'aria-label': 'スキル選択を閉じる', onclick: () => closeSkills() })), choices);
   const box = h('div', { class: 'cx-box' }, assets, input, toolbar, picker, notice, ...inside, fileInput);
   root.append(...[box, place.length ? h('div', { class: 'cx-place' }, ...place) : null, keys?.length ? h('div', { class: 'cx-keys' }, ...keys) : null].filter(Boolean));
@@ -48,7 +56,8 @@ function promptComposer(input, { key, context, submit, placeholder, leading = []
       ...draft.skills.map(s => h('div', { class: 'prompt-skill-chip', title: s.path },
         h('span', { text: `$${s.name}` }), h('button', { type: 'button', class: 'icon-btn', text: '✕', disabled: draft.sending,
           'aria-label': `${s.name} を削除`, onclick: () => { draft.skills = draft.skills.filter(x => x.path !== s.path); paint(); } }))));
-    imageButton.disabled = skillButton.disabled = input.readOnly = draft.sending;
+    imageButton.disabled = skillButton.disabled = micButton.disabled = input.readOnly = draft.sending;
+    if (draft.sending && recognizing) stopSpeech();
     root.setAttribute('aria-busy', String(draft.sending || draft.images.some(i => i.loading)));
   }
   paintView.root = root;
@@ -128,6 +137,66 @@ function promptComposer(input, { key, context, submit, placeholder, leading = []
     if (!event.dataTransfer?.files.length) return;
     event.preventDefault(); event.stopPropagation(); root.classList.remove('drag-image'); addFiles([...event.dataTransfer.files]);
   });
+  function stopSpeech() {
+    if (recognition) {
+      try { recognition.stop(); } catch {}
+      recognition = null;
+    }
+    recognizing = false;
+    micButton.classList?.remove?.('listening');
+    micButton.innerHTML = picon('mic', 16);
+    micButton.title = SpeechRecognition ? '音声入力（Alt+M）' : '音声認識はお使いの環境でサポートされていません';
+    micButton.setAttribute?.('aria-label', '音声入力');
+    if (notice.textContent === '音声を聞き取っています…') notice.textContent = '';
+  }
+  function startSpeech() {
+    if (!SpeechRecognition) {
+      notice.textContent = 'お使いのブラウザは音声認識に対応していません';
+      return;
+    }
+    if (draft.sending) return;
+    try {
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = (typeof navigator !== 'undefined' && navigator.language) || 'ja-JP';
+      let baseText = input.value;
+      if (baseText && !baseText.endsWith(' ') && !baseText.endsWith('\n')) {
+        baseText += ' ';
+      }
+      recognition.onstart = () => {
+        recognizing = true;
+        micButton.classList?.add?.('listening');
+        micButton.innerHTML = picon('stop', 16);
+        micButton.title = '音声入力を停止（Alt+M）';
+        micButton.setAttribute?.('aria-label', '音声入力を停止');
+        notice.textContent = '音声を聞き取っています…';
+      };
+      recognition.onresult = event => {
+        let interim = '', final = '';
+        for (let i = 0; i < event.results.length; ++i) {
+          const res = event.results[i];
+          if (res.isFinal) final += res[0].transcript;
+          else interim += res[0].transcript;
+        }
+        input.value = baseText + final + (interim ? (final ? ' ' : '') + interim : '');
+        draft.text = input.value;
+        fit();
+      };
+      recognition.onerror = event => {
+        if (event.error !== 'no-speech' && event.error !== 'aborted') {
+          notice.textContent = `音声認識エラー: ${event.error}`;
+        }
+        stopSpeech();
+      };
+      recognition.onend = () => { stopSpeech(); };
+      recognition.start();
+    } catch (e) {
+      notice.textContent = `音声認識を開始できませんでした: ${e.message}`;
+      stopSpeech();
+    }
+  }
+  function toggleSpeech() { if (recognizing) stopSpeech(); else startSpeech(); }
   function closeSkills() { picker.hidden = true; search.value = ''; skillButton.setAttribute('aria-expanded', 'false'); token = null; }
   function renderChoices() {
     const query = search.value.toLowerCase().trim();
@@ -176,12 +245,25 @@ function promptComposer(input, { key, context, submit, placeholder, leading = []
     } else if (token) closeSkills();
   });
   input.addEventListener('keydown', event => {
+    if (event.altKey && (event.key === 'm' || event.key === 'M' || event.code === 'KeyM')) {
+      event.preventDefault();
+      toggleSpeech();
+      return;
+    }
+    if (event.key === 'Escape' && recognizing) {
+      event.preventDefault();
+      stopSpeech();
+      return;
+    }
     if (event.key === 'Escape' && !picker.hidden) { event.preventDefault(); event.stopPropagation(); closeSkills(); return; }
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); submit?.(); }
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.isComposing && event.keyCode !== 229) {
+      if (recognizing) stopSpeech();
+      event.preventDefault(); submit?.();
+    }
   });
   paint();
   for (const item of draft.images) if (item.id && !item.preview && !item.previewError) restoreImage(item);
-  return { root, box, toolbar, draft, contextChanged() { currentContext(); closeSkills(); paint(); },
+  return { root, box, toolbar, draft, toggleSpeech, stopSpeech, isListening: () => recognizing, contextChanged() { currentContext(); closeSkills(); paint(); },
     hasContent: () => !!(input.value.trim() || draft.images.length || draft.skills.length),
     payload() {
       draft.text = input.value;
@@ -190,7 +272,7 @@ function promptComposer(input, { key, context, submit, placeholder, leading = []
       return { imageIds: draft.images.map(i => i.id), skills: draft.skills.map(s => ({ ...s })) };
     },
     setSending(value) { draft.sending = value; paint(); },
-    clear() { draft.images.forEach(i => i.preview && URL.revokeObjectURL(i.preview)); draft.text = draft.baseline = input.value = input.defaultValue = ''; draft.images = []; draft.skills = []; notice.textContent = ''; closeSkills(); paint(); fit(); },
+    clear() { stopSpeech(); draft.images.forEach(i => i.preview && URL.revokeObjectURL(i.preview)); draft.text = draft.baseline = input.value = input.defaultValue = ''; draft.images = []; draft.skills = []; notice.textContent = ''; closeSkills(); paint(); fit(); },
     restore(request) {
       if (this.hasContent()) throw new Error('入力中の指示があります。先に確認してください');
       draft.text = input.value = request.prompt || ''; draft.skills = (request.skills || []).map(s => ({ ...s }));

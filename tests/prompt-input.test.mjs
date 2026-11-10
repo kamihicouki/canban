@@ -132,7 +132,7 @@ test('remote image storage and skill discovery return paths on the target host',
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-function composerHarness() {
+function composerHarness(options = {}) {
   class Element {
     constructor(tag, attrs = {}, children = []) { this.tag = tag; this.children = children.filter(Boolean); this.events = {}; this.dataset = {}; this.value = attrs.value || ''; this.isConnected = true; Object.assign(this, attrs); this.classList = { add() {}, remove() {} }; }
     append(...items) { this.children.push(...items.filter(Boolean)); }
@@ -146,7 +146,14 @@ function composerHarness() {
   let calls = [], sends = 0;
   const bridge = { async callTool(name, args) { calls.push({ name, args }); return { result: name === 'canban_prompt_skills' ? { skills: [{ name: 'demo', path: '/skills/demo/SKILL.md', description: 'demo skill' }] } : { id: 'image-id', offset: args.offset + Buffer.from(args.data, 'base64').length, complete: true } }; } };
   class Reader { readAsDataURL(blob) { blob.arrayBuffer().then(b => { this.result = `data:image/png;base64,${Buffer.from(b).toString('base64')}`; this.onload(); }); } }
-  const context = vm.createContext({ h: (tag, attrs, ...children) => new Element(tag, attrs, children), picon: () => '', bridge, URL: { createObjectURL: () => 'blob:preview', revokeObjectURL() {} }, FileReader: Reader });
+  class MockSpeechRecognition {
+    constructor() { MockSpeechRecognition.instances.push(this); this.started = false; this.stopped = false; }
+    start() { this.started = true; this.onstart?.(); }
+    stop() { this.stopped = true; this.onend?.(); }
+  }
+  MockSpeechRecognition.instances = [];
+  const win = { SpeechRecognition: MockSpeechRecognition, ...(options.globals?.window || {}) };
+  const context = vm.createContext({ h: (tag, attrs, ...children) => new Element(tag, attrs, children), picon: () => '', bridge, URL: { createObjectURL: () => 'blob:preview', revokeObjectURL() {} }, FileReader: Reader, window: win, SpeechRecognition: MockSpeechRecognition, ...options.globals });
   vm.runInContext(fs.readFileSync(new URL('../ui/prompt-composer.js', import.meta.url), 'utf8') + '\nglobalThis.create = promptComposer;', context);
   const input = new Element('textarea'); const target = { agent: 'codex', cwd: '/repo' };
   const composer = context.create(input, { key: 'test', context: () => target, submit: () => { sends++; } });
@@ -218,4 +225,44 @@ test('composer draws one Codex-style box with caller controls in its bottom row'
   assert.equal(row[2], chip); assert.equal(row.at(-1), send);
   assert.equal(c.root.children[1].class, 'cx-place'); assert.equal(c.root.children[1].children[0], where);
   assert.equal(c.root.children[2].class, 'cx-keys');
+});
+
+test('composer toggles voice input, transcribes speech, responds to Alt+M and clears on stop/submit', async () => {
+  const h = composerHarness();
+  const micBtn = h.nodes().find(e => typeof e.class === 'string' && e.class.includes('prompt-mic'));
+  assert.ok(micBtn);
+  assert.equal(micBtn['aria-label'], '音声入力');
+
+  let prevented = false;
+  await h.input.fire('keydown', { key: 'm', altKey: true, preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(h.composer.isListening(), true);
+  assert.equal(micBtn['aria-label'], '音声入力を停止');
+
+  const recognition = h.context.window.SpeechRecognition.instances.at(-1);
+  assert.ok(recognition);
+  recognition.onresult({
+    results: [
+      Object.assign([{ transcript: '音声で' }], { isFinal: true }),
+      Object.assign([{ transcript: '指示を入力' }], { isFinal: false }),
+    ]
+  });
+  assert.equal(h.input.value, '音声で 指示を入力');
+  assert.equal(h.composer.draft.text, '音声で 指示を入力');
+
+  recognition.onresult({
+    results: [
+      Object.assign([{ transcript: '音声で指示を入力' }], { isFinal: true }),
+    ]
+  });
+  assert.equal(h.input.value, '音声で指示を入力');
+
+  await h.input.fire('keydown', { key: 'm', altKey: true, preventDefault() {} });
+  assert.equal(h.composer.isListening(), false);
+  assert.equal(micBtn['aria-label'], '音声入力');
+
+  h.composer.toggleSpeech();
+  assert.equal(h.composer.isListening(), true);
+  h.composer.clear();
+  assert.equal(h.composer.isListening(), false);
 });
