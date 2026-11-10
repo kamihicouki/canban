@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.29.61 — 2026-11-10
+
+- マルチエージェント（Gemini CLI / Antigravity / Cursor / ChatGPT / Grok）対応と横断UIの改良
+
 ## 0.29.60 — 2026-11-10
 
 - プロンプト入力欄にWeb Speech APIによる音声入力（Alt+M）を追加

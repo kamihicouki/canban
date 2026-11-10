@@ -11,7 +11,7 @@ function inboxRow(x) {
   const row = h('article', { class: 'card irow', tabindex: 0, role: 'option', 'data-card-id': card.id, 'data-life': lifeOf(card), 'data-day': daysAgo(card.updatedAt), 'aria-selected': String(state.inbox.sel === card.id), title: card.title },
     faceGlyph(card.status, card.statusKnown),
     h('div', { class: 'grow' }, h('div', { class: 'irow-t', text: card.title }),
-      h('div', { class: 'irow-s' }, faceWho(task ? 'task' : card.agent), dotPill(card), h('span', { class: 'ellipsis', text: (task ? card.links.length ? `${card.links.length} セッション` : 'セッションなし' : card.git?.branch || card.branch || card.directory?.name || '') }), card.unread ? h('span', { class: 'fflag fflag-new', text: '新着' }) : null)),
+      h('div', { class: 'irow-s' }, faceWho(task ? 'task' : card.agent, card), dotPill(card), h('span', { class: 'ellipsis', text: (task ? card.links.length ? `${card.links.length} セッション` : 'セッションなし' : card.git?.branch || card.branch || card.directory?.name || '') }), card.unread ? h('span', { class: 'fflag fflag-new', text: '新着' }) : null)),
     h('span', { class: 'irow-time', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }));
   const exchanges = exchangePill(card); if (exchanges) $('.irow-s', row).append(exchanges);
   row.addEventListener('click', () => inboxSelect(card.id));

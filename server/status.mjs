@@ -84,6 +84,45 @@ export function refineClaude(state, desktopStatus) {
   return state;
 }
 
+export function multiAgentRawStatus(session, records) {
+  if (session.sourceMetadata?.cursorStats?.hasBlockingPendingActions) return 'waiting';
+  let state = 'idle';
+  let waitingQuestion = false;
+  for (const r of records) {
+    if (!r || typeof r !== 'object') continue;
+    if (r.type === 'USER_INPUT' || r.source === 'USER_EXPLICIT') {
+      state = 'running';
+      waitingQuestion = false;
+      continue;
+    }
+    if (r.type === 'PLANNER_RESPONSE') {
+      if (r.status === 'ERROR') {
+        state = 'aborted';
+        waitingQuestion = false;
+        continue;
+      }
+      const tools = Array.isArray(r.tool_calls) ? r.tool_calls : [];
+      if (tools.some((tc) => /ask_question/i.test(String(tc?.name || tc?.tool_name || '')))) {
+        waitingQuestion = true;
+        state = 'waiting';
+      } else if (tools.length > 0 && !(typeof r.content === 'string' && r.content.trim())) {
+        state = 'running';
+      } else {
+        state = 'completed';
+      }
+      continue;
+    }
+    if (r.type === 'GENERIC' && state === 'running') {
+      continue;
+    }
+    const role = String(r.role || r.author?.role || r.sender || r.type || '').toLowerCase();
+    if (role === 'user' || role === 'human') state = 'running';
+    else if (role === 'assistant' || role === 'model' || role === 'agent' || role === 'bot' || role === 'gemini' || role === 'grok') state = 'completed';
+  }
+  if (waitingQuestion) return 'waiting';
+  return state;
+}
+
 // ---- local sessions -------------------------------------------------------
 const cache = new Map(); // path -> { mtimeMs, size, desktopStatus, raw, activity, signals }
 const sigAcc = new Map(); // path -> { offset, acc }: signals folded up to `offset`
@@ -115,16 +154,32 @@ export async function localStatus(session, now = Date.now()) {
   session.signals = null;
   session.lastSaid = null;
   if (!session.sourcePath || (session.updatedAt || 0) < now - RECENT_MS) return 'idle';
-  const st = await stat(session.sourcePath);
+  const realFile = String(session.sourcePath).split('#')[0];
+  const st = await stat(realFile);
   if (!st) return 'idle';
   let hit = cache.get(session.sourcePath);
   if (!hit || hit.mtimeMs !== st.mtimeMs || hit.size !== st.size || hit.desktopStatus !== session.desktopStatus) {
     const tail = await readLines(session.sourcePath, { tailBytes: TAIL_BYTES });
     const { records } = tail;
-    const raw = session.agent === 'codex' ? codexRawStatus(records) : claudeRawStatus(records, session.desktopStatus);
+    const raw = session.agent === 'codex'
+      ? codexRawStatus(records)
+      : session.agent === 'claude'
+        ? claudeRawStatus(records, session.desktopStatus)
+        : multiAgentRawStatus(session, records);
     const items = itemsFor(session.agent, records.slice(-200), {});
     const activity = raw === 'running' || raw === 'waiting' ? activityOf(items) : null;
     const signals = await signalsOf(session, tail);
+    if (session.sourceMetadata?.planSteps?.length && !signals.plan) {
+      const steps = session.sourceMetadata.planSteps;
+      const list = steps.map((x) => ({ t: String(x.step || '').slice(0, 160), s: x.status === 'completed' ? 'done' : x.status === 'in_progress' ? 'doing' : 'todo' }));
+      const doing = steps.find((x) => x.status === 'in_progress');
+      signals.plan = {
+        done: list.filter((x) => x.s === 'done').length,
+        total: list.length,
+        current: doing ? String(doing.step || '').slice(0, 160) : null,
+        steps: list.slice(0, 12),
+      };
+    }
     hit = { mtimeMs: st.mtimeMs, size: st.size, desktopStatus: session.desktopStatus, raw, activity, signals, lastSaid: lastSaidOf(items) };
     cache.set(session.sourcePath, hit);
   }

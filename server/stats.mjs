@@ -3,6 +3,7 @@
 import { resolveDirectory } from './store.mjs';
 import { matchesDotScope } from './sources/codex-dots.mjs';
 import { accountName } from './accounts.mjs';
+import { AGENTS } from './agents.mjs';
 
 const DAY = 86400e3;
 
@@ -86,12 +87,15 @@ export function computeStats(state, sessions, { days = 30, agent = 'all', host =
       tokens: inRange.reduce((n, s) => n + (s.tokens || 0), 0),
       codex: inRange.filter((s) => s.agent === 'codex').length,
       claude: inRange.filter((s) => s.agent === 'claude').length,
+      byAgent: Object.fromEntries(
+        Object.keys(AGENTS).map((ag) => [ag, inRange.filter((s) => s.agent === ag).length])
+      ),
     },
     daily,
     projects: breakdown(inRange, (s) => s.project, 12),
     directories: breakdown(inRange, (s) => dirOf(s)?.name || 'カテゴリ無し', 12),
     hosts: breakdown(inRange, (s) => (s.host?.local === false ? s.host.label : 'このマシン'), 12),
-    agents: breakdown(inRange, (s) => (s.agent === 'codex' ? 'Codex' : 'Claude Code'), 5),
+    agents: breakdown(inRange, (s) => AGENTS[s.agent]?.label || s.agent, 10),
     accounts: breakdown(inRange, (s) => (s.account ? accountName(s.account, state.settings.accounts?.labels) : null), 12),
     lists: lists.map(({ dwell, ...l }) => ({ ...l, medianDwellMs: median(dwell) })),
     cycle: {

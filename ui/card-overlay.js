@@ -2,8 +2,16 @@
 // Only a press that starts and ends on the backdrop closes the card, and not the same press that just closed a popover.
 let backdropDown = false;
 const onBackdrop = (e) => !paneDocked() && !e.target.closest('.pane, .pane-bar, .exchange-trail-bar, .exchange-stack-peek, .popover');
-paneLayer.addEventListener('pointerdown', e => { backdropDown = onBackdrop(e) && Date.now() - popoverClosedAt > 300; });
+paneLayer.addEventListener('pointerdown', e => {
+  backdropDown = onBackdrop(e) && Date.now() - popoverClosedAt > 300;
+  const paneEl = e.target.closest?.('.pane');
+  if (paneEl && !paneEl.contains(document.activeElement) && !e.target.closest?.('button, input, textarea, select, a, summary, [tabindex]')) {
+    paneEl.focus({ preventScroll: true });
+  }
+  if (paneEl) queueMicrotask(() => voiceMode.sync());
+});
 paneLayer.addEventListener('click', e => { if (backdropDown && onBackdrop(e)) closeCards(); backdropDown = false; });
+document.addEventListener('focusin', () => queueMicrotask(() => voiceMode.sync()));
 document.body.append(paneLayer);
 const panes = []; // the cards on the layer in the order they sit: a task first, then the sessions linked to it
 const paneCache = new Map(); // cards that are no longer shown keep their DOM, and whatever is typed in it, until they are opened again
@@ -120,6 +128,7 @@ function showCards(ids, { dock } = {}) {
   if (timelineOn() && cardKind(ids[0]) !== 'view') markInboxSel(ids[0]);
   workspace.syncShell(); kickLive();
   if (wasHidden) paneStage.scrollLeft = 0;
+  queueMicrotask(() => voiceMode.sync());
 }
 // On the 時間軸, Esc puts a card opened large back on the right of the list instead of closing it;
 // `dock: false` closes it all the same (archived, deleted).
@@ -138,6 +147,7 @@ function closeCards({ dock = true } = {}) {
   if (docked) state.inbox.sel = null; // the next drawing of the 時間軸 docks its first card
   else refocus(back); // refocus() finds a card the board has re-rendered since by its id
   if (timelineOn()) queueMicrotask(syncDockedCard);
+  queueMicrotask(() => voiceMode.sync());
 }
 // Between the 時間軸's right side and the board: the same cards, drafts and scroll, only the place changes.
 function setCardsDocked(dock) {
@@ -797,7 +807,7 @@ function renderPane(p, d) {
     d.parentId ? h('div', { class: 'msg' }, h('button', { class: 'link-btn', text: '↑ 親セッションを開く', onclick: () => openCard(d.parentId) })) : null,
     d.sameBranch && d.sameBranch.length ? h('div', { class: 'sub-h', text: `同じブランチのセッション（${d.sameBranch.length}）` }) : null,
     ...(d.sameBranch || []).map((c) => h('button', { class: 'sub-row', onclick: () => openCard(c.id) },
-      h('span', { class: `sdot s-${c.status}` }), h('span', { class: `badge ${c.agent}`, text: c.agent === 'codex' ? 'Codex' : 'Claude' }),
+      h('span', { class: `sdot s-${c.status}` }), h('span', { class: `badge ${c.agent}`, text: agentLabel(c.agent) }),
       h('span', { class: 'ellipsis grow', text: c.title }), h('span', { class: 'muted', text: relTime(c.updatedAt) }))),
   ].filter(Boolean);
 
@@ -805,7 +815,8 @@ function renderPane(p, d) {
   const secs = {};
   secs.breadcrumb = { nodes: [cardCrumb(listSel, d.task)] };
   secs.title = { nodes: [h('h2', { text: s.title, title: s.title })] };
-  secs.status = { nodes: [h('div', { class: 'sub row' }, h('span', { class: `badge ${s.agent}`, text: s.agent === 'codex' ? 'Codex' : 'Claude' }),
+  secs.status = { nodes: [h('div', { class: 'sub row' }, h('span', { class: `badge ${s.agent}`, text: agentLabel(s.agent) }),
+    cardSurface(s) ? h('span', { class: 'pill', title: SURFACE_META[cardSurface(s)]?.title || '', text: SURFACE_META[cardSurface(s)]?.label || cardSurface(s) }) : null,
     s.host ? h('span', { class: 'host-chip', text: s.host.label }) : null,
     h('span', { class: 'row pane-status' }, h('span', { class: `sdot s-${s.status || 'idle'}` }), s.statusKnown === false ? '状態未取得' : STATUS_LABELS[s.status || 'idle']), h('span', { class: 'pill viewer-pill viewers', hidden: true }))] };
   secs.actions = { nodes: sessionCardActions(p, card) };
@@ -817,7 +828,7 @@ function renderPane(p, d) {
   secs.labels = { nodes: [labelWrap], extra: h('button', { class: 'link-btn', 'data-pane-key': 'l', text: '編集', onclick: e => labelPicker(e.currentTarget, s.id, card, paintLabels) }) };
   secs.memo = { nodes: [note] };
   secs.detail = { nodes: [sourceDetails(s), h('dl', { class: 'kv' },
-    ...kv('AI App', s.agent === 'codex' ? 'Codex' : 'Claude Code'),
+    ...kv('AI App', `${agentAppLabel(s.agent)}${cardSurface(s) ? `（${SURFACE_META[cardSurface(s)]?.label || cardSurface(s)}）` : ''}`),
     ...kv('マシン', s.sourceKind === 'codex-cloud' ? 'Codex Cloud' : s.host ? `${s.host.label}（SSH: ${s.host.alias}）` : 'このマシン'),
     ...(s.dot ? kv('dot', dotTitle(s)) : []),
     ...(s.cloud ? kv('保存済み情報の更新', s.cloud.cachedAt ? fmtDate(s.cloud.cachedAt) : '時刻不明') : []),

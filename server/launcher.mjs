@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { loginBrowsers, openLoginBrowser } from './login-browsers.mjs';
 
-const ALLOWED_SCHEMES = new Set(['codex:', 'claude:']);
+const ALLOWED_SCHEMES = new Set(['codex:', 'claude:', 'cursor:', 'antigravity:', 'chatgpt:']);
 
 // An app started by "open" inherits this process's environment (seen 2026-10-16: Claude
 // Desktop and every session in it got CANBAN_CLIENT=canban-chrome from the Chrome host).

@@ -51,6 +51,61 @@ export const AGENTS = {
       };
     },
   },
+  gemini: {
+    label: 'Gemini CLI',
+    app: 'Gemini',
+    cli: (s) => (s.nativeId ? `gemini --resume ${shq(s.nativeId)}` : 'gemini'),
+    desktop: () => null,
+  },
+  antigravity: {
+    label: 'Antigravity',
+    app: 'Antigravity',
+    cli: (s) => `agy ${shq(s.cwd || '.')}`,
+    desktop(s) {
+      if (s.host && !s.host.local) return null;
+      if (s.cwd) {
+        return {
+          url: `antigravity://file${s.cwd.startsWith('/') ? s.cwd : `/${s.cwd}`}`,
+          exact: false,
+          label: 'Antigravity で開く',
+        };
+      }
+      return {
+        url: `antigravity://conversation/${encodeURIComponent(s.nativeId)}`,
+        exact: true,
+        label: 'Antigravity で開く',
+      };
+    },
+  },
+  cursor: {
+    label: 'Cursor',
+    app: 'Cursor',
+    cli: (s) => (s.surface === 'cli' && s.nativeId ? `cursor-agent --resume ${shq(s.nativeId)}` : `cursor ${shq(s.cwd || '.')}`),
+    desktop(s) {
+      if (s.host && !s.host.local) return null;
+      if (!s.cwd) return null;
+      return {
+        url: `cursor://file${s.cwd.startsWith('/') ? s.cwd : `/${s.cwd}`}`,
+        exact: false,
+        label: 'Cursor で開く',
+      };
+    },
+  },
+  chatgpt: {
+    label: 'ChatGPT',
+    app: 'ChatGPT',
+    cli: null,
+    desktop(s) {
+      if (s.host && !s.host.local) return null;
+      return { url: 'chatgpt://', exact: false, label: 'ChatGPT で開く' };
+    },
+  },
+  grok: {
+    label: 'Grok',
+    app: 'Grok',
+    cli: (s) => (s.nativeId ? `grok --session ${shq(s.nativeId)}` : 'grok'),
+    desktop: () => null,
+  },
 };
 
 // ---- headless turns (requests) -------------------------------------------
@@ -95,7 +150,7 @@ export function homePrefix(s) {
 export function resumeCommand(s) {
   if (isCloudSession(s)) return null;
   const agent = AGENTS[s.agent];
-  if (!agent) return null;
+  if (!agent || !agent.cli) return null;
   const inner = `${s.cwd ? `cd ${shq(s.cwd)} 2>/dev/null${s.resumePath ? ' &&' : ';'} ` : ''}${homePrefix(s)}${agent.cli(s)}`;
   return s.host && !s.host.local ? `ssh -t ${shq(s.host.alias)} ${shq(inner)}` : inner;
 }
@@ -132,12 +187,31 @@ export function newSessionLink(agent, { host, cwd, prompt, projectId = null }) {
     } else if (cwd) url.searchParams.set('folder', cwd);
     return { url: url.toString(), label: 'Claude で開始' };
   }
+  if (agent === 'antigravity' && !remote) {
+    const target = cwd ? `antigravity://file${cwd.startsWith('/') ? cwd : `/${cwd}`}` : 'antigravity://new';
+    return { url: target, label: 'Antigravity で開始' };
+  }
+  if (agent === 'cursor' && !remote && cwd) {
+    return { url: `cursor://file${cwd.startsWith('/') ? cwd : `/${cwd}`}`, label: 'Cursor で開始' };
+  }
+  if (agent === 'chatgpt' && !remote) {
+    return { url: 'chatgpt://', label: 'ChatGPT で開始' };
+  }
   return null;
 }
 
+const NEW_SESSION_BINS = {
+  codex: 'codex',
+  claude: 'claude',
+  gemini: 'gemini',
+  antigravity: 'agy',
+  cursor: 'cursor-agent',
+  grok: 'grok',
+};
+
 // prefix: homePrefix() of the account to start with (local only).
 export function newSessionCommand(agent, { host, cwd, prompt, images = [], prefix = '' }) {
-  const bin = agent === 'codex' ? 'codex' : agent === 'claude' ? 'claude' : null;
+  const bin = NEW_SESSION_BINS[agent] || null;
   if (!bin) return null;
   const imageArgs = agent === 'codex' ? images.map(i => ` --image ${shq(i.path)}`).join('') : '';
   const inner = `${cwd ? `cd ${shq(cwd)} && ` : ''}${prefix}${bin}${imageArgs}${prompt ? `${imageArgs ? ' --' : ''} ${shq(prompt)}` : ''}`;

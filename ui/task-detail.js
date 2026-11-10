@@ -35,7 +35,8 @@ function taskRelatedNodes(card) {
     h('span', { class: `sdot s-${l.status}` }),
     h('div', { class: 'task-related-copy grow' },
       h('button', { class: 'link-btn', text: l.title, title: '詳細を見る', onclick: () => selectTaskThread(cardId, l.id) }),
-      h('div', { class: 'task-related-meta' }, h('span', { class: `badge ${l.agent}`, text: l.agent === 'codex' ? 'Codex' : 'Claude' }),
+      h('div', { class: 'task-related-meta' }, h('span', { class: `badge ${l.agent}`, text: agentLabel(l.agent) }),
+        cardSurface(l) ? h('span', { class: 'pill', text: SURFACE_META[cardSurface(l)]?.short || cardSurface(l) }) : null,
         l.host ? h('span', { class: 'host-chip', text: l.host.label }) : null,
         h('span', { class: 'muted', text: `${STATUS_LABELS[l.status]}・${relTime(l.updatedAt)}` }))),
     h('div', { class: 'task-related-actions' },
@@ -43,7 +44,7 @@ function taskRelatedNodes(card) {
       h('button', { class: 'icon-btn', 'aria-label': '紐付けを解除', title: '紐付けを解除', html: picon('close', 12),
         onclick: () => act('canban_unlink_session', { taskId: cardId, sessionId: l.id }, { okMsg: '紐付けを解除しました' }).then(() => openCard(cardId)) }))));
   const pending = card.pending.length ? [h('div', { class: 'msg' },
-    card.pending.map((x) => `${x.expired ? '⚠ 見つかりません' : '⏳ 開始待ち'}: ${x.agent === 'codex' ? 'Codex' : 'Claude'}（${relTime(x.startedAt)}）`).join(' / '), ' ',
+    card.pending.map((x) => `${x.expired ? '⚠ 見つかりません' : '⏳ 開始待ち'}: ${agentLabel(x.agent)}（${relTime(x.startedAt)}）`).join(' / '), ' ',
     h('button', { class: 'link-btn', text: '取り消す', onclick: () => act('canban_clear_pending', { taskId: cardId }).then(() => openCard(cardId)) }))] : [];
   const more = total > TASK_SESSIONS_MAX ? [h('p', { class: 'muted task-related-more', text: `横に並べるのは ${TASK_SESSIONS_MAX} 件までです。ほかの会話はここから個別に開けます。` })] : [];
   return [...(rows.length ? rows : [h('p', { class: 'muted', text: 'なし' })]), ...pending, ...more];
@@ -94,7 +95,13 @@ async function loadTask(p, found) {
   // --- start a new session
   const t = { ...card.target, ...(card.context?.agent ? { agent: card.context.agent } : {}), ...(card.context?.host ? { hostId: card.context.host } : {}) };
   if (t.hostId && !b.hosts.some(host => !host.cloud && (host.local ? 'local' : host.id) === t.hostId)) t.hostId = 'local';
-  const agentSel = h('select', { class: 'text-input', 'aria-label': 'AI App' }, h('option', { value: 'codex', text: 'Codex' }), h('option', { value: 'claude', text: 'Claude Code' }));
+  const agentSel = h('select', { class: 'text-input', 'aria-label': 'AI App' },
+    h('option', { value: 'codex', text: 'Codex' }),
+    h('option', { value: 'claude', text: 'Claude Code' }),
+    h('option', { value: 'gemini', text: 'Gemini CLI' }),
+    h('option', { value: 'antigravity', text: 'Antigravity' }),
+    h('option', { value: 'cursor', text: 'Cursor' }),
+    h('option', { value: 'grok', text: 'Grok' }));
   agentSel.value = t.agent || 'codex';
   const hostSel = pickerButton({ title: 'マシン', value: t.hostId || 'local', stack: false,
     items: () => b.hosts.filter(x => !x.cloud).map((x) => ({ value: x.local ? 'local' : x.id, label: x.local ? 'このマシン' : `⌂ ${x.label}${x.enabled ? '' : '（読み取りオフ）'}`, keywords: x.alias || '' })),
@@ -102,7 +109,7 @@ async function loadTask(p, found) {
   // The account to start with: Claude Desktop switches to that account's signed-in profile.
   const accountFor = (agent) => [t.account, card.context?.account].find(k => k && k.split(':')[0] === agent) || '';
   const acctSel = pickerButton({ title: 'アカウント', popoverTitle: '開始するアカウント', value: accountFor(agentSel.value), stack: false, width: 340, placeholder: 'メールで検索',
-    items: () => [{ value: '', label: `${agentSel.value === 'codex' ? 'Codex' : 'Claude'} · いまのログイン`, description: 'Desktop・CLI の現在のアカウントで開始' }, ...accountItems(agentSel.value)] });
+    items: () => [{ value: '', label: `${agentLabel(agentSel.value)} · いまのログイン`, description: 'Desktop・CLI の現在のアカウントで開始' }, ...accountItems(agentSel.value)] });
   acctSel.classList.add('start-account');
   const paintAccount = () => {
     const remote = hostSel.value !== 'local';
@@ -225,7 +232,7 @@ async function loadTask(p, found) {
       rememberTaskLaunchResult(composer.draft, r);
       paintLaunchImages();
       launchNotice.textContent = r.state === 'opened' ? '開始を依頼しました。適用結果は元アプリで確認してください。' : '前回の開始結果は未確認です。同じ内容は結果を確認し、編集した内容は新しい依頼として開始します。';
-      toast(r.note || `${acctSel.value ? accountName(acctSel.value) : agentSel.value === 'codex' ? 'Codex' : 'Claude'} で開始しました。セッションが現れると自動で紐付きます`, !!r.note);
+      toast(r.note || `${acctSel.value ? accountName(acctSel.value) : agentLabel(agentSel.value)} で開始しました。セッションが現れると自動で紐付きます`, !!r.note);
       if (r.state !== 'opened') return; // unresolved launch keeps the original request for idempotent retries
       if (request.route === 'desktop' && request.imageIds?.length) { load(); return; }
       delete composer.draft.launchRequest;

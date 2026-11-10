@@ -142,8 +142,10 @@ const taskQuickAdd = {
     if (draft.startRequest) return '開始結果を確認';
     if (sessionRunsInCloud(draft)) return 'クラウドで開始';
     if (draft.route === 'desktop' && draft.agent === 'claude') return draft.desktopAccount ? `${accountName(draft.desktopAccount)} で Claude を開く` : 'Desktop アカウントを選択';
-    if (draft.route === 'terminal') return `${draft.agent === 'codex' ? 'Codex' : 'Claude Code'}を開始`;
-    return `${draft.agent === 'codex' ? 'Codex' : 'Claude'}を開く`;
+    const cliNames = { codex: 'Codex', claude: 'Claude Code', gemini: 'Gemini CLI', antigravity: 'Antigravity', cursor: 'Cursor CLI', chatgpt: 'ChatGPT', grok: 'Grok CLI' };
+    const appNames = { codex: 'Codex', claude: 'Claude', gemini: 'Gemini', antigravity: 'Antigravity', cursor: 'Cursor', chatgpt: 'ChatGPT', grok: 'Grok' };
+    if (draft.route === 'terminal') return `${cliNames[draft.agent] || draft.agent}を開始`;
+    return `${appNames[draft.agent] || draft.agent}を開く`;
   },
   chooseSessionDestination(agent, route) {
     const draft = this.sessionDraft;
@@ -161,18 +163,46 @@ const taskQuickAdd = {
     if (draft.agent !== agent) { draft.projectId = '__folder'; draft.environmentId = '__folder'; draft.sourceRef = null; }
     draft.agent = agent; draft.route = route;
     if (!draft.account?.startsWith(`${agent}:`)) draft.account = null;
-    this.mount('input[name="session-destination"]:checked');
+    this.mount('input[name="session-destination"]:checked, .session-more-apps');
   },
   sessionFields(field) {
     const draft = this.sessionDraft, board = state.board;
     const choices = [['codex', 'desktop', 'Codex', 'デスクトップ'], ['claude', 'desktop', 'Claude', 'デスクトップのCode'],
       ['codex', 'terminal', 'Codex CLI', 'ターミナル'], ['claude', 'terminal', 'Claude Code', 'ターミナル']];
+    const extraChoices = [
+      ['antigravity', 'desktop', 'Antigravity', 'IDE / Brain'],
+      ['gemini', 'terminal', 'Gemini CLI', 'ターミナル'],
+      ['cursor', 'desktop', 'Cursor', 'IDE'],
+      ['cursor', 'terminal', 'Cursor Agent', 'ターミナル'],
+      ['chatgpt', 'desktop', 'ChatGPT', 'デスクトップ'],
+      ['grok', 'terminal', 'Grok CLI', 'ターミナル'],
+    ];
+    const activeExtra = extraChoices.find(([a, r]) => draft.agent === a && draft.route === r);
+    const moreBtn = h('button', {
+      type: 'button',
+      class: `btn session-more-apps${activeExtra ? ' active' : ''}`,
+      'aria-pressed': String(!!activeExtra),
+      text: activeExtra ? `選択中: ${activeExtra[2]}（${activeExtra[3]}） ▾` : 'ほかの AI App で開始…',
+      onclick: e => {
+        if (draft.startRequest || draft.submitting) return;
+        picker(e.currentTarget, {
+          title: 'ほかの AI App で開始',
+          selected: activeExtra ? `${activeExtra[0]}-${activeExtra[1]}` : '',
+          items: extraChoices.map(([a, r, lbl, dtl]) => ({ value: `${a}:${r}`, label: `${lbl} · ${dtl}`, keywords: `${a} ${r} ${lbl} ${dtl}` })),
+          onPick: v => {
+            const [a, r] = v.split(':');
+            this.chooseSessionDestination(a, r);
+          },
+        });
+      },
+    });
     const destinations = h('fieldset', { class: 'session-destination' }, h('legend', { class: 'creation-label', text: 'AI App・開く方法' }),
       h('div', { class: 'session-destinations' }, choices.map(([agent, route, label, detail]) => {
         const radio = h('input', { type: 'radio', name: 'session-destination', value: `${agent}-${route}`, checked: draft.agent === agent && draft.route === route,
           onchange: () => this.chooseSessionDestination(agent, route) });
         return h('label', { class: 'session-choice' }, radio, h('span', {}, h('strong', { text: label }), h('span', { text: detail })));
-      })));
+      })),
+      moreBtn);
     const targets = this.targets;
     applySessionTargetDefaults(draft, targets);
     draft.sourceRef = targets?.codex?.projects?.find(p => p.id === draft.projectId)?.sourceRef || null;
@@ -369,7 +399,7 @@ const taskQuickAdd = {
     }
     contextSelect('folder', '作業フォルダ', [...new Set((board.folders || []).map(f => f.name || f.cwd?.split('/').filter(Boolean).pop()).filter(Boolean))].map(name => [name, name]), 'フォルダなし');
     if (Object.hasOwn(draft.context, 'section')) contextSelect('section', '旧セクション（保存済み）', [], 'なし');
-    contextSelect('agent', 'AI App', [['codex', 'Codex'], ['claude', 'Claude Code']], '指定なし');
+    contextSelect('agent', 'AI App', [['codex', 'Codex'], ['claude', 'Claude Code'], ['antigravity', 'Antigravity'], ['gemini', 'Gemini CLI'], ['cursor', 'Cursor'], ['chatgpt', 'ChatGPT'], ['grok', 'Grok']], '指定なし');
     contextSelect('host', 'マシン', board.hosts.filter(host => !host.cloud).map(host => [host.local ? 'local' : host.id, host.local ? 'このマシン' : host.label]));
     contextSelect('account', 'アカウント', (board.accounts?.accounts || []).map(a => [a.key, accountName(a.key)]), 'アカウント不明');
     const summary = h('summary');
@@ -466,7 +496,8 @@ const taskQuickAdd = {
     const names = { project: '旧プロジェクト', folder: '作業フォルダ', section: '旧セクション', agent: 'AI App', host: 'マシン', account: 'アカウント' };
     return h('div', { class: 'task-context-summary' }, Object.entries(card.context || {}).map(([key, value]) => {
       let text = value || 'なし';
-      if (key === 'agent' && value) text = value === 'codex' ? 'Codex' : 'Claude Code';
+      const agentNames = { codex: 'Codex', claude: 'Claude Code', antigravity: 'Antigravity', gemini: 'Gemini CLI', cursor: 'Cursor', chatgpt: 'ChatGPT', grok: 'Grok' };
+      if (key === 'agent' && value) text = agentNames[value] || value;
       if (key === 'host' && value) text = value === 'local' ? 'このマシン' : state.board.hosts.find(h => h.id === value)?.label || value;
       if (key === 'account' && value) text = accountName(value);
       if (key === 'section' && value) text = state.board.codexSections?.find(s => s.id === value)?.name || value;

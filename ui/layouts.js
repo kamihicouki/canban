@@ -122,7 +122,7 @@ function paintHud(b) {
   layoutParts.hud.replaceChildren(head, ...live.slice(0, 12).map((c) => {
     const doing = activityText(c.activity, c.status, c.signals);
     return h('button', { class: `hud-tile${c.status === 'waiting' ? ' is-waiting' : ''}`, type: 'button', title: c.title, onclick: () => openCard(c.id) },
-      h('span', { class: 'hud-r1' }, faceGlyph(c.status), h('span', { text: STATUS_LABELS[c.status] || STATUS_LABELS.idle }), faceWho(c.agent)),
+      h('span', { class: 'hud-r1' }, faceGlyph(c.status), h('span', { text: STATUS_LABELS[c.status] || STATUS_LABELS.idle }), faceWho(c.agent, c)),
       h('span', { class: 'hud-t', text: c.title }),
       h('span', { class: 'hud-act', text: doing || relTime(c.updatedAt) }));
   }));

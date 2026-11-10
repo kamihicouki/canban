@@ -1,8 +1,48 @@
 // Shared browser boundary for the v1 compact wire model. No catalog lookups or source inference.
-const SOURCE_AXES = { codexProject: 'Codexのプロジェクト', claudeEnvironment: 'Claudeの環境', codexSection: 'Codexのセクション', claudeGroup: 'Claudeのグループ', workingFolder: '作業フォルダ' };
+const SOURCE_AXES = {
+  codexProject: 'Codexのプロジェクト',
+  claudeEnvironment: 'Claudeの環境',
+  codexSection: 'Codexのセクション',
+  claudeGroup: 'Claudeのグループ',
+  antigravityBrain: 'AntigravityのBrain',
+  geminiProject: 'Geminiのプロジェクト',
+  cursorWorkspace: 'Cursorのワークスペース',
+  chatgptProject: 'ChatGPTのプロジェクト',
+  grokWorkspace: 'Grokのワークスペース',
+  workingFolder: '作業フォルダ',
+};
+const SOURCE_PROVIDER_LABELS = {
+  codex: 'Codex',
+  claude: 'Claude',
+  antigravity: 'Antigravity',
+  gemini: 'Gemini',
+  cursor: 'Cursor',
+  chatgpt: 'ChatGPT',
+  grok: 'Grok',
+};
 const sourceRefKey = ref => ['provider', 'identityDomain', 'scopeId', 'kind', 'nativeId'].every(k => typeof ref?.[k] === 'string' && ref[k].trim()) ? JSON.stringify([1, ref.provider, ref.identityDomain, ref.scopeId, ref.kind, ref.nativeId]) : null;
-const sourceCategoryRelation = ref => ({ 'codex:project': 'memberOf', 'codex:section': 'displayedIn', 'claude:group': 'displayedIn', 'claude:environment': 'startedWith' })[`${ref?.provider}:${ref?.kind}`];
-const sourceAxis = ref => ({ 'codex:project': 'codexProject', 'codex:section': 'codexSection', 'claude:environment': 'claudeEnvironment', 'claude:group': 'claudeGroup' })[`${ref?.provider}:${ref?.kind}`];
+const sourceCategoryRelation = ref => ({
+  'codex:project': 'memberOf',
+  'codex:section': 'displayedIn',
+  'claude:group': 'displayedIn',
+  'claude:environment': 'startedWith',
+  'antigravity:brain': 'memberOf',
+  'gemini:project': 'memberOf',
+  'cursor:workspace': 'memberOf',
+  'chatgpt:project': 'memberOf',
+  'grok:workspace': 'memberOf',
+})[`${ref?.provider}:${ref?.kind}`];
+const sourceAxis = ref => ({
+  'codex:project': 'codexProject',
+  'codex:section': 'codexSection',
+  'claude:environment': 'claudeEnvironment',
+  'claude:group': 'claudeGroup',
+  'antigravity:brain': 'antigravityBrain',
+  'gemini:project': 'geminiProject',
+  'cursor:workspace': 'cursorWorkspace',
+  'chatgpt:project': 'chatgptProject',
+  'grok:workspace': 'grokWorkspace',
+})[`${ref?.provider}:${ref?.kind}`];
 const sourceUnknown = reason => ({ value: null, status: 'unknown', observedAt: null, sourceUpdatedAt: null, source: null, reason });
 function expandUiSourceView(wire) {
   const base = { version: 1, attributes: Object.fromEntries(['codexProject', 'codexSection', 'claudeGroup', 'claudeEnvironment'].map(k => [k, sourceUnknown(k === 'claudeEnvironment' ? '開始実績のReceiptは未取得です' : '元アプリの属性は未取得です')])), relations: [], workingLocations: sourceUnknown('作業場所は未取得です') };
@@ -38,7 +78,7 @@ const sourceFacetName = (facet, peers = []) => {
   return same.length > 1 ? `${name} · ${facet.ref.nativeId.slice(-8)}${same.some(p => p.ref.nativeId === facet.ref.nativeId && sourceRefKey(p.ref) !== sourceRefKey(facet.ref)) ? ` · ${facet.ref.scopeId.slice(-12)}` : ''}` : name;
 };
 const sourceFacetLabel = (facet, peers = []) => `${SOURCE_AXES[sourceAxis(facet.ref)] || '元アプリ'}: ${sourceFacetName(facet, peers)}`;
-const sourceFacetHint = facet => [facet.ref.provider === 'codex' ? 'Codex' : 'Claude', (facet.origins || []).map(o => o === 'planned' ? '開始予定' : '観測').join('・')].filter(Boolean).join(' · ');
+const sourceFacetHint = facet => [SOURCE_PROVIDER_LABELS[facet.ref.provider] || facet.ref.provider, (facet.origins || []).map(o => o === 'planned' ? '開始予定' : '観測').join('・')].filter(Boolean).join(' · ');
 const sourceFacetTitle = facet => `${sourceFacetLabel(facet)} · ${facet.ref.scopeId} · ${facet.ref.nativeId}`;
 function cardSourceRelations(card) {
   const observed = card.sourceRelations || expandUiSourceView(card.sourceView).relations;
@@ -96,7 +136,7 @@ function sourceLane(card, axis, peers = []) {
     return { id: key, name: sourceFacetName({ ref: relation.ref, name }, peers), creation: { sourceContext: [{ ref: relation.ref }] } };
   }
   const observation = expandUiSourceView(card.sourceView).attributes[axis];
-  const provider = axis.startsWith('codex') ? 'codex' : 'claude';
+  const provider = Object.keys(SOURCE_PROVIDER_LABELS).find(p => axis.startsWith(p)) || 'claude';
   const relevant = links.filter(s => !s.agent || s.agent === provider);
   const absent = card.kind === 'task' ? completeLinks && relevant.length > 0 && relevant.every(s => expandUiSourceView(s.sourceView).attributes[axis]?.status === 'absent') : observation?.status === 'absent';
   return absent ? { id: '__absent', name: 'なし（確認済み）', creation: {} } : { id: '__unknown', name: '未取得', creation: {} };

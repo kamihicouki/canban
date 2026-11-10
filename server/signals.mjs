@@ -120,8 +120,32 @@ function foldCodex(acc, o) {
   }
 }
 
+function foldMultiAgent(acc, o) {
+  if (!o || typeof o !== 'object') return;
+  if (o.model && typeof o.model === 'string') acc.model = o.model;
+  if (o.type === 'USER_INPUT' || o.source === 'USER_EXPLICIT') {
+    newTurn(acc);
+    return;
+  }
+  if (o.type === 'PLANNER_RESPONSE' && Array.isArray(o.tool_calls)) {
+    for (const tc of o.tool_calls) {
+      if (!tc) continue;
+      const name = String(tc.name || tc.tool_name || '');
+      const args = parse(tc.arguments || tc.args || tc.input || {});
+      if ((/edit_file|write_file/i.test(name) || EDIT_TOOLS.has(name)) && (args.Path || args.file_path)) {
+        acc.files.add(args.Path || args.file_path);
+      }
+      if (/ask_question/i.test(name) || WAIT_KIND[name]) {
+        acc.asks.set(tc.id || `ask-${o.step_index || 0}`, 'question');
+      }
+    }
+  } else if (o.type === 'GENERIC' && o.source === 'MODEL') {
+    // Tool result step in Antigravity clears pending non-question state if needed
+  }
+}
+
 export function foldSignals(acc, records) {
-  const fold = acc.agent === 'codex' ? foldCodex : foldClaude;
+  const fold = acc.agent === 'codex' ? foldCodex : acc.agent === 'claude' ? foldClaude : foldMultiAgent;
   for (const o of records) fold(acc, o);
   return acc;
 }

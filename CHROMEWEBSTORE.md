@@ -1,3 +1,7 @@
+## 内部実装版 0.29.61
+
+- マルチエージェント（Gemini CLI / Antigravity / Cursor / ChatGPT / Grok）対応と横断UIの改良
+
 ## 内部実装版 0.29.60
 
 - プロンプト入力欄にWeb Speech APIによる音声入力（Alt+M）を追加

@@ -7,6 +7,14 @@ import { leaderFor } from './leader.mjs';
 // Canban store into a board snapshot.
 import { listCodexSessions, codexMessagesFromRecords } from './sources/codex.mjs';
 import { listClaudeSessions, claudeMessagesFromRecords } from './sources/claude.mjs';
+import {
+  listAntigravitySessions,
+  listGeminiSessions,
+  listCursorSessions,
+  listChatGptSessions,
+  listGrokSessions,
+  multiAgentSessionMessages,
+} from './sources/multi-agents.mjs';
 import { exists, rolloutFile } from './sources/readonly.mjs';
 import { readLines, itemsFor, foldResults } from './feed.mjs';
 import { permissionFor } from './permissions.mjs';
@@ -48,10 +56,42 @@ export function dropLocalCache() {
   localCache = null;
 }
 
+export const KNOWN_AGENTS = ['codex', 'claude', 'gemini', 'antigravity', 'cursor', 'chatgpt', 'grok'];
+export const KNOWN_SURFACES = ['cli', 'desktop', 'ide', 'cloud'];
+
+export function inferSurface(s) {
+  if (s?.surface && KNOWN_SURFACES.includes(s.surface)) return s.surface;
+  if (isCloudSession(s) || s?.host?.cloud) return 'cloud';
+  if (s?.desktopSessionId || /desktop/i.test(s?.entrypoint || '') || s?.agent === 'chatgpt') return 'desktop';
+  if (/ide|antigravity|cursor-ide|vscode/i.test(s?.entrypoint || '') || s?.agent === 'antigravity') return 'ide';
+  return 'cli';
+}
+
 async function localSessions({ force = false } = {}) {
   if (!force && localCache && Date.now() - localCache.at < LOCAL_TTL_MS) return localCache.value;
-  const [codex, claude] = await Promise.all([perf.timed('codex.list', () => listCodexSessions()), perf.timed('claude.list', () => listClaudeSessions())]);
-  const value = { sessions: [...codex.sessions, ...claude.sessions], errors: [codex.error, claude.error].filter(Boolean), codexAvailable: !codex.error };
+  const [codex, claude, antigravity, gemini, cursor, chatgpt, grok] = await Promise.all([
+    perf.timed('codex.list', () => listCodexSessions()),
+    perf.timed('claude.list', () => listClaudeSessions()),
+    perf.timed('antigravity.list', () => listAntigravitySessions()),
+    perf.timed('gemini.list', () => listGeminiSessions()),
+    perf.timed('cursor.list', () => listCursorSessions()),
+    perf.timed('chatgpt.list', () => listChatGptSessions()),
+    perf.timed('grok.list', () => listGrokSessions()),
+  ]);
+  const allLocal = [
+    ...codex.sessions,
+    ...claude.sessions,
+    ...antigravity.sessions,
+    ...gemini.sessions,
+    ...cursor.sessions,
+    ...chatgpt.sessions,
+    ...grok.sessions,
+  ].map((s) => ({ ...s, surface: inferSurface(s) }));
+  const value = {
+    sessions: allLocal,
+    errors: [codex.error, claude.error, antigravity.error, gemini.error, cursor.error, chatgpt.error, grok.error].filter(Boolean),
+    codexAvailable: !codex.error,
+  };
   localCache = { at: Date.now(), value };
   return value;
 }
@@ -182,7 +222,7 @@ export function matchesTask(t, links, status, f, labelsById, dir) {
 export function normalizeFilters(f = {}) {
   const days = f.days === 0 || f.days === '0' ? 0 : Number(f.days ?? 30);
   return {
-    agent: ['codex', 'claude'].includes(f.agent) ? f.agent : 'all',
+    agent: KNOWN_AGENTS.includes(f.agent) ? f.agent : 'all',
     host: typeof f.host === 'string' && f.host ? f.host : null,
     account: typeof f.account === 'string' && f.account ? f.account : null,
     sourceFilters: normalizeSourceSelections(f.sourceFilters || []),
@@ -416,6 +456,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
     buckets.get(listId).push({
       id: s.id,
       agent: s.agent,
+      surface: inferSurface(s),
       host: s.host?.local === false ? { id: s.host.id, alias: s.host.alias, label: s.host.label } : null,
       account: s.account || null,
       home: s.home || null,
@@ -513,7 +554,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       target: t.target || null,
       launchSelection: t.launchSelection || null,
       launchReceipts: t.launchReceipts || [],
-      links: links.map((x) => ({ id: x.id, sourceView: compactSourceView(x.sourceView || sessionSourceView(x)), capabilities: compactCapabilities(capabilitiesFor({ session: x })), agent: x.agent, account: x.account || null, title: x.title, status: x.status || 'idle', statusKnown: x.statusKnown !== false, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, updatedAt: x.updatedAt })),
+      links: links.map((x) => ({ id: x.id, sourceView: compactSourceView(x.sourceView || sessionSourceView(x)), capabilities: compactCapabilities(capabilitiesFor({ session: x })), agent: x.agent, surface: inferSurface(x), account: x.account || null, title: x.title, status: x.status || 'idle', statusKnown: x.statusKnown !== false, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, updatedAt: x.updatedAt })),
       linkedSessionIds: [...(t.links || [])],
       missingLinks: (t.links || []).length - allLinks.length,
       pending: (t.pending || []).map((p) => ({ agent: p.agent, startedAt: p.startedAt, expired: now - p.startedAt > PENDING_MS })),
@@ -571,6 +612,22 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       sessions: sessions.length,
       codex: sessions.filter((s) => s.agent === 'codex').length,
       claude: sessions.filter((s) => s.agent === 'claude').length,
+      byAgent: Object.fromEntries(
+        KNOWN_AGENTS.map((ag) => {
+          const list = visible.filter((s) => s.agent === ag);
+          return [
+            ag,
+            {
+              total: list.length,
+              running: list.filter((s) => s.status === 'running').length,
+              waiting: list.filter((s) => s.status === 'waiting').length,
+            },
+          ];
+        })
+      ),
+      bySurface: Object.fromEntries(
+        KNOWN_SURFACES.map((sf) => [sf, visible.filter((s) => inferSurface(s) === sf).length])
+      ),
       shown: lists.reduce((n, l) => n + l.count, 0),
     },
     errors,
@@ -675,10 +732,14 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   let feed = null; // local: the live conversation and where canban_watch continues it
   try {
     if (host) recent = await pool.messages(host, s, messages);
-    else if (s.sourcePath && exists(rolloutFile(s.sourcePath))) {
+    else if (s.sourcePath && exists(rolloutFile(String(s.sourcePath).split('#')[0]))) {
       // One tail read serves the messages, the live feed and the permissions shown for sending.
       const { records, offset, size } = await readLines(s.sourcePath, { tailBytes: 768 * 1024 });
-      recent = s.agent === 'codex' ? codexMessagesFromRecords(records, messages) : claudeMessagesFromRecords(records, messages);
+      recent = s.agent === 'codex'
+        ? codexMessagesFromRecords(records, messages)
+        : s.agent === 'claude'
+          ? claudeMessagesFromRecords(records, messages)
+          : await multiAgentSessionMessages(s.sourcePath, messages);
       permission = permissionFor(s, records);
       const ctx = {};
       feed = { items: foldResults(itemsFor(s.agent, records, ctx)), offset, size, codexItems: !!ctx.items };
@@ -729,6 +790,13 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     messagesError: isCloudSession(s) ? '会話本文は保存済み情報に含まれていません。Codexで開いて確認してください。' : messagesError,
     feed,
     git,
-    dispatch: { ...await dispatchView(store.dir, state, cardId, permission), unavailableReason: isCloudSession(s) ? CLOUD_OPERATION_REASON : null },
+    dispatch: {
+      ...await dispatchView(store.dir, state, cardId, permission),
+      unavailableReason: isCloudSession(s)
+        ? CLOUD_OPERATION_REASON
+        : !['codex', 'claude'].includes(s.agent)
+          ? 'このエージェントへの追加依頼は Canban から直接送信できません。「再開」から元アプリまたは CLI で続けてください。'
+          : null,
+    },
   };
 }

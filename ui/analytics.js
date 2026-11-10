@@ -1,6 +1,11 @@
 // Part of board.html: included into its script by server/ui.mjs and shares its scope.
 // Analytics view
-const VIZ = { codex: '#12a381', claude: '#d46f4c' }; // validated categorical pair (light + dark)
+const VIZ = { codex: '#12a381', claude: '#d46f4c', antigravity: '#7c5cdb', gemini: '#3b82f6', cursor: '#0891b2', chatgpt: '#16a34a', grok: '#e11d48' };
+const VIZ_LABELS = { codex: 'Codex', claude: 'Claude Code', antigravity: 'Antigravity', gemini: 'Gemini CLI', cursor: 'Cursor', chatgpt: 'ChatGPT', grok: 'Grok' };
+function activeAnalyticsAgents(st) {
+  const order = ['codex', 'claude', 'antigravity', 'gemini', 'cursor', 'chatgpt', 'grok'];
+  return order.filter(a => a === 'codex' || a === 'claude' || (st?.totals?.[a] || 0) > 0);
+}
 const fmtNum = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n));
 function fmtDur(ms) {
   if (ms == null) return '—';
@@ -44,11 +49,12 @@ function dailyChart(st, tip) {
   const W = Math.max(480, Math.min(1100, $('#board').clientWidth - 72));
   const H = 220, L = 36, R = 8, T = 8, B = 26;
   const data = st.daily;
-  const max = niceMax(Math.max(1, ...data.map((d) => d.codex + d.claude)));
+  const agents = activeAnalyticsAgents(st);
+  const max = niceMax(Math.max(1, ...data.map((d) => agents.reduce((acc, a) => acc + (d[a] || 0), 0))));
   const bw = (W - L - R) / data.length;
   const barW = Math.max(3, Math.min(18, bw * 0.62));
   const y = (v) => T + (H - T - B) * (1 - v / max);
-  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'img', 'aria-label': '日別のセッション数（Codex / Claude の積み上げ）' });
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'img', 'aria-label': '日別のセッション数（AI App 別の積み上げ）' });
   for (let i = 0; i <= 4; i++) {
     const v = (max / 4) * i;
     svg.append(svgEl('line', { x1: L, x2: W - R, y1: y(v), y2: y(v), class: 'grid' }));
@@ -59,19 +65,24 @@ function dailyChart(st, tip) {
   data.forEach((d, i) => {
     const cx = L + bw * i + bw / 2;
     const x = cx - barW / 2;
-    const hCodex = (H - T - B) * (d.codex / max);
-    const hClaude = (H - T - B) * (d.claude / max);
-    const base = H - B;
-    const gap = d.codex && d.claude ? 2 : 0;
-    if (d.codex) svg.append(svgEl('path', { d: d.claude ? `M${x},${base}h${barW}v${-hCodex}h${-barW}Z` : topRounded(x, base - hCodex, barW, hCodex, 4), fill: VIZ.codex }));
-    if (d.claude) svg.append(svgEl('path', { d: topRounded(x, base - hCodex - gap - hClaude, barW, hClaude, 4), fill: VIZ.claude }));
+    const present = agents.filter(a => (d[a] || 0) > 0);
+    let cursorY = H - B;
+    present.forEach((a, idx) => {
+      const hBar = (H - T - B) * ((d[a] || 0) / max);
+      const isTop = idx === present.length - 1;
+      svg.append(svgEl('path', {
+        d: isTop ? topRounded(x, cursorY - hBar, barW, hBar, 4) : `M${x},${cursorY}h${barW}v${-hBar}h${-barW}Z`,
+        fill: VIZ[a] || VIZ.codex,
+      }));
+      cursorY -= hBar + (isTop ? 0 : 1.5);
+    });
     if (i % Math.ceil(data.length / 8) === 0 || i === data.length - 1) {
       const t = svgEl('text', { x: cx, y: H - 8, 'text-anchor': 'middle', class: 'axis' });
       t.textContent = d.date.slice(5).replace('-', '/');
       svg.append(t);
     }
     const hit = svgEl('rect', { x: L + bw * i, y: T, width: bw, height: H - T - B, fill: 'transparent', class: 'hit' });
-    hit.addEventListener('mouseenter', (e) => tip.show(e, [`${d.date}`, `Codex ${d.codex}`, `Claude ${d.claude}`, `トークン ${fmtNum(d.tokens)}`]));
+    hit.addEventListener('mouseenter', (e) => tip.show(e, [`${d.date}`, ...agents.filter(a => a === 'codex' || a === 'claude' || d[a]).map(a => `${VIZ_LABELS[a] || a} ${d[a] || 0}`), `トークン ${fmtNum(d.tokens)}`]));
     hit.addEventListener('mousemove', (e) => tip.move(e));
     hit.addEventListener('mouseleave', () => tip.hide());
     svg.append(hit);
@@ -89,13 +100,14 @@ function makeTip(host) {
 }
 function breakdownRows(rows, tip) {
   const max = Math.max(1, ...rows.map((r) => r.sessions));
+  const order = ['codex', 'claude', 'antigravity', 'gemini', 'cursor', 'chatgpt', 'grok'];
   return h('div', { class: 'hbars' }, rows.map((r) => {
     const bar = h('div', { class: 'hbar' },
-      r.codex ? h('span', { style: { width: `${(r.codex / max) * 100}%`, background: VIZ.codex } }) : null,
-      r.claude ? h('span', { style: { width: `${(r.claude / max) * 100}%`, background: VIZ.claude } }) : null);
+      ...order.map(a => r[a] ? h('span', { style: { width: `${(r[a] / max) * 100}%`, background: VIZ[a] } }) : null));
     const row = h('div', { class: 'hbar-row' }, h('span', { class: 'hbar-name ellipsis', title: r.name, text: r.name }), bar,
       h('span', { class: 'hbar-val', text: `${r.sessions} 件 · ${fmtNum(r.tokens)}` }));
-    row.addEventListener('mouseenter', (e) => tip.show(e, [r.name, `Codex ${r.codex || 0} / Claude ${r.claude || 0}`, `トークン ${r.tokens.toLocaleString()}`]));
+    const parts = order.filter(a => a === 'codex' || a === 'claude' || r[a]).map(a => `${VIZ_LABELS[a] || a} ${r[a] || 0}`).join(' / ');
+    row.addEventListener('mouseenter', (e) => tip.show(e, [r.name, parts, `トークン ${r.tokens.toLocaleString()}`]));
     row.addEventListener('mousemove', (e) => tip.move(e));
     row.addEventListener('mouseleave', () => tip.hide());
     return row;
@@ -106,14 +118,15 @@ function renderAnalytics(st, p) {
   if (!body) return;
   const page = h('div', { class: 'analytics' });
   const tip = makeTip(page);
+  const agents = activeAnalyticsAgents(st);
   const daysSeg = h('div', { class: 'seg', role: 'group', 'aria-label': '期間' }, [7, 30, 90].map((d) =>
     h('button', { 'aria-pressed': String((state.analyticsDays || 30) === d), text: `${d}日`, onclick: () => { state.analyticsDays = d; loadAnalytics(p); } })));
   const legend = h('div', { class: 'legend' },
-    h('span', {}, h('i', { style: { background: VIZ.codex } }), 'Codex'), h('span', {}, h('i', { style: { background: VIZ.claude } }), 'Claude Code'));
+    ...agents.map(a => h('span', {}, h('i', { style: { background: VIZ[a] } }), VIZ_LABELS[a] || a)));
   const tile = (label, value, sub) => h('div', { class: 'tile' }, h('div', { class: 'tile-label', text: label }), h('div', { class: 'tile-value', text: value }), sub ? h('div', { class: 'tile-sub', text: sub }) : null);
   const table = h('details', { class: 'viz-table' }, h('summary', { text: '表で見る' }),
-    h('table', {}, h('thead', {}, h('tr', {}, ['日付', 'Codex', 'Claude', 'トークン'].map((t) => h('th', { text: t })))),
-      h('tbody', {}, st.daily.map((d) => h('tr', {}, [d.date, d.codex, d.claude, d.tokens.toLocaleString()].map((v) => h('td', { text: String(v) })))))));
+    h('table', {}, h('thead', {}, h('tr', {}, ['日付', ...agents.map(a => VIZ_LABELS[a] || a), 'トークン'].map((t) => h('th', { text: t })))),
+      h('tbody', {}, st.daily.map((d) => h('tr', {}, [d.date, ...agents.map(a => d[a] || 0), d.tokens.toLocaleString()].map((v) => h('td', { text: String(v) })))))));
   const lists = h('table', { class: 'plain' },
     h('thead', {}, h('tr', {}, ['リスト', 'カード', '滞留（中央値）'].map((t) => h('th', { text: t })))),
     h('tbody', {}, st.lists.map((l) => h('tr', {},
@@ -123,11 +136,12 @@ function renderAnalytics(st, p) {
     h('span', { class: 'hbar-name', text: `${w.week.slice(5).replace('-', '/')} 週` }),
     h('div', { class: 'hbar' }, h('span', { style: { width: `${(w.count / wmax) * 100}%`, background: 'var(--c-blue)' } })),
     h('span', { class: 'hbar-val', text: `${w.count} 件` })))) : h('p', { class: 'muted', text: 'まだ完了したカードの記録がありません（カードを最後のリストへ移すと記録されます）' });
+  const totalBreakdown = agents.map(a => `${VIZ_LABELS[a] || a} ${st.totals[a] || 0}`).join(' / ');
   page.append(
     h('div', { class: 'row analytics-bar' }, h('h2', { text: '分析' }), daysSeg,
       h('span', { class: 'muted', text: `AI Apps・マシン・アカウント・${T.category}の絞り込みは、アプリバーとサイドバーで選んだ条件に従います` })),
     h('div', { class: 'tiles' },
-      tile('セッション', st.totals.sessions.toLocaleString(), `Codex ${st.totals.codex} / Claude ${st.totals.claude}`),
+      tile('セッション', st.totals.sessions.toLocaleString(), totalBreakdown),
       tile('トークン', fmtNum(st.totals.tokens), st.totals.tokens.toLocaleString()),
       tile(`「${st.lists.find((l) => l.id === st.cycle.doneListId)?.title ?? '最後のリスト'}」へ移動`, `${st.cycle.count} 件`, `直近 ${st.days} 日`),
       tile('サイクルタイム（中央値）', fmtDur(st.cycle.medianMs), '最初の配置 → 最後のリスト')),

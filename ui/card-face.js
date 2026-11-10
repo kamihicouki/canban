@@ -14,7 +14,14 @@ function faceGlyph(status, statusKnown = true) {
   else if (tone === 'err') g.innerHTML = picon('alert', 11);
   return g;
 }
-const faceWho = (agent) => h('span', { class: `who who-${agent}`, text: agent === 'codex' ? 'Codex' : agent === 'claude' ? 'Claude' : T.taskCard });
+function faceWho(agent, card = null) {
+  if (agent === 'task') return h('span', { class: 'who who-task', text: T.taskCard });
+  const surf = card ? cardSurface(card) : null;
+  const surfMeta = surf ? SURFACE_META[surf] : null;
+  return h('span', { class: `who who-${agent}`, title: surfMeta ? `${agentAppLabel(agent)}（${surfMeta.title}）` : agentAppLabel(agent) },
+    agentLabel(agent),
+    surfMeta ? h('span', { class: 'who-surf', text: surfMeta.short }) : null);
+}
 
 const dotTitle = s => s.dot ? `${s.dot.name} ${s.dot.relation === 'created' ? 'が作成したセッション' : 'に関連するセッション'}` : '';
 const dotPill = s => s.dot ? h('span', { class: 'pill dot-pill', title: dotTitle(s), text: s.dot.name === 'dot' ? 'dot' : `dot · ${s.dot.name}` }) : null;
@@ -74,7 +81,7 @@ function renderCard(card, list) {
   el.dataset.day = daysAgo(card.updatedAt);
   const rich = kind === 'rich', compact = kind === 'compact';
   el.append(h('div', { class: 'frow' }, faceGlyph(card.status, card.statusKnown), h('div', { class: 'ftitle', text: card.title }), compact ? dotPill(card) : faceFlags(card),
-    compact ? h('i', { class: `fagent fagent-${task ? 'task' : card.agent}`, title: task ? T.taskCard : card.agent === 'codex' ? 'Codex' : 'Claude' }) : null,
+    compact ? h('i', { class: `fagent fagent-${task ? 'task' : card.agent}`, title: task ? T.taskCard : agentAppLabel(card.agent) }) : null,
     compact ? h('span', { class: 'ftime', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }) : null));
   if (compact) { const pill = exchangePill(card, true); if (pill) el.querySelector('.frow').append(pill); return finishFace(el, card, list); }
   const now = task ? faceTaskNow(card) : faceNow(card);
@@ -87,9 +94,9 @@ function renderCard(card, list) {
     if (!task && card.status === 'waiting') el.append(h('div', { class: 'fask' },
       card.canDesktop ? h('button', { class: 'btn-primary', type: 'button', text: 'アプリで答える', onpointerdown: (e) => e.stopPropagation(), onclick: (e) => { e.stopPropagation(); resume(card.id, { route: 'desktop' }); } }) : null,
       h('button', { class: 'btn', type: 'button', text: 'その場で読む', onpointerdown: (e) => e.stopPropagation(), onclick: (e) => { e.stopPropagation(); togglePeek(card); } })));
-    if (task && card.links.length) el.append(h('div', { class: 'flinks' }, ...card.links.slice(0, 3).map((l) => h('span', { class: 'flink', title: l.title }, faceGlyph(l.status, l.statusKnown), faceWho(l.agent), h('span', { class: 'ellipsis', text: l.title })))));
+    if (task && card.links.length) el.append(h('div', { class: 'flinks' }, ...card.links.slice(0, 3).map((l) => h('span', { class: 'flink', title: l.title }, faceGlyph(l.status, l.statusKnown), faceWho(l.agent, l), h('span', { class: 'ellipsis', text: l.title })))));
   }
-  const foot = h('div', { class: 'ffoot' }, faceWho(task ? 'task' : card.agent), dotPill(card), dirPill(card.directory || { name: 'カテゴリ無し' }));
+  const foot = h('div', { class: 'ffoot' }, faceWho(task ? 'task' : card.agent, card), dotPill(card), dirPill(card.directory || { name: 'カテゴリ無し' }));
   const source = cardSourceRelations(card).filter((relation, index, all) => all.findIndex(r => sourceRefKey(r.ref) === sourceRefKey(relation.ref)) === index);
   if (source.length) foot.append(h('span', { class: 'pill ellipsis', title: sourceDetailRows(card).map(([k,v]) => `${k}: ${v}`).join('\n'), text: source.length > 1 ? `元アプリ 複数（${source.length}）` : sourceFacetLabel({ ref: source[0].ref, name: source[0].observation?.value?.name }) }));
   if (!task) {
@@ -188,7 +195,7 @@ function peekContent(card, d, { limit = 3, onSent, onClose }) {
   const out = [], s = d.session, D = d.dispatch;
   const said = d.recentMessages.length ? d.recentMessages : (d.feed?.items || []).filter((it) => (it.k === 'user' || it.k === 'assistant') && it.text).map((it) => ({ role: it.k, text: it.text }));
   for (const m of said.slice(-limit)) {
-    out.push(h('div', { class: `pmsg ${m.role}` }, h('span', { class: `pwho${m.role === 'user' ? '' : ` who-${s.agent}`}`, text: m.role === 'user' ? 'あなた' : s.agent === 'codex' ? 'Codex' : 'Claude' }),
+    out.push(h('div', { class: `pmsg ${m.role}` }, h('span', { class: `pwho${m.role === 'user' ? '' : ` who-${s.agent}`}`, text: m.role === 'user' ? 'あなた' : agentLabel(s.agent) }),
       // A card's reply shows a short excerpt; the inbox reads whole messages (cut when extreme) with their paragraphs and lists.
       limit <= 3 ? h('div', { class: 'ptext', html: mdInline(m.text.length > 420 ? `${m.text.slice(0, 420)}…` : m.text) })
         : h('div', { class: 'ptext md', html: mdHtml(m.text.length > 3000 ? `${m.text.slice(0, 3000)}\n\n…（長いため途中までを表示しています。続きはカードで）` : m.text) })));
@@ -202,7 +209,7 @@ function peekContent(card, d, { limit = 3, onSent, onClose }) {
   } else if (s.status === 'aborted') out.push(h('div', { class: 'pwait pwait-err' }, h('b', { text: '中断しました' }), h('span', { text: '続けるには指示を送ってください。' })));
   if (D.unavailableReason || !D.settings.enabled) {
     out.push(h('div', { class: 'muted', text: D.unavailableReason || '指示の送信は設定でオフになっています。' }));
-    if (d.launch?.desktop) out.push(h('button', { class: 'btn', type: 'button', text: s.agent === 'codex' ? 'Codexで開く' : 'Claudeで開く', onclick: () => resume(card.id, { route: 'desktop' }) }));
+    if (d.launch?.desktop) out.push(h('button', { class: 'btn', type: 'button', text: `${agentLabel(s.agent)}で開く`, onclick: () => resume(card.id, { route: 'desktop' }) }));
     return out;
   }
   const elevated = !!D.permission?.elevated;

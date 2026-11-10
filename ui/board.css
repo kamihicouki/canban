@@ -62,6 +62,11 @@
 .ag { font-weight: 700; padding: 4px 6px; border-radius: 6px; white-space: nowrap; flex: none; }
 .ag-codex { color: var(--ag-codex); background: var(--ag-codex-bg); }
 .ag-claude { color: var(--ag-claude); background: var(--ag-claude-bg); }
+.ag-gemini { color: var(--ag-gemini); background: var(--ag-gemini-bg); }
+.ag-antigravity { color: var(--ag-antigravity); background: var(--ag-antigravity-bg); }
+.ag-cursor { color: var(--ag-cursor); background: var(--ag-cursor-bg); }
+.ag-chatgpt { color: var(--ag-chatgpt); background: var(--ag-chatgpt-bg); }
+.ag-grok { color: var(--ag-grok); background: var(--ag-grok-bg); }
 .ag-task { color: var(--ag-task); background: var(--ag-task-bg); }
 .flag { font-size: 11px; font-weight: 600; padding: 3px 5px; border-radius: 5px; background: var(--tone-idle-bg); color: var(--card-muted); white-space: nowrap; max-width: 110px; overflow: hidden; text-overflow: ellipsis; flex: none; }
 .flag-new { background: var(--accent); color: var(--on-accent); }
@@ -92,6 +97,11 @@
 .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 3px; color: var(--on-solid); line-height: 16px; }
 .badge.codex { background: var(--codex); }
 .badge.claude { background: var(--claude); }
+.badge.gemini { background: var(--gemini); }
+.badge.antigravity { background: var(--antigravity); }
+.badge.cursor { background: var(--cursor); }
+.badge.chatgpt { background: var(--chatgpt); }
+.badge.grok { background: var(--grok); }
 .pill { display: inline-flex; align-items: center; gap: 3px; border-radius: 3px; padding: 0 4px; }
 .pill.prio-high { background: var(--prio-high-bg); color: var(--prio-high-fg); }
 .pill.prio-medium { background: var(--prio-medium-bg); color: var(--prio-medium-fg); }
@@ -349,6 +359,12 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .side-seg button { height: 28px; border-radius: 5px; color: var(--header-fg); font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px; }
 .side-seg button:hover { background: var(--header-btn-hover); }
 .side-seg button[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-fg); }
+.side-apps { display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; }
+.side-app-row { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 0 10px; border-radius: 6px; color: var(--header-fg); min-height: 30px; font-size: 13px; font-weight: 500; }
+.side-app-row:hover { background: var(--header-btn); }
+.side-app-row.active { background: var(--side-active); font-weight: 700; }
+.side-app-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.side-app-live { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 700; color: var(--header-fg); }
 .side-check { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 10px; font-size: 13px; cursor: pointer; border-radius: 6px; }
 .side-check:hover { background: var(--header-btn); }
 .side-check input { accent-color: var(--accent); margin: 0; }
@@ -374,7 +390,7 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .side-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 0 10px; border-radius: 6px; color: var(--header-fg); min-height: 34px; font-weight: 500; }
 .side-row:hover, .side-row:focus-visible { background: var(--header-btn); }
 .side-row.active, .side-row[aria-current="page"] { background: var(--side-active); font-weight: 700; }
-.side-row .count { color: var(--header-dim); font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.side-row .count, .side-app-row .count { color: var(--header-dim); font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .side-row .dot { width: 12px; height: 12px; border-radius: 3px; flex: none; }
 .side-ic { width: 18px; flex: none; display: grid; place-items: center; }
 .side-key { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--header-dim); }

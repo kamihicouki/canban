@@ -191,7 +191,7 @@ const workspace = {
       h('p', { class: 'page-help', text: '現在のホームの絞り込みに一致するセッションです。コンテキスト量はアカウントの利用上限とは別の値です。' }));
     contexts.append(this.table(['セッション', 'エージェント', '使用量', '更新'], cards.slice(0,100).map(c => {
       const ctx = c.signals?.ctx;
-      return [h('button', { class: 'link-btn', text: c.title, onclick: () => openCard(c.id) }), c.agent === 'codex' ? 'Codex' : 'Claude',
+      return [h('button', { class: 'link-btn', text: c.title, onclick: () => openCard(c.id) }), agentLabel(c.agent),
         ctx ? `${fmtTok(ctx.used)} / ${ctx.window ? fmtTok(ctx.window) : '上限未取得'}${ctx.window ? ` (${ctxPct(ctx)}%)` : ''}` : '未取得', fmtDate(c.updatedAt)];
     })));
     if (!cards.length) contexts.append(h('p', { text: '対象のセッションがありません。' }));

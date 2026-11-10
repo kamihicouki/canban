@@ -13,6 +13,13 @@ export function storageScope(value) {
 
 const fields = ['provider', 'identityDomain', 'scopeId', 'kind', 'nativeId'];
 const attributes = { codexProject: ['codex', 'project', 'memberOf'], codexSection: ['codex', 'section', 'displayedIn'], claudeGroup: ['claude', 'group', 'displayedIn'], claudeEnvironment: ['claude', 'environment', null] };
+const extraAttributes = {
+  antigravityBrain: ['antigravity', 'brain', 'memberOf'],
+  geminiProject: ['gemini', 'project', 'memberOf'],
+  cursorWorkspace: ['cursor', 'workspace', 'memberOf'],
+  chatgptProject: ['chatgpt', 'project', 'memberOf'],
+  grokWorkspace: ['grok', 'workspace', 'memberOf'],
+};
 const string = v => typeof v === 'string' && v.trim() ? v : null;
 const time = v => Number.isFinite(v) && v > 0 ? v : null;
 const unknown = reason => ({ value: null, status: 'unknown', observedAt: null, sourceUpdatedAt: null, source: null, reason });
@@ -71,6 +78,12 @@ export function sessionSourceView(session, catalog = {}, receipts = session.laun
   };
   for (const [attribute, [provider, kind, relation]] of Object.entries(attributes)) {
     const observation = attribute === 'claudeEnvironment' ? unknown('開始実績のReceiptは未取得です') : entityObservation(session.sourceMetadata?.[attribute], provider, kind, entities);
+    view.attributes[attribute] = observation;
+    if (relation) addRelation(relation, observation);
+  }
+  for (const [attribute, [provider, kind, relation]] of Object.entries(extraAttributes)) {
+    if (!session.sourceMetadata?.[attribute]) continue;
+    const observation = entityObservation(session.sourceMetadata[attribute], provider, kind, entities);
     view.attributes[attribute] = observation;
     if (relation) addRelation(relation, observation);
   }

@@ -2,6 +2,8 @@ import { ACCOUNT_KEY } from './accounts-settings.mjs';
 
 export const TASK_CONTEXT_KEYS = ['project', 'folder', 'section', 'agent', 'host', 'account'];
 
+const TASK_AGENTS = ['codex', 'claude', 'gemini', 'antigravity', 'cursor', 'chatgpt', 'grok'];
+
 // null is an explicit "none"; an absent key follows linked sessions/launch preferences.
 export function normalizeTaskContext(value) {
   if (value === null) return {};
@@ -12,7 +14,7 @@ export function normalizeTaskContext(value) {
     if (raw === null) { out[key] = null; continue; }
     if (typeof raw !== 'string' || !raw.trim() || raw.length > 300) throw new Error('タスクの所属情報を確認してください');
     const text = raw.trim();
-    if (key === 'agent' && !['codex', 'claude'].includes(text)) throw new Error('AI Appを確認してください');
+    if (key === 'agent' && !TASK_AGENTS.includes(text)) throw new Error('AI Appを確認してください');
     if (key === 'account' && !ACCOUNT_KEY.test(text)) throw new Error('アカウントを確認してください');
     out[key] = text;
   }

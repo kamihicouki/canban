@@ -6,7 +6,7 @@ const fmtClock = (at) => (at ? new Date(at).toLocaleTimeString('ja-JP', { hour: 
 function feedItem(it, f) {
   if (it.k === 'user' || it.k === 'assistant') {
     const stamp = Date.parse(it.at);
-    const who = h('div', { class: 'fi-who' }, it.k === 'user' ? 'あなた' : f.pane.d?.session?.agent === 'claude' ? 'Claude' : 'Codex',
+    const who = h('div', { class: 'fi-who' }, it.k === 'user' ? 'あなた' : agentLabel(f.pane.d?.session?.agent || 'codex'),
       Number.isFinite(stamp) ? h('time', { datetime: new Date(stamp).toISOString(), title: fmtDate(stamp), text: fmtClock(it.at) }) : null);
     return it.k === 'user'
       ? h('div', { class: 'fi fi-user' }, who, h('div', { class: 'fi-content' }, h('span', { class: 'raw', text: exchangeModel.messageText(it.text) }), userMessageView(exchangeModel.messageText(it.text))))
@@ -41,6 +41,7 @@ function renderFeed(d, p) {
   // A user message consumes the earlier question; tool/turn records do not.
   const lastSaid = [...d.feed.items].reverse().find((it) => it.k === 'assistant' || it.k === 'user');
   p.lastText = lastSaid?.k === 'assistant' ? lastSaid.text : '';
+  if (p.lastText && typeof voiceMode !== 'undefined') voiceMode.lastSpokenText.set(f.cardId, p.lastText);
   if (!d.feed.items.length) list.append(h('div', { class: 'muted', text: 'まだやりとりはありません' }));
   live.feeds.set(f.cardId, f);
   paintFeedFoot(f);
@@ -72,7 +73,7 @@ function paintFeedFoot(f) {
 function applyFeed(f, feed) {
   if (feed.reset) { openCard(f.cardId); return; }
   const stick = atFeedEnd(f.list);
-  let added = 0;
+  let added = 0, newAssistantText = '';
   if (feed.items.length) f.list.querySelector(':scope > .muted')?.remove();
   for (const it of feed.items) {
     if (it.k === 'result') {
@@ -85,8 +86,8 @@ function applyFeed(f, feed) {
       if (group) paintToolGroup(group);
       continue;
     }
-    if (it.k === 'assistant') f.pane.lastText = it.text;
-    else if (it.k === 'user') f.pane.lastText = '';
+    if (it.k === 'assistant') { f.pane.lastText = it.text; newAssistantText = it.text; }
+    else if (it.k === 'user') { f.pane.lastText = ''; newAssistantText = ''; }
     if (feedPush(f, it)) added++;
   }
   // Keep the DOM bounded on long runs.
@@ -117,6 +118,7 @@ function applyFeed(f, feed) {
   if (added || feed.status) paintChoices(f);
   if (added && f.pane.exchangeData) { paintExchangeTimeline(f.pane); scheduleExchangeRefresh(f.pane); }
   if (added) { if (stick) scrollFeedToEnd(f); else f.newBtn.hidden = false; }
+  if (newAssistantText && typeof voiceMode !== 'undefined') voiceMode.onAssistantMessage(f.cardId, newAssistantText);
 }
 
 // ---- the long poll ----
