@@ -11,6 +11,14 @@ document.addEventListener('keydown', e => {
   if (e.code === 'KeyL' && (openViewKind() === 'orbit' || focusedPane()?.kind === 'task' || document.activeElement?.closest?.('.card')?.dataset.cardId?.startsWith('task:'))) { e.preventDefault(); focusTaskLoop(); }
 }, true);
 document.addEventListener('keydown', e => {
+  if (e.altKey && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.isComposing && (e.code === 'KeyM' || e.key === 'm' || e.key === 'M') && !document.querySelector('.popover')) {
+    if (!paneLayer.hidden || document.querySelector('.task-quick-dialog[open]') || voiceMode.active) {
+      e.preventDefault();
+      voiceMode.toggle();
+      refreshShortcutHints();
+      return;
+    }
+  }
   if (e.altKey && !e.metaKey && !e.ctrlKey && !e.isComposing && e.code === 'KeyA' && !typingIn(e.target) && !document.querySelector('.popover')) {
     const picker = claudeAccountPicker(focusedPane());
     if (picker) { e.preventDefault(); picker.click(); }
@@ -104,7 +112,7 @@ function refreshShortcutHints() {
       ['⇧←', '左のリストへ', !adjacentPaneList(focusedPane(), -1)], ['⇧→', '右のリストへ', !adjacentPaneList(focusedPane(), 1)],
       ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
       ...(focusedPane()?.kind === 'session' ? [['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
-      ...(panePromptInput() ? [['i', '指示欄']] : []), ...(panes.some(x => x.choices?.length) ? [['Alt+1〜9', '選択肢で答える']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ['f', '変更'], ...(terminalAvailable(focusedPane()) ? [['t', 'ターミナル'], ...(cardTerms.get(focusedPane().id)?.closed ? [['Shift+R', '開き直す']] : cardTerms.get(focusedPane().id)?.id ? [['Shift+X', 'シェルを終了']] : [])] : [])] : []), ['r', '更新'], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys,
+      ...(panePromptInput() ? [['i', '指示欄'], ['Alt+M', voiceMode.active ? '音声対話OFF' : '音声対話']] : []), ...(panes.some(x => x.choices?.length) ? [['Alt+1〜9', '選択肢で答える']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ['f', '変更'], ...(terminalAvailable(focusedPane()) ? [['t', 'ターミナル'], ...(cardTerms.get(focusedPane().id)?.closed ? [['Shift+R', '開き直す']] : cardTerms.get(focusedPane().id)?.id ? [['Shift+X', 'シェルを終了']] : [])] : [])] : []), ['r', '更新'], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys,
       ...(exchangeTrail ? [['Shift+1 / 2 / 3', '関連カードのビュー'], ['Esc / Shift+Esc', '訪問を戻る / 進む'], ['Shift+Home', '起点へ']] : docked ? [['Enter', '大きく開く'], ['Esc', '一覧へ戻る']] : [['Esc', timelineOn() ? '時間軸へ戻す' : '閉じる']])];
   }
   else if (typing) entries = input.id === 'q' ? [['↓ / Enter', 'カードへ'], ['Esc', '検索をクリア']] : [['⌘K / Ctrl+K', 'コマンド']];
@@ -220,7 +228,7 @@ async function commandPalette() {
     ...(!laneHides('directory') ? [{ label: 'すべてのカテゴリを選ぶ', run: () => openCategoryPicker(), hint: 'Alt+C' }] : []),
     ...(!laneHides('directory') && state.filters.directory ? [{ label: `選択中のカテゴリを${categoryIsPinned(state.filters.directory) ? '固定解除' : '固定'}`, run: () => setCategoryPin(state.filters.directory), hint: '一覧内 Alt+P' }] : []),
     { label: 'Slack資料の追加ボタンへ', run: () => focusedPane()?.el.querySelector('.slack-add-prompt')?.focus(), hint: 'Alt+s' },
-    ...(document.querySelector('.prompt-mic') ? [{ label: document.querySelector('.prompt-mic.listening') ? '音声入力を停止' : '音声入力', run: () => document.querySelector('.prompt-mic')?.click(), hint: 'Alt+M' }] : []),
+    ...(document.querySelector('.prompt-mic') ? [{ label: voiceMode.active ? '音声対話モードを停止' : '音声対話モードを開始', run: () => voiceMode.toggle(), hint: 'Alt+M' }] : []),
     ...(!paneLayer.hidden && focusedPane()?.kind !== 'view' ? [
       ...[-1, 1].filter(step => adjacentPaneList(focusedPane(), step)).map(step => {
         const p = focusedPane(), target = adjacentPaneList(p, step);

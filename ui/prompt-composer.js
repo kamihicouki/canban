@@ -1,6 +1,368 @@
 // Shared composer for task launches and session follow-ups. Drafts survive live
 // re-rendering; binary files never go into board settings or localStorage.
 const promptDrafts = new Map();
+const VOICE_SILENCE_MS = 5000;
+
+function cleanTextForSpeech(raw) {
+  if (!raw) return '';
+  return String(raw)
+    .replace(/<[a-zA-Z0-9_-]+>[\s\S]*?<\/[a-zA-Z0-9_-]+>/g, ' ')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`\n]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/^[ \t]*(?:#{1,6}\s+|[-*+]\s+|>\s+)/gm, '')
+    .replace(/[*_~]{1,3}/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const voiceMode = {
+  active: false,
+  silenceMs: VOICE_SILENCE_MS,
+  ttsEnabled: true,
+  composers: new Set(),
+  current: null,
+  recognition: null,
+  silenceTimer: null,
+  resultOffset: 0,
+  lastResultsLength: 0,
+  baseText: '',
+  speakingCardId: null,
+  lastSpokenText: new Map(),
+  cleanTextForSpeech,
+
+  getSpeechRecognition() {
+    return typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
+  },
+
+  resolveTarget(preferred = null) {
+    for (const c of [...this.composers]) {
+      if (c.root.isConnected === false) this.composers.delete(c);
+    }
+    if (preferred && this.composers.has(preferred) && preferred.root.isConnected !== false) return preferred;
+    if (typeof document !== 'undefined') {
+      const dialog = document.querySelector?.('.task-quick-dialog[open]');
+      if (dialog) {
+        const inDialog = [...this.composers].find(c => dialog.contains?.(c.root) && !c.root.closest?.('[hidden]'));
+        if (inDialog) return inDialog;
+      }
+      if (typeof paneLayer !== 'undefined') {
+        if (!paneLayer.hidden && typeof focusedPane === 'function') {
+          const fp = focusedPane();
+          if (fp?.el) {
+            const inPane = [...this.composers].find(c => fp.el.contains?.(c.root));
+            if (inPane) return inPane;
+          }
+          if (typeof panes !== 'undefined') {
+            for (const p of panes) {
+              const inPane = [...this.composers].find(c => p.el?.contains?.(c.root));
+              if (inPane) return inPane;
+            }
+          }
+        }
+        const outsidePane = [...this.composers].find(c => document.body?.contains?.(c.root) && !paneLayer.contains?.(c.root) && !c.root.closest?.('[hidden], dialog:not([open])'));
+        return outsidePane || null;
+      }
+      const activeEl = document.activeElement;
+      if (activeEl) {
+        const byFocus = [...this.composers].find(c => c.root.contains?.(activeEl) || c.root.closest?.('.pane')?.contains?.(activeEl));
+        if (byFocus) return byFocus;
+      }
+    }
+    if (this.current && this.composers.has(this.current) && this.current.root.isConnected !== false) return this.current;
+    return [...this.composers].at(-1) || null;
+  },
+
+  clearSilenceTimer() {
+    if (this.silenceTimer) {
+      const clear = typeof clearTimeout === 'function' ? clearTimeout : (typeof window !== 'undefined' ? window.clearTimeout : null);
+      if (clear) clear(this.silenceTimer);
+      this.silenceTimer = null;
+    }
+  },
+
+  stopSpeaking() {
+    this.speakingCardId = null;
+    const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+    if (synth) {
+      try { synth.cancel(); } catch {}
+    }
+  },
+
+  speak(text, cardId = null) {
+    if (!this.active || !this.ttsEnabled) return false;
+    if (cardId && typeof paneLayer !== 'undefined' && !paneLayer.hidden && typeof focusedPane === 'function') {
+      const fp = focusedPane();
+      const visibleIds = typeof panes !== 'undefined' ? panes.map(p => p.id) : [];
+      if (fp && fp.id !== cardId && !(fp.kind === 'task' && visibleIds.includes(cardId))) return false;
+    }
+    const clean = cleanTextForSpeech(text);
+    if (!clean) return false;
+    const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+    const Utterance = typeof window !== 'undefined' ? window.SpeechSynthesisUtterance : null;
+    if (!synth || !Utterance) return false;
+    try {
+      synth.cancel();
+      const u = new Utterance(clean);
+      u.lang = (typeof navigator !== 'undefined' && navigator.language) || 'ja-JP';
+      this.speakingCardId = cardId;
+      u.onend = u.onerror = () => {
+        if (this.speakingCardId === cardId) this.speakingCardId = null;
+      };
+      synth.speak(u);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  onAssistantMessage(cardId, text) {
+    if (!this.active || !this.ttsEnabled || !text) return false;
+    if (this.lastSpokenText.get(cardId) === text) return false;
+    this.lastSpokenText.set(cardId, text);
+    return this.speak(text, cardId);
+  },
+
+  updateUI() {
+    const SR = this.getSpeechRecognition();
+    for (const c of this.composers) {
+      const isTarget = this.active && this.current === c;
+      c.box.classList?.toggle?.('voice-active', isTarget);
+      if (isTarget) {
+        c.micButton.classList?.add?.('listening');
+        c.micButton.innerHTML = picon('stop', 16);
+        c.micButton.title = '音声入力を停止（Alt+M）';
+        c.micButton.setAttribute?.('aria-label', '音声入力を停止');
+        if (!c.notice.textContent || c.notice.textContent.startsWith('音声') || c.notice.textContent.startsWith('🎙')) {
+          c.notice.textContent = '音声を聞き取っています…（5秒無音で自動送信）';
+        }
+      } else {
+        c.micButton.classList?.remove?.('listening');
+        c.micButton.innerHTML = picon('mic', 16);
+        c.micButton.title = SR ? '音声入力（Alt+M）' : '音声認識はお使いの環境でサポートされていません';
+        c.micButton.setAttribute?.('aria-label', '音声入力');
+        if (c.notice.textContent?.startsWith('音声を聞き取って') || c.notice.textContent?.startsWith('🎙')) {
+          c.notice.textContent = '';
+        }
+      }
+    }
+  },
+
+  bindTarget(target, lastEventResultsLength = null) {
+    if (this.current === target) {
+      this.updateUI();
+      return;
+    }
+    this.clearSilenceTimer();
+    this.stopSpeaking();
+    this.current = target;
+    if (target) {
+      let base = target.input.value || '';
+      if (base && !base.endsWith(' ') && !base.endsWith('\n')) base += ' ';
+      this.baseText = base;
+    } else {
+      this.baseText = '';
+    }
+    if (lastEventResultsLength !== null) {
+      this.resultOffset = lastEventResultsLength;
+    } else if (this.lastResultsLength) {
+      this.resultOffset = this.lastResultsLength;
+    }
+    this.updateUI();
+  },
+
+  sync(preferred = null) {
+    if (!this.active) {
+      this.updateUI();
+      return;
+    }
+    const next = this.resolveTarget(preferred);
+    if (next !== this.current) {
+      this.bindTarget(next);
+    } else {
+      this.updateUI();
+    }
+    if (next && !this.recognition && !next.draft.sending) {
+      this.ensureRecognition();
+    }
+  },
+
+  matchChoiceReply(target, text) {
+    const trimmed = text.trim().replace(/[。、！？.!?\s]+$/g, '');
+    if (!trimmed || typeof panes === 'undefined') return null;
+    const pane = panes.find(p => p.el?.contains?.(target.root));
+    const choices = pane?.choices;
+    if (!choices?.length) return null;
+    for (let i = 0; i < choices.length; i++) {
+      const c = choices[i];
+      const key = String(c.key).toLowerCase();
+      const norm = trimmed.toLowerCase();
+      if (
+        norm === key ||
+        norm === `${key}で` ||
+        norm === `${key}でお願いします` ||
+        norm === `${key}にする` ||
+        norm === `${i + 1}` ||
+        norm === `${i + 1}番` ||
+        norm === `${i + 1}番で` ||
+        (c.recommended && (norm === '推奨' || norm === '推奨で' || norm === 'おすすめ'))
+      ) {
+        return c.reply;
+      }
+    }
+    return null;
+  },
+
+  scheduleAutoSubmit(target) {
+    this.clearSilenceTimer();
+    if (!this.active || !target || target.draft.sending) return;
+    const setTimer = typeof setTimeout === 'function' ? setTimeout : (typeof window !== 'undefined' ? window.setTimeout : null);
+    if (!setTimer) return;
+    this.silenceTimer = setTimer(() => {
+      this.silenceTimer = null;
+      if (!this.active || this.current !== target || target.draft.sending) return;
+      const val = target.input.value.trim();
+      if (!val) return;
+      const spokenPart = val.slice(this.baseText.trim().length).trim() || val;
+      const matchedReply = this.matchChoiceReply(target, spokenPart);
+      if (matchedReply) {
+        target.input.value = matchedReply;
+        target.draft.text = matchedReply;
+      }
+      this.baseText = '';
+      this.resultOffset = this.lastResultsLength || 0;
+      target.notice.textContent = '🎙 自動送信しました';
+      target.submit?.();
+    }, this.silenceMs);
+  },
+
+  ensureRecognition() {
+    const SR = this.getSpeechRecognition();
+    if (!SR) {
+      if (this.current) this.current.notice.textContent = 'お使いのブラウザは音声認識に対応していません';
+      this.active = false;
+      this.updateUI();
+      return;
+    }
+    if (this.recognition) return;
+    try {
+      const rec = new SR();
+      this.recognition = rec;
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = (typeof navigator !== 'undefined' && navigator.language) || 'ja-JP';
+      this.resultOffset = 0;
+      this.lastResultsLength = 0;
+
+      rec.onstart = () => {
+        if (!this.active) return;
+        this.updateUI();
+      };
+
+      rec.onresult = event => {
+        if (!this.active) return;
+        const target = this.current || this.resolveTarget();
+        if (!target || target.draft.sending) return;
+        if (this.speakingCardId) this.stopSpeaking();
+        this.lastResultsLength = event.results.length;
+        if (this.resultOffset > event.results.length) this.resultOffset = 0;
+        let interim = '', final = '';
+        for (let i = this.resultOffset; i < event.results.length; ++i) {
+          const res = event.results[i];
+          if (res.isFinal) final += res[0].transcript;
+          else interim += res[0].transcript;
+        }
+        const spoken = final + (interim ? (final ? ' ' : '') + interim : '');
+        target.input.value = this.baseText + spoken;
+        target.draft.text = target.input.value;
+        target.fit();
+        if (spoken.trim()) {
+          target.notice.textContent = '音声を聞き取っています…（5秒無音で自動送信）';
+          this.scheduleAutoSubmit(target);
+        }
+      };
+
+      rec.onerror = event => {
+        if (event.error === 'no-speech' || event.error === 'aborted') return;
+        if (this.current) this.current.notice.textContent = `音声認識エラー: ${event.error}`;
+        this.stop();
+      };
+
+      rec.onend = () => {
+        if (this.recognition === rec) this.recognition = null;
+        if (this.active && typeof document !== 'undefined') {
+          const target = this.current || this.resolveTarget();
+          if (target && !target.draft.sending) {
+            let base = target.input.value || '';
+            if (base && !base.endsWith(' ') && !base.endsWith('\n')) base += ' ';
+            this.baseText = base;
+            try { this.ensureRecognition(); } catch {}
+          }
+        } else if (!this.active) {
+          this.updateUI();
+        }
+      };
+
+      rec.start();
+    } catch (e) {
+      if (this.current) this.current.notice.textContent = `音声認識を開始できませんでした: ${e.message}`;
+      this.stop();
+    }
+  },
+
+  start(preferred = null) {
+    const target = this.resolveTarget(preferred);
+    const SR = this.getSpeechRecognition();
+    if (!SR) {
+      if (target) target.notice.textContent = 'お使いのブラウザは音声認識に対応していません';
+      return;
+    }
+    if (target?.draft.sending) return;
+    this.active = true;
+    this.current = null;
+    this.bindTarget(target, 0);
+    this.ensureRecognition();
+  },
+
+  stop() {
+    this.active = false;
+    this.clearSilenceTimer();
+    this.stopSpeaking();
+    const rec = this.recognition;
+    this.recognition = null;
+    if (rec) {
+      try { rec.stop(); } catch {}
+    }
+    this.current = null;
+    this.baseText = '';
+    this.resultOffset = 0;
+    this.lastResultsLength = 0;
+    this.updateUI();
+  },
+
+  toggle(preferred = null) {
+    if (this.active) {
+      if (preferred && this.current && preferred !== this.current) {
+        this.bindTarget(preferred);
+        return;
+      }
+      this.stop();
+    } else {
+      this.start(preferred);
+    }
+  },
+
+  onComposerCleared(instance) {
+    if (this.current === instance) {
+      this.clearSilenceTimer();
+      this.baseText = '';
+      this.resultOffset = this.lastResultsLength || 0;
+    }
+  }
+};
+globalThis.voiceMode = voiceMode;
+
 // Codex desktop style: one rounded box with attachments on top, the text, and one row of
 // [+ image] [$ skill] [leading…] ··· [actions…]; key hints sit under the box.
 function promptComposer(input, { key, context, submit, placeholder, leading = [], actions = [], inside = [], place = [], keys = null }) {
@@ -19,8 +381,7 @@ function promptComposer(input, { key, context, submit, placeholder, leading = []
   if (placeholder) input.placeholder = placeholder;
   const imageButton = h('button', { type: 'button', class: 'cx-ico', title: '画像を添付（貼り付け・ドロップも可）', 'aria-label': '画像を添付', html: picon('plus', 16), onclick: () => fileInput.click() });
   const skillButton = h('button', { type: 'button', class: 'cx-ico', title: 'スキルを選ぶ（$）', 'aria-label': 'スキルを選ぶ', 'aria-expanded': 'false', 'aria-controls': picker.id, text: '$', onclick: () => toggleSkills() });
-  const SpeechRecognition = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
-  let recognition = null, recognizing = false;
+  const SpeechRecognition = voiceMode.getSpeechRecognition();
   const micButton = h('button', {
     type: 'button', class: 'cx-ico prompt-mic',
     title: SpeechRecognition ? '音声入力（Alt+M）' : '音声認識はお使いの環境でサポートされていません',
@@ -36,6 +397,8 @@ function promptComposer(input, { key, context, submit, placeholder, leading = []
   input.addEventListener('input', fit);
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fit);
   let catalog = [], loadedContext = null, pendingSkills = null, requestGeneration = 0, token = null;
+  const voiceEntry = { key, root, box, input, micButton, notice, draft, submit: () => submit?.(), fit, context };
+  voiceMode.composers.add(voiceEntry);
   const currentContext = () => {
     const value = context(), signature = JSON.stringify(value);
     if (draft.context && draft.context !== signature && draft.skills.length) {
@@ -57,7 +420,7 @@ function promptComposer(input, { key, context, submit, placeholder, leading = []
         h('span', { text: `$${s.name}` }), h('button', { type: 'button', class: 'icon-btn', text: '✕', disabled: draft.sending,
           'aria-label': `${s.name} を削除`, onclick: () => { draft.skills = draft.skills.filter(x => x.path !== s.path); paint(); } }))));
     imageButton.disabled = skillButton.disabled = micButton.disabled = input.readOnly = draft.sending;
-    if (draft.sending && recognizing) stopSpeech();
+    if (draft.sending && voiceMode.current === voiceEntry) voiceMode.clearSilenceTimer();
     root.setAttribute('aria-busy', String(draft.sending || draft.images.some(i => i.loading)));
   }
   paintView.root = root;
@@ -137,66 +500,9 @@ function promptComposer(input, { key, context, submit, placeholder, leading = []
     if (!event.dataTransfer?.files.length) return;
     event.preventDefault(); event.stopPropagation(); root.classList.remove('drag-image'); addFiles([...event.dataTransfer.files]);
   });
-  function stopSpeech() {
-    if (recognition) {
-      try { recognition.stop(); } catch {}
-      recognition = null;
-    }
-    recognizing = false;
-    micButton.classList?.remove?.('listening');
-    micButton.innerHTML = picon('mic', 16);
-    micButton.title = SpeechRecognition ? '音声入力（Alt+M）' : '音声認識はお使いの環境でサポートされていません';
-    micButton.setAttribute?.('aria-label', '音声入力');
-    if (notice.textContent === '音声を聞き取っています…') notice.textContent = '';
-  }
-  function startSpeech() {
-    if (!SpeechRecognition) {
-      notice.textContent = 'お使いのブラウザは音声認識に対応していません';
-      return;
-    }
-    if (draft.sending) return;
-    try {
-      recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = (typeof navigator !== 'undefined' && navigator.language) || 'ja-JP';
-      let baseText = input.value;
-      if (baseText && !baseText.endsWith(' ') && !baseText.endsWith('\n')) {
-        baseText += ' ';
-      }
-      recognition.onstart = () => {
-        recognizing = true;
-        micButton.classList?.add?.('listening');
-        micButton.innerHTML = picon('stop', 16);
-        micButton.title = '音声入力を停止（Alt+M）';
-        micButton.setAttribute?.('aria-label', '音声入力を停止');
-        notice.textContent = '音声を聞き取っています…';
-      };
-      recognition.onresult = event => {
-        let interim = '', final = '';
-        for (let i = 0; i < event.results.length; ++i) {
-          const res = event.results[i];
-          if (res.isFinal) final += res[0].transcript;
-          else interim += res[0].transcript;
-        }
-        input.value = baseText + final + (interim ? (final ? ' ' : '') + interim : '');
-        draft.text = input.value;
-        fit();
-      };
-      recognition.onerror = event => {
-        if (event.error !== 'no-speech' && event.error !== 'aborted') {
-          notice.textContent = `音声認識エラー: ${event.error}`;
-        }
-        stopSpeech();
-      };
-      recognition.onend = () => { stopSpeech(); };
-      recognition.start();
-    } catch (e) {
-      notice.textContent = `音声認識を開始できませんでした: ${e.message}`;
-      stopSpeech();
-    }
-  }
-  function toggleSpeech() { if (recognizing) stopSpeech(); else startSpeech(); }
+  function stopSpeech() { voiceMode.stop(); }
+  function startSpeech() { voiceMode.start(voiceEntry); }
+  function toggleSpeech() { voiceMode.toggle(voiceEntry); }
   function closeSkills() { picker.hidden = true; search.value = ''; skillButton.setAttribute('aria-expanded', 'false'); token = null; }
   function renderChoices() {
     const query = search.value.toLowerCase().trim();
@@ -247,23 +553,33 @@ function promptComposer(input, { key, context, submit, placeholder, leading = []
   input.addEventListener('keydown', event => {
     if (event.altKey && (event.key === 'm' || event.key === 'M' || event.code === 'KeyM')) {
       event.preventDefault();
+      event.stopPropagation?.();
       toggleSpeech();
       return;
     }
-    if (event.key === 'Escape' && recognizing) {
+    if (event.key === 'Escape' && voiceMode.active && voiceMode.current === voiceEntry) {
       event.preventDefault();
-      stopSpeech();
+      if (voiceMode.silenceTimer) {
+        voiceMode.clearSilenceTimer();
+        notice.textContent = '自動送信を保留しました（続けて話すか ⌘Enter で送信）';
+      } else {
+        stopSpeech();
+      }
       return;
     }
     if (event.key === 'Escape' && !picker.hidden) { event.preventDefault(); event.stopPropagation(); closeSkills(); return; }
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.isComposing && event.keyCode !== 229) {
-      if (recognizing) stopSpeech();
+      voiceMode.clearSilenceTimer();
       event.preventDefault(); submit?.();
     }
   });
   paint();
+  if (voiceMode.active) {
+    if (typeof queueMicrotask === 'function') queueMicrotask(() => voiceMode.sync());
+    else voiceMode.sync();
+  }
   for (const item of draft.images) if (item.id && !item.preview && !item.previewError) restoreImage(item);
-  return { root, box, toolbar, draft, toggleSpeech, stopSpeech, isListening: () => recognizing, contextChanged() { currentContext(); closeSkills(); paint(); },
+  return { root, box, toolbar, draft, toggleSpeech, stopSpeech, isListening: () => voiceMode.active && voiceMode.current === voiceEntry, contextChanged() { currentContext(); closeSkills(); paint(); },
     hasContent: () => !!(input.value.trim() || draft.images.length || draft.skills.length),
     payload() {
       draft.text = input.value;
@@ -271,8 +587,15 @@ function promptComposer(input, { key, context, submit, placeholder, leading = []
       if (draft.images.some(i => i.loading)) throw new Error('画像の添付が完了するまでお待ちください');
       return { imageIds: draft.images.map(i => i.id), skills: draft.skills.map(s => ({ ...s })) };
     },
-    setSending(value) { draft.sending = value; paint(); },
-    clear() { stopSpeech(); draft.images.forEach(i => i.preview && URL.revokeObjectURL(i.preview)); draft.text = draft.baseline = input.value = input.defaultValue = ''; draft.images = []; draft.skills = []; notice.textContent = ''; closeSkills(); paint(); fit(); },
+    setSending(value) { draft.sending = value; paint(); if (!value && voiceMode.active) voiceMode.sync(voiceEntry); },
+    clear() {
+      if (draft.sending) voiceMode.onComposerCleared(voiceEntry);
+      else if (voiceMode.current === voiceEntry) stopSpeech();
+      draft.images.forEach(i => i.preview && URL.revokeObjectURL(i.preview));
+      draft.text = draft.baseline = input.value = input.defaultValue = '';
+      draft.images = []; draft.skills = []; notice.textContent = '';
+      closeSkills(); paint(); fit();
+    },
     restore(request) {
       if (this.hasContent()) throw new Error('入力中の指示があります。先に確認してください');
       draft.text = input.value = request.prompt || ''; draft.skills = (request.skills || []).map(s => ({ ...s }));
