@@ -311,3 +311,21 @@ test('Desktop creation sends its own account and leaves the CLI account and imag
   await model.saveQuickSessionDraft(draft, { newRequestId: () => 'must-not-change', refresh: async () => {}, callTool: async (name, args) => { seen.push({ name, args: plain(args) }); return { state: 'waiting-for-quit' }; } });
   assert.deepEqual(seen[1].args, seen[0].args);
 });
+
+test('the dialog sends the contract it built, and a memo sends none', async () => {
+  const seen = [];
+  const io = { newRequestId: () => 'contract-id', refresh: async () => {}, callTool: async (name, args) => { seen.push(plain(args)); return { cardId: 'task:c', title: args.title, description: args.description, listId: args.list, labels: args.labels, context: args.context }; } };
+  const draft = { ...model.taskCreationDefaults({ defaultListId: 'inbox' }, {}), title: '直す', description: '', clientRequestId: null, contractArgs: { level: 1, goal: '直す' } };
+  await model.saveQuickTaskDraft(draft, io);
+  assert.deepEqual(seen[0].contract, { level: 1, goal: '直す' });
+  Object.assign(draft, { title: 'メモ', contractArgs: null });
+  await model.saveQuickTaskDraft(draft, io);
+  assert.equal(Object.hasOwn(seen[1], 'contract'), false);
+});
+
+test('the board script includes the contract fields and still parses', () => {
+  const html = boardHtml();
+  for (const name of ['function taskContractFields', 'function contractDraftArgs', 'const CONTRACT_LEVELS']) assert.ok(html.includes(name), name);
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+  new vm.Script(scripts.at(-1)[1]);
+});

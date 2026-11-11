@@ -15,6 +15,7 @@ const taskQuickAdd = {
     this.loadTargets();
     if (source.mode || source.listId || source.lane || source.slackMessage) this.mode = source.mode || 'task';
     const soloLane = state.lanes.find(l => l.key === state.soloLane);
+    const laneKey = source.lane?.key || soloLane?.key || 'all';
     if (source.slackMessage) {
       const message = source.slackMessage;
       this.slackDrafts ||= new Map(); this.beforeSlackDraft = this.draft;
@@ -22,14 +23,26 @@ const taskQuickAdd = {
       this.draft = previous?.title ? previous : { ...taskCreationDefaults(state.board, state.filters, { soloLane }),
         title: (message.text.trim().split('\n')[0] || message.files?.[0]?.name || 'Slackの依頼').slice(0,300), description: '',
         directory: slackUi.data.workspaces.find(w => w.id === message.team)?.channels.find(c => c.id === message.channel)?.directory || '__none',
-        slackSource: message.key, slackPreview: message, clientRequestId: null };
+        slackSource: message.key, slackPreview: message, clientRequestId: null, laneKey, contract: contractDraftDefaults(0) };
       this.slackDrafts.set(message.key,this.draft); this.mount(); return;
     }
     // A dismissed draft keeps its actual destination; chips make that destination visible.
-    if (!this.draft || this.draft.editCardId || (!this.draft.title && !this.draft.description)) {
-      this.draft = { ...taskCreationDefaults(state.board, state.filters, { ...source, soloLane }), title: '', description: '', clientRequestId: null };
+    if (!this.draft || this.draft.editCardId || (!this.draft.title && !this.draft.description && !contractDraftHasContent(this.draft.contract))) {
+      // The delegation level is remembered per lane in this browser (L1 until a lane has chosen otherwise).
+      const level = store.get('creationLevel', {})[laneKey];
+      this.draft = { ...taskCreationDefaults(state.board, state.filters, { ...source, soloLane }), title: '', description: '', clientRequestId: null,
+        laneKey, contract: contractDraftDefaults(CONTRACT_LEVELS.some(l => l.level === level) ? level : 1) };
     }
     this.mount();
+  },
+  // Repaints warnings and the readiness line; returns the readiness (null for a memo, an edit or a direct start).
+  paintContract() {
+    const draft = this.draft;
+    if (!draft || draft.editCardId || this.mode === 'session' || !this.contractFields) return null;
+    const readiness = this.contractFields.paint();
+    const label = this.primary?.querySelector('span');
+    if (label) label.textContent = readiness?.level >= 2 && !readiness.ready ? `タスクを作成（契約 ${readiness.filled}/${readiness.required}）` : 'タスクを作成';
+    return readiness;
   },
   edit(card, list) {
     if (this.dialog?.open) return;
@@ -48,7 +61,7 @@ const taskQuickAdd = {
     const field = (label, control) => h('label', { class: 'creation-field' }, h('span', { class: 'creation-label', text: label }), control);
     const title = this.title = h('input', { class: 'text-input task-title', maxlength: 300, required: true,
       'aria-label': 'タスクのタイトル', placeholder: '例：リリースの準備をする', value: draft.title,
-      oninput: e => { draft.title = e.target.value; } });
+      oninput: e => { draft.title = e.target.value; this.paintContract(); } });
     const desc = h('textarea', { class: 'note task-description', rows: 4, maxlength: 20000, 'aria-label': '説明',
       placeholder: 'やることや、完了の目安を書いておけます', oninput: e => { draft.description = e.target.value; } });
     desc.value = draft.description;
@@ -57,13 +70,20 @@ const taskQuickAdd = {
     const form = this.form = h('form'), content = h('div', { class: 'creation-body' });
     if (edit) content.append(this.attributes(draft, state.board, false));
     else if (session) content.append(this.sessionFields(field));
-    else content.append(field('タイトル', title), field('説明（任意）', desc),
+    else {
+      draft.contract ||= contractDraftDefaults(draft.slackSource ? 0 : 1);
+      this.contractFields = taskContractFields(draft.contract, { title: () => draft.title, field,
+        remount: selector => this.mount(selector),
+        onLevel: level => { draft.laneKey && store.set('creationLevel', { ...store.get('creationLevel', {}), [draft.laneKey]: level }); } });
+      content.append(field('タイトル', title), field('説明（任意）', desc), this.contractFields.root,
       this.attributes(draft, state.board, true, 'placement'),
       h('details', { class: 'creation-details' }, h('summary', { text: '整理の詳細' }), this.attributes(draft, state.board, false, 'organization')),
       ...(draft.slackPreview ? [h('details', { class: 'creation-details' }, h('summary', { text: `Slack資料: ${draft.slackPreview.workspace} / ${draft.slackPreview.channelName}` }), h('p', { class: 'slack-body', text: draft.slackPreview.text }))] : []),
       h('label', { class: 'creation-open-after' }, openAfter, '作成後にカードを開く'));
+    }
     this.primary = h('button', { type: 'submit', class: 'btn-primary' },
       h('span', { text: edit ? '保存' : session ? this.sessionActionLabel() : 'タスクを作成' }), keycap('⌘/Ctrl', 'Enter'));
+    this.paintContract();
     this.newRequestButton = session ? h('button', { type: 'button', class: 'btn session-new-request', hidden: !this.sessionDraft.startRequest, text: '新しい依頼', onclick: () => this.newSessionRequest() }) : null;
     form.append(content, feedback, h('div', { class: 'task-quick-actions' }, this.primary, this.newRequestButton,
       h('button', { type: 'button', class: 'btn creation-cancel', text: 'キャンセル', onclick: () => this.dialog.close() })));
@@ -71,6 +91,9 @@ const taskQuickAdd = {
     form.addEventListener('keydown', e => {
       if (e.key === 'Escape') { e.stopPropagation(); return; }
       if (e.isComposing || e.keyCode === 229) { if (e.key === 'Enter') e.preventDefault(); return; }
+      if (e.key === 'Enter' && e.target === title && !e.metaKey && !e.ctrlKey && !edit && !session && draft.contract?.level >= 2 && !this.paintContract()?.ready) {
+        e.preventDefault(); e.stopPropagation(); form.querySelector('.contract-goal')?.focus(); return; // an L2 contract is not finished by the title alone
+      }
       if (e.key === 'Enter' && ((e.metaKey || e.ctrlKey) || e.target === title)) {
         e.preventDefault(); e.stopPropagation(); this.submit(!!draft.openAfterCreate);
       }
@@ -424,6 +447,14 @@ const taskQuickAdd = {
     const draft = this.draft;
     if (!draft || draft.submitting) return;
     if (!draft.title.trim()) return this.title.focus();
+    if (!draft.editCardId) {
+      const built = contractDraftArgs(draft.contract, draft.title);
+      if (built.error) {
+        this.feedback.hidden = false; this.feedback.classList.add('error'); this.feedback.textContent = built.error.message;
+        return this.form.querySelector(built.error.selector)?.focus();
+      }
+      draft.contractArgs = built.contract;
+    }
     this.busy(true);
     this.feedback.hidden = false;
     this.feedback.classList.remove('error');
@@ -447,6 +478,10 @@ const taskQuickAdd = {
           [...crypto.getRandomValues(new Uint8Array(16))].map(n => n.toString(16).padStart(2, '0')).join('') });
       if (!saved) return;
       if (draft.slackSource) slackUi.refresh();
+      if (saved.matches && draft.contract) {
+        draft.contract = contractDraftDefaults(draft.contract.level);
+        if (draft.contract.level > 0) { this.mount(); this.feedback.hidden = false; } // the contract fields start over with the title
+      }
       this.title.value = draft.title;
       const message = saved.matches ? `「${saved.result.title}」を作成しました。` : `前回の「${saved.result.title}」を確認しました。現在の入力は保持しています。`;
       const reasons = this.hiddenReasons(saved.result);
