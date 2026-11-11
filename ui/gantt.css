@@ -31,7 +31,7 @@
   border-bottom: 1px solid var(--surface-border, rgba(255, 255, 255, 0.1));
   font-size: 12px;
   font-weight: 600;
-  color: var(--on-board, #fff);
+  color: var(--on-board);
   flex-shrink: 0;
 }
 
@@ -48,7 +48,7 @@
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  color: var(--on-board, #fff);
+  color: var(--on-board);
   cursor: pointer;
   transition: background 0.12s;
   user-select: none;
@@ -58,7 +58,7 @@
 }
 .gantt-row[aria-selected="true"] {
   background: var(--side-active, rgba(255, 255, 255, 0.2));
-  box-shadow: inset 3px 0 0 var(--focus, #388bff);
+  box-shadow: inset 3px 0 0 var(--focus);
 }
 .gantt-row.is-child {
   padding-left: 28px;
@@ -93,7 +93,7 @@
   z-index: 10;
 }
 .gantt-resizer:hover, .gantt-resizer.resizing {
-  background: var(--focus, #388bff);
+  background: var(--focus);
 }
 
 /* Right Content Area */
@@ -173,7 +173,7 @@
 }
 .gantt-day-header.is-today {
   background: rgba(239, 68, 68, 0.2);
-  color: #fca5a5;
+  color: var(--danger);
   font-weight: bold;
 }
 .gantt-day-header.is-weekend {
@@ -204,7 +204,7 @@
   top: 0;
   bottom: 0;
   width: 2px;
-  background: var(--today-line, #ef4444);
+  background: var(--danger);
   box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
   z-index: 4;
   pointer-events: none;
@@ -220,7 +220,7 @@
   justify-content: space-between;
   padding: 0 8px;
   font-size: 11px;
-  color: #fff;
+  color: var(--on-solid);
   cursor: pointer;
   box-shadow: var(--card-shadow, 0 1px 2px rgba(0, 0, 0, 0.3));
   transition: transform 0.1s, box-shadow 0.1s, border-color 0.1s;
@@ -231,16 +231,16 @@
 .gantt-bar-item:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  border-color: #fff;
+  border-color: var(--on-solid);
 }
 .gantt-bar-item.task-bracket {
   height: 22px;
   background: rgba(147, 51, 234, 0.4);
-  border: 1.5px solid #c084fc;
+  border: 1.5px solid var(--c-purple);
 }
 .gantt-bar-item.session-bar {
   background: rgba(16, 185, 129, 0.3);
-  border: 1px solid #34d399;
+  border: 1px solid var(--c-green);
 }
 .gantt-bar-progress {
   position: absolute;
@@ -263,7 +263,7 @@
   border-radius: 10px;
   padding: 10px;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
-  color: #fff;
+  color: var(--on-solid);
   pointer-events: none;
   font-size: 11.5px;
   transform: translate(-50%, -100%);
