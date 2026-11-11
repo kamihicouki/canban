@@ -53,6 +53,7 @@ function renderInbox(b) {
 // After every drawing of the board: the docked card follows the 時間軸 — docked on its right while it is shown,
 // gone with it when the board comes back. A card opened large stays large.
 function syncDockedCard() {
+  if (typeof ganttOn === 'function' && ganttOn()) return syncGanttDockedCard();
   if (!inboxOn() || !$('#board .inbox-main')) { if (paneDocked()) closeCards({ dock: false }); return; }
   if (paneDocked()) return paneMetrics();
   if (paneLayer.hidden && state.inbox.sel && findCard(state.inbox.sel)) openCard(state.inbox.sel, { dock: true });

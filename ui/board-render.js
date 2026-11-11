@@ -32,11 +32,12 @@ function render() {
   const focused = document.activeElement;
   const focusedCard = boardEl.contains(focused) ? focused.closest('.card')?.dataset.cardId : null;
   const frag = document.createDocumentFragment();
-  boardEl.classList.toggle('with-lanes', !!state.filters.swimlane && !inboxOn());
+  boardEl.classList.toggle('with-lanes', !!state.filters.swimlane && !inboxOn() && !ganttOn());
   boardEl.style.setProperty('--lane-max-h', (LANE_HEIGHTS[state.filters.laneHeight] || LANE_HEIGHTS.normal)[1]);
   state.lanes = state.filters.swimlane ? buildLanes(b, state.filters.swimlane) : [];
   if (state.soloLane && !state.lanes.some((l) => l.key === state.soloLane)) state.soloLane = null;
   if (inboxOn()) frag.append(renderInbox(b));
+  else if (ganttOn()) frag.append(renderGantt(b));
   else if (state.filters.swimlane) {
     if (state.soloLane) {
       frag.append(h('div', { class: 'solo-bar' }, `「${state.lanes.find(l => l.key === state.soloLane)?.name}」だけを表示中`,
@@ -47,7 +48,7 @@ function render() {
     for (const list of b.lists) frag.append(renderList(list));
     frag.append(renderAddList());
   }
-  if (state.filters.swimlane && !inboxOn() && slackUi.visible) { const lanes = h('div', { class: 'slack-lanes' }, frag); boardEl.replaceChildren(lanes); }
+  if (state.filters.swimlane && !inboxOn() && !ganttOn() && slackUi.visible) { const lanes = h('div', { class: 'slack-lanes' }, frag); boardEl.replaceChildren(lanes); }
   else boardEl.replaceChildren(frag);
   boardEl.classList.toggle('with-slack', slackUi.visible);
   const slackNode = slackUi.boardNode(); if (slackNode) boardEl.prepend(slackNode);

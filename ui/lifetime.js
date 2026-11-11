@@ -5,25 +5,25 @@
 //   時間軸         the board by time instead of by list (`i`): needs you, running, today, yesterday, …
 const RIBBON_DAYS_ALL = 90;
 const PERIODS = [[7, '7日'], [30, '30日'], [90, '90日'], [0, '全期間']];
-state.view = store.get('boardView', 'board') === 'timeline' ? 'timeline' : 'board';
+state.view = ['board', 'timeline', 'gantt'].includes(store.get('boardView')) ? store.get('boardView') : 'board';
 state.lens = null;        // { day } or { life }: what the board lights, pinned by a click
 state.lensPreview = null; // the same while the pointer rests on the ribbon
 state.wake = new Set(store.get('wakeLists', [])); // folds that are open (list id, or lane + list id)
 
 const timelineOn = () => state.view === 'timeline';
 function setBoardView(view) {
-  state.view = view === 'timeline' ? 'timeline' : 'board';
+  state.view = ['board', 'timeline', 'gantt'].includes(view) ? view : 'board';
   store.set('boardView', state.view);
   if (workspace.utilityPage()) workspace.navigate('home', { reload: false });
   if (state.board) render();
 }
-const toggleBoardView = () => setBoardView(timelineOn() ? 'board' : 'timeline');
+const toggleBoardView = () => setBoardView(state.view === 'board' ? 'timeline' : (state.view === 'timeline' ? 'gantt' : 'board'));
 
 // ---- the view switch in the app bar: one control, the key beside it ----
 function renderViewSwitch() {
   const el = $('#viewSwitch');
   if (!el) return;
-  el.replaceChildren(...[['board', 'board', 'ボード'], ['timeline', 'clock', '時間軸']].map(([v, icon, label]) =>
+  el.replaceChildren(...[['board', 'board', 'ボード'], ['timeline', 'clock', '時間軸'], ['gantt', 'calendar', 'ガント']].map(([v, icon, label]) =>
     h('button', { type: 'button', 'aria-pressed': String(state.view === v), 'aria-label': label, title: `${label}（i で切り替え）`, onclick: () => setBoardView(v) },
       h('span', { html: picon(icon, 15) }), state.view === v ? h('span', { class: 'lbl', text: label }) : null)), ...keycap('i'));
   fitHeader(); // the switch changed width: the app bar may need to give way again

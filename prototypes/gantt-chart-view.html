@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="ja" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Canban - ガントチャート (Gantt Chart View)</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    :root {
+      --board-bg: #1d2125;
+      --board-gradient: linear-gradient(135deg, #0e1726 0%, #0b2a4a 55%, #13192b 100%);
+      --surface-header: rgba(15, 23, 42, 0.9);
+      --surface-border: rgba(255, 255, 255, 0.1);
+      --grid-line: rgba(255, 255, 255, 0.05);
+      --grid-line-major: rgba(255, 255, 255, 0.12);
+      --today-line: #ef4444;
+      --card-fg: #f1f5f9;
+      --card-muted: #94a3b8;
+    }
+    html.light {
+      --board-bg: #0079bf;
+      --board-gradient: linear-gradient(135deg, #0284c7 0%, #3b82f6 50%, #4f46e5 100%);
+      --surface-header: rgba(255, 255, 255, 0.95);
+      --surface-border: rgba(0, 0, 0, 0.1);
+      --grid-line: rgba(0, 0, 0, 0.05);
+      --grid-line-major: rgba(0, 0, 0, 0.12);
+      --today-line: #dc2626;
+      --card-fg: #0f172a;
+      --card-muted: #475569;
+    }
+
+    body {
+      background: var(--board-gradient);
+      color: var(--card-fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.15);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.25);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.4);
+    }
+
+    .gantt-day-col {
+      width: 48px;
+      min-width: 48px;
+    }
+    .gantt-day-col.is-weekend {
+      background-color: rgba(0, 0, 0, 0.12);
+    }
+    html.light .gantt-day-col.is-weekend {
+      background-color: rgba(0, 0, 0, 0.03);
+    }
+
+    @keyframes live-pulse {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+      70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    .animate-today-glow {
+      animation: live-pulse 2s infinite;
+    }
+
+    /* Floating tooltip transition */
+    #hoverTooltip {
+      pointer-events: none;
+      transition: opacity 0.12s ease-out, transform 0.08s ease-out;
+      transform: translate(-50%, -100%);
+    }
+
+    /* Resizer styling */
+    .resizer-handle {
+      width: 6px;
+      cursor: col-resize;
+      background: rgba(255, 255, 255, 0.05);
+      transition: background 0.15s;
+    }
+    .resizer-handle:hover, .resizer-handle.resizing {
+      background: rgba(56, 189, 248, 0.6);
+    }
+
+    /* Dropdown hover popover */
+    .hover-popover-trigger:hover .hover-popover-content {
+      display: block;
+    }
+  </style>
+</head>
+<body class="flex flex-col h-screen select-none">
+
+  <!-- ================= TOP APP BAR (SINGLE 1-ROW HEADER) ================= -->
+  <header class="h-12 border-b border-white/10 bg-black/35 backdrop-blur-md px-3 flex items-center justify-between text-white flex-shrink-0 z-30">
+    
+    <!-- Left: Logo, Board, View, and Quick Actions -->
+    <div class="flex items-center gap-2.5">
+      <!-- Logo -->
+      <div class="flex items-center gap-2 font-bold tracking-tight text-sm mr-1">
+        <svg class="w-5 h-5 text-sky-400" viewBox="0 0 24 24" fill="currentColor">
+          <rect x="3" y="4" width="4" height="14" rx="1.5" />
+          <rect x="10" y="4" width="4" height="10" rx="1.5" opacity="0.8" />
+          <rect x="17" y="4" width="4" height="16" rx="1.5" opacity="0.9" />
+          <circle cx="19" cy="21" r="1.5" class="text-amber-400" />
+        </svg>
+        <span class="tracking-wider">canban</span>
+      </div>
+
+      <div class="h-4 w-px bg-white/20"></div>
+
+      <!-- Board Name -->
+      <button class="px-2 py-1 text-xs font-semibold rounded bg-white/10 hover:bg-white/20 flex items-center gap-1.5 transition">
+        <span>メインボード</span>
+      </button>
+
+      <!-- View Selector (Board / Gantt Chart) -->
+      <div class="flex items-center bg-black/40 rounded-lg p-0.5 border border-white/15 text-xs">
+        <button class="px-2 py-0.5 rounded text-white/70 hover:text-white transition flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+          <span>ボード</span>
+        </button>
+        <button class="px-2.5 py-0.5 rounded bg-sky-500 text-white font-bold shadow flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="6" x2="14" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="6" y1="18" x2="16" y2="18"/></svg>
+          <span>ガント</span>
+        </button>
+      </div>
+
+      <!-- TODAY Button (Icon + Label) -->
+      <button id="jumpTodayBtn" class="px-2 py-1 rounded bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-200 text-xs font-semibold flex items-center gap-1.5 transition ml-1" title="本日の位置へスクロール">
+        <span class="w-1.5 h-1.5 rounded-full bg-red-400 animate-today-glow"></span>
+        <span>TODAY</span>
+      </button>
+    </div>
+
+    <!-- Center/Right Toolbar Items (Icon + Label only, with hover expansion) -->
+    <div class="flex items-center gap-2">
+      
+      <!-- Scale Dropdown (Hover to expand) -->
+      <div class="relative hover-popover-trigger">
+        <button class="px-2 py-1 rounded bg-white/10 hover:bg-white/15 border border-white/10 text-xs text-white/90 flex items-center gap-1.5 transition">
+          <svg class="w-3.5 h-3.5 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span id="currentScaleLabel">日表示</span>
+          <svg class="w-3 h-3 text-white/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <!-- Hover Popover Content -->
+        <div class="hover-popover-content hidden absolute left-0 top-full pt-1.5 z-50">
+          <div class="bg-[#1e293b] border border-white/15 rounded-xl shadow-2xl p-1.5 text-xs text-white w-28 space-y-0.5">
+            <button class="w-full text-left px-2 py-1 rounded hover:bg-sky-500 hover:text-white transition font-medium flex items-center justify-between" onclick="setScale('日表示')">
+              <span>日表示</span><span class="text-[10px] text-sky-300">✓</span>
+            </button>
+            <button class="w-full text-left px-2 py-1 rounded hover:bg-sky-500 hover:text-white transition text-white/70" onclick="setScale('週表示')">週表示</button>
+            <button class="w-full text-left px-2 py-1 rounded hover:bg-sky-500 hover:text-white transition text-white/70" onclick="setScale('月表示')">月表示</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Agent Filter (Hover to expand) -->
+      <div class="relative hover-popover-trigger">
+        <button class="px-2 py-1 rounded bg-white/10 hover:bg-white/15 border border-white/10 text-xs text-white/90 flex items-center gap-1.5 transition">
+          <svg class="w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span id="currentAgentLabel">担当: すべて</span>
+          <svg class="w-3 h-3 text-white/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <!-- Hover Popover Content -->
+        <div class="hover-popover-content hidden absolute left-0 top-full pt-1.5 z-50">
+          <div class="bg-[#1e293b] border border-white/15 rounded-xl shadow-2xl p-1.5 text-xs text-white w-36 space-y-0.5">
+            <button class="w-full text-left px-2 py-1 rounded hover:bg-white/10 transition font-medium flex items-center gap-1.5" onclick="setAgentFilter('all', '担当: すべて')">
+              <span class="w-2 h-2 rounded-full bg-white"></span><span>すべて</span>
+            </button>
+            <button class="w-full text-left px-2 py-1 rounded hover:bg-white/10 transition flex items-center gap-1.5" onclick="setAgentFilter('codex', 'Codex')">
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span><span>Codex</span>
+            </button>
+            <button class="w-full text-left px-2 py-1 rounded hover:bg-white/10 transition flex items-center gap-1.5" onclick="setAgentFilter('claude', 'Claude')">
+              <span class="w-2 h-2 rounded-full bg-orange-400"></span><span>Claude</span>
+            </button>
+            <button class="w-full text-left px-2 py-1 rounded hover:bg-white/10 transition flex items-center gap-1.5" onclick="setAgentFilter('gemini', 'Gemini')">
+              <span class="w-2 h-2 rounded-full bg-blue-400"></span><span>Gemini</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dependencies Toggle (Icon + Label) -->
+      <button id="toggleDepsBtn" class="px-2 py-1 rounded bg-white/10 hover:bg-white/15 border border-white/10 text-xs text-white/90 flex items-center gap-1.5 transition" onclick="toggleDependencyLines()">
+        <svg class="w-3.5 h-3.5 text-sky-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
+        <span id="depsLabel">依存線: ON</span>
+      </button>
+
+      <div class="h-4 w-px bg-white/20 mx-0.5"></div>
+
+      <!-- Search Input -->
+      <div class="relative flex items-center">
+        <input type="text" placeholder="検索 ( / )" class="w-32 focus:w-48 transition-all duration-200 bg-white/10 hover:bg-white/15 focus:bg-white/20 border border-white/15 rounded-md px-2 py-1 text-xs text-white placeholder-white/50 focus:outline-none focus:ring-1 focus:ring-sky-400">
+        <kbd class="absolute right-2 text-[10px] text-white/50 font-mono pointer-events-none">⌘K</kbd>
+      </div>
+
+      <!-- Quick Task Button -->
+      <button class="bg-sky-500 hover:bg-sky-400 text-white px-2.5 py-1 rounded text-xs font-semibold flex items-center gap-1 shadow-sm transition">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span>作成</span>
+      </button>
+
+      <!-- Theme Switcher -->
+      <button id="themeToggle" class="p-1.5 rounded hover:bg-white/10 text-white/80 hover:text-white transition" title="テーマ切り替え">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ================= MAIN WORKSPACE (SIDEBAR 1 COLUMN + RIGHT TIMELINE / CARD AREA) ================= -->
+  <div class="flex-1 flex overflow-hidden relative">
+
+    <!-- LEFT SIDEBAR: WBS / TASK LIST (Width Adjustable via Resizer) -->
+    <aside id="taskSidebar" class="flex flex-col border-r border-white/15 bg-black/25 z-20 flex-shrink-0" style="width: 340px; min-width: 220px; max-width: 600px;">
+      
+      <!-- Sidebar Header -->
+      <div class="h-11 border-b border-white/15 bg-black/40 px-3 flex items-center justify-between text-xs font-semibold text-white/80 flex-shrink-0">
+        <div class="flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          <span>タスク・WBS</span>
+          <span class="text-[10px] bg-white/10 px-1.5 py-0.2 rounded text-white/60">5件</span>
+        </div>
+        <div class="flex items-center gap-3 text-[10px] text-white/50 font-mono">
+          <span>進捗</span>
+          <span>期日</span>
+        </div>
+      </div>
+
+      <!-- Task List Rows -->
+      <div id="wbsTableBody" class="flex-1 overflow-y-auto divide-y divide-white/10 select-none">
+        
+        <!-- ROW 1: Parent Task -->
+        <div class="wbs-row h-12 px-3 flex items-center justify-between text-xs hover:bg-white/[0.08] cursor-pointer transition bg-purple-950/20" data-task-id="t1" onclick="openRightDetail('t1')">
+          <div class="flex items-center gap-1.5 min-w-0 pr-2">
+            <span class="w-3.5 h-3.5 rounded bg-purple-500/30 text-purple-200 flex items-center justify-center font-bold text-[9px] flex-shrink-0">T</span>
+            <span class="font-bold text-white truncate">[タスク] 0.16.0 ガントビュー機能</span>
+          </div>
+          <div class="flex items-center gap-3 text-[10px] font-mono flex-shrink-0">
+            <span class="text-purple-300 font-bold">75%</span>
+            <span class="text-white/60">11/15</span>
+          </div>
+        </div>
+
+        <!-- ROW 2: Child 1 (Codex) -->
+        <div class="wbs-row h-12 pl-7 pr-3 flex items-center justify-between text-xs hover:bg-white/[0.08] cursor-pointer transition" data-task-id="s1" onclick="openRightDetail('s1')">
+          <div class="flex items-center gap-2 min-w-0 pr-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping flex-shrink-0"></span>
+            <span class="text-white/90 truncate font-medium">Codex: ガントUIプロトタイプ実装</span>
+          </div>
+          <div class="flex items-center gap-3 text-[10px] font-mono flex-shrink-0">
+            <span class="text-emerald-400 font-semibold">85%</span>
+            <span class="text-white/60">11/12</span>
+          </div>
+        </div>
+
+        <!-- ROW 3: Child 2 (Claude) -->
+        <div class="wbs-row h-12 pl-7 pr-3 flex items-center justify-between text-xs hover:bg-white/[0.08] cursor-pointer transition" data-task-id="s2" onclick="openRightDetail('s2')">
+          <div class="flex items-center gap-2 min-w-0 pr-2">
+            <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse flex-shrink-0"></span>
+            <span class="text-white/90 truncate font-medium">Claude: PRレビュー指摘の修正</span>
+          </div>
+          <div class="flex items-center gap-3 text-[10px] font-mono flex-shrink-0">
+            <span class="text-amber-400 font-semibold">50%</span>
+            <span class="text-white/60">11/13</span>
+          </div>
+        </div>
+
+        <!-- ROW 4: Child 3 (Gemini) -->
+        <div class="wbs-row h-12 pl-7 pr-3 flex items-center justify-between text-xs hover:bg-white/[0.08] cursor-pointer transition opacity-80" data-task-id="s3" onclick="openRightDetail('s3')">
+          <div class="flex items-center gap-2 min-w-0 pr-2">
+            <span class="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0"></span>
+            <span class="text-white/90 truncate">Gemini: E2Eテスト作成 & CI疎通</span>
+          </div>
+          <div class="flex items-center gap-3 text-[10px] font-mono flex-shrink-0">
+            <span class="text-white/40">0%</span>
+            <span class="text-white/60">11/15</span>
+          </div>
+        </div>
+
+        <!-- ROW 5: Completed (Antigravity) -->
+        <div class="wbs-row h-12 px-3 flex items-center justify-between text-xs hover:bg-white/[0.08] cursor-pointer transition" data-task-id="s4" onclick="openRightDetail('s4')">
+          <div class="flex items-center gap-2 min-w-0 pr-2">
+            <span class="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0"></span>
+            <span class="text-white/70 truncate line-through">Antigravity: SQLiteチューニング</span>
+          </div>
+          <div class="flex items-center gap-3 text-[10px] font-mono flex-shrink-0">
+            <span class="text-blue-400 font-semibold">100%</span>
+            <span class="text-white/40">11/10</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Sidebar Foot: Width hint -->
+      <div class="p-2 border-t border-white/10 text-[10px] text-white/40 flex items-center justify-between bg-black/20">
+        <span>↔ 境界をドラッグで幅調整</span>
+        <span id="widthIndicator">340px</span>
+      </div>
+    </aside>
+
+    <!-- RESIZER SPLITTER (Drag to resize sidebar width) -->
+    <div id="sidebarResizer" class="resizer-handle z-30" title="ドラッグしてサイドバー幅を変更"></div>
+
+    <!-- RIGHT CONTAINER: SWITCHES BETWEEN GANTT TIMELINE & OPENED CARD DETAIL -->
+    <main class="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+
+      <!-- ================= VIEW 1: GANTT CHART CANVAS ================= -->
+      <div id="ganttTimelineWrapper" class="flex-1 flex flex-col min-w-0 overflow-x-auto relative">
+        
+        <!-- Calendar Header -->
+        <div class="h-11 border-b border-white/15 bg-black/40 flex flex-col flex-shrink-0 select-none sticky top-0 z-10 w-[960px]">
+          <div class="h-5 px-3 flex items-center text-[11px] font-bold text-white/70 border-b border-white/10">
+            <span>2026年 11月</span>
+          </div>
+          <div class="h-6 flex divide-x divide-white/10 text-[10px] font-mono text-white/60">
+            <div class="gantt-day-col flex items-center justify-center"><span>11/07</span></div>
+            <div class="gantt-day-col flex items-center justify-center"><span>11/08</span></div>
+            <div class="gantt-day-col is-weekend flex items-center justify-center text-sky-400"><span>11/09</span></div>
+            <div class="gantt-day-col is-weekend flex items-center justify-center text-red-400"><span>11/10</span></div>
+            <!-- TODAY (11/11) Column -->
+            <div id="todayCol" class="gantt-day-col flex items-center justify-center bg-red-500/20 text-red-200 font-bold relative">
+              <span>11/11</span>
+              <div class="absolute -top-1 px-1 py-0.2 bg-red-500 text-white font-mono text-[8px] rounded uppercase shadow-sm">NOW</div>
+            </div>
+            <div class="gantt-day-col flex items-center justify-center"><span>11/12</span></div>
+            <div class="gantt-day-col flex items-center justify-center"><span>11/13</span></div>
+            <div class="gantt-day-col flex items-center justify-center"><span>11/14</span></div>
+            <div class="gantt-day-col flex items-center justify-center"><span>11/15</span></div>
+            <div class="gantt-day-col is-weekend flex items-center justify-center text-sky-400"><span>11/16</span></div>
+            <div class="gantt-day-col is-weekend flex items-center justify-center text-red-400"><span>11/17</span></div>
+            <div class="gantt-day-col flex items-center justify-center"><span>11/18</span></div>
+            <div class="gantt-day-col flex items-center justify-center"><span>11/19</span></div>
+            <div class="gantt-day-col flex items-center justify-center"><span>11/20</span></div>
+            <div class="gantt-day-col flex items-center justify-center"><span>11/21</span></div>
+            <div class="gantt-day-col flex items-center justify-center"><span>11/22</span></div>
+            <div class="gantt-day-col is-weekend flex items-center justify-center text-sky-400"><span>11/23</span></div>
+            <div class="gantt-day-col is-weekend flex items-center justify-center text-red-400"><span>11/24</span></div>
+            <div class="gantt-day-col flex items-center justify-center"><span>11/25</span></div>
+            <div class="gantt-day-col flex items-center justify-center"><span>11/26</span></div>
+          </div>
+        </div>
+
+        <!-- Gantt Rows Wrapper -->
+        <div id="ganttCanvas" class="flex-1 overflow-y-auto relative w-[960px] divide-y divide-white/10 select-none">
+          
+          <!-- VERTICAL TODAY RED LINE -->
+          <div class="absolute left-[216px] top-0 bottom-0 w-[2px] bg-red-500 z-20 shadow-[0_0_8px_rgba(239,68,68,0.9)] pointer-events-none"></div>
+
+          <!-- DEPENDENCY SVG OVERLAY -->
+          <svg id="dependencySvg" class="absolute inset-0 w-full h-full pointer-events-none z-15" style="min-height: 280px;">
+            <path d="M 288 72 L 310 72 L 310 120 L 260 120" fill="none" stroke="#38bdf8" stroke-width="2" stroke-dasharray="3,3" marker-end="url(#arrowhead)"/>
+            <path d="M 336 120 L 360 120 L 360 168 L 340 168" fill="none" stroke="#f59e0b" stroke-width="2" stroke-dasharray="3,3" marker-end="url(#arrowhead)"/>
+            <defs>
+              <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                <polygon points="0 0, 6 3, 0 6" fill="#38bdf8" />
+              </marker>
+            </defs>
+          </svg>
+
+          <!-- ROW 1: PARENT TASK 1 BAR -->
+          <div class="h-12 relative flex items-center hover:bg-white/[0.03] transition">
+            <div class="gantt-bar absolute left-[48px] h-6 rounded bg-purple-900/60 border-2 border-purple-400 flex items-center px-2 z-10 shadow cursor-pointer hover:border-white transition-all"
+                 style="width: 384px;"
+                 data-task-id="t1"
+                 onclick="openRightDetail('t1')">
+              <div class="absolute left-0 top-0 bottom-0 bg-purple-500/40 rounded-l" style="width: 75%;"></div>
+              <span class="text-[10px] font-bold text-purple-100 z-10 truncate">0.16.0 ガント機能追加 (75%)</span>
+              <span class="ml-auto text-[9px] font-mono text-purple-200 z-10">11/08 〜 11/15</span>
+            </div>
+          </div>
+
+          <!-- ROW 2: CHILD SESSION 1 (Codex) -->
+          <div class="h-12 relative flex items-center hover:bg-white/[0.03] transition">
+            <div class="gantt-bar absolute left-[96px] h-8 rounded-lg bg-emerald-950/90 border border-emerald-400 flex items-center justify-between px-2.5 z-10 shadow-lg cursor-pointer hover:scale-[1.01] hover:border-white transition-all group"
+                 style="width: 192px;"
+                 data-task-id="s1"
+                 onclick="openRightDetail('s1')">
+              <div class="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-emerald-600 to-emerald-500 rounded-l-lg" style="width: 85%;"></div>
+              <div class="flex items-center gap-1.5 z-10 min-w-0">
+                <span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                <span class="text-[11px] font-bold text-white truncate">Codex (85%)</span>
+              </div>
+              <span class="text-[9px] font-mono text-emerald-100 z-10">稼働中</span>
+            </div>
+          </div>
+
+          <!-- ROW 3: CHILD SESSION 2 (Claude) -->
+          <div class="h-12 relative flex items-center hover:bg-white/[0.03] transition">
+            <div class="gantt-bar absolute left-[192px] h-8 rounded-lg bg-amber-950/90 border border-amber-400 flex items-center justify-between px-2.5 z-10 shadow-lg cursor-pointer hover:scale-[1.01] hover:border-white transition-all group"
+                 style="width: 144px;"
+                 data-task-id="s2"
+                 onclick="openRightDetail('s2')">
+              <div class="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-amber-600 to-amber-500 rounded-l-lg" style="width: 50%;"></div>
+              <div class="flex items-center gap-1.5 z-10 min-w-0">
+                <span class="w-2 h-2 rounded-full bg-amber-200 animate-ping"></span>
+                <span class="text-[11px] font-bold text-white truncate">Claude (50%)</span>
+              </div>
+              <span class="text-[9px] font-mono text-amber-100 z-10">入力待ち</span>
+            </div>
+          </div>
+
+          <!-- ROW 4: CHILD SESSION 3 (Gemini) -->
+          <div class="h-12 relative flex items-center hover:bg-white/[0.03] transition opacity-80">
+            <div class="gantt-bar absolute left-[288px] h-8 rounded-lg bg-blue-950/50 border border-dashed border-blue-400/80 flex items-center justify-between px-2.5 z-10 shadow cursor-pointer hover:border-white transition-all group"
+                 style="width: 144px;"
+                 data-task-id="s3"
+                 onclick="openRightDetail('s3')">
+              <div class="flex items-center gap-1.5 z-10 min-w-0">
+                <span class="text-[11px] font-medium text-blue-200 truncate">Gemini (予定)</span>
+              </div>
+              <span class="text-[9px] font-mono text-blue-300 z-10">未着手</span>
+            </div>
+          </div>
+
+          <!-- ROW 5: COMPLETED SESSION (Antigravity) -->
+          <div class="h-12 relative flex items-center hover:bg-white/[0.03] transition">
+            <div class="gantt-bar absolute left-0 h-8 rounded-lg bg-blue-600 border border-blue-300 flex items-center justify-between px-2.5 z-10 shadow cursor-pointer hover:border-white transition-all"
+                 style="width: 192px;"
+                 data-task-id="s4"
+                 onclick="openRightDetail('s4')">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                <span class="text-[11px] font-medium text-white truncate">Antigravity: SQLiteチューニング</span>
+              </div>
+              <span class="text-[9px] font-mono text-white/80">完了</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Footer Guide -->
+        <footer class="h-8 bg-black/45 border-t border-white/10 px-4 flex items-center justify-between text-[11px] text-white/60 z-10 sticky bottom-0">
+          <div class="flex items-center gap-3">
+            <span>🎯 バーをホバー: <strong class="text-white">その時刻のメッセージプレビュー</strong></span>
+            <span class="text-white/30">|</span>
+            <span>👆 バーをクリック: <strong class="text-white">右側領域にタスク詳細を開く（サイドバー維持）</strong></span>
+          </div>
+          <span class="text-[10px] text-white/40 font-mono">Esc でガントチャートに戻る</span>
+        </footer>
+
+      </div>
+
+      <!-- ================= VIEW 2: OPENED CARD DETAIL (RIGHT REGION ONLY, SIDEBAR STAYS VISIBLE) ================= -->
+      <section id="cardDetailView" class="hidden flex-1 flex-col bg-[#161d27]/95 backdrop-blur-md overflow-hidden z-20 animate-fade-in">
+        
+        <!-- Header: Back to Gantt, Agent Badge, Branch, and Close Button -->
+        <div class="p-3.5 border-b border-white/10 bg-black/30 flex items-center justify-between flex-shrink-0">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <!-- Back to Gantt button -->
+            <button onclick="closeRightDetail()" class="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold text-white/90 flex items-center gap-1.5 transition">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+              <span>ガントに戻る</span>
+            </button>
+            <div class="h-4 w-px bg-white/20"></div>
+            <span id="detailAgentBadge" class="px-2.5 py-0.5 rounded text-xs font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">Codex</span>
+            <span id="detailBranch" class="text-xs text-white/60 font-mono truncate">feature/gantt-hover-preview</span>
+          </div>
+          
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-white/40 font-mono">Esc で閉じる</span>
+            <button onclick="closeRightDetail()" class="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition" title="閉じる (Esc)">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Task Title & Gantt Progress Card -->
+        <div class="p-4 border-b border-white/10 bg-black/15 flex-shrink-0">
+          <div class="flex items-center justify-between mb-1.5">
+            <span id="detailStatusBadge" class="px-2 py-0.5 rounded text-xs font-bold bg-emerald-500/20 text-emerald-300 flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>進行中 (85%)</span>
+            </span>
+            <span class="text-xs font-mono text-white/60" id="detailDates">期間: 11/09 〜 11/12</span>
+          </div>
+          <h2 id="detailTitle" class="text-lg font-bold text-white leading-snug">Codex: ガントUIプロトタイプ実装</h2>
+
+          <div class="mt-3">
+            <div class="flex justify-between text-xs text-white/70 mb-1">
+              <span>ガント進捗状況</span>
+              <span id="detailProgressPct" class="font-bold text-emerald-400">85%</span>
+            </div>
+            <div class="w-full bg-white/10 h-2 rounded-full overflow-hidden">
+              <div id="detailProgressBar" class="bg-gradient-to-r from-emerald-500 to-sky-400 h-full rounded-full transition-all duration-300" style="width: 85%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Conversation & Thought Scroll Area -->
+        <div class="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
+          
+          <!-- User Prompt -->
+          <div class="flex gap-3">
+            <div class="w-7 h-7 rounded-full bg-sky-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">U</div>
+            <div class="flex-1 bg-white/[0.08] rounded-xl p-3.5 border border-white/10 text-white/90">
+              <div class="text-[10px] font-semibold text-white/50 mb-1">ユーザーの指示</div>
+              <p id="detailPrompt" class="leading-relaxed text-sm">カードを前面に出すと他のタスクの状況が分からないので、開く領域はタイムラインの部分（右）としてください。サイドバー（タスク名・wbs) の幅は調整可能としてください。加えてツールバーが２行化されてるので、画面全体のレイアウトをサイドバー１列とトップバー１行としてください。</p>
+            </div>
+          </div>
+
+          <!-- Thought & Actions Process -->
+          <div class="border-l-2 border-emerald-500/50 ml-3.5 pl-4 space-y-2 py-1">
+            <div class="text-[11px] font-semibold text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              思考プロセス・ガント同期
+            </div>
+            <div class="bg-black/40 p-3 rounded-lg border border-white/5 text-xs text-white/80 space-y-1">
+              <div class="flex justify-between font-mono text-[11px]">
+                <span class="text-sky-300">UX改善: 右側ペイン展開</span>
+                <span class="text-emerald-400">適用済</span>
+              </div>
+              <p class="text-white/60 text-[11px]">左サイドバーのタスク一覧を維持したまま、右側タイムライン領域にスレッドを開くことで、タスク一覧の視認性と集中閲覧を両立させました。</p>
+            </div>
+          </div>
+
+          <!-- Agent Response -->
+          <div class="flex gap-3">
+            <div class="w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">C</div>
+            <div class="flex-1 bg-emerald-950/40 rounded-xl p-3.5 border border-emerald-500/30 text-white/90">
+              <div class="text-[10px] font-semibold text-emerald-300 mb-1 flex items-center justify-between">
+                <span>Codex の報告</span>
+                <span class="text-white/40">たった今</span>
+              </div>
+              <p id="detailMessage" class="leading-relaxed text-sm text-emerald-100">右側タイムライン領域へのドッキング展開、ドラッグによるサイドバー幅調整、トップバー1行化を実装しました！左側のタスク一覧を見ながら、スムーズにカードの切り替えが可能です。</p>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Bottom Prompt Composer -->
+        <div class="p-3 border-t border-white/10 bg-black/30 flex-shrink-0">
+          <div class="relative">
+            <textarea placeholder="追加の指示や返答を入力... (⌘Enter で送信)" rows="2" class="w-full bg-white/10 border border-white/20 rounded-xl p-2.5 text-xs text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-sky-400 resize-none"></textarea>
+            <div class="flex items-center justify-between mt-2 px-1">
+              <span class="text-[10px] text-white/40">⌘Enter 送信 / Esc ガントに戻る</span>
+              <button class="px-3.5 py-1.5 bg-sky-500 hover:bg-sky-400 text-white text-xs font-semibold rounded-lg transition shadow flex items-center gap-1.5">
+                <span>送信</span>
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+  </div>
+
+  <!-- ================= FLOATING HOVER PREVIEW TOOLTIP ================= -->
+  <div id="hoverTooltip" class="fixed hidden z-50 w-72 bg-[#1e293b]/95 backdrop-blur-md border border-white/20 rounded-xl p-3 shadow-2xl text-white pointer-events-none">
+    <div class="flex items-center justify-between border-b border-white/10 pb-2 mb-2">
+      <div class="flex items-center gap-1.5">
+        <span id="tooltipAgentBadge" class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300">Codex</span>
+        <span id="tooltipTaskTitle" class="text-xs font-bold truncate max-w-[130px]">UIプロトタイプ</span>
+      </div>
+      <span id="tooltipTime" class="text-[10px] font-mono text-sky-300">11/11 10:15</span>
+    </div>
+    
+    <div class="space-y-1.5 text-xs">
+      <div class="flex items-center gap-1 text-[10px] text-white/50">
+        <span id="tooltipSender" class="font-semibold text-white/80">ユーザーの指示:</span>
+      </div>
+      <p id="tooltipMessage" class="text-[11px] text-white/90 leading-snug line-clamp-3 bg-black/30 p-2 rounded border border-white/5">
+        ガントチャートのバーにホバーしている時、その時刻のそのタスクのメッセージをプレビューできる機能が欲しい。
+      </p>
+    </div>
+
+    <div class="mt-2 pt-1.5 border-t border-white/10 flex items-center justify-between text-[9px] text-white/40">
+      <span>マウス移動で時刻変更</span>
+      <span class="text-sky-300">クリックで右側に開く ➔</span>
+    </div>
+  </div>
+
+  <!-- ================= JAVASCRIPT LOGIC ================= -->
+  <script>
+    const taskDetails = {
+      't1': {
+        title: '[タスク] 0.16.0 ガントビュー機能',
+        badge: '親タスク (WBS)',
+        badgeClass: 'bg-purple-950 text-purple-300 border-purple-800',
+        branch: 'task/v0.16-gantt-chart',
+        status: '進行中 (75%)',
+        statusClass: 'bg-purple-500/20 text-purple-300',
+        progress: 75,
+        dates: '期間: 11/08 〜 11/15',
+        prompt: '0.16.0 のガントチャート機能追加に向けた親タスクを起票。',
+        message: '配下の3つのセッションが進行中。サマリーバーに進捗が反映されています。',
+        timePoints: [
+          { pct: 0.2, time: '11/08 10:00', sender: '親タスク起票', text: 'ガントチャート機能の仕様策定を開始しました。' },
+          { pct: 0.5, time: '11/10 14:00', sender: 'マイルストーン更新', text: 'Codex と Claude の子セッションへタスクを分割・割り当て完了。' },
+          { pct: 0.8, time: '11/11 09:30', sender: '進行状況', text: 'プロトタイプ実装が順調に進捗中（全体75%）。' }
+        ]
+      },
+      's1': {
+        title: 'Codex: ガントUIプロトタイプ実装',
+        badge: 'Codex',
+        badgeClass: 'bg-emerald-950 text-emerald-300 border-emerald-800',
+        branch: 'feature/gantt-hover-preview',
+        status: '進行中 (85%)',
+        statusClass: 'bg-emerald-500/20 text-emerald-300',
+        progress: 85,
+        dates: '期間: 11/09 〜 11/12 (NOW稼働中)',
+        prompt: 'カードを前面に出すと他のタスクの状況が分からないので、開く領域はタイムラインの部分（右）としてください。サイドバー（タスク名・wbs) の幅は調整可能としてください。加えてツールバーが２行化されてるので、画面全体のレイアウトをサイドバー１列とトップバー１行としてください。',
+        message: '右側タイムライン領域へのドッキング展開、ドラッグによるサイドバー幅調整、トップバー1行化を実装しました！左側のタスク一覧を見ながら、スムーズにカードの切り替えが可能です。',
+        timePoints: [
+          { pct: 0.1, time: '11/09 11:20', sender: 'ユーザーの初期指示', text: 'ガントチャート風のビューを作成してください。' },
+          { pct: 0.4, time: '11/10 16:45', sender: 'Codex の実行ログ', text: 'カレンダーグリッドとTODAY赤線マーカーを配置完了。' },
+          { pct: 0.8, time: '11/11 10:15', sender: 'Codex の最新発言', text: 'バーホバー時のメッセージプレビューと、右側領域へのスレッド展開を追加しました！' }
+        ]
+      },
+      's2': {
+        title: 'Claude: PRレビュー指摘の修正',
+        badge: 'Claude',
+        badgeClass: 'bg-orange-950 text-orange-300 border-orange-800',
+        branch: 'fix/pr-review',
+        status: '入力待ち (50%)',
+        statusClass: 'bg-amber-500/20 text-amber-300',
+        progress: 50,
+        dates: '期間: 11/11 〜 11/13',
+        prompt: 'PRレビューの指摘事項を修正してください。',
+        message: 'テスト方針の確認で待機中です。モック化か実通信かどちらにしますか？',
+        timePoints: [
+          { pct: 0.2, time: '11/11 08:30', sender: 'Claude の作業開始', text: 'レビュー指摘の差分をチェックしています。' },
+          { pct: 0.7, time: '11/11 09:50', sender: 'Claude の質問 (入力待ち)', text: 'テストスイートの書き換え方針について、モック化か実通信か選択肢の回答をお待ちしています。' }
+        ]
+      },
+      's3': {
+        title: 'Gemini: E2Eテスト作成 & CI疎通',
+        badge: 'Gemini',
+        badgeClass: 'bg-blue-950 text-blue-300 border-blue-800',
+        branch: 'ci/e2e-gantt',
+        status: '未着手 (0%)',
+        statusClass: 'bg-blue-500/20 text-blue-300',
+        progress: 0,
+        dates: '期間: 11/13 〜 11/15 (予定)',
+        prompt: 'ガントチャートのブラウザ自動テストを作成。',
+        message: 'Claudeの修正完了（依存関係）を待って着手予定です。',
+        timePoints: [
+          { pct: 0.5, time: '11/13 09:00', sender: 'Gemini (予定)', text: '先行タスクの完了通知を検知次第、自動でテスト実行を開始します。' }
+        ]
+      },
+      's4': {
+        title: 'Antigravity: SQLiteチューニング',
+        badge: 'Antigravity',
+        badgeClass: 'bg-indigo-950 text-indigo-300 border-indigo-800',
+        branch: 'db/sqlite-tuning',
+        status: '完了 (100%)',
+        statusClass: 'bg-blue-500/20 text-blue-300',
+        progress: 100,
+        dates: '期間: 11/07 〜 11/10',
+        prompt: 'EXPLAIN によるインデックスチューニング実施。',
+        message: 'レスポンスが大幅に短縮されPRがマージされました。',
+        timePoints: [
+          { pct: 0.1, time: '11/07 13:00', sender: 'Antigravity 開始', text: '低速クエリのプロファイリングを開始しました。' },
+          { pct: 0.9, time: '11/10 17:30', sender: 'Antigravity 完了', text: '全インデックスの作成完了。応答速度が4msに改善しました。' }
+        ]
+      }
+    };
+
+    // ================= 1. RESIZABLE SIDEBAR LOGIC =================
+    const sidebar = document.getElementById('taskSidebar');
+    const resizer = document.getElementById('sidebarResizer');
+    const widthIndicator = document.getElementById('widthIndicator');
+    let isResizing = false;
+
+    resizer.addEventListener('mousedown', (e) => {
+      isResizing = true;
+      resizer.classList.add('resizing');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+      const newWidth = Math.max(220, Math.min(600, e.clientX));
+      sidebar.style.width = `${newWidth}px`;
+      widthIndicator.textContent = `${Math.round(newWidth)}px`;
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isResizing) {
+        isResizing = false;
+        resizer.classList.remove('resizing');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    });
+
+    // Double click resizer to reset
+    resizer.addEventListener('dblclick', () => {
+      sidebar.style.width = '340px';
+      widthIndicator.textContent = '340px';
+    });
+
+    // ================= 2. OPEN DETAIL IN RIGHT REGION (SIDEBAR STAYS VISIBLE) =================
+    const ganttWrapper = document.getElementById('ganttTimelineWrapper');
+    const detailView = document.getElementById('cardDetailView');
+    let currentOpenId = null;
+
+    function openRightDetail(taskId) {
+      currentOpenId = taskId;
+      const data = taskDetails[taskId];
+      if (!data) return;
+
+      // Update right detail content
+      document.getElementById('detailTitle').textContent = data.title;
+      document.getElementById('detailAgentBadge').textContent = data.badge;
+      document.getElementById('detailAgentBadge').className = `px-2.5 py-0.5 rounded text-xs font-bold border ${data.badgeClass}`;
+      document.getElementById('detailBranch').textContent = data.branch;
+      document.getElementById('detailStatusBadge').innerHTML = `<span>${data.status}</span>`;
+      document.getElementById('detailStatusBadge').className = `px-2 py-0.5 rounded text-xs font-bold flex items-center gap-1.5 ${data.statusClass}`;
+      document.getElementById('detailDates').textContent = data.dates;
+      document.getElementById('detailProgressPct').textContent = `${data.progress}%`;
+      document.getElementById('detailProgressBar').style.width = `${data.progress}%`;
+      document.getElementById('detailPrompt').textContent = data.prompt;
+      document.getElementById('detailMessage').textContent = data.message;
+
+      // Switch right region views
+      ganttWrapper.style.display = 'none';
+      detailView.style.display = 'flex';
+
+      // Highlight active sidebar item
+      document.querySelectorAll('.wbs-row').forEach(row => {
+        const isMatch = row.dataset.taskId === taskId;
+        row.classList.toggle('bg-white/15', isMatch);
+        row.classList.toggle('ring-1', isMatch);
+        row.classList.toggle('ring-sky-400', isMatch);
+      });
+    }
+
+    function closeRightDetail() {
+      currentOpenId = null;
+      detailView.style.display = 'none';
+      ganttWrapper.style.display = 'flex';
+
+      document.querySelectorAll('.wbs-row').forEach(row => {
+        row.classList.remove('bg-white/15', 'ring-1', 'ring-sky-400');
+      });
+    }
+
+    // ================= 3. HOVER MESSAGE PREVIEW LOGIC =================
+    const tooltip = document.getElementById('hoverTooltip');
+    const tooltipAgentBadge = document.getElementById('tooltipAgentBadge');
+    const tooltipTaskTitle = document.getElementById('tooltipTaskTitle');
+    const tooltipTime = document.getElementById('tooltipTime');
+    const tooltipSender = document.getElementById('tooltipSender');
+    const tooltipMessage = document.getElementById('tooltipMessage');
+
+    document.querySelectorAll('.gantt-bar').forEach(bar => {
+      bar.addEventListener('mousemove', (e) => {
+        const taskId = bar.dataset.taskId;
+        const data = taskDetails[taskId];
+        if (!data) return;
+
+        const rect = bar.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const pct = Math.max(0, Math.min(1, mouseX / rect.width));
+
+        let closest = data.timePoints[0];
+        let minDiff = 999;
+        data.timePoints.forEach(tp => {
+          const diff = Math.abs(tp.pct - pct);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closest = tp;
+          }
+        });
+
+        tooltipAgentBadge.textContent = data.badge;
+        tooltipTaskTitle.textContent = data.title;
+        tooltipTime.textContent = closest.time;
+        tooltipSender.textContent = `${closest.sender}:`;
+        tooltipMessage.textContent = closest.text;
+
+        tooltip.style.left = `${e.clientX}px`;
+        tooltip.style.top = `${e.clientY - 14}px`;
+        tooltip.classList.remove('hidden');
+      });
+
+      bar.addEventListener('mouseleave', () => {
+        tooltip.classList.add('hidden');
+      });
+    });
+
+    // ================= 4. CONTROLS (Scale, Filters, Today, Theme) =================
+    function setScale(label) {
+      document.getElementById('currentScaleLabel').textContent = label;
+    }
+
+    function setAgentFilter(agent, label) {
+      document.getElementById('currentAgentLabel').textContent = label;
+      document.querySelectorAll('.wbs-row').forEach(row => {
+        if (agent === 'all' || row.dataset.taskId.includes(agent.substring(0, 1))) {
+          row.style.display = 'flex';
+        } else {
+          row.style.display = 'none';
+        }
+      });
+    }
+
+    let depsVisible = true;
+    function toggleDependencyLines() {
+      depsVisible = !depsVisible;
+      document.getElementById('dependencySvg').style.display = depsVisible ? 'block' : 'none';
+      document.getElementById('depsLabel').textContent = depsVisible ? '依存線: ON' : '依存線: OFF';
+    }
+
+    document.getElementById('jumpTodayBtn').addEventListener('click', () => {
+      if (detailView.style.display === 'flex') closeRightDetail();
+      ganttWrapper.scrollTo({ left: 100, behavior: 'smooth' });
+    });
+
+    document.getElementById('themeToggle').addEventListener('click', () => {
+      document.documentElement.classList.toggle('light');
+      document.documentElement.classList.toggle('dark');
+    });
+
+    // Esc key handling
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (detailView.style.display === 'flex') closeRightDetail();
+      }
+    });
+  </script>
+</body>
+</html>

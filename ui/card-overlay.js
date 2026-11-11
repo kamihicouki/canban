@@ -143,6 +143,10 @@ function showCards(ids, { dock } = {}) {
   paintPaneBar();
   if (!restoringPanes && !paneDocked()) store.set('openCard', ids[0]);
   if (timelineOn() && cardKind(ids[0]) !== 'view') markInboxSel(ids[0]);
+  if (typeof ganttOn === 'function' && ganttOn() && cardKind(ids[0]) !== 'view') {
+    state.gantt.sel = ids[0];
+    for (const r of $$('.gantt-row')) r.setAttribute('aria-selected', String(r.dataset.cardId === ids[0]));
+  }
   workspace.syncShell(); kickLive();
   if (wasHidden) paneStage.scrollLeft = 0;
   queueMicrotask(() => voiceMode.sync());
@@ -151,7 +155,7 @@ function showCards(ids, { dock } = {}) {
 // `dock: false` closes it all the same (archived, deleted).
 function closeCards({ dock = true } = {}) {
   if (paneLayer.hidden) return;
-  if (dock && overlayOpen() && timelineOn() && panes[0] && panes[0].kind !== 'view' && $('#board .inbox-main')) return dockCards();
+  if (dock && overlayOpen() && (timelineOn() || (typeof ganttOn === 'function' && ganttOn())) && panes[0] && panes[0].kind !== 'view' && ($('#board .inbox-main') || $('#board .gantt-main'))) return dockCards();
   const docked = paneDocked();
   endExchangeTrail();
   closePopover();
@@ -161,9 +165,9 @@ function closeCards({ dock = true } = {}) {
   store.set('openCard', null);
   workspace.syncShell(); kickLive();
   const back = cardReturn; cardReturn = null;
-  if (docked) state.inbox.sel = null; // the next drawing of the 時間軸 docks its first card
+  if (docked) { state.inbox.sel = null; if (typeof state.gantt === 'object') state.gantt.sel = null; }
   else refocus(back); // refocus() finds a card the board has re-rendered since by its id
-  if (timelineOn()) queueMicrotask(syncDockedCard);
+  if (timelineOn() || (typeof ganttOn === 'function' && ganttOn())) queueMicrotask(syncDockedCard);
   queueMicrotask(() => voiceMode.sync());
 }
 // Between the 時間軸's right side and the board: the same cards, drafts and scroll, only the place changes.
