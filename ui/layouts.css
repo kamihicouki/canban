@@ -86,6 +86,8 @@ body[data-layout="rail"] .shell { position: static; }
 
 /* C: omnibar: no sidebar; categories as a strip in the app bar, places in the dock */
 body[data-layout="omni"] #sidebar, body[data-layout="omni"] #sideBtn, body[data-layout="omni"] .board-name { display: none; }
+body[data-layout="omni"] .topbar { background: color-mix(in srgb, var(--header-bg) 75%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--chrome-line); }
+body[data-layout="omni"] .lifetime-wrap { background: color-mix(in srgb, var(--side-bg) 60%, transparent); backdrop-filter: blur(10px); }
 body[data-layout="omni"] .topbar .hsearch-wrap { flex: 0 1 380px !important; }
 body[data-layout="omni"] .topbar .hsearch { height: 36px; border-radius: 10px; }
 body[data-layout="omni"] .topbar > .spacer { display: none; }

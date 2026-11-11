@@ -54,9 +54,13 @@ function feedPush(f, it) {
     const kind = it.k === 'tool' ? toolKindOf(it.name)[0] : 'think';
     if (kind !== 'think') g._kinds.set(kind, (g._kinds.get(kind) || 0) + 1);
     paintToolGroup(g);
+    const p = typeof panes !== 'undefined' && panes.find((p) => live.feeds.get(p.id) === f);
+    if (p) paintThreadTimeline(p);
     return g;
   }
   f.edits ? f.list.insertBefore(el, f.edits.el) : f.list.append(el);
+  const p = typeof panes !== 'undefined' && panes.find((p) => live.feeds.get(p.id) === f);
+  if (p) paintThreadTimeline(p);
   return el;
 }
 function endTurn(f, it) {
@@ -168,10 +172,49 @@ function detailSection(id, title, nodes, { open = true, extra = null } = {}) {
   det.append(h('summary', {}, h('span', { class: 'dsec-t', text: title }), extra), h('div', { class: 'dsec-b' }, ...nodes));
   return det;
 }
+function buildThreadTimeline(p) {
+  const b = h('div', { class: 'th-timeline-b' });
+  const tl = h('aside', { class: 'th-timeline', 'aria-label': '思考・実行タイムライン' },
+    h('div', { class: 'th-timeline-h' }, h('span', { text: '思考・実行ステップ' }), h('span', { class: 'muted', html: picon('history', 13) })),
+    b
+  );
+  p.timelineEl = tl;
+  p.timelineBody = b;
+  paintThreadTimeline(p);
+  return tl;
+}
+function paintThreadTimeline(p) {
+  if (!p.timelineBody || p.timelineHidden) return;
+  const feed = live.feeds.get(p.id);
+  const items = [];
+  if (feed?.list) {
+    for (const child of feed.list.children) {
+      if (child.classList.contains('fi-user')) {
+        const text = child.querySelector('.fi-content')?.textContent?.trim() || '指示';
+        items.push({ kind: 'user', label: text.slice(0, 36), target: child });
+      } else if (child.classList.contains('tg')) {
+        const sum = child.querySelector('.tg-sum')?.textContent?.trim() || '思考・ツール実行';
+        items.push({ kind: 'tool', label: sum.slice(0, 36), target: child });
+      } else if (child.classList.contains('fi-asst')) {
+        const text = child.querySelector('.fi-content')?.textContent?.trim() || '回答';
+        items.push({ kind: 'asst', label: text.slice(0, 36), target: child });
+      }
+    }
+  }
+  p.timelineEl.hidden = p.timelineHidden || items.length === 0;
+  p.timelineBody.replaceChildren(...items.map((it) => h('button', {
+    class: `th-tl-item ${it.kind}`,
+    type: 'button',
+    title: it.label,
+    onclick: () => it.target?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+  }, h('span', { class: 'tl-dot' }), h('span', { class: 'tl-text', text: it.label }))));
+}
+
 function renderThreadPane(p, d, secs, { card, listSel }) {
   const el = p.el, s = d.session;
   // One entry per panel: the labelled buttons in the header (with their keys) open and close it.
   const side = h('aside', { class: 'th-side', 'aria-label': '詳細パネル', hidden: true }, h('div', { class: 'th-side-b' }));
+  const timeline = buildThreadTimeline(p);
   // The attributes: every section the module layout has, in one reading order.
   const order = [['progress', true], ['add', true], ['labels', true], ['prio', true], ['task', false], ['related', true], ['pr', true], ['memo', true], ['resume', true], ['detail', false], ['first', false], ['other', false], ['actions', false]];
   p.detailNodes = order.filter(([id]) => secs[id]).map(([id, open]) => detailSection(id, secs[id].title ?? secTitle(id), secs[id].nodes, { open, extra: secs[id].extra }));
@@ -190,6 +233,7 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
     h('span', { class: 'th-time', title: fmtDate(s.updatedAt), text: relTime(s.updatedAt) }),
   ].filter(Boolean);
   const head = h('div', { class: 'th-head' }, secs.breadcrumb.nodes[0], h('span', { class: 'grow' }),
+    h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'timeline', title: '思考タイムラインを左に開く・閉じる（y）', 'aria-pressed': String(!p.timelineHidden), 'aria-keyshortcuts': 'y', onclick: () => { p.timelineHidden = !p.timelineHidden; if (p.timelineEl) p.timelineEl.hidden = p.timelineHidden; paintThreadTimeline(p); } }, h('span', { html: picon('history', 14) }), '思考', ...keycap('y')),
     !s.host ? h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'changes', title: '作業フォルダの変更を右に開く・閉じる（f）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'f', onclick: () => toggleThreadSide(p, 'changes') }, h('span', { html: picon('diff', 14) }), '変更', h('span', { class: 'th-diffstat' }), ...keycap('f')) : null,
     !s.host ? h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'terminal', title: 'プロジェクトのルートで開くターミナルを右に開く・閉じる（t）', 'aria-pressed': 'false', 'aria-keyshortcuts': 't', onclick: () => toggleThreadSide(p, 'terminal') }, h('span', { html: picon('terminal', 14) }), 'ターミナル', ...keycap('t')) : null,
     h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'details', title: '属性・メモ・再開などを右に開く・閉じる（d）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'd', onclick: () => toggleThreadSide(p, 'details') }, h('span', { html: picon('panel', 14) }), '詳細', ...keycap('d')),
@@ -199,9 +243,10 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
     h('div', { class: 'th-conv', 'data-sec': 'conv' }, ...secs.conv.nodes),
     // Slack material sits beside the input it feeds (「依頼文に追加」), not in the details panel.
     h('div', { class: 'th-dock', 'data-sec': 'send' }, secs.slack ? h('details', { class: 'th-attach', 'data-sec': 'slack' }, h('summary', {}, h('span', { html: picon('message', 13) }), `Slack資料（${card.slackRefs.length}）`), ...secs.slack.nodes) : null, ...secs.send.nodes));
-  el.replaceChildren(...[head, threadStrip(p, d), title].filter(Boolean), h('div', { class: 'th-meta' }, secs.status.nodes[0], ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('session'));
+  el.replaceChildren(...[head, threadStrip(p, d), title].filter(Boolean), h('div', { class: 'th-meta' }, secs.status.nodes[0], ...chips), h('div', { class: 'th-body' }, timeline, main, side), ...paneSizeHandles('session'));
   paintThreadStat(p, git);
   paintThreadSide(p);
+  paintThreadTimeline(p);
 }
 
 // The same frame before the detail arrives: the board's card already has the title, the state and the

@@ -56,9 +56,11 @@ function applyPaneAttrs(p) {
 
 // ---- the bar over the cards: how the conversation is shown, reset layout, close ----
 function buildPaneBar() {
-  const mode = h('div', { class: 'seg', role: 'group', 'aria-label': '会話の表示' },
+  const mode = h('div', { class: 'seg pb-mode', role: 'group', 'aria-label': '会話の表示' },
     ...PANE_MODES.map(([v, t], i) => h('button', { type: 'button', 'data-v': v, 'aria-pressed': 'false', 'aria-keyshortcuts': String(i + 1), onclick: () => setPaneMode(v) }, t, ' ', ...keycap(String(i + 1)))));
-  paneBar.append(h('span', { class: 'pb-title' }), mode,
+  const viewMode = h('div', { class: 'seg pb-viewmode', role: 'group', 'aria-label': '表示モード' },
+    ...CARD_VIEW_MODES.map(([v, t]) => h('button', { type: 'button', 'data-view-mode': v, 'aria-pressed': 'false', title: `${t}表示に切り替え（v）`, onclick: () => setPaneViewMode(v) }, t)));
+  paneBar.append(h('span', { class: 'pb-title' }), mode, viewMode,
     h('button', { class: 'hbtn pb-reset', type: 'button', title: '開いている種類のカードの幅と高さを既定に戻します', onclick: resetCardLayout }, 'サイズを初期化'),
     h('button', { class: 'hbtn pb-expand', type: 'button', title: 'カードをボードの上に大きく開く（Enter）', onclick: expandCards }, h('span', { html: picon('expand', 14) }), '大きく開く ', ...keycap('Enter')));
 }
@@ -68,13 +70,28 @@ function paintPaneBar() {
   for (const el of $$('.seg, .pb-reset', paneBar)) el.hidden = view; // a sheet has no conversation, no card layout and no neighbour to step to
   $('.pb-reset', paneBar).hidden ||= paneDocked(); // docked, the 時間軸 decides the size
   $('.pb-expand', paneBar).hidden = !paneDocked();
+  $('.pb-viewmode', paneBar).hidden = view || paneDocked();
   $$('button[data-v]', paneBar).forEach((b) => b.setAttribute('aria-pressed', String(paneGlobal.mode === b.dataset.v)));
+  $$('button[data-view-mode]', paneBar).forEach((b) => b.setAttribute('aria-pressed', String((paneGlobal.viewMode || 'full') === b.dataset.viewMode)));
+  applyPaneViewMode();
   refreshShortcutHints();
 }
 buildPaneBar();
 function setPaneMode(mode) {
   paneGlobal.mode = oneOf(mode, PANE_MODES, PANE_DEF.mode); saveGlobal();
   panes.forEach(applyPaneAttrs); paintPaneBar();
+}
+function setPaneViewMode(mode) {
+  paneGlobal.viewMode = oneOf(mode, CARD_VIEW_MODES, 'full'); saveGlobal();
+  applyPaneViewMode(); paintPaneBar();
+}
+function cyclePaneViewMode() {
+  const keys = CARD_VIEW_MODES.map(([k]) => k);
+  const idx = Math.max(0, keys.indexOf(paneGlobal.viewMode));
+  setPaneViewMode(keys[(idx + 1) % keys.length]);
+}
+function applyPaneViewMode() {
+  paneLayer.dataset.viewMode = paneDocked() ? 'docked' : (paneGlobal.viewMode || 'full');
 }
 
 // ---- showing and hiding ----
@@ -368,8 +385,10 @@ document.addEventListener('keydown', e => {
   else if (p && p.kind !== 'view') {
     if (k === 'j' || k === 'k') run = () => stepOpenCard(k === 'j' ? 1 : -1);
     else if (k === '[' || k === ']') run = () => stepPane(k === ']' ? 1 : -1);
+    else if (k === 'v') run = cyclePaneViewMode;
     else if (/^[1-9]$/.test(k) && PANE_MODES[k - 1]) run = () => setPaneMode(PANE_MODES[k - 1][0]);
     else if (k === 'i') run = () => focusPrompt(p);
+    else if (p.kind === 'session' && k === 'y') run = () => { p.timelineHidden = !p.timelineHidden; if (p.timelineEl) p.timelineEl.hidden = p.timelineHidden; paintThreadTimeline(p); };
     else if ((p.kind === 'session' && (k === 'd' || (k === 'f' && !sessionHost(p)))) || (p.kind === 'task' && k === 'd')) run = () => toggleThreadSide(p, k === 'd' ? 'details' : 'changes');
     else if (e.shiftKey && k === 'R' && terminalAvailable(p) && cardTerms.get(p.id)?.closed) run = () => restartTerminal(p);
     else if (e.shiftKey && k === 'X' && terminalAvailable(p) && cardTerms.get(p.id)?.id && !cardTerms.get(p.id)?.closed) run = () => endTerminal(p);

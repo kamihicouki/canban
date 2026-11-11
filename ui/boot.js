@@ -45,7 +45,10 @@ function adoptSharedUi(record) {
       state.layoutSaved = value.layout; state.layout = next;
     }
     if (value.boardView === 'board' || value.boardView === 'timeline') state.view = value.boardView;
-    if (value.paneGlobal && typeof value.paneGlobal === 'object') Object.assign(paneGlobal, { mode: oneOf(value.paneGlobal.mode, PANE_MODES, PANE_DEF.mode) });
+    if (value.paneGlobal && typeof value.paneGlobal === 'object') {
+      if (value.paneGlobal.mode) paneGlobal.mode = oneOf(value.paneGlobal.mode, PANE_MODES, PANE_DEF.mode);
+      if (value.paneGlobal.viewMode) paneGlobal.viewMode = oneOf(value.paneGlobal.viewMode, CARD_VIEW_MODES, 'full');
+    }
     if (['spread', 'center', 'stack'].includes(value.exchangeTrailView)) { exchangeTrailView = value.exchangeTrailView; paintExchangeTrail(); }
     if (value.cardWidths) Object.assign(cardWidths, normalizeCardWidths(value.cardWidths));
     if (value.cardHeights) Object.assign(cardHeights, normalizeCardHeights(value.cardHeights));

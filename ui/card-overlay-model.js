@@ -2,6 +2,8 @@
 // A card is shown on its own layer above the board. Its width and height are kept per kind of card —
 // "session" and "task" — and shared by every card of that kind.
 const CARD_KINDS = ['session', 'task'];
+const CARD_VIEW_MODES = [['full', '全画面'], ['split', 'スプリット'], ['sheet', 'シート']];
+const normalizeCardViewMode = (v) => (CARD_VIEW_MODES.some(([k]) => k === v) ? v : 'full');
 const CARD_WIDTH_DEF = { session: 1000, task: 760 };
 const CARD_WIDTH_MIN = 560, CARD_WIDTH_MAX = 1600;
 const CARD_HEIGHT_DEF = { session: 860, task: 860 };
