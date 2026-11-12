@@ -14,6 +14,7 @@ export function storageScope(value) {
 const fields = ['provider', 'identityDomain', 'scopeId', 'kind', 'nativeId'];
 const attributes = { codexProject: ['codex', 'project', 'memberOf'], codexSection: ['codex', 'section', 'displayedIn'], claudeGroup: ['claude', 'group', 'displayedIn'], claudeEnvironment: ['claude', 'environment', null] };
 const extraAttributes = {
+  antigravityProject: ['antigravity', 'project', 'memberOf'],
   antigravityBrain: ['antigravity', 'brain', 'memberOf'],
   geminiProject: ['gemini', 'project', 'memberOf'],
   cursorWorkspace: ['cursor', 'workspace', 'memberOf'],

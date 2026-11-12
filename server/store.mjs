@@ -147,14 +147,7 @@ export function resolveDirectory(state, card, cwd, session = null) {
       fallbackCategoryId: legacyDirectory?.id, legacySourceKey: old?.key,
       pathBindings: mapping?.legacyPathBindings || [], hostId: session?.host?.id || 'local', agent: session?.agent,
       repoName: session?.repoName, projectName: session?.project } });
-  if (result.categoryId) {
-    const existing = state.directories.find(d => d.id === result.categoryId);
-    if (existing) return existing;
-    if (result.status === 'auto_repo') {
-      return { id: result.categoryId, name: result.categoryName || session?.repoName || 'Auto', isAuto: true };
-    }
-  }
-  return null;
+  return result.categoryId ? state.directories.find(d => d.id === result.categoryId) || null : null;
 }
 
 function placeCard(card, toListId, order, at = new Date().toISOString()) {

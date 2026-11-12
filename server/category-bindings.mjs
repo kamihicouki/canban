@@ -68,26 +68,7 @@ export function resolveCategory({ card, sourceView, bindings = [], legacy = {} }
   // Directory prefixes belong to Task/source-less callers; native sessions
   // keep their exact source keys/bindings, including the Claude cwd rule above.
   const path = ['codex', 'claude'].includes(legacy.agent) ? null : pathCategory(legacy.directories, legacy.cwd);
-  if (path) return { status: 'legacy', categoryId: path.id };
-
-  // Hybrid Mode 2: Auto match by repoName or projectName
-  const cands = [legacy.repoName, legacy.projectName, legacy.project].filter(Boolean).map(s => String(s).trim().toLowerCase());
-  if (cands.length && Array.isArray(legacy.directories)) {
-    for (const dir of legacy.directories) {
-      const dName = String(dir.name || '').trim().toLowerCase();
-      if (dName && cands.includes(dName)) {
-        return { status: 'auto_matched', categoryId: dir.id, matchedBy: dir.name };
-      }
-    }
-  }
-
-  // Hybrid Mode 1: Fallback auto grouping by repoName (or project name)
-  const autoName = legacy.repoName || legacy.projectName || legacy.project || null;
-  if (autoName && autoName !== 'outside-of-project') {
-    return { status: 'auto_repo', categoryId: `auto:repo:${autoName}`, categoryName: autoName };
-  }
-
-  return { status: 'unclassified', categoryId: null };
+  return path ? { status: 'legacy', categoryId: path.id } : { status: 'unclassified', categoryId: null };
 }
 
 // Pure dry run. Callers may persist this copy using the existing board payload;

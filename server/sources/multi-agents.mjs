@@ -348,6 +348,19 @@ export async function listAntigravitySessions(rawOpts = {}) {
         updatedAt,
       });
 
+      const brainObs = makeEntityObservation({
+        provider: 'antigravity',
+        scopeId: brainDir || agyRoot,
+        kind: 'brain',
+        nativeId: convId,
+        name: displayProject,
+        product: 'Antigravity',
+        surface: 'ide',
+        cwd,
+        hostId: host.id || 'local',
+        updatedAt,
+      });
+
       sessions.push({
         id: sessionKey('antigravity', host, convId),
         nativeId: convId,
@@ -375,7 +388,7 @@ export async function listAntigravitySessions(rawOpts = {}) {
         sourcePath: brain?.transcriptPath || (exists(csDbPath) ? `${csDbPath}#${convId}` : null),
         sourceMetadata: {
           antigravityProject: projectObs,
-          antigravityBrain: projectObs,
+          antigravityBrain: brainObs,
           artifacts: brain?.artifacts || [],
           planSteps: brain?.planSteps || null,
           lastStepType: brain?.lastStep?.type || null,
@@ -424,6 +437,19 @@ export async function listAntigravitySessions(rawOpts = {}) {
           updatedAt: brain.transcriptUpdatedAt,
         });
 
+        const brainObs = makeEntityObservation({
+          provider: 'antigravity',
+          scopeId: brainDir,
+          kind: 'brain',
+          nativeId: convId,
+          name: displayProject,
+          product: 'Antigravity',
+          surface: 'ide',
+          cwd,
+          hostId: host.id || 'local',
+          updatedAt: brain.transcriptUpdatedAt,
+        });
+
         sessions.push({
           id: sessionKey('antigravity', host, convId),
           nativeId: convId,
@@ -451,7 +477,7 @@ export async function listAntigravitySessions(rawOpts = {}) {
           sourcePath: brain.transcriptPath,
           sourceMetadata: {
             antigravityProject: projectObs,
-            antigravityBrain: projectObs,
+            antigravityBrain: brainObs,
             artifacts: brain.artifacts,
             planSteps: brain.planSteps,
             lastStepType: brain.lastStep?.type || null,

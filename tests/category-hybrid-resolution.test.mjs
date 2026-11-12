@@ -20,39 +20,19 @@ test('resolveCategory: explicit category takes top priority (Mode 2)', () => {
   assert.equal(res.categoryId, 'dir-2');
 });
 
-test('resolveCategory: auto matches existing directory by repoName or projectName', () => {
+test('resolveCategory: unclassified cards retain unclassified status without arbitrary assignment', () => {
   const directories = [
     { id: 'dir-canban', name: 'Canban' },
-    { id: 'dir-other', name: 'Other Project' },
   ];
-  // repoName is 'canban' (lowercase), directory name is 'Canban'
   const res = resolveCategory({
     card: {},
     sourceView: null,
     legacy: {
       directories,
       sessionId: 'sess-2',
-      repoName: 'canban',
+      repoName: 'other-repo',
     },
   });
-  assert.equal(res.status, 'auto_matched');
-  assert.equal(res.categoryId, 'dir-canban');
-});
-
-test('resolveCategory: falls back to auto-repo category when unclassified (Mode 1)', () => {
-  const directories = [
-    { id: 'dir-other', name: 'Other' },
-  ];
-  const res = resolveCategory({
-    card: {},
-    sourceView: null,
-    legacy: {
-      directories,
-      sessionId: 'sess-3',
-      repoName: 'my-cool-app',
-    },
-  });
-  assert.equal(res.status, 'auto_repo');
-  assert.equal(res.categoryId, 'auto:repo:my-cool-app');
-  assert.equal(res.categoryName, 'my-cool-app');
+  assert.equal(res.status, 'unclassified');
+  assert.equal(res.categoryId, null);
 });

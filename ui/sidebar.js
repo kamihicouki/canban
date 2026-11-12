@@ -109,9 +109,15 @@ function toggleSidebar(open = !state.sideOpen) {
 const SIDE_LOOK = [['analytics', 'chart', '分析', 'a'], ['usage', 'gauge', 'Agent Usage', ''], ['orbit', 'refresh', '軌道', 'Shift+O']];
 const SIDE_MANAGE = [['rules', 'zap', T.automation], ['labels', 'tag', 'ラベル'], ['views', 'bookmark', '保存ビュー'], ['hosts', 'server', 'マシン'], ['slack', 'message', 'Slack接続'], ['settings', 'gear', '設定']];
 // The axes a lane can follow, in the order the sidebar offers them; the rest sit behind ⋯.
-const LANE_AXES = [['', 'なし'], ['directory', T.category], ['agent', 'AI Apps'], ['host', 'マシン'], ['label', 'ラベル']];
+const LANE_AXES = [['', 'なし'], ['directory', T.category], ['repo', 'リポジトリ'], ['agent', 'AI Apps']];
 const SIDE_SOURCE_TOP = 5; // rows per 元アプリ axis before the rest fold into 「ほか N 件…」
-const LANE_MORE = [...Object.entries(SOURCE_AXES), ['account', 'アカウント']];
+const LANE_MORE = [
+  ['branch', 'ブランチ / ワークツリー'],
+  ['workingFolder', '作業フォルダ'],
+  ['host', 'マシン'],
+  ['label', 'ラベル'],
+  ['account', 'アカウント'],
+];
 function sideCount(b, page) {
   return { rules: b.settings?.rules?.length, views: b.settings?.views?.length, labels: b.labels?.length, directories: b.directories?.length,
     hosts: (b.hosts || []).filter((x) => !x.local && !x.cloud && x.enabled).length || null }[page] ?? null;
