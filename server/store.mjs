@@ -145,8 +145,16 @@ export function resolveDirectory(state, card, cwd, session = null) {
     bindings: mapping?.bindings || [], legacy: { directories: state.directories || [], cwd: cwd || session?.cwd,
       cards: mapping?.legacyCards || {}, sessionId: session?.id, tombstones: mapping?.tombstones || [],
       fallbackCategoryId: legacyDirectory?.id, legacySourceKey: old?.key,
-      pathBindings: mapping?.legacyPathBindings || [], hostId: session?.host?.id || 'local', agent: session?.agent } });
-  return result.categoryId ? state.directories.find(d => d.id === result.categoryId) || null : null;
+      pathBindings: mapping?.legacyPathBindings || [], hostId: session?.host?.id || 'local', agent: session?.agent,
+      repoName: session?.repoName, projectName: session?.project } });
+  if (result.categoryId) {
+    const existing = state.directories.find(d => d.id === result.categoryId);
+    if (existing) return existing;
+    if (result.status === 'auto_repo') {
+      return { id: result.categoryId, name: result.categoryName || session?.repoName || 'Auto', isAuto: true };
+    }
+  }
+  return null;
 }
 
 function placeCard(card, toListId, order, at = new Date().toISOString()) {
