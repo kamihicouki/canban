@@ -5,6 +5,88 @@
 // `git config --get remote.origin.url` in the session folder (read-only, local only).
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import path from 'node:path';
+
+const repoContextCache = new Map();
+
+async function readHeadBranch(headFilePath) {
+  try {
+    const content = await fsp.readFile(headFilePath, 'utf8');
+    const m = content.match(/^ref: refs\/heads\/(.+)$/m);
+    return m ? m[1].trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function doResolveRepoContext(dirPath) {
+  let curr = dirPath;
+  for (let i = 0; i < 10; i++) {
+    const gitPath = path.join(curr, '.git');
+    try {
+      const st = await fsp.stat(gitPath);
+      if (st.isDirectory()) {
+        const branch = await readHeadBranch(path.join(gitPath, 'HEAD'));
+        return {
+          isGit: true,
+          isWorktree: false,
+          repoRoot: curr,
+          repoName: path.basename(curr),
+          worktreeName: null,
+          branch,
+        };
+      } else if (st.isFile()) {
+        const content = await fsp.readFile(gitPath, 'utf8');
+        const m = content.match(/^gitdir:\s*(.+)$/m);
+        if (m) {
+          const gitDir = path.resolve(curr, m[1].trim());
+          const branch = await readHeadBranch(path.join(gitDir, 'HEAD'));
+          const worktreesIdx = gitDir.lastIndexOf(path.sep + '.git' + path.sep + 'worktrees' + path.sep);
+          if (worktreesIdx !== -1) {
+            const repoRoot = gitDir.slice(0, worktreesIdx);
+            const worktreeName = path.basename(gitDir);
+            return {
+              isGit: true,
+              isWorktree: true,
+              repoRoot,
+              repoName: path.basename(repoRoot),
+              worktreeName,
+              branch,
+            };
+          }
+        }
+      }
+    } catch {}
+
+    const parent = path.dirname(curr);
+    if (!parent || parent === curr) break;
+    curr = parent;
+  }
+
+  return {
+    isGit: false,
+    isWorktree: false,
+    repoRoot: dirPath,
+    repoName: path.basename(dirPath),
+    worktreeName: null,
+    branch: null,
+  };
+}
+
+export async function resolveRepoContext(dirPath) {
+  if (!dirPath || typeof dirPath !== 'string') {
+    return { isGit: false, isWorktree: false, repoRoot: '', repoName: '', worktreeName: null, branch: null };
+  }
+  const normalized = path.resolve(dirPath);
+  if (repoContextCache.has(normalized)) {
+    return repoContextCache.get(normalized);
+  }
+  const res = await doResolveRepoContext(normalized);
+  repoContextCache.set(normalized, res);
+  return res;
+}
+
 
 const TTL_MS = 5 * 60e3;
 const DEFAULT_BRANCHES = new Set(['main', 'master', 'develop', 'trunk', 'HEAD', 'dev']);
