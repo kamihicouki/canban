@@ -33,6 +33,74 @@ body:not([data-layout="trello"]) .mgmt-drawer { border-right: 1px solid var(--ch
 body:not([data-layout="trello"]) .sidebar { border-right: 1px solid var(--chrome-line); }
 body:not([data-layout="trello"]) .list { box-shadow: none; }
 
+/* Theme 1: Trello (王道モダン) - グラスモーフィズムと洗練された立体感 */
+body[data-layout="trello"] .topbar {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+body[data-layout="trello"] .sidebar {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+body[data-layout="trello"] .list {
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+}
+body[data-layout="trello"] .card {
+  border-radius: 10px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+body[data-layout="trello"] .card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--lift-shadow);
+}
+
+/* Theme 2: 定番 (Linear/Notion風ミニマリズム) - マットサーフェスと1pxの端正な線 */
+body[data-layout="classic"] .list {
+  background: var(--list-bg);
+  border: 1px solid var(--chrome-line);
+  border-radius: 8px;
+  box-shadow: none;
+}
+body[data-layout="classic"] .card {
+  border: 1px solid var(--chrome-line);
+  box-shadow: none;
+  border-radius: 6px;
+  transition: border-color 0.12s ease;
+}
+body[data-layout="classic"] .card:hover {
+  border-color: var(--focus);
+}
+
+/* Theme 3: 高密度HUD (マルチエージェントダッシュボード) - 画面有効活用と凝縮されたステータス */
+body[data-layout="hud"] .board {
+  gap: 8px;
+  padding: 8px;
+}
+body[data-layout="hud"] .list {
+  flex: 0 0 256px;
+  width: 256px;
+  border-radius: 8px;
+  border: 1px solid var(--chrome-line);
+  background: var(--list-bg);
+  box-shadow: none;
+}
+body[data-layout="hud"] .cards {
+  padding: 2px 6px 6px;
+  gap: 6px;
+}
+body[data-layout="hud"] .card {
+  padding: 7px 9px 6px;
+  gap: 4px;
+  border-radius: 6px;
+  border: 1px solid var(--chrome-line);
+  box-shadow: none;
+}
+body[data-layout="hud"] .ftitle {
+  font-size: 0.875rem;
+}
+
 /* Grid layouts: the board area is one grid; .shell dissolves so the sidebar can span rows.
    The management panel has a column of its own next to the navigation; it is empty (0 wide) while closed. */
 @media (min-width: 721px) {
