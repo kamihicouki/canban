@@ -4,11 +4,11 @@
 // few parts a layout has of its own (rail, dock, live HUD, tabs, category strip) and the picker.
 // Each place has exactly one entry per layout: the navigation that a layout shows is its only index.
 const LAYOUTS = [
-  ['trello', 'Trello', 'グラデーションの背景に、半透明のアプリバーとサイドバー。管理はサイドバーの隣に開く'],
-  ['classic', '定番', 'サイドバーが上まで通る、落ち着いた配色（Linear・Notion 型）'],
+  ['trello', 'Trello', '王道モダン。グラデーション背景に半透明グラスモーフィズムと立体感のあるカード'],
+  ['classic', '定番', 'サイドバーが上まで通る、落ち着いた配色のモダンミニマリズム（Linear・Notion 型）'],
+  ['hud', 'ライブ HUD', '並行自律エージェントの動いているセッションを最上段にタイル表示する高密度ダッシュボード'],
   ['rail', 'レール', '左のレールで場所を選び、隣のパネルで中身を選ぶ（VS Code・Slack 型）'],
   ['omni', 'オムニバー', 'サイドバーなし。絞り込みは検索欄とカテゴリの帯、移動は下のドック'],
-  ['hud', 'ライブ HUD', '動いているセッションを、いつも最上段にタイルで表示'],
 ];
 const layoutOf = (v) => (LAYOUTS.some(([id]) => id === v) ? v : 'trello');
 // Places a layout can jump to: [icon, label]. analytics / usage / orbit open a sheet on the overlay; the rest open the management panel.
