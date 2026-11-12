@@ -81,3 +81,10 @@
 .ptext.md pre { margin: .5em 0; padding: 8px 10px; border-radius: 8px; background: var(--btn-subtle); white-space: pre-wrap; font-size: .9em; line-height: 1.5; overflow-x: auto; }
 .ptext.md pre code { font-size: inherit; padding: 0; background: none; }
 .ptext.md h1, .ptext.md h2, .ptext.md h3, .ptext.md h4 { margin: .7em 0 .25em; font-size: 1em; font-weight: 700; }
+
+/* Container query for responsive card interiors */
+@container (max-width: 220px) {
+  .ffoot { flex-wrap: wrap; gap: 4px; }
+  .fbranch { display: none; }
+}
+
