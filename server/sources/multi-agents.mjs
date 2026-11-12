@@ -14,6 +14,7 @@ import {
   queryReadOnly,
 } from './readonly.mjs';
 import { projectName, clip, cleanPrompt, firstLine, LOCAL_HOST, sessionKey } from './util.mjs';
+import { resolveRepoContext } from '../git.mjs';
 
 function isIsolatedTestEnv() {
   return Boolean(
@@ -312,8 +313,14 @@ export async function listAntigravitySessions(rawOpts = {}) {
         branch = proj.defaultBranch;
       }
 
-      const projName = proj ? proj.name : (row.project_id && row.project_id !== 'outside-of-project' ? row.project_id.slice(0, 8) : null);
-      const displayProject = projName || (cwd ? projectName(cwd) : 'Antigravity');
+      const repoCtx = await resolveRepoContext(cwd || (proj?.mainCwd ? proj.mainCwd : null));
+      if (!branch && repoCtx.branch) {
+        branch = repoCtx.branch;
+      }
+
+      const projId = proj ? proj.id : (row.project_id && row.project_id !== 'outside-of-project' ? row.project_id : (projectMap.size === 1 ? Array.from(projectMap.values())[0].id : 'outside-of-project'));
+      const projName = proj ? proj.name : (row.project_id && row.project_id !== 'outside-of-project' ? row.project_id.slice(0, 8) : (projectMap.size === 1 ? Array.from(projectMap.values())[0].name : null));
+      const displayProject = projName || repoCtx.repoName || (cwd ? projectName(cwd) : 'Antigravity');
 
       const createdAt = toMs(row.last_user_input_time || row.last_modified_time, Date.now());
       let updatedAt = toMs(row.last_modified_time, Date.now());
@@ -327,6 +334,19 @@ export async function listAntigravitySessions(rawOpts = {}) {
       const firstPrompt = brain?.firstPrompt || cleanPrompt(row.preview) || null;
       const lastPrompt = brain?.lastPrompt || firstPrompt;
       const lastMessage = brain?.lastMessage || null;
+
+      const projectObs = makeEntityObservation({
+        provider: 'antigravity',
+        scopeId: brainDir || agyRoot,
+        kind: 'project',
+        nativeId: projId,
+        name: displayProject,
+        product: 'Antigravity',
+        surface: 'ide',
+        cwd: proj?.mainCwd || cwd,
+        hostId: host.id || 'local',
+        updatedAt,
+      });
 
       sessions.push({
         id: sessionKey('antigravity', host, convId),
@@ -342,6 +362,9 @@ export async function listAntigravitySessions(rawOpts = {}) {
         cwd,
         project: displayProject,
         branch,
+        repoRoot: repoCtx.repoRoot || null,
+        repoName: repoCtx.repoName || null,
+        worktreeName: repoCtx.worktreeName || null,
         model: brain?.model || 'gemini',
         reasoningEffort: null,
         createdAt: Math.round(createdAt),
@@ -351,18 +374,8 @@ export async function listAntigravitySessions(rawOpts = {}) {
         turns: Math.max(1, brain?.turns || row.step_count || 1),
         sourcePath: brain?.transcriptPath || (exists(csDbPath) ? `${csDbPath}#${convId}` : null),
         sourceMetadata: {
-          antigravityBrain: makeEntityObservation({
-            provider: 'antigravity',
-            scopeId: brainDir || agyRoot,
-            kind: 'brain',
-            nativeId: convId,
-            name: displayProject,
-            product: 'Antigravity',
-            surface: 'ide',
-            cwd,
-            hostId: host.id || 'local',
-            updatedAt,
-          }),
+          antigravityProject: projectObs,
+          antigravityBrain: projectObs,
           artifacts: brain?.artifacts || [],
           planSteps: brain?.planSteps || null,
           lastStepType: brain?.lastStep?.type || null,
@@ -372,7 +385,7 @@ export async function listAntigravitySessions(rawOpts = {}) {
           isRunning,
           isKilled,
           environment: branch,
-          projectId: row.project_id,
+          projectId: projId,
         },
       });
     }
@@ -391,8 +404,25 @@ export async function listAntigravitySessions(rawOpts = {}) {
           annoTitle = await readAnnotationTitle(path.join(annotationsDir, `${convId}.pbtxt`));
         }
         const titleSource = annoTitle || brain.taskHeading || firstLine(brain.firstPrompt) || firstLine(brain.lastMessage) || convId;
-        const cwd = brain.detectedCwd || null;
-        const brainName = projectName(cwd) || clip(titleSource, 40) || convId.slice(0, 8);
+        const proj = projectMap.size === 1 ? Array.from(projectMap.values())[0] : null;
+        const cwd = brain.detectedCwd || proj?.mainCwd || null;
+        const repoCtx = await resolveRepoContext(cwd || (proj?.mainCwd ? proj.mainCwd : null));
+        const projId = proj ? proj.id : 'outside-of-project';
+        const projName = proj ? proj.name : null;
+        const displayProject = projName || repoCtx.repoName || projectName(cwd) || 'Antigravity';
+
+        const projectObs = makeEntityObservation({
+          provider: 'antigravity',
+          scopeId: brainDir,
+          kind: 'project',
+          nativeId: projId,
+          name: displayProject,
+          product: 'Antigravity',
+          surface: 'ide',
+          cwd,
+          hostId: host.id || 'local',
+          updatedAt: brain.transcriptUpdatedAt,
+        });
 
         sessions.push({
           id: sessionKey('antigravity', host, convId),
@@ -406,8 +436,11 @@ export async function listAntigravitySessions(rawOpts = {}) {
           lastPrompt: clip(brain.lastPrompt, 240) || null,
           lastMessage: clip(firstLine(brain.lastMessage), 200) || null,
           cwd,
-          project: projectName(cwd) || 'Antigravity',
-          branch: null,
+          project: displayProject,
+          branch: repoCtx.branch || null,
+          repoRoot: repoCtx.repoRoot || null,
+          repoName: repoCtx.repoName || null,
+          worktreeName: repoCtx.worktreeName || null,
           model: brain.model || 'gemini',
           reasoningEffort: null,
           createdAt: Math.round(brain.transcriptUpdatedAt || Date.now()),
@@ -417,18 +450,8 @@ export async function listAntigravitySessions(rawOpts = {}) {
           turns: Math.max(1, brain.turns),
           sourcePath: brain.transcriptPath,
           sourceMetadata: {
-            antigravityBrain: makeEntityObservation({
-              provider: 'antigravity',
-              scopeId: brainDir,
-              kind: 'brain',
-              nativeId: convId,
-              name: brainName,
-              product: 'Antigravity',
-              surface: 'ide',
-              cwd,
-              hostId: host.id || 'local',
-              updatedAt: brain.transcriptUpdatedAt,
-            }),
+            antigravityProject: projectObs,
+            antigravityBrain: projectObs,
             artifacts: brain.artifacts,
             planSteps: brain.planSteps,
             lastStepType: brain.lastStep?.type || null,
