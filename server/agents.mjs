@@ -13,6 +13,13 @@ export function shq(s) {
 const CLAUDE_DESKTOP_ID = /^local_[A-Za-z0-9-]{1,64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// `<scheme>://file/<path>` for VS Code style editors. Each segment is percent-encoded so a
+// folder name with `#`, `?`, `%` or spaces still opens that folder rather than a different path.
+export function fileLink(scheme, cwd) {
+  const abs = cwd.startsWith('/') ? cwd : `/${cwd}`;
+  return `${scheme}://file${abs.split('/').map(encodeURIComponent).join('/')}`;
+}
+
 export const AGENTS = {
   codex: {
     label: 'Codex',
@@ -72,7 +79,7 @@ export const AGENTS = {
       }
       if (s.cwd) {
         return {
-          url: `antigravity://file${s.cwd.startsWith('/') ? s.cwd : `/${s.cwd}`}`,
+          url: fileLink('antigravity', s.cwd),
           exact: false,
           label: 'Antigravity で開く',
         };
@@ -88,7 +95,7 @@ export const AGENTS = {
       if (s.host && !s.host.local) return null;
       if (!s.cwd) return null;
       return {
-        url: `cursor://file${s.cwd.startsWith('/') ? s.cwd : `/${s.cwd}`}`,
+        url: fileLink('cursor', s.cwd),
         exact: false,
         label: 'Cursor で開く',
       };
@@ -191,11 +198,11 @@ export function newSessionLink(agent, { host, cwd, prompt, projectId = null }) {
     return { url: url.toString(), label: 'Claude で開始' };
   }
   if (agent === 'antigravity' && !remote) {
-    const target = cwd ? `antigravity://file${cwd.startsWith('/') ? cwd : `/${cwd}`}` : 'antigravity://new';
+    const target = cwd ? fileLink('antigravity', cwd) : 'antigravity://new';
     return { url: target, label: 'Antigravity で開始' };
   }
   if (agent === 'cursor' && !remote && cwd) {
-    return { url: `cursor://file${cwd.startsWith('/') ? cwd : `/${cwd}`}`, label: 'Cursor で開始' };
+    return { url: fileLink('cursor', cwd), label: 'Cursor で開始' };
   }
   if (agent === 'chatgpt' && !remote) {
     return { url: 'chatgpt://', label: 'ChatGPT で開始' };
