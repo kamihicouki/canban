@@ -15,16 +15,27 @@ const LANE_MODES = {
 };
 const LANE_AGENT_LABELS = { codex: 'Codex', claude: 'Claude Code', gemini: 'Gemini CLI', antigravity: 'Antigravity', cursor: 'Cursor', chatgpt: 'ChatGPT', grok: 'Grok' };
 const NO_DIR = 'カテゴリ無し';
-function laneKey(card, mode) {
+// 手動指定と「カテゴリ無し」を優先し、未設定だけを元リポジトリでまとめる。
+function resolveDirectoryLane(card, directories = []) {
+  if (card.directory) return { id: card.directory.id, name: card.directory.name, creation: { directory: card.directory.id } };
+  if (card.directoryId !== '__none') {
+    const repo = card.repoName || card.project;
+    if (repo && repo !== 'outside-of-project') {
+      const matched = directories.find(d => d.name.trim().toLowerCase() === repo.trim().toLowerCase());
+      if (matched) return { id: matched.id, name: matched.name, creation: { directory: matched.id } };
+      return { id: `auto:${repo}`, name: `未分類（${repo}）`, creation: { directory: `auto:${repo}` } };
+    }
+  }
+  return { id: '__none', name: NO_DIR, creation: { directory: '__none' } };
+}
+function laneKey(card, mode, board = state.board) {
   if (mode === 'repo') return card.repoName || card.project || '（リポジトリ不明）';
   if (mode === 'branch') {
     const b = card.branch || card.worktreeName;
     return b ? b : '（ブランチなし）';
   }
   if (mode === 'directory') {
-    if (card.directory) return card.directory.name;
-    const auto = card.repoName || card.project;
-    return auto && auto !== 'outside-of-project' ? `未分類（${auto}）` : NO_DIR;
+    return resolveDirectoryLane(card, board.directories).name;
   }
   if (SOURCE_AXES[mode]) return sourceLane(card, mode).name;
   if (mode === 'section') {
@@ -44,9 +55,7 @@ function laneIdForCard(card, mode, board = state.board) {
   if (mode === 'repo') return JSON.stringify([mode, card.repoName || card.project || '__none']);
   if (mode === 'branch') return JSON.stringify([mode, card.branch || card.worktreeName || '__none']);
   if (mode === 'directory') {
-    if (card.directory) return JSON.stringify([mode, card.directory.id]);
-    const auto = card.repoName || card.project;
-    return JSON.stringify([mode, auto && auto !== 'outside-of-project' ? `auto:${auto}` : '__none']);
+    return JSON.stringify([mode, resolveDirectoryLane(card, board.directories).id]);
   }
   if (SOURCE_AXES[mode]) return JSON.stringify([mode, sourceLane(card, mode, board.sourceFacets).id]);
   const labelId = board.labels.find(label => card.labels.includes(label.id))?.id;
@@ -69,8 +78,8 @@ function buildLanes(b, mode) {
       const bKey = card.branch || card.worktreeName || '__none';
       ln = lane({ context: { branch: bKey } }, laneKey(card, mode), bKey);
     } else if (mode === 'directory') {
-      const dKey = card.directory ? card.directory.id : (card.repoName || card.project ? `auto:${card.repoName || card.project}` : '__none');
-      ln = lane(card.directory ? { directory: card.directory.id } : { directory: dKey }, laneKey(card, mode), dKey);
+      const d = resolveDirectoryLane(card, b.directories);
+      ln = lane(d.creation, d.name, d.id);
     } else {
       const native = SOURCE_AXES[mode] ? sourceLane(card, mode, b.sourceFacets) : null;
       ln = native ? lane(native.creation, native.name, native.id) : lane(taskLaneCreation(card, mode, labelId), laneKey(card, mode));
