@@ -185,9 +185,10 @@ test('unanswered questions older than fifteen minutes still block follow-up disp
     const answer = agent === 'codex'
       ? { type: 'response_item', payload: { type: 'function_call_output', call_id: 'pending-question', output: '{}' } }
       : { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'pending-question', content: 'answer' }] } };
-    assert.match(M.timingProblem({ agent }, { records: [ask], mtimeMs }, now), /入力待ち/);
-    assert.equal(M.timingProblem({ agent }, { records: [ask, answer], mtimeMs }, now), null);
-    assert.equal(M.timingProblem({ agent }, { records: [ask], mtimeMs: now - 24 * HOUR - 1 }, now), null);
+    const records = [...(agent === 'codex' ? [{ type: 'event_msg', payload: { type: 'task_started' } }] : []), ask];
+    assert.match(M.timingProblem({ agent }, { records, mtimeMs }, now), /入力待ち/);
+    assert.equal(M.timingProblem({ agent }, { records: [...records, answer], mtimeMs }, now), null);
+    assert.equal(M.timingProblem({ agent }, { records, mtimeMs: now - 24 * HOUR - 1 }, now), null);
   }
 });
 
