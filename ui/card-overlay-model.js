@@ -23,10 +23,10 @@ function cardBoardGeometry(width, reserve = {}) {
 // The key guide: one panel on every screen, docked at a corner of the stage or as a strip along its foot.
 // Where it sits is shared UI state ('keyGuide'); it floats over the stage and takes no room.
 const KEY_GUIDE_DOCKS = ['tr', 'br', 'bottom', 'bl']; // clockwise: the arrows on its title walk this ring
-const KEY_GUIDE_DEF = { dock: 'bottom', min: false };
+const KEY_GUIDE_DEF = { dock: 'br', min: true };
 const KEY_GUIDE_WIDTH = 200, KEY_GUIDE_ROOM = 216;
 function normalizeKeyGuide(value) {
-  return { dock: KEY_GUIDE_DOCKS.includes(value?.dock) ? value.dock : KEY_GUIDE_DEF.dock, min: value?.min === true };
+  return { dock: KEY_GUIDE_DOCKS.includes(value?.dock) ? value.dock : KEY_GUIDE_DEF.dock, min: typeof value?.min === 'boolean' ? value.min : KEY_GUIDE_DEF.min };
 }
 // Where a guide dropped at (x, y) — fractions of the stage — lands: the strip in the middle of the foot,
 // else the nearest corner. The top left belongs to the navigation and the ribbon, so the top is always the right.

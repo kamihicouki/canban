@@ -53,7 +53,16 @@
 .cx-rec { flex: none; font-size: 11px; font-weight: 700; color: var(--accent); }
 .cx-choice .keycap { flex: none; opacity: .7; }
 /* The originating app's unanswered question is readable beside the draft, never actionable here. */
-.cx-wait-question { margin: 0 0 10px; padding: 10px 12px; border: 1px solid var(--btn-subtle-hover); border-radius: 8px; background: var(--card-hover); font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
-.cx-wait-question h3 { margin: 0 0 5px; font-size: 12px; color: var(--card-muted); }
-.cx-wait-question p { margin: 0; white-space: pre-wrap; }
-.cx-wait-question ul { margin: 6px 0 0; padding-left: 20px; }
+/* Outstanding questions stay readable in one line; choices open by keyboard or pointer. */
+.cx-wait-question { margin: 0 0 6px; border: 1px solid var(--btn-subtle-hover); border-radius: 8px; background: var(--card-hover); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.cx-wait-question[hidden] { display: none; }
+.cx-wait-summary { display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 32px; padding: 4px 10px; }
+.cx-wait-summary::before { content: '›'; font-size: 17px; }
+.cx-wait-question[open] .cx-wait-summary::before { transform: rotate(90deg); }
+.cx-wait-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cx-wait-summary small { flex: none; color: var(--card-muted); font-size: 11px; }
+.cx-wait-body { padding: 4px 12px 10px; }
+.cx-wait-body p { margin: 0; white-space: pre-wrap; }
+.cx-wait-body ul { margin: 6px 0; padding-left: 20px; }
+.cx-wait-body small { color: var(--card-muted); }
+.cx-busy-key { white-space: nowrap; font-size: 12px; }

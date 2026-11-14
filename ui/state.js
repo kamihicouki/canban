@@ -26,7 +26,7 @@ const cardSurface = (card) => {
   if (card.canDesktop && card.desktopExact && card.agent === 'claude') return 'desktop';
   return AGENT_META[card.agent]?.defaultSurface || null;
 };
-const SHARED_UI_KEYS = ['filters', 'themePref', 'layout', 'boardView', 'sidebar', 'workspacePage', 'paneGlobal', 'cardWidths', 'cardHeights', 'collapsedLanes', 'keyGuide', 'exchangeTrailView', 'categoryPins'];
+const SHARED_UI_KEYS = ['filters', 'themePref', 'layout', 'boardView', 'sidebar', 'workspacePage', 'paneGlobal', 'cardWidths', 'cardHeights', 'collapsedLanes', 'keyGuide', 'exchangeTrailView', 'categoryPins', 'auxiliaryPrefs'];
 const sharedUi = { revision: null, ready: false, dirty: false, blocked: false, applying: false, inflight: false, generation: 0, timer: null, checkTimer: null };
 const store = {
   get(k, d) { try { const v = localStorage.getItem(`sk:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },

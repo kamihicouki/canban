@@ -14,7 +14,7 @@ function inboxRow(x) {
   const row = h('article', { class: `card irow${parentId ? ' irow-sub' : ''}`, tabindex: 0, role: 'option', 'data-card-id': card.id, 'data-parent-id': parentId || '', 'data-life': lifeOf(card), 'data-day': daysAgo(card.updatedAt), 'data-status': statusKnown ? status || '' : 'unknown', 'aria-selected': String(state.inbox.sel === card.id), title: [card.title, waiting].filter(Boolean).join('\n') },
     faceGlyph(status, statusKnown),
     h('div', { class: 'irow-body grow' }, h('div', { class: 'irow-t', text: card.title }),
-      h('div', { class: 'irow-s' }, faceWho(task ? 'task' : card.agent, card), dotPill(card), h('span', { class: 'ellipsis', text: (task ? card.links?.length ? `${card.links.length} セッション` : 'セッションなし' : card.git?.branch || card.branch || card.directory?.name || '') }), card.unread ? h('span', { class: 'fflag fflag-new', text: '新着' }) : null),
+      h('div', { class: 'irow-s' }, faceWho(task ? 'task' : card.agent, card), dotPill(card), h('span', { class: 'ellipsis', text: (task ? card.links?.length ? `${card.links.length} セッション` : 'セッションなし' : card.git?.branch || card.branch || card.directory?.name || '') }), card.unread ? h('span', { class: 'fflag fflag-new', text: '新着' }) : null, card.archived ? h('span', { class: 'fflag', text: 'アーカイブ済み' }) : null),
       waiting ? h('div', { class: 'irow-w', text: waiting }) : null),
     h('span', { class: 'irow-time', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }));
   const exchanges = exchangePill(card); if (exchanges) $('.irow-s', row).append(exchanges);
@@ -25,7 +25,7 @@ function inboxRow(x) {
     const p = paneDocked() && panes[0]?.id === card.id ? panes[0] : null;
     const run = {
       Enter: () => inboxExpand(card.id),
-      ...(!task ? { o: () => resume(card.id) } : {}),
+      ...(!task ? { o: () => resume(card.id), x: () => workBundlePicker(row, card.id) } : {}),
       r: () => p?.el.querySelector('[data-sec="send"] textarea')?.focus(),
       m: () => listPicker(row, card, list.id),
       l: () => labelPicker(row, card.id, card, () => {}),
@@ -103,8 +103,20 @@ function renderInbox(b) {
 // gone with it when the board comes back. A card opened large stays large.
 function syncDockedCard() {
   if (typeof ganttOn === 'function' && ganttOn()) return syncGanttDockedCard();
-  if (!inboxOn() || !$('#board .inbox-main')) { if (paneDocked()) closeCards({ dock: false }); return; }
-  if (paneDocked()) return paneMetrics();
+  if (!inboxOn() || !$('#board .inbox-main')) {
+    if (paneDocked()) {
+      const selected = panes[0]?.id;
+      closeCards({ dock: false });
+      state.inbox.sel = selected || null;
+      if (typeof state.gantt === 'object') state.gantt.sel = selected || null;
+    }
+    return;
+  }
+  if (paneDocked()) {
+    const id = panes[0]?.id;
+    if (id && state.inbox.sel !== id) markInboxSel(id);
+    return paneMetrics();
+  }
   if (paneLayer.hidden && state.inbox.sel && findCard(state.inbox.sel)) openCard(state.inbox.sel, { dock: true });
 }
 // The row of the card on the layer is the selected one.

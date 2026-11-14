@@ -29,7 +29,9 @@ window.openai.callTool = (name, args) => { calls.push(name); return callTool(nam
 document.querySelector('[data-look]').click();
 check(document.querySelectorAll('[data-layout-choice]').length === 5, '5 layout choices must be selectable');
 key('Escape');
-const snapshotUi = () => Object.fromEntries(['filters','themePref','layout','boardView','sidebar','workspacePage','paneGlobal','cardWidths','cardHeights','collapsedLanes','keyGuide'].map(k => [k, localStorage.getItem('sk:'+k)]));
+const ensureAuxiliary = mode => { for(let i=0;i<2&&document.body.dataset.auxiliaryMode!==mode;i++) key('U',{code:'KeyU',altKey:true,shiftKey:true}); check(document.body.dataset.auxiliaryMode===mode,'auxiliary mode '+mode); };
+const noRects = selector => [...document.querySelectorAll(selector)].every(el=>el.getClientRects().length===0);
+const snapshotUi = () => Object.fromEntries(['auxiliaryPrefs','auxiliaryMode','filters','themePref','layout','boardView','sidebar','workspacePage','paneGlobal','cardWidths','cardHeights','collapsedLanes','keyGuide'].map(k => [k, localStorage.getItem('sk:'+k)]));
 for (const id of ['trello', 'classic', 'rail', 'omni', 'hud']) {
   const initialUi = snapshotUi();
   key('k', { metaKey: true });
@@ -43,6 +45,47 @@ for (const id of ['trello', 'classic', 'rail', 'omni', 'hud']) {
   check(Object.keys(initialUi).every(k => k === 'layout' || initialUi[k] === afterUi[k]), 'only layout preference changed: ' + id);
   check([...document.querySelectorAll('.card')].map(el => el.dataset.cardId).sort().join(',') === before, 'same card IDs: ' + id);
   if (id === 'hud') check(document.querySelector('.hud-tile'), 'HUD renders the running fixture');
+  ensureAuxiliary('minimal'); await w();
+  check(noRects('#ribbon, .live-hud'),'minimal removes ribbon and HUD from layout: '+id);
+  const session=document.querySelector('.card.face:not(.task)'); check(session,'session available: '+id);session.click();
+  for(let i=0;i<50&&!document.querySelector('.pane .th-conv');i++)await w();
+  check(noRects('.pane-bar'),'minimal removes open-card display bar: '+id);
+  const ribbonNode=document.querySelector('#ribbon'), ribbonHome=ribbonNode.parentNode;
+  const periodChip=document.querySelector('[data-auxiliary-open="ribbon"]'),cardChip=document.querySelector('[data-auxiliary-open="card"]');
+  check(periodChip.getClientRects().length>0&&/期間 (?:[0-9]+日|全期間)/.test(periodChip.textContent),'minimal keeps a readable period fragment: '+id);
+  check(cardChip.getClientRects().length>0&&cardChip.textContent.trim(),'minimal keeps the card display name: '+id);
+  if(id==='hud')check(document.querySelector('[data-auxiliary-open="hud"]').textContent.includes('入力待ち'),'minimal keeps waiting count');
+  periodChip.click();await w();
+  check(document.querySelector('.auxiliary-panel #ribbon')===ribbonNode,'period fragment moves the existing ribbon DOM: '+id);
+  ribbonNode.querySelector('.rb-day[data-day="0"]').focus();ribbonNode.querySelector('.rb-day[data-day="0"]').click();await w();
+  check(periodChip.textContent.includes('照らし中'),'minimal shows the pinned lens state');
+  ribbonNode.querySelector('.rb-clear').focus();ribbonNode.querySelector('.rb-clear').click();await w();
+  document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'p',bubbles:true}));await w();
+  let prefs=JSON.parse(localStorage.getItem('sk:auxiliaryPrefs'));
+  check(prefs.ribbon==='pinned'&&prefs.card==='minimal'&&document.body.dataset.auxiliaryMode==='mixed','individual pin does not change other parts');
+  check(ribbonNode.parentNode===ribbonHome&&ribbonNode.getClientRects().length>0&&!document.querySelector('.popover'),'pin restores same ribbon to its original place');
+  check(!document.querySelector('#board').classList.contains('lens-on'),'pinning the ribbon does not start a focus preview');
+  cardChip.click();await w();document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'p',bubbles:true}));await w();
+  prefs=JSON.parse(localStorage.getItem('sk:auxiliaryPrefs'));check(prefs.ribbon==='pinned'&&prefs.card==='pinned','later individual choice preserves earlier choice');
+  document.querySelector('.pane-bar [data-auxiliary-minimize="card"]').click();await w();
+  prefs=JSON.parse(localStorage.getItem('sk:auxiliaryPrefs'));check(prefs.ribbon==='pinned'&&prefs.card==='minimal','individual minimization preserves other pins');
+  const guide=document.querySelector('.key-guide'), guideBefore=guide.dataset.min;document.querySelector('.kg-fold').click();
+  const guideChosen=guide.dataset.min;
+  ensureAuxiliary('pinned');await w();
+  check(document.querySelector('#ribbon').getClientRects().length>0,'pinned restores ribbon: '+id);
+  check(document.querySelector('.pane-bar').getClientRects().length>0,'pinned restores card display bar: '+id);
+  if(id==='hud')check(document.querySelector('.live-hud').getClientRects().length>0,'pinned restores HUD');
+  ensureAuxiliary('minimal');await w();
+  check(guide.dataset.min===guideChosen,'bulk does not overwrite independent key-guide choice');
+  if(guide.dataset.min!==guideBefore)document.querySelector('.kg-fold').click();
+  check(noRects('#ribbon, .live-hud, .pane-bar'),'minimal removes secondary regions again: '+id);
+  key('Escape');await w();check(document.querySelector('#paneLayer').hidden,'card closes after toggling: '+id);
+  if(id==='rail'){
+    const rail=document.querySelector('.layout-rail'),side=document.querySelector('#sidebar');
+    const r=rail.getBoundingClientRect(),a=side.getBoundingClientRect();
+    check(rail.closest('#sidebar')===side&&!document.querySelector('.app-content > .layout-rail'),'rail has no separate sidebar');
+    check(r.left>=a.left&&r.right<=a.right,'rail stays inside the existing sidebar width');
+  }
   key('p'); await w();
   check([...document.querySelectorAll('.picker-row')].some(el => el.textContent.includes('Codexのプロジェクト: UI検証')), 'source picker uses observed source facets: ' + id);
   key('Escape'); await w();
@@ -50,7 +93,8 @@ for (const id of ['trello', 'classic', 'rail', 'omni', 'hud']) {
   check(rect.width > 300 && rect.height > 300, 'board surface: ' + id);
   key('i'); await w();
   check(document.querySelector('.inbox'), 'timeline available: ' + id);
-  key('i'); await w(); calls.length = 0;
+  key('i'); await w();check(document.querySelector('.gantt-view'),'gantt available: '+id);
+  key('i');await w();check(!document.querySelector('.inbox,.gantt-view'),'i returns to board: '+id); calls.length = 0;
 }
 // All 20 directed transitions preserve an open card and its reply draft.
 document.querySelector('.card.face:not(.task)').click();
@@ -160,18 +204,105 @@ test('five selectable layouts retain board and timeline cards', { skip: !fs.exis
     assert.equal(result.result?.exceptionDetails, undefined, JSON.stringify(result.result?.exceptionDetails));
     return result.result?.result?.value;
   };
+  // Individual pins are shared state, not transient panel visibility. Reload only after the
+  // fictional server has read back the same preference map, so startup cannot race its save.
+  const individual = await run(`(async()=>{
+    const w=ms=>new Promise(r=>setTimeout(r,ms));
+    for(let i=0;i<2&&document.body.dataset.auxiliaryMode!=='minimal';i++)document.querySelector('#auxiliaryBtn').click();
+    document.querySelector('[data-auxiliary-open="ribbon"]').click();await w(80);
+    document.querySelector('.auxiliary-pin').click();await w(80);
+    const expected=JSON.parse(localStorage.getItem('sk:auxiliaryPrefs'));
+    if(expected.ribbon!=='pinned'||expected.hud!=='minimal'||expected.card!=='minimal'||expected.dock!=='minimal')throw Error('individual preference map not isolated');
+    for(let i=0;i<40;i++){
+      const packet=await fetch('/rpc',{method:'POST',body:JSON.stringify({name:'canban_get_ui_state',arguments:{}})}).then(r=>r.json());
+      const data=packet.result?.structuredContent,record=data?.result||data;
+      if(JSON.stringify(record?.state?.auxiliaryPrefs)===JSON.stringify(expected))return expected;
+      await w(100);
+    }
+    throw Error('individual auxiliary preference was not saved to shared state');
+  })()`);
+  await run(`window.__layoutReloadMarker=true`);
+  await cdp('Page.reload',{ignoreCache:true});
+  for(let i=0;i<80;i++){
+    const ready=await cdp('Runtime.evaluate',{expression:`!window.__layoutReloadMarker&&!!document.querySelector('#board .card')&&!!document.querySelector('#auxiliaryFragments')`,returnByValue:true});
+    if(ready.result?.result?.value)break;
+    await sleep(150);
+  }
+  assert.equal(await run(`JSON.stringify(JSON.parse(localStorage.getItem('sk:auxiliaryPrefs')))===${JSON.stringify(JSON.stringify(individual))}&&document.body.dataset.auxiliaryMode==='mixed'&&document.querySelector('#ribbon').getClientRects().length>0`),true,'individual pin restores after reload and shared adoption');
+  await run(`for(let i=0;i<2&&document.body.dataset.auxiliaryMode!=='minimal';i++)document.querySelector('#auxiliaryBtn').click()`);
+  const chooseCommand = label => run(`(async()=>{
+    document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}));
+    for(let i=0;i<100;i++){
+      const choice=[...document.querySelectorAll('.picker-row')].find(button=>button.textContent.includes(${JSON.stringify(label)}));
+      if(choice){choice.click();return true;}await new Promise(resolve=>setTimeout(resolve,50));
+    }throw Error('command unavailable: '+${JSON.stringify(label)});
+  })()`);
+  const press=async(key,code,vk)=>{await cdp('Input.dispatchKeyEvent',{type:'keyDown',key,code,windowsVirtualKeyCode:vk,...(key==='Enter'?{text:'\r',unmodifiedText:'\r'}:{})});await cdp('Input.dispatchKeyEvent',{type:'keyUp',key,code,windowsVirtualKeyCode:vk});};
   for (const theme of ['light', 'dark']) {
-    await run(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true})); [...document.querySelectorAll('.picker-row')].find(b=>b.textContent.includes('色: '+${JSON.stringify(theme === 'light' ? 'ライト' : 'ダーク')})).click()`);
+    await chooseCommand('色: '+(theme==='light'?'ライト':'ダーク'));
     for (const [layout, name] of [['trello','Trello'],['classic','定番'],['rail','レール'],['omni','オムニバー'],['hud','ライブ HUD']]) {
-      await run(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true})); [...document.querySelectorAll('.picker-row')].find(b=>b.textContent.includes('レイアウト: '+${JSON.stringify(name)})).click()`);
+      await chooseCommand('レイアウト: '+name);
+      if(layout==='trello')for(const lensView of ['ボード','時間軸']){
+        await run(`document.querySelector('#viewSwitch button[aria-label="'+${JSON.stringify(lensView)}+'"]').click()`);
+        for(let attempt=0;attempt<3;attempt++){
+          await run(`(()=>{const trigger=document.querySelector('[data-auxiliary-open="ribbon"]');trigger.focus();trigger.click();window.__lensPhase=document.querySelector('#ribbon .rb-phase.life-live');window.__lensPhase.focus()})()`);
+          assert.equal(await run(`window.__lensPhase.isConnected&&document.activeElement===window.__lensPhase`),true,'focus preview preserves the same phase button before its click');
+          const point=await run(`(()=>{const r=window.__lensPhase.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+          await cdp('Input.dispatchMouseEvent',{type:'mouseMoved',...point});
+          await cdp('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...point});await cdp('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...point});
+          assert.equal(await run(`document.querySelector('#board').classList.contains('lens-on')&&document.querySelector('[data-auxiliary-open="ribbon"]').textContent.includes('照らし中 動いている')`),true,'phase click and minimal summary agree: '+JSON.stringify(await run(`({lens:document.querySelector('#board').className,summary:document.querySelector('[data-auxiliary-open="ribbon"]').textContent,phase:document.querySelector('#ribbon .rb-phase.life-live').getAttribute('aria-pressed'),focus:document.activeElement?.outerHTML?.slice(0,180),popup:!!document.querySelector('.popover')})`)));
+          await press('Escape','Escape',27);
+          assert.equal(await run(`!document.querySelector('.popover')&&document.querySelector('#board').classList.contains('lens-on')&&document.querySelector('[data-auxiliary-open="ribbon"]').textContent.includes('照らし中 動いている')`),true,'first Escape closes only the popup and retains the pinned lens');
+          await press('Escape','Escape',27);
+          assert.equal(await run(`!document.querySelector('#board').classList.contains('lens-on')&&!document.querySelector('[data-auxiliary-open="ribbon"]').textContent.includes('照らし中')`),true,'next Escape clears the lens and its summary together');
+        }
+        await run(`(()=>{const trigger=document.querySelector('[data-auxiliary-open="ribbon"]');trigger.focus();trigger.click();document.querySelector('#ribbon .rb-phase.life-live').focus()})()`);
+        assert.equal(await run(`document.querySelector('#board').classList.contains('lens-on')&&document.querySelector('[data-auxiliary-open="ribbon"]').textContent.includes('照らし中')`),true,'focus-only preview has a matching minimal summary');
+        await press('Escape','Escape',27);
+        assert.equal(await run(`!document.querySelector('.popover')&&!document.querySelector('#board').classList.contains('lens-on')&&!document.querySelector('[data-auxiliary-open="ribbon"]').textContent.includes('照らし中')`),true,'closing an unpinned preview clears it instead of stranding a lens with no Escape action');
+        await run(`document.querySelector('#viewSwitch button[aria-label="ボード"]').click()`);
+      }
+      if(layout==='omni'){
+        assert.equal(await run(`document.querySelectorAll('.dock-open').length===1&&document.querySelector('.dock-open').parentElement.id==='auxiliaryFragments'&&document.querySelector('.layout-dock').hidden`),true,'minimal places is one app-bar entry with no empty floating dock');
+        await run(`window.__dockTrigger=document.querySelector('.dock-open');document.querySelector('#auxiliaryBtn').click()`);
+        assert.equal(await run(`document.querySelector('.dock-open')===window.__dockTrigger&&window.__dockTrigger.closest('.layout-dock')&&!document.querySelector('.layout-dock').hidden`),true,'pin restores the same trigger to its dock');
+        await run(`document.querySelector('#auxiliaryBtn').click()`);
+        await run(`if(document.body.dataset.auxiliaryMode!=='minimal')document.querySelector('#auxiliaryBtn').click();document.querySelector('.dock-open').focus()`);
+        await press('Enter','Enter',13);await sleep(120);
+        assert.equal(await run(`!!document.querySelector('.popover .dock-items')&&!!document.activeElement.closest('.popover')`),true,'Enter opens minimal places and moves focus: '+JSON.stringify(await run(`({active:document.activeElement?.outerHTML?.slice(0,250),popover:document.querySelector('.popover')?.outerHTML?.slice(0,250),inert:document.querySelector('.layout-dock').inert})`)));
+        await press('Escape','Escape',27);await sleep(100);
+        assert.equal(await run(`!document.querySelector('.popover')&&document.activeElement===document.querySelector('.dock-open')`),true,'Escape restores minimal dock trigger focus');
+        const point=await run(`(()=>{const r=document.querySelector('.dock-open').getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+        await cdp('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...point});await cdp('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...point});await sleep(100);
+        assert.equal(await run(`!!document.querySelector('.popover .dock-items')&&!!document.activeElement.closest('.popover')`),true,'pointer opens minimal places and moves focus: '+JSON.stringify(await run(`(()=>{const r=document.querySelector('.dock-open').getBoundingClientRect();return{active:document.activeElement?.outerHTML?.slice(0,180),hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.outerHTML?.slice(0,250),dock:JSON.stringify(r.toJSON()),guide:JSON.stringify(document.querySelector('.key-guide').getBoundingClientRect().toJSON())}})()`)));
+        await press('Escape','Escape',27);await sleep(100);
+        assert.equal(await run(`document.activeElement===document.querySelector('.dock-open')`),true,'pointer-opened places returns focus on Escape');
+      }
       for (const view of ['board', 'timeline']) {
-        if (view === 'timeline') await run(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'i',bubbles:true}))`);
+        await run(`document.querySelector('#viewSwitch button[aria-label="'+${JSON.stringify(view === 'timeline' ? '時間軸' : 'ボード')}+'"]')?.click()`);
         await sleep(180);
+        if(layout==='omni'&&view==='timeline'){
+          const sendPoint=await run(`(async()=>{
+            const row=document.querySelector('.irow[data-card-id="claude:c2"]')||document.querySelector('.irow[data-card-id^="codex:"]');
+            if(!row)throw Error('session row unavailable for pointer regression');row.click();
+            for(let i=0;i<100&&!document.querySelector('.pane .send-round');i++)await new Promise(r=>setTimeout(r,50));
+            const send=document.querySelector('.pane .send-round');if(!send)throw Error('send button unavailable');
+            window.__sendPointerReached=false;send.addEventListener('click',e=>{e.preventDefault();e.stopImmediatePropagation();window.__sendPointerReached=true;},{capture:true,once:true});
+            const r=send.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};
+          })()`);
+          await cdp('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...sendPoint});await cdp('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...sendPoint});
+          assert.equal(await run(`window.__sendPointerReached===true&&document.querySelector('.dock-open').closest('#auxiliaryFragments')!==null&&!document.querySelector('.dock-open').closest('[inert]')`),true,'minimal places never intercepts send pointer and remains reachable with docked card');
+          const dockPoint=await run(`(()=>{const r=document.querySelector('.dock-open').getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+          await cdp('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...dockPoint});await cdp('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...dockPoint});
+          assert.equal(await run(`!!document.querySelector('.popover .dock-items')&&!document.querySelector('.popover .dock-items').closest('[inert]')`),true,'places popup remains operable above the card');
+          await press('Escape','Escape',27);
+          assert.equal(await run(`document.activeElement===document.querySelector('.dock-open')`),true,'places popup restores app-bar trigger focus above a card');
+        }
         const shot = await cdp('Page.captureScreenshot', { format: 'png' });
         fs.writeFileSync(path.join(output, `${layout}-${view}-${theme}.png`), Buffer.from(shot.result.data, 'base64'));
         assert.equal(await run(`document.documentElement.scrollWidth <= 1280 && document.querySelector('.topbar').getBoundingClientRect().height < 65`), true, `${layout}/${view}/${theme} viewport and app bar`);
         if (layout === 'omni') assert.equal(await run(`(() => { const d = document.querySelector('.layout-dock').getBoundingClientRect(), g = document.querySelector('.key-guide').getBoundingClientRect(); return d.bottom <= g.top || g.bottom <= d.top || d.right <= g.left || g.right <= d.left; })()`), true, 'dock leaves keyboard hints visible');
-        if (view === 'timeline') await run(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'i',bubbles:true}))`);
+        await run(`document.querySelector('#viewSwitch button[aria-label="ボード"]')?.click()`);
       }
       // The only reachable entry opens management once and Esc closes it.
       const selector = layout === 'omni' ? '.layout-dock [data-place="settings"]' : layout === 'rail' ? '.layout-rail [data-place="settings"]' : '#sidebar [data-page="settings"]';

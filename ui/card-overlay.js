@@ -74,6 +74,7 @@ function paintPaneBar() {
   $$('button[data-v]', paneBar).forEach((b) => b.setAttribute('aria-pressed', String(paneGlobal.mode === b.dataset.v)));
   $$('button[data-view-mode]', paneBar).forEach((b) => b.setAttribute('aria-pressed', String((paneGlobal.viewMode || 'full') === b.dataset.viewMode)));
   applyPaneViewMode();
+  applyAuxiliaryUi();
   refreshShortcutHints();
 }
 buildPaneBar();
@@ -114,7 +115,7 @@ function detachPane(p) {
   for (const [id, old] of paneCache) { if (paneCache.size <= PANE_CACHE_MAX) break; if (!workspace.hasDrafts(old.el)) paneCache.delete(id); }
 }
 function newPane(id) {
-  const p = { id, kind: cardKind(id), el: null, d: null, status: null, lastText: '' };
+  const p = { id, kind: cardKind(id), el: null, d: null, status: null, lastText: '', timelineHidden: true, sideTab: null };
   if (p.kind === 'view') {
     const [icon, title] = VIEW_SHEETS[viewOf(id)];
     p.el = h('article', { class: 'pane sheet', role: 'region', 'aria-label': title, tabindex: -1, 'data-card-id': id },
@@ -155,6 +156,7 @@ function showCards(ids, { dock } = {}) {
 // `dock: false` closes it all the same (archived, deleted).
 function closeCards({ dock = true } = {}) {
   if (paneLayer.hidden) return;
+  if (dock && typeof canReturnPaletteOutsideCard === 'function' && canReturnPaletteOutsideCard()) return returnPaletteOutsideCard();
   if (dock && overlayOpen() && (timelineOn() || (typeof ganttOn === 'function' && ganttOn())) && panes[0] && panes[0].kind !== 'view' && ($('#board .inbox-main') || $('#board .gantt-main'))) return dockCards();
   const docked = paneDocked();
   endExchangeTrail();
@@ -197,15 +199,19 @@ function setCardsDocked(dock) {
     if (task) reconcileCards({ lists: [{ cards: [task] }] });
   }
 }
+function selectedDockedRow() {
+  const id = typeof ganttOn === 'function' && ganttOn() ? state.gantt.sel : state.inbox.sel;
+  return document.querySelector('#board .irow[data-card-id="' + CSS.escape(id || '') + '"], #board .gantt-row[data-card-id="' + CSS.escape(id || '') + '"]');
+}
 function expandCards() {
   if (!paneDocked()) return;
-  cardReturn = $(`#board .irow[aria-selected="true"]`);
+  cardReturn = $(`#board .irow[aria-selected="true"], #board .gantt-row[aria-selected="true"]`);
   setCardsDocked(false);
   (focusedPane() || panes[0])?.el.focus({ preventScroll: true });
 }
 function dockCards() {
   setCardsDocked(true);
-  const row = $(`#board .irow[data-card-id="${CSS.escape(state.inbox.sel || '')}"]`);
+  const row = selectedDockedRow();
   cardReturn = null;
   (row || panes[0]?.el)?.focus({ preventScroll: true });
 }
@@ -325,10 +331,15 @@ function paneButtons(p) {
 function paintPaneButtons(p) { const slot = $('.ph-btns', p.el); if (slot) slot.replaceChildren(...paneButtons(p)); }
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing || paneLayer.hidden || document.querySelector('.popover, dialog[open]')) return;
+  if (typeof canReturnPaletteOutsideCard === 'function' && canReturnPaletteOutsideCard()) {
+    e.preventDefault();
+    if (typingIn(e.target)) { e.target.blur(); return; }
+    returnPaletteOutsideCard(); return;
+  }
   if (paneDocked() && !inDockedPane(e.target)) return; // the 時間軸's list keeps its own Esc
   e.preventDefault();
   if (typingIn(e.target)) { e.target.blur(); return; } // the first Esc leaves the field, the next one closes the card
-  if (paneDocked()) { $(`#board .irow[data-card-id="${CSS.escape(state.inbox.sel || '')}"]`)?.focus(); return; } // docked: back to the list
+  if (paneDocked()) { const row = selectedDockedRow(); if (row) row.focus(); else closeCards({ dock: false }); return; }
   if (exchangeTrail && e.shiftKey) { moveExchangeVisit(1); return; }
   if (moveExchangeVisit(-1)) return;
   closeCards();
@@ -405,12 +416,13 @@ document.addEventListener('keydown', e => {
     else if (k === 'v') run = cyclePaneViewMode;
     else if (/^[1-9]$/.test(k) && PANE_MODES[k - 1]) run = () => setPaneMode(PANE_MODES[k - 1][0]);
     else if (k === 'i') run = () => focusPrompt(p);
-    else if (p.kind === 'session' && k === 'y') run = () => { p.timelineHidden = !p.timelineHidden; if (p.timelineEl) p.timelineEl.hidden = p.timelineHidden; paintThreadTimeline(p); };
+    else if (p.kind === 'session' && k === 'y') run = () => toggleThreadTimeline(p);
     else if ((p.kind === 'session' && (k === 'd' || (k === 'f' && !sessionHost(p)))) || (p.kind === 'task' && k === 'd')) run = () => toggleThreadSide(p, k === 'd' ? 'details' : 'changes');
     else if (e.shiftKey && k === 'R' && terminalAvailable(p) && cardTerms.get(p.id)?.closed) run = () => restartTerminal(p);
     else if (e.shiftKey && k === 'X' && terminalAvailable(p) && cardTerms.get(p.id)?.id && !cardTerms.get(p.id)?.closed) run = () => endTerminal(p);
     else if (k === 't' && terminalAvailable(p)) run = () => toggleThreadSide(p, 'terminal');
     else if (p.kind === 'session' && (k === 'z' || k === 'Delete')) run = () => paneKeyButton(p, k)?.click();
+    else if (p.kind === 'session' && k === 'x') run = () => workBundlePicker(p.el.querySelector('.th-meta') || p.el, p.id);
     else if (p.kind === 'session' && k === 'o') run = () => resume(p.id);
     else if (/^[olgmh]$/.test(k)) run = () => paneKeyButton(p, k)?.click();
   }
@@ -442,7 +454,7 @@ async function openCard(cardId, { restore = false, dock } = {}) {
   for (const l of state.board?.lists || []) for (const c of l.cards) if (c.id === cardId && c.unread) { c.unread = false; if (!dock) render(); }
   showCards([cardId], { dock });
   const [p] = panes;
-  const loading = loadSession(p, { restore }); // paints the head and the input before it waits
+  const loading = p.initialSessionLoad = loadSession(p, { restore }); // paints the head and the input before it waits
   const focus = !restore && !dock;
   if (focus) p.el.focus({ preventScroll: true });
   await loading;
@@ -619,11 +631,13 @@ function renderPaneKeepingDrafts(p, d) {
     const baseline = workspace.draftValues.get(input);
     return (baseline !== undefined && baseline !== input.value) || input.matches('.send-box textarea') && !!input.value.trim()
       || input.matches('textarea.note') && input.value !== input.defaultValue;
-  }).map(input => ({ label: input.getAttribute('aria-label'), value: input.value }));
+  }).map(input => ({ label: input.getAttribute('aria-label'), value: input.value,
+    start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection, scrollTop: input.scrollTop }));
   // The field being typed in keeps the focus and the caret through the rebuild (the head shown before the detail).
   const focused = el.ownerDocument?.activeElement;
   const active = focused?.matches('input,textarea') && el.contains(focused) ? focused : null;
-  const caret = active && { label: active.getAttribute('aria-label'), start: active.selectionStart, end: active.selectionEnd };
+  const caret = active && { label: active.getAttribute('aria-label'), start: active.selectionStart, end: active.selectionEnd,
+    direction: active.selectionDirection, scrollTop: active.scrollTop };
   const promptDraft = promptDrafts.get(`dispatch:${p.id}`);
   const promptValue = drafts.find(draft => draft.label === '送るプロンプト');
   if (promptDraft && promptValue) promptDraft.text = promptValue.value;
@@ -631,12 +645,23 @@ function renderPaneKeepingDrafts(p, d) {
   restoreReading();
   for (const draft of drafts) {
     if (!draft.label) continue;
-    const input = [...el.querySelectorAll('input,textarea,select')].find(input => input.getAttribute('aria-label') === draft.label);
-    if (input) input.value = draft.value;
-    else if (draft.label === '送るプロンプト') keepDisabledPrompt($('.send-section', el), draft.value);
+    let input = [...el.querySelectorAll('input,textarea,select')].find(input => input.getAttribute('aria-label') === draft.label);
+    if (!input && draft.label === '送るプロンプト') {
+      keepDisabledPrompt($('.send-section', el), draft.value);
+      input = [...el.querySelectorAll('input,textarea,select')].find(input => input.getAttribute('aria-label') === draft.label);
+    }
+    if (input) {
+      input.value = draft.value;
+      if (typeof draft.start === 'number' && typeof draft.end === 'number') { try { input.setSelectionRange(draft.start, draft.end, draft.direction); } catch {} }
+      input.scrollTop = draft.scrollTop;
+    }
   }
   const field = caret?.label && [...el.querySelectorAll('input,textarea')].find(input => input.getAttribute('aria-label') === caret.label);
-  if (field && !field.disabled) { field.focus({ preventScroll: true }); try { field.setSelectionRange(caret.start, caret.end); } catch {} }
+  if (field && !field.disabled) {
+    field.focus({ preventScroll: true });
+    try { field.setSelectionRange(caret.start, caret.end, caret.direction); } catch {}
+    field.scrollTop = caret.scrollTop;
+  }
 }
 
 async function changeSessionCardState(p, action) {
@@ -812,6 +837,7 @@ function renderPane(p, d) {
     continueMain.title = [action.label, action.reason, shortcutHelp()].filter(Boolean).join('\n');
     continueMain.querySelector('.continue-label').textContent = action.label;
     continueReason.textContent = action.reason;
+    continueReason.title = action.reason;
     continueReason.hidden = !action.disabled || !action.reason;
   }
   const managedResume = managedDesktop ? desktopResumeControl(s.id, { onPaint: value => {
@@ -851,7 +877,7 @@ function renderPane(p, d) {
       const menu = popover(continueOptions, '開く経路', body, { width: 320 });
       menu.querySelector('button:not(.close):not(:disabled)')?.focus();
     } }, h('span', { html: picon('chev', 12) }));
-  const continueControl = h('div', { class: 'thread-continue' }, h('div', { class: 'thread-continue-buttons' }, continueMain, s.sourceKind === 'codex-cloud' ? null : continueOptions), continueReason);
+  const continueControl = h('div', { class: 'thread-continue' }, h('div', { class: 'thread-continue-buttons' }, continueMain, s.sourceKind === 'codex-cloud' ? null : continueOptions));
   p.continueState = continuation;
   p.paintContinue = paintContinue;
   paintContinue();
@@ -883,18 +909,11 @@ function renderPane(p, d) {
   }
   updateExecutionChoice();
 
-  const taskSel = pickerButton({ title: `${T.taskCard}に紐付け`, value: '', stack: false,
-    items: () => [
-      { value: '', label: d.task ? `紐付け中: ${d.task.title}` : `（${T.taskCard}に紐付けない）` },
-      ...(d.tasks || []).filter((t) => !d.task || t.id !== d.task.id).map((t) => ({ value: t.id, label: t.title })),
-      d.task ? { value: '__unlink', label: '紐付けを解除' } : null].filter(Boolean),
-    onChange: (v) => onTask(v) });
-  const onTask = async (v) => {
-    if (!v) return;
-    if (v === '__unlink') await act('canban_unlink_session', { taskId: d.task.id, sessionId: s.id }, { okMsg: '紐付けを解除しました' });
-    else await act('canban_link_session', { taskId: v, sessionId: s.id }, { okMsg: `${T.taskCard}に紐付けました` });
-    closeCards();
-  };
+  const taskReason = workBundleDisabledReason(s);
+  const taskSel = h('button', { class: 'text-input picker-btn', type: 'button', disabled: !!taskReason,
+    'data-work-bundle': s.id, 'aria-label': '仕事にまとめる', title: taskReason || '仕事にまとめる（x）',
+    onclick: e => workBundlePicker(e.currentTarget, s.id) },
+    h('span', { class: 'grow ellipsis', text: d.task ? `いまの仕事: ${d.task.title}` : '仕事にまとめる' }), ...keycap('x'));
 
   const msgs = d.recentMessages.length
     ? d.recentMessages.map((m) => h('div', { class: `msg ${m.role}` }, h('div', { class: 'who', text: `${m.role === 'user' ? 'ユーザー' : 'エージェント'}${m.at ? ` · ${fmtDate(Date.parse(m.at))}` : ''}` }), m.text))
@@ -949,10 +968,11 @@ function renderPane(p, d) {
     h('div', { class: 'muted', text: `${String(d.repo).replace(/^gitlab:/, 'GitLab: ')} · ${d.pr.branch}` }),
     ...(d.pr.checkRuns || []).map((c) => h('div', { class: 'check-row' }, h('span', { class: `ck ck-${/fail|error|cancel|timed/.test(c.state) ? 'failing' : /success|pass|neutral|skipped/.test(c.state) ? 'passing' : 'pending'}`, text: /fail|error|cancel|timed/.test(c.state) ? '✗' : /success|pass|neutral|skipped/.test(c.state) ? '✓' : '●' }), ` ${c.name}`)))] };
   if (related.length) secs.related = { nodes: related };
+  secs.cardRelations = { title: '関連するカード', nodes: [cardRelationsSection(s.id)], extra: h('span', {}, ...keycap('Alt+Shift+R')) };
   secs.first = { nodes: [h('div', { class: 'msg user', text: s.preview || '-' })] };
   secs.resume = { title: '再開の設定', nodes: [resumeBox] };
-  secs.continue = { nodes: [continueControl] };
-  secs.task = { nodes: [taskSel] };
+  secs.continue = { nodes: [continueControl], reason: continueReason };
+  secs.task = { nodes: [taskSel, ...(taskReason ? [h('p', { class: 'muted', text: taskReason })] : [])] };
   secs.add = { title: T.category, nodes: [dirBtn] };
   secs.prio = { nodes: [prio, due] };
   secs.other = { nodes: [

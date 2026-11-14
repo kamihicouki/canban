@@ -19,7 +19,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => ap
 function sharedUiSnapshot() {
   return {
     slackVisible: slackUi.visible, filters: { ...state.filters }, themePref: state.themePref, layout: state.layoutSaved, boardView: state.view, sidebar: state.sideOpen, workspacePage: workspace.page,
-    categoryPins: state.categoryPins,
+    categoryPins: state.categoryPins, auxiliaryPrefs: { ...state.auxiliaryPrefs },
     exchangeTrailView: typeof exchangeTrailView === 'string' ? exchangeTrailView : 'center',
     paneGlobal: { ...paneGlobal }, cardWidths: { ...cardWidths }, cardHeights: { ...cardHeights }, collapsedLanes: [...collapsedLanes], keyGuide: { ...keyGuidePlace },
   };
@@ -36,6 +36,10 @@ function adoptSharedUi(record) {
     for (const key of SHARED_UI_KEYS) if (Object.hasOwn(value, key)) store.cache(key, value[key]);
     if (value.filters && typeof value.filters === 'object' && !Array.isArray(value.filters)) state.filters = { ...DEFAULT_FILTERS, ...value.filters };
     if (Object.hasOwn(value, 'categoryPins')) state.categoryPins = Array.isArray(value.categoryPins) ? value.categoryPins.filter(id => typeof id === 'string') : null;
+    if (Object.hasOwn(value, 'auxiliaryPrefs') || Object.hasOwn(value, 'auxiliaryMode')) {
+      state.auxiliaryPrefs = normalizeAuxiliaryPrefs(value.auxiliaryPrefs, value.auxiliaryMode);
+      state.auxiliaryMode = auxiliaryModeSummary(state.auxiliaryPrefs);
+    }
     if (typeof value.sidebar === 'boolean') state.sideOpen = value.sidebar;
     if (typeof value.slackVisible === 'boolean') { slackUi.visible = value.slackVisible; if (slackUi.visible) slackUi.refresh(); }
     if (typeof value.themePref === 'string') { state.themePref = value.themePref; applyTheme(); }
@@ -44,7 +48,7 @@ function adoptSharedUi(record) {
       layoutChanged = next !== state.layout;
       state.layoutSaved = value.layout; state.layout = next;
     }
-    if (value.boardView === 'board' || value.boardView === 'timeline') state.view = value.boardView;
+    if (Object.hasOwn(value, 'boardView')) state.view = ['board', 'timeline', 'gantt'].includes(value.boardView) ? value.boardView : 'board';
     if (value.paneGlobal && typeof value.paneGlobal === 'object') {
       if (value.paneGlobal.mode) paneGlobal.mode = oneOf(value.paneGlobal.mode, PANE_MODES, PANE_DEF.mode);
       if (value.paneGlobal.viewMode) paneGlobal.viewMode = oneOf(value.paneGlobal.viewMode, CARD_VIEW_MODES, 'full');
@@ -83,7 +87,7 @@ async function applySharedUi(record, { redraw = true } = {}) {
   try { adopted = adoptSharedUi(record); }
   finally { sharedUi.applying = wasApplying; }
   if (!adopted) return;
-  applyCardWidths(); placeKeyGuide(); panes.forEach(applyPaneAttrs); paintPaneBar();
+  applyCardWidths(); placeKeyGuide(); panes.forEach(applyPaneAttrs); paintPaneBar(); applyAuxiliaryUi();
   if (redraw) {
     const after = sharedUiSnapshot();
     const layoutOnly = before.layout !== after.layout && Object.keys(before).every(key => key === 'layout' || JSON.stringify(before[key]) === JSON.stringify(after[key]));
@@ -228,6 +232,7 @@ window.addEventListener('resize', () => bridge.reportSize());
   if (ctx.displayMode === 'inline') {
     $('#refresh').after(h('button', { class: 'hbtn', title: '全画面で開く', 'aria-label': '全画面で開く', text: '⤢', onclick: () => bridge.requestFullscreen() }));
   }
+  buildAuxiliaryUi();
   buildLayouts();
   await initializeSharedUi();
   await load();
