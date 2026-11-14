@@ -554,7 +554,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       target: t.target || null,
       launchSelection: t.launchSelection || null,
       launchReceipts: t.launchReceipts || [],
-      links: links.map((x) => ({ id: x.id, sourceView: compactSourceView(x.sourceView || sessionSourceView(x)), capabilities: compactCapabilities(capabilitiesFor({ session: x })), agent: x.agent, surface: inferSurface(x), account: x.account || null, title: x.title, status: x.status || 'idle', statusKnown: x.statusKnown !== false, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, updatedAt: x.updatedAt })),
+      links: links.map((x) => ({ id: x.id, sourceView: compactSourceView(x.sourceView || sessionSourceView(x)), capabilities: compactCapabilities(capabilitiesFor({ session: x })), agent: x.agent, surface: inferSurface(x), account: x.account || null, title: x.title, status: x.status || 'idle', statusKnown: x.statusKnown !== false, signals: cardSignals(x.signals), activity: x.activity || null, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, updatedAt: x.updatedAt })),
       linkedSessionIds: [...(t.links || [])],
       missingLinks: (t.links || []).length - allLinks.length,
       pending: (t.pending || []).map((p) => ({ agent: p.agent, startedAt: p.startedAt, expired: now - p.startedAt > PENDING_MS })),

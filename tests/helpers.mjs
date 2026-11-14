@@ -83,3 +83,14 @@ export function makeFixtures() {
     },
   };
 }
+
+// The server shuts down asynchronously on SIGTERM and can still write to its data folder,
+// so removing that folder right after kill() fails with ENOTEMPTY. Await this first.
+export function stopChild(child, { graceMs = 5000 } = {}) {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    const force = setTimeout(() => child.kill('SIGKILL'), graceMs);
+    child.once('exit', () => { clearTimeout(force); resolve(); });
+    child.kill();
+  });
+}

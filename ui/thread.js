@@ -233,6 +233,7 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
     h('span', { class: 'th-time', title: fmtDate(s.updatedAt), text: relTime(s.updatedAt) }),
   ].filter(Boolean);
   const head = h('div', { class: 'th-head' }, secs.breadcrumb.nodes[0], h('span', { class: 'grow' }),
+    ...secs.continue.nodes,
     h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'timeline', title: '思考タイムラインを左に開く・閉じる（y）', 'aria-pressed': String(!p.timelineHidden), 'aria-keyshortcuts': 'y', onclick: () => { p.timelineHidden = !p.timelineHidden; if (p.timelineEl) p.timelineEl.hidden = p.timelineHidden; paintThreadTimeline(p); } }, h('span', { html: picon('history', 14) }), '思考', ...keycap('y')),
     !s.host ? h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'changes', title: '作業フォルダの変更を右に開く・閉じる（f）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'f', onclick: () => toggleThreadSide(p, 'changes') }, h('span', { html: picon('diff', 14) }), '変更', h('span', { class: 'th-diffstat' }), ...keycap('f')) : null,
     !s.host ? h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'terminal', title: 'プロジェクトのルートで開くターミナルを右に開く・閉じる（t）', 'aria-pressed': 'false', 'aria-keyshortcuts': 't', onclick: () => toggleThreadSide(p, 'terminal') }, h('span', { html: picon('terminal', 14) }), 'ターミナル', ...keycap('t')) : null,
@@ -380,6 +381,7 @@ function taskThreadChoice(taskId, links) {
 }
 async function selectTaskThread(taskId, id) {
   store.set('taskThreads', { ...taskThreadsSaved(), [taskId]: id });
+  if (paneDocked()) return openCard(id, { dock: true });
   if (panes[0]?.id !== taskId) return openCard(id);
   showCards([taskId, id]);
   const p = panes[1];

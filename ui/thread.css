@@ -1,7 +1,7 @@
 /* Thread detail, folded conversation, chips composer and the changes panel. Colors come from board.html's tokens. */
 /* ---------- the thread layout of a session card ---------- */
-.pane[data-detail="thread"] { background: var(--card-bg); color: var(--card-fg); --fs: 14px; }
-.pane[data-detail="thread"] .th-head { display: flex; align-items: center; gap: 4px; padding: 18px 24px 8px; flex: none; min-width: 0; }
+.pane[data-detail="thread"] { container-type: inline-size; background: var(--card-bg); color: var(--card-fg); --fs: 14px; }
+.pane[data-detail="thread"] .th-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 18px 24px 8px; flex: none; min-width: 0; }
 .th-head .card-crumb { flex: 1; min-width: 0; }
 .th-tool { height: 28px; min-width: 28px; padding: 0 6px 0 8px; border-radius: 7px; background: var(--btn-subtle); color: var(--card-fg) !important; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--card-muted); font-size: 12px; font-weight: 600; }
 .th-tool:hover { background: var(--btn-subtle-hover); color: var(--card-fg); }
@@ -153,3 +153,22 @@
 @media (prefers-reduced-motion: reduce) { .conv-wait i { animation: none; } }
 .conv-failed { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .conv-failed .pane-loading { padding: 0; }
+
+/* The unique continue action stays beside the thread heading, including in the narrow dock. */
+.thread-continue { flex: none; max-width: min(260px, 42%); min-width: 0; }
+.thread-continue-buttons { display: flex; gap: 2px; align-items: center; }
+.thread-continue .resume-main { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; max-width: 100%; min-width: 0; padding: 0 8px; border-radius: 7px; white-space: nowrap; }
+.thread-continue .continue-label { overflow: hidden; text-overflow: ellipsis; }
+.thread-continue .continue-reason { font-size: 11px; line-height: 1.4; color: var(--card-muted); overflow-wrap: anywhere; padding-top: 4px; }
+.thread-continue .continue-options { flex: none; }
+.continue-menu { display: flex; flex-direction: column; gap: 3px; }
+.continue-menu .menu-item { display: flex; align-items: center; gap: 8px; text-align: left; }
+.continue-menu small { display: block; white-space: normal; }
+@container (max-width: 880px) {
+  .th-head .card-crumb { flex: 1 0 100%; }
+  .thread-continue { max-width: min(260px, 42%); }
+}
+@container (max-width: 600px) {
+  .thread-continue { max-width: 130px; }
+  .thread-continue .continue-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}

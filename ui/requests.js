@@ -3,6 +3,26 @@
 const REQ_ICONS = { queued: '⏳', starting: '▶', running: '▶', succeeded: '✓', failed: '✗', cancelled: '⊘', interrupted:'⏹',blocked:'⏸' };
 const REQ_LABELS = { queued: '待機中', starting: '開始中', running: '実行中', succeeded: '完了', failed: '失敗', cancelled: '取り消し', interrupted:'停止',blocked:'競合のため停止' };
 
+// Questions belong to the originating app. Reading them never creates a reply action.
+function waitQuestionOf(session) {
+  const sig = session?.signals;
+  if (session?.statusKnown === false || session?.status !== 'waiting' || sig?.wait !== 'question' || typeof sig.waitText !== 'string' || !sig.waitText.trim()) return null;
+  return { text: sig.waitText, options: Array.isArray(sig.waitOptions) ? sig.waitOptions.filter(x => typeof x === 'string' && x.trim()).slice(0, 6) : [] };
+}
+function paintWaitingQuestion(root, session) {
+  const box = root.querySelector('.cx-wait-question');
+  if (!box) return;
+  const question = waitQuestionOf(session), key = JSON.stringify(question);
+  if (box._questionKey === key) return;
+  box._questionKey = key;
+  box.hidden = !question;
+  box.replaceChildren(...(question ? [
+    h('h3', { text: '質問（元アプリで答えます）' }),
+    h('p', { text: question.text }),
+    question.options.length ? h('ul', {}, ...question.options.map(text => h('li', { text }))) : null,
+  ].filter(Boolean) : []));
+}
+
 function requestPill(r) {
   if (r.running) return h('span', { class: 'pill', title: 'Canban から送った指示を実行中', text: `▶ 実行中${r.queued ? `・待機 ${r.queued}` : ''}` });
   if (r.paused) return h('span', { class: 'pill due-over', title: 'キューが一時停止しています（詳細で再開）', text: `⏸ 待機 ${r.queued}` });
@@ -67,6 +87,8 @@ function renderDispatch(d) {
   const s = d.session;
   const D = d.dispatch;
   const box = h('div', { class: 'send-section' });
+  box.append(h('section', { class: 'cx-wait-question', 'aria-label': '元アプリの質問', hidden: true }));
+  paintWaitingQuestion(box, s);
   const title = h('div', { class: 'section-title', text: '指示を送る' });
   if (D.unavailableReason) {
     box.append(title, h('div', { class: 'muted', text: D.unavailableReason }));

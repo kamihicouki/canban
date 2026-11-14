@@ -102,6 +102,9 @@ function applyFeed(f, feed) {
     f.signals = feed.signals || null;
     if (feed.git) { f.git = feed.git; paintThreadStat(f.pane, f.git); }
     paintFeedFoot(f);
+    f.pane.paintContinue?.();
+    const waitingRoot = f.pane.el.querySelector('.send-section');
+    if (waitingRoot && typeof paintWaitingQuestion === 'function') paintWaitingQuestion(waitingRoot, { ...f.pane.d?.session, status: f.status, signals: f.signals });
     f.edits?.paint();
     const box = f.pane.el.querySelector('.sig-box');
     if (box) {
@@ -149,20 +152,27 @@ function findCard(id) {
 
 // Patch cards in place: a status change rebuilds the board (rules and counts follow it).
 function applyPatches(patches) {
-  let rebuild = false;
+  let rebuild = false, timelineChanged = false;
+  const timeline = typeof inboxOn === 'function' && inboxOn();
   for (const p of patches) {
     const hit = findCard(p.id);
     if (!hit) continue;
     const { card, list, link } = hit;
-    if (link) { if (link.status !== p.status) rebuild = true; continue; }
-    if (card.status !== p.status) { rebuild = true; continue; }
+    const target = link || card;
+    const changedStatus = target.status !== p.status || typeof p.statusKnown === 'boolean' && target.statusKnown !== p.statusKnown;
+    if (changedStatus) rebuild = true;
     const openHere = live.feeds.has(p.id);
-    if ((p.updatedAt || 0) > (card.updatedAt || 0) && !openHere) card.unread = true;
+    if ((p.updatedAt || 0) > (target.updatedAt || 0) && !openHere) target.unread = card.unread = true;
+    target.status = p.status;
+    if (typeof p.statusKnown === 'boolean') target.statusKnown = p.statusKnown;
+    target.updatedAt = Math.max(target.updatedAt || 0, p.updatedAt || 0);
     card.updatedAt = Math.max(card.updatedAt || 0, p.updatedAt || 0);
-    card.activity = p.activity;
-    card.signals = p.signals || null;
-    card.git = p.git || null;
-    const el = document.querySelector(`.card[data-card-id="${CSS.escape(p.id)}"]`);
+    target.activity = p.activity || null;
+    target.signals = p.signals || null;
+    target.git = p.git || null;
+    if (timeline) { timelineChanged = true; continue; }
+    if (changedStatus) continue;
+    const el = document.querySelector(`.card[data-card-id="${CSS.escape(card.id)}"]`);
     if (el && !state.drag && !el.querySelector('.peek-input:focus')) {
       const focused = el.contains(document.activeElement);
       const next = renderCard(card, list);
@@ -170,6 +180,7 @@ function applyPatches(patches) {
       if (focused) next.focus();
     }
   }
+  if (timelineChanged && !state.drag) refreshInboxList();
   if (rebuild) scheduleLoad();
 }
 
@@ -200,6 +211,8 @@ function applyPresence(list) {
     if (JSON.stringify(before.get(id)) === JSON.stringify(live.viewers.get(id))) continue;
     const hit = findCard(id);
     const el = document.querySelector(`.card[data-card-id="${CSS.escape(id)}"]`);
+    // The time-axis row has its own structure; a viewer change must not replace it with a board face.
+    if (el?.classList.contains('irow')) continue;
     if (hit && !hit.link && el && !state.drag && !el.querySelector('.peek-input:focus')) {
       const focused = el.contains(document.activeElement);
       const next = renderCard(hit.card, hit.list);

@@ -73,3 +73,32 @@ function neighborCardId(ids, current, step) {
   const i = ids.indexOf(current);
   return i < 0 ? null : ids[i + step] ?? null;
 }
+
+// A continuation label states the actual route; a usable CLI route never proves Desktop is usable.
+function continueAction(card, launch = {}, capabilities = {}, options = {}) {
+  const cloud = card.sourceKind === 'codex-cloud' || !!card.dot;
+  const route = cloud ? 'desktop' : options.route || 'desktop';
+  const name = ({ codex: 'Codex', claude: 'Claude', antigravity: 'Antigravity', cursor: 'Cursor' })[card.agent] || '元アプリ';
+  const waiting = card.statusKnown !== false && card.status === 'waiting';
+  const open = capabilities?.open;
+  let capability = open?.routes?.[route] || open || { status: 'unknown', reason: '操作条件は未取得です' };
+  // Cloud opens the Codex shell, not this exact conversation (whose capability is unsupported).
+  if (cloud && launch.desktop?.url && capability.status === 'unsupported') capability = { status: 'available' };
+  // The existing managed Desktop control refreshes account ownership/connection state before every launch.
+  if (route === 'desktop' && options.desktopState && capability.status !== 'blocked') capability = options.desktopState;
+  let label = route === 'terminal' ? 'ターミナルで再開' : cloud ? 'Codex を開く'
+    : launch.desktop?.exact === false ? '同じフォルダーで新しく開く' : `${name} で${waiting ? '答える' : '開く'}`;
+  let reason = route === 'terminal' ? options.targetLabel || '' : cloud ? '会話は元アプリで読みます'
+    : launch.desktop?.exact === false ? `この会話は${name}では直接開けません。続きはターミナルで再開できます`
+    : waiting ? '質問・承認は元アプリで答えます' : '';
+  const present = route === 'terminal' ? !!launch.terminal?.command && options.terminalAvailable !== false : !!launch.desktop;
+  let disabled = !present || capability.status !== 'available';
+  if (disabled) reason = !present ? route === 'terminal' ? options.terminalAvailable === false ? '対応ターミナルが見つかりません' : 'CLI の再開経路はありません' : 'デスクトップアプリで開く経路はありません'
+    : `${capability.status === 'unknown' ? '開けるか確認できていません: ' : ''}${capability.reason || 'この経路は利用できません'}`;
+  if (route === 'desktop' && options.pending) {
+    label = options.pending.waiting ? '再開結果を確認' : label;
+    disabled = disabled || options.pending.disabled;
+    reason = options.pending.reason || reason;
+  }
+  return { label, reason, disabled, route };
+}

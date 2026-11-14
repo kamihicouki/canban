@@ -110,7 +110,7 @@ function desktopAccountPicker({ key, value = null, onChange = () => {} }) {
   paint(); return root;
 }
 
-function desktopResumeControl(cardId) {
+function desktopResumeControl(cardId, { onPaint } = {}) {
   const feedback = h('div', { class: 'desktop-resume-feedback', role: 'status', 'aria-live': 'polite' });
   const launch = h('button', { type: 'button', class: 'side-btn', 'data-resume-desktop': '', onclick: () => desktopAccounts.startResume(cardId).catch(e => toast(e.message, true)) });
   const field = desktopAccountPicker({ key: cardId, onChange: () => paint() });
@@ -125,6 +125,7 @@ function desktopResumeControl(cardId) {
     launch.textContent = waiting ? '再開結果を確認' : problem ? `${account ? accountName(account) : 'アカウント'}：${connected ? '保持確認が必要' : '接続確認が必要'}` : `${accountName(account)} で Claude を開く`;
     launch.title = waiting ? result?.reason || '保存した再開要求の結果を確認します' : problem || '';
     launch.disabled = !!request?.submitting || result?.state === 'uncertain' || !waiting && !!problem;
+    onPaint?.({ status: problem ? 'blocked' : 'available', reason: launch.title || null, disabled: launch.disabled, waiting });
     field.querySelector('.desktop-account-picker').disabled = waiting || !!request?.submitting;
     feedback.replaceChildren(...[h('span', { text: result?.reason || result?.note || (result?.state === 'cancelled' ? '再開待機を取り消しました。選択と下書きは保持しています。' : '') }),
       waiting ? h('button', { type: 'button', class: 'btn', text: '再開待機を取り消す', onclick: () => desktopAccounts.cancelResume(cardId).catch(e => toast(e.message, true)) }) : null,

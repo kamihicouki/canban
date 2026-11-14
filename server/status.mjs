@@ -7,7 +7,7 @@
 // Keep the rules in sync with codex_status / claude_status in server/remote/collect.py.
 import { stat } from './sources/readonly.mjs';
 import { itemsFor, activityOf, lastSaidOf, readLines, FEED_MAX_DELTA } from './feed.mjs';
-import { newAcc, foldSignals, signalsView, limitsFrom, noteLimits } from './signals.mjs';
+import { newAcc, foldSignals, signalsView, limitsFrom, noteLimits, waitKind } from './signals.mjs';
 import { limitsAccount } from './accounts.mjs';
 import { isCloudSession } from './sources/codex-dots.mjs';
 
@@ -15,8 +15,6 @@ export const STATUSES = ['running', 'waiting', 'completed', 'aborted', 'idle'];
 export const RECENT_MS = 24 * 3600e3; // older sessions are always idle
 export const STALE_MS = 15 * 60e3; // "running" with no writes for this long is treated as idle
 export const TAIL_BYTES = 256 * 1024;
-
-const ASK_TOOLS = new Set(['request_user_input', 'AskUserQuestion', 'ExitPlanMode']);
 
 export function settle(state, mtimeMs, now = Date.now()) {
   if ((state === 'running' || state === 'waiting') && now - mtimeMs > STALE_MS) return 'idle';
@@ -34,11 +32,11 @@ export function codexRawStatus(records) {
     const p = o?.payload;
     if (!p) continue;
     if (o.type === 'event_msg') {
-      if (p.type === 'task_started') state = 'running';
+      if (p.type === 'task_started') { state = 'running'; asks.clear(); }
       else if (p.type === 'task_complete') state = 'completed';
       else if (p.type === 'turn_aborted') state = 'aborted';
     } else if (o.type === 'response_item') {
-      if (p.type === 'function_call' && ASK_TOOLS.has(p.name) && p.call_id) asks.add(p.call_id);
+      if (p.type === 'function_call' && waitKind(p.name) && p.call_id) asks.add(p.call_id);
       else if (p.type === 'function_call_output' && p.call_id) asks.delete(p.call_id);
     }
   }
@@ -62,10 +60,11 @@ export function claudeRawStatus(records, desktopStatus = null) {
     if (!o || o.isSidechain || (o.type !== 'user' && o.type !== 'assistant')) continue;
     const items = contentList(o);
     if (o.type === 'assistant') {
-      for (const it of items) if (it?.type === 'tool_use' && ASK_TOOLS.has(it.name) && it.id) asks.add(it.id);
+      for (const it of items) if (it?.type === 'tool_use' && waitKind(it.name) && it.id) asks.add(it.id);
       const stop = o.message?.stop_reason;
       state = stop === 'end_turn' || stop === 'stop_sequence' ? 'completed' : 'running';
     } else {
+      if (!o.isMeta && !items.some(it => it?.type === 'tool_result')) asks.clear();
       for (const it of items) if (it?.type === 'tool_result' && it.tool_use_id) asks.delete(it.tool_use_id);
       const text = typeof o.message?.content === 'string' ? o.message.content : items.map((it) => (it?.type === 'text' ? it.text : '')).join('');
       state = /\[Request interrupted by user/.test(text) ? 'aborted' : 'running';

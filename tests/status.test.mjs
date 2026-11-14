@@ -20,6 +20,13 @@ const CODEX = [
   [[ev('task_started'), ev('turn_aborted')], 'aborted'],
   [[ev('task_started'), fc('request_user_input', 'c1')], 'waiting'],
   [[ev('task_started'), fc('request_user_input', 'c1'), fco('c1')], 'running'],
+  [[ev('task_started'), fc('request_user_input_async', 'c1')], 'waiting'],
+  [[ev('task_started'), fc('functions.request_user_input', 'c1')], 'waiting'],
+  [[ev('task_started'), fc('functions.request_user_input_async', 'c1')], 'waiting'],
+  [[ev('task_started'), fc('mcp__functions__request_user_input_async', 'c1')], 'waiting'],
+  [[ev('task_started'), fc('functions.request_user_input_async', 'c1'), fco('c1')], 'running'],
+  [[ev('task_started'), fc('functions.request_user_input_async', 'c1'), ev('task_started')], 'running'],
+  [[ev('task_started'), fc('send_user_message_question_reply', 'c1')], 'running'],
   [[ev('task_started'), fc('shell', 'c2')], 'running'],
 ];
 const CLAUDE = [
@@ -30,6 +37,7 @@ const CLAUDE = [
   [[user('hi'), asst('tool_use'), user([{ type: 'text', text: '[Request interrupted by user]' }])], 'aborted'],
   [[user('hi'), asst('tool_use', [{ type: 'tool_use', id: 'q1', name: 'AskUserQuestion' }])], 'waiting'],
   [[user('hi'), asst('tool_use', [{ type: 'tool_use', id: 'q1', name: 'AskUserQuestion' }]), user([{ type: 'tool_result', tool_use_id: 'q1' }])], 'running'],
+  [[user('hi'), asst('tool_use', [{ type: 'tool_use', id: 'q1', name: 'AskUserQuestion' }]), user('新しい依頼')], 'running'],
   [[user('hi'), { ...asst('end_turn'), isSidechain: true }], 'running'],
 ];
 
