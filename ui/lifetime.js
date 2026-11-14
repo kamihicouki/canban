@@ -16,8 +16,9 @@ function setBoardView(view) {
   store.set('boardView', state.view);
   if (workspace.utilityPage()) workspace.navigate('home', { reload: false });
   if (state.board) render();
+  queueMicrotask(refreshShortcutHints);
 }
-const toggleBoardView = () => setBoardView(timelineOn() ? 'board' : 'timeline');
+const toggleBoardView = () => { const views = ['board', 'timeline', 'gantt']; setBoardView(views[(views.indexOf(state.view) + 1) % views.length]); };
 
 // ---- the view switch in the app bar: one control, the key beside it ----
 function renderViewSwitch() {
@@ -47,6 +48,10 @@ function dayLabel(i) {
 function renderRibbon(b) {
   const el = $('#ribbon');
   if (!el) return;
+  const active = document.activeElement, hadFocus = el.contains(active);
+  const focusedLife = hadFocus && active.classList.contains('rb-phase') ? active.dataset.life : null;
+  const focusedDay = hadFocus ? active.dataset?.day : null;
+  const focusedPeriod = hadFocus && active.closest('.rb-period') ? active.textContent : null;
   const cards = b.lists.flatMap((l) => l.cards);
   const days = ribbonDays(cards);
   const counts = dayHistogram(cards, days);
@@ -55,7 +60,7 @@ function renderRibbon(b) {
   const life = { live: 0, fresh: 0, active: 0, dormant: 0 };
   for (const c of cards) life[lifeOf(c)]++;
   const phases = h('div', { class: 'rb-phases', role: 'group', 'aria-label': 'カードの寿命' }, Object.entries(LIFE_LABELS).map(([k, label]) =>
-    h('button', { type: 'button', class: `rb-phase life-${k}`, 'aria-pressed': String(lens?.life === k), title: `${label}のカードを照らす（もう一度で解除）`,
+    h('button', { type: 'button', class: `rb-phase life-${k}`, 'data-life': k, 'aria-pressed': String(lens?.life === k), title: `${label}のカードを照らす（もう一度で解除）`,
       onpointerenter: () => previewLens({ life: k }), onpointerleave: () => previewLens(null), onfocus: () => previewLens({ life: k }), onblur: () => previewLens(null),
       onclick: () => pinLens(lens?.life === k ? null : { life: k }) },
       h('i'), h('span', { text: label }), h('b', { class: 'num', text: String(life[k]) }))));
@@ -91,8 +96,14 @@ function renderRibbon(b) {
   const period = h('div', { class: 'rb-period', role: 'group', 'aria-label': '期間' }, PERIODS.map(([k, label]) =>
     h('button', { type: 'button', 'aria-pressed': String(Number(state.filters.days) === k), title: k ? `${k} 日以内に動いたカード（置いたカードは残ります）` : 'すべての期間', text: label,
       onclick: () => setScope({ days: k }) })));
-  const legend = lensActive() ? h('button', { type: 'button', class: 'rb-clear', title: '照らすのをやめる（Esc）', onclick: () => pinLens(null) }, lensText(lensActive()), h('span', { class: 'x', text: '✕' })) : null;
+  const legend = h('button', { type: 'button', class: 'rb-clear', hidden: !lensActive(), title: '照らすのをやめる（Esc）', onclick: () => pinLens(null) }, lensText(lensActive()), h('span', { class: 'x', text: '✕' }));
+  el.hidden = auxiliaryPreference('ribbon') !== 'pinned' && !el.closest('.auxiliary-panel');
   el.replaceChildren(...[phases, h('div', { class: 'rb-track' }, bars, marks), legend, period].filter(Boolean));
+  applyAuxiliaryUi();
+  if (hadFocus) {
+    const next = focusedLife ? el.querySelector(`.rb-phase[data-life="${focusedLife}"]`) : focusedDay != null ? el.querySelector(`[data-day="${focusedDay}"]`) : focusedPeriod ? [...el.querySelectorAll('.rb-period button')].find(button => button.textContent === focusedPeriod) : null;
+    (next || el.closest('.auxiliary-panel')?.querySelector('.auxiliary-pin'))?.focus({ preventScroll: true });
+  }
 }
 function lensText(lens) {
   if (!lens) return '';
@@ -123,8 +134,8 @@ function applyLens() {
     if (badge) badge.textContent = hits ? `該当 ${hits}` : '';
   }
   const legend = $('#ribbon .rb-clear');
-  if (lens && !legend && state.board) renderRibbon(state.board);
-  else if (legend) legend.firstChild.textContent = lensText(lens);
+  if (legend) { legend.hidden = !lens; legend.firstChild.textContent = lensText(lens); }
+  applyAuxiliaryUi();
 }
 
 // ---- the dormant fold at the foot of a list ----

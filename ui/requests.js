@@ -13,14 +13,15 @@ function paintWaitingQuestion(root, session) {
   const box = root.querySelector('.cx-wait-question');
   if (!box) return;
   const question = waitQuestionOf(session), key = JSON.stringify(question);
+  const waitFoot = root.closest?.('.pane')?.querySelector('.feed-foot');
+  if (waitFoot) waitFoot.hidden = !!question;
   if (box._questionKey === key) return;
   box._questionKey = key;
   box.hidden = !question;
   box.replaceChildren(...(question ? [
-    h('h3', { text: '質問（元アプリで答えます）' }),
-    h('p', { text: question.text }),
-    question.options.length ? h('ul', {}, ...question.options.map(text => h('li', { text }))) : null,
-  ].filter(Boolean) : []));
+    h('summary', { class: 'cx-wait-summary', title: question.text }, h('b', { text: '質問' }), h('span', { class: 'cx-wait-text', text: question.text }), h('small', { text: question.options.length ? '選択肢 ' + question.options.length : '元アプリで回答' })),
+    h('div', { class: 'cx-wait-body' }, h('p', { text: question.text }), question.options.length ? h('ul', {}, ...question.options.map(text => h('li', { text }))) : null, h('small', { text: '元アプリで答えます。ここから回答・承認は実行しません。' })),
+  ] : []));
 }
 
 function requestPill(r) {
@@ -36,7 +37,9 @@ function keepDisabledPrompt(box, value) {
 }
 function replaceDispatch(old, d) {
   if (old.querySelector('.req-row textarea, .prompt-skill-picker:not([hidden]), .prompt-composer[aria-busy="true"]')) return;
-  const draft = old.querySelector('textarea[aria-label="送るプロンプト"]')?.value || '';
+  const previous = old.querySelector('textarea[aria-label="送るプロンプト"]');
+  const draft = previous?.value || '';
+  const selection = previous && {start:previous.selectionStart,end:previous.selectionEnd,direction:previous.selectionDirection,scrollTop:previous.scrollTop,focused:old.ownerDocument?.activeElement===previous};
   const stored = promptDrafts.get(`dispatch:${d.session.id}`);
   if (stored) stored.text = draft;
   const next = renderDispatch(d), input = next.querySelector('.send-box textarea');
@@ -44,6 +47,12 @@ function replaceDispatch(old, d) {
   // If sending has been disabled, retain the draft next to the reason.
   else if (draft) keepDisabledPrompt(next, draft);
   old.replaceWith(next);
+  const restored = input || next.querySelector('textarea[aria-label="送るプロンプト"]');
+  if(selection && restored) {
+    if(selection.focused&&!restored.disabled)restored.focus({preventScroll:true});
+    if(typeof selection.start==='number'&&typeof selection.end==='number'){try{restored.setSelectionRange(selection.start,selection.end,selection.direction);}catch{}}
+    if(typeof selection.scrollTop==='number')restored.scrollTop=selection.scrollTop;
+  }
   paintChoices(live.feeds.get(d.session.id));
 }
 
@@ -87,7 +96,7 @@ function renderDispatch(d) {
   const s = d.session;
   const D = d.dispatch;
   const box = h('div', { class: 'send-section' });
-  box.append(h('section', { class: 'cx-wait-question', 'aria-label': '元アプリの質問', hidden: true }));
+  box.append(h('details', { class: 'cx-wait-question', 'aria-label': '元アプリの質問', hidden: true }));
   paintWaitingQuestion(box, s);
   const title = h('div', { class: 'section-title', text: '指示を送る' });
   if (D.unavailableReason) {
@@ -138,11 +147,8 @@ function renderDispatch(d) {
     ? helpTip(`${s.agent === 'codex' ? 'Codex' : 'Claude'} アプリでこのセッションを開いている場合は、閉じてから送ってください（アプリ側の表示と履歴がずれることがあります）。`) : null;
   const composer = promptComposer(ta, { key: `dispatch:${s.id}`, context: () => ({ cardId: s.id }), submit: () => send(busy ? 'queue' : 'now'),
     leading: [permChip], actions: [appNote, ...sendButtons],
-    inside: [ack ? h('label', { class: 'send-note row', style: { gap: '6px' } }, ack, 'このセッションはサンドボックス／確認なしで動いています。そのまま実行されることを確認しました') : null,
-      busy ? h('div', { class: 'muted cx-busy', text: s.codexFollowUps
-        ? `Codex アプリのキューにフォローアップが ${s.codexFollowUps} 件あります。二重に送らないよう、アプリ側で送るか消すまで Canban からは送りません。`
-        : `セッションが${s.status === 'running' ? '実行中' : '入力待ち'}です。送ると順番待ちに入ります。` }) : null],
-    keys: [keyHint(['⌘', 'Enter'], busy ? 'キューへ' : '送信'), keyHint(['⌥', 'Enter'], 'キューへ'), keyHint(['$'], 'スキル')] });
+    inside: [ack ? h('label', { class: 'send-note row', style: { gap: '6px' } }, ack, 'このセッションはサンドボックス／確認なしで動いています。そのまま実行されることを確認しました') : null],
+    keys: [...(busy ? [h('span', { class: 'cx-busy-key', title: s.codexFollowUps ? 'Codex アプリ側の待機が解消するまでCanbanから送りません' : '追加依頼は順番待ちに入り、質問・承認への回答は元アプリで行います', text: s.codexFollowUps ? 'アプリのキュー ' + s.codexFollowUps + '件' : (s.status === 'running' ? '実行中' : '入力待ち') + ' · キュー送信' })] : []), keyHint(['⌘', 'Enter'], busy ? 'キューへ' : '送信'), keyHint(['⌥', 'Enter'], 'キューへ'), keyHint(['$'], 'スキル')] });
   box.append(...[
     D.paused ? h('div', { class: 'paused-bar' }, h('span', { class: 'grow', text: `⏸ キュー一時停止: ${D.paused.reason}` }),
       h('button', { class: 'link-btn', text: '再開', onclick: () => act('canban_resume_queue', { cardId: s.id }, { okMsg: 'キューを再開しました' }).then(() => openCard(s.id)) })) : null,

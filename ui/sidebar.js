@@ -326,7 +326,7 @@ function renderSidebar(b) {
       h('span', { class: 'side-ic side-key', text: i < 9 ? String(i + 1) : '' }), h('span', { class: 'grow ellipsis', text: v.name })))));
   secs.push(laneSection(b, hit), filterSection(b, hit));
   const had = document.activeElement === state.sideInput;
-  el.replaceChildren(h('div', { class: 'side-scroll' }, ...secs), sideFoot(b));
+  el.replaceChildren(h('div', { class: 'side-scroll' }, ...(layoutParts.rail ? [layoutParts.rail] : []), ...secs), sideFoot(b));
   $('.side-scroll', el).scrollTop = scroll;
   if (had) state.sideInput.focus();
 }

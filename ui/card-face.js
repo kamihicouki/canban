@@ -68,7 +68,7 @@ function faceExtras(card) {
   if (card.requests) out.push(requestPill(card.requests));
   if (card.grouped?.length) out.push(h('span', { class: 'pill', title: card.grouped.map((g) => g.title).join('\n'), text: `＋${card.grouped.length}` }));
   if (card.subagents) out.push(h('span', { class: 'pill', title: 'このセッションが起動したサブエージェント', text: `サブ ${card.subagents.total}${card.subagents.running ? `（${card.subagents.running}）` : ''}` }));
-  if (card.archived) out.push(h('span', { text: 'アーカイブ済' }));
+  if (card.archived) out.push(h('span', { text: 'アーカイブ済み' }));
   if (card.hidden) out.push(h('span', { text: '非表示' }));
   return out;
 }
@@ -83,7 +83,7 @@ function renderCard(card, list) {
   el.append(h('div', { class: 'frow' }, faceGlyph(card.status, card.statusKnown), h('div', { class: 'ftitle', text: card.title }), compact ? dotPill(card) : faceFlags(card),
     compact ? h('i', { class: `fagent fagent-${task ? 'task' : card.agent}`, title: task ? T.taskCard : agentAppLabel(card.agent) }) : null,
     compact ? h('span', { class: 'ftime', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }) : null));
-  if (compact) { const pill = exchangePill(card, true); if (pill) el.querySelector('.frow').append(pill); return finishFace(el, card, list); }
+  if (compact) { if (card.archived) el.querySelector('.frow').append(h('span', { class: 'fflag', text: 'アーカイブ済み' })); const pill = exchangePill(card, true); if (pill) el.querySelector('.frow').append(pill); return finishFace(el, card, list); }
   const now = task ? faceTaskNow(card) : faceNow(card);
   if (now && !(rich && !task && !(card.status === 'running' || card.status === 'waiting') && card.last)) el.append(now);
   if (rich) {

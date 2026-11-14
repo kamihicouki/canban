@@ -1,17 +1,19 @@
 /* Thread detail, folded conversation, chips composer and the changes panel. Colors come from board.html's tokens. */
 /* ---------- the thread layout of a session card ---------- */
 .pane[data-detail="thread"] { container-type: inline-size; background: var(--card-bg); color: var(--card-fg); --fs: 14px; }
-.pane[data-detail="thread"] .th-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 18px 24px 8px; flex: none; min-width: 0; }
-.th-head .card-crumb { flex: 1; min-width: 0; }
+.pane[data-detail="thread"] .th-head { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; padding: 6px 12px 4px; flex: none; min-width: 0; }
+.th-head .card-crumb { flex: 1; min-width: 0; flex-wrap: nowrap; white-space: nowrap; overflow: hidden; }
+.th-head .card-list-controls { flex: none; flex-wrap: nowrap; }
+.th-head .card-crumb > .link-btn { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .th-tool { height: 28px; min-width: 28px; padding: 0 6px 0 8px; border-radius: 7px; background: var(--btn-subtle); color: var(--card-fg) !important; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--card-muted); font-size: 12px; font-weight: 600; }
 .th-tool:hover { background: var(--btn-subtle-hover); color: var(--card-fg); }
 .th-tool[aria-pressed="true"] { background: var(--btn-subtle-hover); color: var(--card-fg); }
 .th-diffstat { display: inline-flex; gap: 5px; } .th-diffstat:empty { display: none; }
 .add { color: var(--tone-run); } .del { color: var(--tone-err); } .num { font-variant-numeric: tabular-nums; }
-.th-title { padding: 2px 24px 8px; flex: none; display: flex; flex-direction: column; gap: 8px; }
+.th-title { padding: 0 16px 4px; flex: none; display: flex; flex-direction: column; gap: 8px; }
 .th-title .sub { order: 2; margin: 0; }
-.pane[data-detail="thread"] .th-title h2 { font-size: 23px; line-height: 1.45; letter-spacing: -.02em; order: 1; }
-.th-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; padding: 0 24px 16px; font-size: 12px; color: var(--card-muted); border-bottom: 1px solid var(--btn-subtle); flex: none; min-width: 0; }
+.pane[data-detail="thread"] .th-title h2 { font-size: 20px; line-height: 1.45; letter-spacing: -.02em; order: 1; }
+.th-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; padding: 0 16px 8px; font-size: 12px; color: var(--card-muted); border-bottom: 1px solid var(--btn-subtle); flex: none; min-width: 0; }
 .th-meta .th-time { margin-left: auto; }
 .th-meta .sub { margin: 0; font-size: inherit; }
 .th-label { display: inline-flex; align-items: center; gap: 5px; } .th-label i { width: 14px; height: 8px; border-radius: 4px; display: block; }
@@ -44,8 +46,9 @@
 
 .th-side { width: min(280px, 40%); flex: none; border-left: 1px solid var(--btn-subtle); display: flex; flex-direction: column; min-height: 0; background: var(--card-bg); }
 .th-side[hidden] { display: none; }
-/* A narrow card keeps the full width for the conversation; the details panel floats over it instead. */
 @container (max-width: 880px) { .th-side { position: absolute; top: 0; right: 0; bottom: 0; width: min(300px, 85%); z-index: 3; box-shadow: var(--card-shadow); } }
+/* A narrow card keeps the full width for the conversation; the details panel floats over it instead. */
+
 .th-side-b { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 /* Room for the key guide's strip along the foot (key-guide.js --kg-foot), so 状態 and カード操作 scroll clear of it. */
 .th-side:not([data-tab="terminal"]) .th-side-b { padding-bottom: var(--kg-foot, 0px); }
@@ -159,16 +162,23 @@
 .thread-continue-buttons { display: flex; gap: 2px; align-items: center; }
 .thread-continue .resume-main { flex: 1 1 auto; width: auto; display: inline-flex; align-items: center; gap: 6px; min-height: 30px; max-width: 100%; min-width: 0; padding: 0 8px; border-radius: 7px; white-space: nowrap; }
 .thread-continue .continue-label { overflow: hidden; text-overflow: ellipsis; }
-.thread-continue .continue-reason { font-size: 12px; line-height: 1.4; color: var(--card-muted); overflow-wrap: anywhere; padding-top: 4px; }
+.th-meta .continue-reason { max-width: min(38ch, 65%); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.4; color: var(--card-muted); overflow-wrap: anywhere; padding-top: 4px; }
 .thread-continue .continue-options { flex: none; }
 .continue-menu { display: flex; flex-direction: column; gap: 3px; }
 .continue-menu .menu-item { display: flex; align-items: center; gap: 8px; text-align: left; }
 .continue-menu small { display: block; white-space: normal; }
 @container (max-width: 880px) {
-  .th-head .card-crumb { flex: 1 0 100%; }
+  .th-head .card-crumb { flex: 1; }
+  .th-tool-label { display: none; }
   .thread-continue { max-width: min(260px, 42%); }
 }
 @container (max-width: 600px) {
   .thread-continue { max-width: 130px; }
   .thread-continue .continue-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
+
+/* The heading stays one row; the precise disabled reason remains readable in metadata. */
+.th-meta .continue-reason[hidden], .feed-foot[hidden] { display: none; }
+.thread-continue .resume-main:disabled { opacity: 1; color: var(--card-muted); background: var(--btn-subtle); }
+.th-archived { color: var(--card-muted); border: 1px solid var(--btn-subtle-hover); border-radius: 4px; padding: 1px 5px; }
+@container (max-width: 600px) { .th-head .th-tool .keycap { display: none; } }

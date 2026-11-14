@@ -269,10 +269,12 @@ async function tickSearchImpl(store) {
 }
 
 // Full-text hits: id -> snippet (local index + enabled remote hosts).
-async function fullTextHits(store, q, hosts) {
-  const hits = new Map(searchFor(store).query(q).map((r) => [r.id, r.snippet]));
+async function fullTextHits(store, q, hosts, errors = []) {
+  const hits = new Map();
+  try { for (const row of searchFor(store).query(q, 300, { strict: true })) hits.set(row.id, row.snippet); }
+  catch (error) { errors.push(`ローカルの本文検索に失敗しました（${error?.message || '取得不能'}）`); }
   const enabled = hosts.filter((h) => h.enabled && !h.cloud);
-  const remote = await Promise.all(enabled.map((h) => pool.search(h, q).catch(() => new Set())));
+  const remote = await Promise.all(enabled.map((h) => pool.search(h, q).catch(error => { errors.push(`${h.label || h.alias || h.id}: 本文検索に失敗しました（${error?.message || '取得不能'}）`); return new Set(); })));
   for (const ids of remote) for (const id of ids) if (!hits.has(id)) hits.set(id, null);
   return hits;
 }
@@ -407,19 +409,21 @@ export function buildBoard(...args) {
   return perf.timed('buildBoard', () => buildBoardImpl(...args));
 }
 
-async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
+async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly = false, includeLinkedSessions = false } = {}) {
   const filters = normalizeFilters(rawFilters);
   const loopSummaries = await store.loopSummaries();
   let state = (await store.load());
   const { sessions: sourceSessions, errors, hosts, app } = await allSessions(state, { force });
   const sessions = sessionCardStates(sourceSessions, state);
   await exchangeIndex.sync(sessions);
-  if ((await store.resolvePending(matchPending(state, sessions))).length) state = (await store.load());
-  if ((await runRules(store, state, sessions)).length) state = (await store.load());
+  if (!readOnly) {
+    if ((await store.resolvePending(matchPending(state, sessions))).length) state = (await store.load());
+    if ((await runRules(store, state, sessions)).length) state = (await store.load());
+  }
   const byId = new Map(sessions.map((x) => [x.id, x]));
   const toTask = linkedToTask(state);
-  const hits = filters.fulltext && [...filters.q].length >= 3 ? await fullTextHits(store, filters.q, hosts) : null;
-  if (state.settings.seenAllAt == null) {
+  const hits = filters.fulltext && [...filters.q].length >= 3 ? await fullTextHits(store, filters.q, hosts, errors) : null;
+  if (!readOnly && state.settings.seenAllAt == null) {
     await store.markAllSeen(); // first run: nothing is "new" yet
     state = (await store.load());
   }
@@ -448,7 +452,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
     if (visibleKind) hostCounts.set(s.host?.id || 'local', (hostCounts.get(s.host?.id || 'local') || 0) + 1);
     const dir = resolveDirectory(state, card, s.cwd, s);
     if (visibleKind && !toTask.has(s.id)) dirCounts.set(dir?.id || '__none', (dirCounts.get(dir?.id || '__none') || 0) + 1);
-    if (toTask.has(s.id)) continue; // shown inside its task card
+    if (!includeLinkedSessions && toTask.has(s.id)) continue; // shown inside its task card except in cross-board search
     if (!matches(s, card, filters, labelsById, hits, dir)) continue;
     const listId = card?.listId && listIds.has(card.listId) ? card.listId : state.defaultListId;
     const kids = (s.children || []).map((id) => byId.get(id)).filter(Boolean);
@@ -554,7 +558,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false } = {}) {
       target: t.target || null,
       launchSelection: t.launchSelection || null,
       launchReceipts: t.launchReceipts || [],
-      links: links.map((x) => ({ id: x.id, sourceView: compactSourceView(x.sourceView || sessionSourceView(x)), capabilities: compactCapabilities(capabilitiesFor({ session: x })), agent: x.agent, surface: inferSurface(x), account: x.account || null, title: x.title, status: x.status || 'idle', statusKnown: x.statusKnown !== false, signals: cardSignals(x.signals), activity: x.activity || null, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, updatedAt: x.updatedAt })),
+      links: links.map((x) => ({ id: x.id, sourceView: compactSourceView(x.sourceView || sessionSourceView(x)), capabilities: compactCapabilities(capabilitiesFor({ session: x })), cwd: x.cwd || null, branch: x.branch || null, agent: x.agent, surface: inferSurface(x), account: x.account || null, title: x.title, status: x.status || 'idle', statusKnown: x.statusKnown !== false, signals: cardSignals(x.signals), activity: x.activity || null, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, createdAt: x.createdAt, updatedAt: x.updatedAt })),
       linkedSessionIds: [...(t.links || [])],
       missingLinks: (t.links || []).length - allLinks.length,
       pending: (t.pending || []).map((p) => ({ agent: p.agent, startedAt: p.startedAt, expired: now - p.startedAt > PENDING_MS })),

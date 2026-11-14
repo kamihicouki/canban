@@ -76,16 +76,21 @@ export class SearchIndex {
   }
 
   // Session ids (with a snippet) whose conversation contains `q` (3+ characters).
-  query(q, limit = 300) {
+  query(q, limit = 300, { strict = false } = {}) {
     const text = String(q || '').trim();
-    if ([...text].length < 3 || !fs.existsSync(this.file)) return [];
+    if ([...text].length < 3) return [];
+    if (!fs.existsSync(this.file)) {
+      if (strict) throw new Error('本文索引はまだ作成されていません');
+      return [];
+    }
     const db = this.open();
     const phrase = `"${text.replace(/"/g, '""')}"`;
     try {
       return db
         .prepare(`SELECT session_id AS id, snippet(docs, 2, '[', ']', '…', 12) AS snippet FROM docs WHERE docs MATCH ? LIMIT ?`)
         .all(phrase, limit);
-    } catch {
+    } catch (error) {
+      if (strict) throw error;
       return [];
     }
   }

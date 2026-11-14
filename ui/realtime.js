@@ -154,6 +154,7 @@ function findCard(id) {
 function applyPatches(patches) {
   let rebuild = false, timelineChanged = false;
   const timeline = typeof inboxOn === 'function' && inboxOn();
+  const gantt = typeof ganttOn === 'function' && ganttOn();
   for (const p of patches) {
     const hit = findCard(p.id);
     if (!hit) continue;
@@ -170,7 +171,7 @@ function applyPatches(patches) {
     target.activity = p.activity || null;
     target.signals = p.signals || null;
     target.git = p.git || null;
-    if (timeline) { timelineChanged = true; continue; }
+    if (timeline || gantt) { timelineChanged = true; continue; }
     if (changedStatus) continue;
     const el = document.querySelector(`.card[data-card-id="${CSS.escape(card.id)}"]`);
     if (el && !state.drag && !el.querySelector('.peek-input:focus')) {
@@ -180,7 +181,7 @@ function applyPatches(patches) {
       if (focused) next.focus();
     }
   }
-  if (timelineChanged && !state.drag) refreshInboxList();
+  if (timelineChanged && !state.drag) { if (gantt) render(); else refreshInboxList(); }
   if (rebuild) scheduleLoad();
 }
 

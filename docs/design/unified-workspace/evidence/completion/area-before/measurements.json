@@ -1,0 +1,385 @@
+{
+  "conditions": "isolated makeFixtures; t1 updated now and c2 with 220 messages plus unanswered AskUserQuestion; 1280x800; no real sends; per-view fresh navigation; single timing sample until feed content and composer exist, excluding 150ms screenshot settling; not a performance claim",
+  "measurements": [
+    {
+      "cardId": "codex:t1",
+      "view": "board",
+      "theme": "light",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 65,
+      "pane": {
+        "x": 16,
+        "y": 100,
+        "width": 1248,
+        "height": 676
+      },
+      "main": {
+        "x": 276,
+        "y": 234.9375,
+        "width": 988,
+        "height": 541.0625
+      },
+      "conversation": {
+        "x": 276,
+        "y": 234.9375,
+        "width": 988,
+        "height": 409.0625
+      },
+      "input": {
+        "x": 322.625,
+        "y": 666,
+        "width": 900.75,
+        "height": 28
+      },
+      "ribbonHeight": 54,
+      "paneBarHeight": 44,
+      "keyGuideMin": "false",
+      "source": "baseline"
+    },
+    {
+      "cardId": "codex:t1",
+      "view": "board",
+      "theme": "dark",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 1,
+      "pane": {
+        "x": 16,
+        "y": 100,
+        "width": 1248,
+        "height": 676
+      },
+      "main": {
+        "x": 276,
+        "y": 234.9375,
+        "width": 988,
+        "height": 541.0625
+      },
+      "conversation": {
+        "x": 276,
+        "y": 234.9375,
+        "width": 988,
+        "height": 409.0625
+      },
+      "input": {
+        "x": 322.625,
+        "y": 666,
+        "width": 900.75,
+        "height": 28
+      },
+      "ribbonHeight": 54,
+      "paneBarHeight": 44,
+      "keyGuideMin": "false",
+      "source": "baseline"
+    },
+    {
+      "cardId": "codex:t1",
+      "view": "timeline",
+      "theme": "light",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 5,
+      "pane": {
+        "x": 544,
+        "y": 156,
+        "width": 724,
+        "height": 632
+      },
+      "main": {
+        "x": 544,
+        "y": 318.9375,
+        "width": 724,
+        "height": 469.0625
+      },
+      "conversation": {
+        "x": 544,
+        "y": 318.9375,
+        "width": 724,
+        "height": 337.0625
+      },
+      "input": {
+        "x": 581,
+        "y": 678,
+        "width": 656,
+        "height": 28
+      },
+      "ribbonHeight": 54,
+      "paneBarHeight": 38,
+      "keyGuideMin": "false",
+      "source": "baseline"
+    },
+    {
+      "cardId": "codex:t1",
+      "view": "timeline",
+      "theme": "dark",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 32,
+      "pane": {
+        "x": 544,
+        "y": 156,
+        "width": 724,
+        "height": 632
+      },
+      "main": {
+        "x": 544,
+        "y": 318.9375,
+        "width": 724,
+        "height": 469.0625
+      },
+      "conversation": {
+        "x": 544,
+        "y": 318.9375,
+        "width": 724,
+        "height": 337.0625
+      },
+      "input": {
+        "x": 581,
+        "y": 678,
+        "width": 656,
+        "height": 28
+      },
+      "ribbonHeight": 54,
+      "paneBarHeight": 38,
+      "keyGuideMin": "false",
+      "source": "baseline"
+    },
+    {
+      "cardId": "codex:t1",
+      "view": "gantt",
+      "theme": "light",
+      "available": false,
+      "limitation": "Baseline selected gantt card has a zero-size dock; no usable conversation area was measurable",
+      "pane": {
+        "x": 0,
+        "y": 72,
+        "width": 0,
+        "height": 0
+      },
+      "dock": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      }
+    },
+    {
+      "cardId": "codex:t1",
+      "view": "gantt",
+      "theme": "dark",
+      "available": false,
+      "limitation": "Baseline selected gantt card has a zero-size dock; no usable conversation area was measurable",
+      "pane": {
+        "x": 0,
+        "y": 72,
+        "width": 0,
+        "height": 0
+      },
+      "dock": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      }
+    },
+    {
+      "cardId": "claude:c2",
+      "view": "board",
+      "theme": "light",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 33,
+      "pane": {
+        "x": 16,
+        "y": 100,
+        "width": 1248,
+        "height": 676
+      },
+      "main": {
+        "x": 276,
+        "y": 255.734375,
+        "width": 988,
+        "height": 520.265625
+      },
+      "conversation": {
+        "x": 276,
+        "y": 255.734375,
+        "width": 988,
+        "height": 234.125
+      },
+      "input": {
+        "x": 322.625,
+        "y": 633.875,
+        "width": 900.75,
+        "height": 28
+      },
+      "ribbonHeight": 54,
+      "paneBarHeight": 44,
+      "keyGuideMin": "false",
+      "source": "baseline"
+    },
+    {
+      "cardId": "claude:c2",
+      "view": "board",
+      "theme": "dark",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 1,
+      "pane": {
+        "x": 16,
+        "y": 100,
+        "width": 1248,
+        "height": 676
+      },
+      "main": {
+        "x": 276,
+        "y": 272.53125,
+        "width": 988,
+        "height": 503.46875
+      },
+      "conversation": {
+        "x": 276,
+        "y": 272.53125,
+        "width": 988,
+        "height": 226.5625
+      },
+      "input": {
+        "x": 322.625,
+        "y": 643.109375,
+        "width": 900.75,
+        "height": 28
+      },
+      "ribbonHeight": 54,
+      "paneBarHeight": 44,
+      "keyGuideMin": "false",
+      "source": "baseline"
+    },
+    {
+      "cardId": "claude:c2",
+      "view": "timeline",
+      "theme": "light",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 12,
+      "pane": {
+        "x": 544,
+        "y": 156,
+        "width": 724,
+        "height": 632
+      },
+      "main": {
+        "x": 544,
+        "y": 356.53125,
+        "width": 724,
+        "height": 431.46875
+      },
+      "conversation": {
+        "x": 544,
+        "y": 356.53125,
+        "width": 724,
+        "height": 194.171875
+      },
+      "input": {
+        "x": 581,
+        "y": 694.71875,
+        "width": 656,
+        "height": 28
+      },
+      "ribbonHeight": 54,
+      "paneBarHeight": 38,
+      "keyGuideMin": "false",
+      "source": "baseline"
+    },
+    {
+      "cardId": "claude:c2",
+      "view": "timeline",
+      "theme": "dark",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 1,
+      "pane": {
+        "x": 544,
+        "y": 156,
+        "width": 724,
+        "height": 632
+      },
+      "main": {
+        "x": 544,
+        "y": 339.734375,
+        "width": 724,
+        "height": 448.265625
+      },
+      "conversation": {
+        "x": 544,
+        "y": 339.734375,
+        "width": 724,
+        "height": 201.734375
+      },
+      "input": {
+        "x": 581,
+        "y": 685.484375,
+        "width": 656,
+        "height": 28
+      },
+      "ribbonHeight": 54,
+      "paneBarHeight": 38,
+      "keyGuideMin": "false",
+      "source": "baseline"
+    },
+    {
+      "cardId": "claude:c2",
+      "view": "gantt",
+      "theme": "light",
+      "available": false,
+      "limitation": "Baseline selected gantt card has a zero-size dock; no usable conversation area was measurable",
+      "pane": {
+        "x": 0,
+        "y": 72,
+        "width": 0,
+        "height": 0
+      },
+      "dock": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      }
+    },
+    {
+      "cardId": "claude:c2",
+      "view": "gantt",
+      "theme": "dark",
+      "available": false,
+      "limitation": "Baseline selected gantt card has a zero-size dock; no usable conversation area was measurable",
+      "pane": {
+        "x": 0,
+        "y": 72,
+        "width": 0,
+        "height": 0
+      },
+      "dock": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      }
+    }
+  ]
+}

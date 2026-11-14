@@ -1,0 +1,461 @@
+{
+  "conditions": "isolated makeFixtures; t1 updated now and c2 with 220 messages plus unanswered AskUserQuestion; 1280x800; no real sends; per-view fresh navigation; single timing sample until feed content and composer exist, excluding 150ms screenshot settling; not a performance claim",
+  "measurements": [
+    {
+      "cardId": "codex:t1",
+      "view": "board",
+      "theme": "light",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 102,
+      "pane": {
+        "x": 16,
+        "y": 56,
+        "width": 1248,
+        "height": 720
+      },
+      "main": {
+        "x": 16,
+        "y": 156.59375,
+        "width": 1248,
+        "height": 619.40625
+      },
+      "conversation": {
+        "x": 16,
+        "y": 156.59375,
+        "width": 1248,
+        "height": 487.40625
+      },
+      "input": {
+        "x": 97,
+        "y": 666,
+        "width": 1092,
+        "height": 28
+      },
+      "ribbonHeight": 0,
+      "paneBarHeight": 0,
+      "keyGuideMin": "true",
+      "source": "completion"
+    },
+    {
+      "cardId": "codex:t1",
+      "view": "board",
+      "theme": "dark",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 1,
+      "pane": {
+        "x": 16,
+        "y": 56,
+        "width": 1248,
+        "height": 720
+      },
+      "main": {
+        "x": 16,
+        "y": 156.59375,
+        "width": 1248,
+        "height": 619.40625
+      },
+      "conversation": {
+        "x": 16,
+        "y": 156.59375,
+        "width": 1248,
+        "height": 487.40625
+      },
+      "input": {
+        "x": 97,
+        "y": 666,
+        "width": 1092,
+        "height": 28
+      },
+      "ribbonHeight": 0,
+      "paneBarHeight": 0,
+      "keyGuideMin": "true",
+      "source": "completion"
+    },
+    {
+      "cardId": "codex:t1",
+      "view": "timeline",
+      "theme": "light",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 6,
+      "pane": {
+        "x": 544,
+        "y": 64,
+        "width": 724,
+        "height": 724
+      },
+      "main": {
+        "x": 544,
+        "y": 164.59375,
+        "width": 724,
+        "height": 623.40625
+      },
+      "conversation": {
+        "x": 544,
+        "y": 164.59375,
+        "width": 724,
+        "height": 491.40625
+      },
+      "input": {
+        "x": 581,
+        "y": 678,
+        "width": 656,
+        "height": 28
+      },
+      "ribbonHeight": 0,
+      "paneBarHeight": 0,
+      "keyGuideMin": "true",
+      "source": "completion"
+    },
+    {
+      "cardId": "codex:t1",
+      "view": "timeline",
+      "theme": "dark",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 34,
+      "pane": {
+        "x": 544,
+        "y": 64,
+        "width": 724,
+        "height": 724
+      },
+      "main": {
+        "x": 544,
+        "y": 164.59375,
+        "width": 724,
+        "height": 623.40625
+      },
+      "conversation": {
+        "x": 544,
+        "y": 164.59375,
+        "width": 724,
+        "height": 491.40625
+      },
+      "input": {
+        "x": 581,
+        "y": 678,
+        "width": 656,
+        "height": 28
+      },
+      "ribbonHeight": 0,
+      "paneBarHeight": 0,
+      "keyGuideMin": "true",
+      "source": "completion"
+    },
+    {
+      "cardId": "codex:t1",
+      "view": "gantt",
+      "theme": "light",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 31,
+      "pane": {
+        "x": 604,
+        "y": 64,
+        "width": 664,
+        "height": 724
+      },
+      "main": {
+        "x": 604,
+        "y": 164.59375,
+        "width": 664,
+        "height": 623.40625
+      },
+      "conversation": {
+        "x": 604,
+        "y": 164.59375,
+        "width": 664,
+        "height": 491.40625
+      },
+      "input": {
+        "x": 641,
+        "y": 678,
+        "width": 596,
+        "height": 28
+      },
+      "ribbonHeight": 0,
+      "paneBarHeight": 0,
+      "keyGuideMin": "true",
+      "source": "completion"
+    },
+    {
+      "cardId": "codex:t1",
+      "view": "gantt",
+      "theme": "dark",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 31,
+      "pane": {
+        "x": 604,
+        "y": 64,
+        "width": 664,
+        "height": 724
+      },
+      "main": {
+        "x": 604,
+        "y": 164.59375,
+        "width": 664,
+        "height": 623.40625
+      },
+      "conversation": {
+        "x": 604,
+        "y": 164.59375,
+        "width": 664,
+        "height": 491.40625
+      },
+      "input": {
+        "x": 641,
+        "y": 678,
+        "width": 596,
+        "height": 28
+      },
+      "ribbonHeight": 0,
+      "paneBarHeight": 0,
+      "keyGuideMin": "true",
+      "source": "completion"
+    },
+    {
+      "cardId": "claude:c2",
+      "view": "board",
+      "theme": "light",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 34,
+      "pane": {
+        "x": 16,
+        "y": 56,
+        "width": 1248,
+        "height": 720
+      },
+      "main": {
+        "x": 16,
+        "y": 158.796875,
+        "width": 1248,
+        "height": 617.203125
+      },
+      "conversation": {
+        "x": 16,
+        "y": 158.796875,
+        "width": 1248,
+        "height": 443.703125
+      },
+      "input": {
+        "x": 97,
+        "y": 666,
+        "width": 1092,
+        "height": 28
+      },
+      "ribbonHeight": 0,
+      "paneBarHeight": 0,
+      "keyGuideMin": "true",
+      "source": "completion"
+    },
+    {
+      "cardId": "claude:c2",
+      "view": "board",
+      "theme": "dark",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 1,
+      "pane": {
+        "x": 16,
+        "y": 56,
+        "width": 1248,
+        "height": 720
+      },
+      "main": {
+        "x": 16,
+        "y": 158.796875,
+        "width": 1248,
+        "height": 617.203125
+      },
+      "conversation": {
+        "x": 16,
+        "y": 158.796875,
+        "width": 1248,
+        "height": 443.703125
+      },
+      "input": {
+        "x": 97,
+        "y": 666,
+        "width": 1092,
+        "height": 28
+      },
+      "ribbonHeight": 0,
+      "paneBarHeight": 0,
+      "keyGuideMin": "true",
+      "source": "completion"
+    },
+    {
+      "cardId": "claude:c2",
+      "view": "timeline",
+      "theme": "light",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 13,
+      "pane": {
+        "x": 544,
+        "y": 64,
+        "width": 724,
+        "height": 724
+      },
+      "main": {
+        "x": 544,
+        "y": 166.796875,
+        "width": 724,
+        "height": 621.203125
+      },
+      "conversation": {
+        "x": 544,
+        "y": 166.796875,
+        "width": 724,
+        "height": 447.703125
+      },
+      "input": {
+        "x": 581,
+        "y": 678,
+        "width": 656,
+        "height": 28
+      },
+      "ribbonHeight": 0,
+      "paneBarHeight": 0,
+      "keyGuideMin": "true",
+      "source": "completion"
+    },
+    {
+      "cardId": "claude:c2",
+      "view": "timeline",
+      "theme": "dark",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 0,
+      "pane": {
+        "x": 544,
+        "y": 64,
+        "width": 724,
+        "height": 724
+      },
+      "main": {
+        "x": 544,
+        "y": 166.796875,
+        "width": 724,
+        "height": 621.203125
+      },
+      "conversation": {
+        "x": 544,
+        "y": 166.796875,
+        "width": 724,
+        "height": 447.703125
+      },
+      "input": {
+        "x": 581,
+        "y": 678,
+        "width": 656,
+        "height": 28
+      },
+      "ribbonHeight": 0,
+      "paneBarHeight": 0,
+      "keyGuideMin": "true",
+      "source": "completion"
+    },
+    {
+      "cardId": "claude:c2",
+      "view": "gantt",
+      "theme": "light",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 0,
+      "pane": {
+        "x": 604,
+        "y": 64,
+        "width": 664,
+        "height": 724
+      },
+      "main": {
+        "x": 604,
+        "y": 166.796875,
+        "width": 664,
+        "height": 621.203125
+      },
+      "conversation": {
+        "x": 604,
+        "y": 166.796875,
+        "width": 664,
+        "height": 447.703125
+      },
+      "input": {
+        "x": 641,
+        "y": 678,
+        "width": 596,
+        "height": 28
+      },
+      "ribbonHeight": 0,
+      "paneBarHeight": 0,
+      "keyGuideMin": "true",
+      "source": "completion"
+    },
+    {
+      "cardId": "claude:c2",
+      "view": "gantt",
+      "theme": "dark",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 30,
+      "pane": {
+        "x": 604,
+        "y": 64,
+        "width": 664,
+        "height": 724
+      },
+      "main": {
+        "x": 604,
+        "y": 166.796875,
+        "width": 664,
+        "height": 621.203125
+      },
+      "conversation": {
+        "x": 604,
+        "y": 166.796875,
+        "width": 664,
+        "height": 447.703125
+      },
+      "input": {
+        "x": 641,
+        "y": 678,
+        "width": 596,
+        "height": 28
+      },
+      "ribbonHeight": 0,
+      "paneBarHeight": 0,
+      "keyGuideMin": "true",
+      "source": "completion"
+    }
+  ]
+}

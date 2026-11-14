@@ -22,6 +22,13 @@ const w = (t = 400) => new Promise((r) => setTimeout(r, t));
 const key = (k, o = {}) => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, ...o }));
 const errs = [];
 const step = async (name, fn, t = 500) => { try { await fn(); } catch (e) { errs.push(name + ': ' + e.message); } await w(t); };
+await step('default minimal chrome and explicit pinning', async () => {
+  if(document.querySelectorAll('.topbar').length!==1)throw new Error('more than one app bar');
+  if(document.querySelector('#ribbon').getBoundingClientRect().height!==0)throw new Error('ribbon reserves space before pinning');
+  if(document.querySelector('.key-guide').dataset.min!=='true')throw new Error('key guide not minimal initially');
+  document.querySelector('#auxiliaryBtn').click();
+  if(document.querySelector('#ribbon').getBoundingClientRect().height<=0)throw new Error('pinning did not restore time controls');
+});
 await step('create task or direct session', async () => {
   const tasks = async () => {
     const packet = await fetch('/rpc', { method: 'POST', body: JSON.stringify({ name: 'canban_get_board', arguments: { days: 0 } }) }).then(r => r.json());
@@ -277,6 +284,17 @@ await step('restore standalone fictional Claude session', async () => {
   await fetch('/rpc', { method: 'POST', body: JSON.stringify({ name: 'canban_unlink_session', arguments: { taskId, sessionId: 'claude:c2' } }) });
   key('r'); await w(700);
 });
+await step('observed gantt', async () => {
+  key('i'); await w(500);
+  const row = document.querySelector('.gantt-row');
+  if (!row || document.querySelector('.gantt-sidebar')) throw new Error('gantt missing or fixed WBS remains');
+  row.click(); await w(400);
+  if (!document.querySelector('#paneLayer.docked')) throw new Error('gantt card not docked');
+  row.focus(); row.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); await w(200);
+  key('Escape'); await w(200);
+  if (!document.querySelector('#paneLayer.docked') || !document.activeElement.matches('.gantt-row')) throw new Error('gantt Enter/Esc lost selected row');
+  for (const bar of document.querySelectorAll('.gantt-bar-item')) if (Number(bar.dataset.observedEnd)>Date.now()) throw new Error('gantt invented future activity');
+});
 await step('board', () => key('i'), 800);
 await step('session', () => document.querySelector('.card.face:not(.task)').click(), 3000);
 await step('relationship card views, cycles, history and drafts', async () => {
@@ -400,11 +418,59 @@ await step('a saved new Desktop start restores its prompt and image before cance
     document.querySelector('dialog[open]').close();
   } finally {window.openai.callTool=original;}
 });
+await step('search archived work outside the board without changing filters', async () => {
+  document.querySelector('#viewSwitch [aria-label="ボード"]').click();
+  document.querySelector('.pane-close')?.click(); await w(250);
+  const filters=localStorage.getItem('sk:filters');
+  const searchArchive=async()=>{
+    key('k',{metaKey:true});await w(100);
+    const input=document.querySelector('.popover.palette .picker-input');
+    if(!input)throw new Error('palette input missing');
+    input.value='調査';input.dispatchEvent(new Event('input',{bubbles:true}));
+    let outside;
+    for(let i=0;i<50;i++){outside=[...document.querySelectorAll('.popover.palette .picker-row')].find(row=>row.textContent.includes('アーカイブ済み')&&row.textContent.includes('調査'));if(outside)break;await w(100);}
+    if(!outside)throw new Error('archived session not found outside board');
+    if(!outside.classList.contains('active'))throw new Error('late card result did not replace the untouched label default');
+    input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+    for(let i=0;i<50&&!document.querySelector('.pane[data-card-id="codex:t3"] .th-conv');i++)await w(100);
+    const pane=document.querySelector('.pane[data-card-id="codex:t3"]');
+    if(!pane?.querySelector('.th-conv'))throw new Error('outside session not opened with Enter');
+    if(localStorage.getItem('sk:filters')!==filters)throw new Error('default Enter changed a filter instead of opening a card');
+    return pane;
+  };
+  const archive=await searchArchive();archive.focus();key('Escape');await w(150);
+  if(!document.querySelector('#paneLayer').hidden)throw new Error('outside search with no source card did not close back to its board');
+  document.querySelector('#viewSwitch [aria-label="時間軸"]').click();await w(300);
+  const sourceRow=document.querySelector('.irow[data-card-id="claude:c2"]');
+  if(!sourceRow)throw new Error('source timeline row missing');sourceRow.click();
+  for(let i=0;i<50;i++){const content=document.querySelector('.pane[data-card-id="claude:c2"] .feed');if(content?.querySelector('.fi-user')&&content.scrollHeight-content.clientHeight>400)break;await w(100);}
+  const sourcePane=document.querySelector('.pane[data-card-id="claude:c2"]'),draft=sourcePane.querySelector('.send-box textarea');
+  draft.value='参照前の未送信下書き';draft.dispatchEvent(new Event('input',{bubbles:true}));draft.focus();draft.setSelectionRange(2,8);await w(80);
+  const feed=sourcePane.querySelector('.feed');
+  feed.scrollTop=Math.min(400,feed.scrollHeight-feed.clientHeight);
+  const reading=feed.scrollTop,board=document.querySelector('#board'),list=document.querySelector('.inbox-list');
+  if(reading<=0)throw new Error('long conversation did not create a meaningful reading position');
+  const left=board.scrollLeft,top=list.scrollTop;
+  const outside=await searchArchive();outside.focus();key('Escape');await w(200);
+  const restored=document.querySelector('.pane[data-card-id="claude:c2"]'),input=restored?.querySelector('.send-box textarea');
+  if(!restored)throw new Error('Escape did not restore the original card');
+  if(document.querySelector('.irow[aria-selected="true"]')?.dataset.cardId!=='claude:c2')throw new Error('Escape did not restore the timeline selection');
+  if(input.value!=='参照前の未送信下書き'||input.selectionStart!==2||input.selectionEnd!==8||document.activeElement!==input)throw new Error('outside search lost draft, caret or focus');
+  if(Math.abs(restored.querySelector('.feed').scrollTop-reading)>1)throw new Error('outside search lost the reading position');
+  if(board.scrollLeft!==left||list.scrollTop!==top||localStorage.getItem('sk:filters')!==filters)throw new Error('outside search changed board scope or scroll');
+  input.value='';input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.pane-close')?.click();
+});
+await step('minimal secondary chrome keeps conversation space', async () => {
+  if(document.body.dataset.auxiliaryMode!=='minimal')document.querySelector('#auxiliaryBtn').click();
+  if(document.querySelector('#ribbon').getBoundingClientRect().height!==0)throw new Error('minimal ribbon still reserves space');
+});
 return { errs, sessionOpened: !!document.querySelector('.th-conv') || true };
 `;
 
 test('the board, the ribbon, the time axis and the card layers run without page errors', { timeout: 120000, skip: !fs.existsSync(chromeBin) && 'no Chrome' }, async (t) => {
   const fx = makeFixtures();
+  const longStamp=new Date().toISOString();
+  for(let i=0;i<220;i++)fs.appendFileSync(path.join(fx.claudeHome,'projects','-r-web','c2.jsonl'),JSON.stringify({type:i%2?'assistant':'user',timestamp:longStamp,message:{content:[{type:'text',text:'架空の長会話 '+i+'。'+('会話の読む位置と下書きを維持します。'.repeat(12))}]}})+'\n');
   fs.appendFileSync(path.join(fx.claudeHome, 'projects', '-r-web', 'c2.jsonl'), JSON.stringify({ type: 'assistant', timestamp: new Date().toISOString(), message: { content: [{ type: 'tool_use', id: 'fixture-question', name: 'AskUserQuestion', input: { questions: [{ question: '検証方法を選んでください', options: [{ label: '実機' }, { label: '架空データ' }] }] } }] } }) + '\n');
   const appDir = path.dirname(fx.desktopDir);
   fs.writeFileSync(path.join(appDir,'config.json'),JSON.stringify({lastKnownAccountUuid:'fixture-account'}));
@@ -480,7 +546,7 @@ test('the board, the ribbon, the time axis and the card layers run without page 
         const task=packet.result.structuredContent.lists.flatMap(l=>l.cards).find(c=>c.kind==='task');
         await rpc(${JSON.stringify(view === 'timeline' ? 'canban_link_session' : 'canban_unlink_session')},{taskId:task.id,sessionId:'claude:c2'});
         document.dispatchEvent(new KeyboardEvent('keydown',{key:'r',bubbles:true})); await w(600);
-        if(!!document.querySelector('.inbox')!==${view === 'timeline'}) document.dispatchEvent(new KeyboardEvent('keydown',{key:'i',bubbles:true}));
+        document.querySelector('#viewSwitch [aria-label="'+(${JSON.stringify(view === 'timeline' ? '時間軸' : 'ボード')})+'"]').click();
         document.documentElement.dataset.theme=${JSON.stringify(theme)}; await w(500);
         for(const b of document.querySelectorAll('.fold-head[aria-expanded="false"]'))b.click();
         const row=document.querySelector('#board .card[data-card-id="claude:c2"]');
