@@ -60,7 +60,7 @@ export function createDesktopAccountSetup({ dataDir, appDir, accounts, runtime, 
     try {
       const state = await readDesktopJson(file) || {};
       const save = async result => { await lock.assertHeld(); await write(file, state); return result; };
-      if (input.type === 'cancel-wait') { delete state.pendingCommand; return save({ state: 'cancelled', reason: '終了待ちを取り消しました' }); }
+      if (input.type === 'cancel-wait') { delete state.pendingCommand; return await save({ state: 'cancelled', reason: '終了待ちを取り消しました' }); }
       const currentBuilds = trialCommands.has(input.type) ? await builds() : null;
       // view() offers a fresh trial after an update. Apply that same invalidation
       // before the old trial / quit-wait guards, without carrying over acceptance.
@@ -72,7 +72,7 @@ export function createDesktopAccountSetup({ dataDir, appDir, accounts, runtime, 
       if (initial.has(input.type)) {
         const result = await accounts.command(input);
         if (result.state === 'waiting-for-quit') state.pendingCommand = input; else delete state.pendingCommand;
-        return save(result);
+        return await save(result);
       }
       if (input.type === 'trial-start') {
         if (platform !== 'darwin' || !currentBuilds.claude) throw desktopError('この Desktop のビルドを確認できません');
@@ -80,13 +80,13 @@ export function createDesktopAccountSetup({ dataDir, appDir, accounts, runtime, 
         const v = await accounts.view(), origin = v.profiles.find(p => p.active), target = v.profiles.find(p => p.account === input.account && !p.active);
         if (!origin || !target || v.pending?.active || await readDesktopIdentity(appDir) !== origin.account) throw desktopError('2つの Desktop アカウントを接続してから確認してください');
         state.trial = { id: randomUUID(), state: 'ready', builds: currentBuilds, origin: origin.account, other: target.account, profiles: [origin.id, target.id], observations: [], startedAt: Date.now() };
-        return save(state.trial);
+        return await save(state.trial);
       }
       const trial = state.trial;
       if (!trial || ['cancelled','complete','needs-review'].includes(trial.state)) throw desktopError('保持確認を開始してください');
-      if (input.type === 'trial-cancel') { trial.state = 'cancelled'; delete state.pendingCommand; return save(trial); }
+      if (input.type === 'trial-cancel') { trial.state = 'cancelled'; delete state.pendingCommand; return await save(trial); }
       if (currentBuilds.claude !== trial.builds.claude) { trial.state = 'needs-review'; delete state.pendingCommand; await save(trial); throw desktopError('Desktop が更新されました。保持確認をやり直してください'); }
-      if (trial.intent) { trial.state = 'needs-review'; delete state.pendingCommand; return save({ state: 'uncertain', reason: '前回の起動結果を Desktop で確認し、保持確認をやり直してください' }); }
+      if (trial.intent) { trial.state = 'needs-review'; delete state.pendingCommand; return await save({ state: 'uncertain', reason: '前回の起動結果を Desktop で確認し、保持確認をやり直してください' }); }
       const v = await accounts.view();
       if (!trial.profiles.every(id => v.profiles.some(p => p.id === id))) throw desktopError('接続プロフィールが変更されました');
       if (input.type === 'trial-switch') {
@@ -101,21 +101,21 @@ export function createDesktopAccountSetup({ dataDir, appDir, accounts, runtime, 
           return { state: trial.state, account };
         });
         if (result.state !== 'waiting-for-quit') delete state.pendingCommand;
-        return save(result);
+        return await save(result);
       }
       if (input.type === 'trial-observe') {
         requireConfirmed(input, observationKeys);
         const status = await runtime({ defaultDir: appDir });
         if (trial.state !== 'awaiting-observation' || !status.running || status.profileDir !== appDir || await readDesktopIdentity(appDir) !== trial.account) throw desktopError('選択した Desktop の起動とアカウントを確認できません');
         trial.observations.push({ account: trial.account, at: Date.now(), ...input.confirmations }); trial.state = 'ready';
-        return save(trial);
+        return await save(trial);
       }
       requireConfirmed(input, acceptanceKeys);
       if (trial.observations.length !== 6 || trial.state !== 'ready' || await readDesktopIdentity(appDir) !== trial.origin) throw desktopError('同じビルドで3往復を確認してください');
       const previous = await readDesktopJson(path.join(dataDir, 'desktop-capabilities.json'));
       await lock.assertHeld();
       await write(path.join(dataDir, 'desktop-capabilities.json'), { ...previous, version: 1, builds: { ...previous?.builds, claude: currentBuilds.claude }, accountSwitch: { verified: true, trialId: trial.id, roundTrips: 3, relogins: 0, logouts: 0, ...input.confirmations, verifiedAt: Date.now() } });
-      trial.state = 'complete'; return save(trial);
+      trial.state = 'complete'; return await save(trial);
     } finally { await lock.release(); }
   }
   async function recover() {
