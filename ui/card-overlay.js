@@ -568,11 +568,19 @@ function reconcileCards(board) {
   const [root] = panes;
   if (!root || root.kind !== 'task' || paneLayer.hidden) return;
   const card = board.lists.flatMap((l) => l.cards).find((c) => c.id === root.id);
-  if (!card) return; // filtered out or unavailable is not a deletion
+  if (!card) {
+    // A filtered-out task remains open. Read only its task record; linked
+    // session states still come from the previous board snapshot.
+    root.taskHandoffSnapshot = true;
+    root.refreshTaskHandoff?.(true);
+    return;
+  }
+  root.taskHandoffSnapshot = false;
   root.taskCard = card; root.status = card.status;
   const status = $('.pane-status', root.el);
   if (status) status.replaceChildren(h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]);
   paintTaskRelated(root, card);
+  root.refreshTaskHandoff?.();
   if (paneDocked()) return; // Linked sessions are separate selectable rows in the timeline.
   const shown = panes.map((p) => p.id);
   const { ids } = taskOverlayIds(root.id, card.links, [taskThreadChoice(root.id, card.links)].filter(Boolean), 1);

@@ -472,6 +472,7 @@ await step('task handoff keyboard quote and report keep the draft without launch
   const original=window.openai.callTool;let sends=0;
   const created=await original('canban_create_task',{title:'引継ぎの架空検証',description:'複数の会話を読み、次の仕事を引き継ぐ'});
   const taskId=(created.structuredContent||created.result||created).cardId;
+  await original('canban_append_task_note',{taskId,text:'最初の架空報告A',nextAction:'古い提案Aを確認する',expectedRevision:0,clientRequestId:'smoke-initial-proposal'});
   document.querySelector('#refresh').click();
   for(let i=0;i<50&&!document.querySelector('.card[data-card-id="'+taskId+'"]');i++)await w(100);
   document.querySelector('.card[data-card-id="'+taskId+'"]').click();
@@ -489,11 +490,30 @@ await step('task handoff keyboard quote and report keep the draft without launch
     input.value='手動で書いた未送信の下書き';input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();
     key('H',{altKey:true,shiftKey:true,code:'KeyH'});await w(100);
     if(!input.value.startsWith('手動で書いた未送信の下書き')||input.value==='手動で書いた未送信の下書き')throw new Error('handoff quote replaced draft or did not append: '+document.querySelector('.toast')?.textContent);
+    if(!input.value.includes('古い提案Aを確認する'))throw new Error('initial proposal A was not quoted');
     const quoted=input.value;key('N',{altKey:true,shiftKey:true,code:'KeyN'});
     for(let i=0;i<50&&!pane.querySelector('[data-sec="handoff"]')?.textContent.includes('報告を保存しました');i++)await w(100);
     const response=await original('canban_get_task',{taskId}),data=response.structuredContent||response.result||response;
     if(!(data.task||data.result?.task)?.notes?.some(note=>note.text===quoted))throw new Error('report was not read back from fictional task API');
     if(input.value!==quoted||sends!==0)throw new Error('report cleared draft or launched agent');
+    const observed=data.task||data.result?.task;
+    const draft='別クライアントの更新中も入力する下書き';
+    input.value=draft;input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();input.setSelectionRange(3,8);
+    const external=await fetch('/rpc',{method:'POST',body:JSON.stringify({name:'canban_append_task_note',arguments:{taskId,text:'別クライアントの架空報告B',nextAction:'新しい提案Bを検証する',expectedRevision:observed.revision,clientRequestId:'smoke-external-proposal'}})}).then(r=>r.json());
+    if(external.error||external.result?.isError)throw new Error('external fixture report failed');
+    document.querySelector('#refresh').click();
+    for(let i=0;i<50;i++){
+      const section=pane.querySelector('[data-sec="handoff"]');
+      if(section?.textContent.includes('新しい提案Bを検証する')&&section.textContent.includes('別クライアントの架空報告B'))break;
+      await w(100);
+    }
+    const section=pane.querySelector('[data-sec="handoff"]');
+    const next=[...section.querySelectorAll('strong')].find(node=>node.textContent==='次の行動（提案）')?.parentElement;
+    if(!next?.textContent.includes('新しい提案Bを検証する')||next.textContent.includes('古い提案Aを確認する'))throw new Error('open handoff did not follow external report revision');
+    const kept=pane.querySelector('[data-sec="send"] textarea');
+    if(kept!==input||kept.value!==draft||kept.selectionStart!==3||kept.selectionEnd!==8||document.activeElement!==kept)throw new Error('board refresh lost the handoff draft, caret or focus');
+    key('H',{altKey:true,shiftKey:true,code:'KeyH'});await w(100);
+    if(!kept.value.startsWith(draft)||!kept.value.includes('新しい提案Bを検証する')||kept.value.includes('古い提案Aを確認する')||sends!==0)throw new Error('handoff quote used stale proposal A or launched an agent');
   }finally{window.openai.callTool=original;document.querySelector('.pane-close')?.click();}
 });
 await step('failed detail retry preserves real composer draft, caret and reading position without sending', async () => {
