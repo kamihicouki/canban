@@ -1,6 +1,7 @@
 // A loop is work with explicit criteria and an append-only observation history.
 // CLI execution status is deliberately separate from verification status.
 import crypto from 'node:crypto';
+import { normalizeVerify, contractReadiness, contractMissingText, contractGateLabel, VERIFY_KINDS } from './task-contract.mjs';
 
 const text = (v, name, max = 4000) => {
   if (typeof v !== 'string' || !v.trim() || v.length > max) throw new Error(`${name}を入力してください（${max}文字以内）`);
@@ -16,11 +17,17 @@ export function loopProgress(cycle) {
   if (!last || (!last.verified && !cycle.confirmations?.some(c => c.roundId === last.id)) || cycle.rounds.at(-1)?.id !== last.id) return null;
   return last.results.filter(r => r.pass).length / last.results.length;
 }
-export function loopPrompt(taskId, cycle) {
+// A criterion is a string or { text, verify }; verify tells the agent how to check it (Canban does not run it).
+const criterionInput = c => typeof c === 'string' ? { text: c, verify: null } : { text: c?.text, verify: normalizeVerify(c?.verify) };
+const criterionLine = c => `${c.id}: ${c.text}${c.verify ? ` — 確かめ方（${VERIFY_KINDS[c.verify.kind]}）: ${c.verify.value}` : ''}`;
+const contractLines = contract => [
+  contract?.gates?.length ? `次の前には止まって人に確認する: ${contract.gates.map(contractGateLabel).join('、')}` : '',
+  contract?.timeLimitMin ? `時間の上限: ${contract.timeLimitMin}分` : ''].filter(Boolean).join('\n');
+export function loopPrompt(taskId, cycle, contract = null) {
   const last = cycle.rounds.at(-1);
   const observed = cycle.rounds.filter(r => r.version === cycle.version && r.results).at(-1);
   return [`目標: ${cycle.goal}`, `守る原則（全文はタスクのループ参照）:\n${cycle.principles?.slice(0, 1600) || '既存のプロジェクトの指示と権限を守る'}`,
-    `完了の条件（基準 v${cycle.version}）:\n${cycle.criteria.map(c => `${c.id}: ${c.text}`).join('\n')}`,
+    `完了の条件（基準 v${cycle.version}）:\n${cycle.criteria.map(criterionLine).join('\n')}`, contractLines(contract),
     `今回の調整（全文はタスクのループ参照）: ${cycle.nextAction?.slice(0, 2000) || '条件を満たすための最小の変更を実施し、検証する'}`,
     observed?.results ? `直近の観測:\n${observed.results.map(r => `${r.criterionId}: ${r.pass === null ? '未観測' : r.pass ? '合格' : '未達'} — ${r.summary.slice(0, 80)} (${r.ref.slice(0, 60) || '根拠なし'})`).join('\n')}` : '',
     `検証後は canban_loop_command で record を実行してください。taskId=${taskId}, cycleId=${cycle.id}, version=${cycle.version}。先に canban_get_loop で最新revisionと実行中のroundIdを確認してください。各条件のcriterionId/pass（true/false/null）/summary/ref、検証したartifactRef（コミットや成果物の版）、学びlearningを記録します。未実行の検証を合格にせず、通常終了だけを完了としないでください。`].filter(Boolean).join('\n\n');
@@ -57,7 +64,7 @@ export function applyLoopCommand(task, taskId, { expectedRevision, commandId, co
     }
     const running = cycle.rounds.find(r => !r.results && !r.closedAt);
     if (running) { running.closedAt = now; running.superseded = true; }
-    Object.assign(cycle, { goal, criteria: criteria.map((c, i) => ({ id: `c${i + 1}`, text: text(c, '完了の条件', 500) })),
+    Object.assign(cycle, { goal, criteria: criteria.map(criterionInput).map((c, i) => ({ id: `c${i + 1}`, text: text(c.text, '完了の条件', 500), ...(c.verify ? { verify: c.verify } : {}) })),
       principles: typeof command.principles === 'string' ? command.principles.slice(0, 4000).trim() : '', maxRounds,
       version: cycle.version + 1, status: 'ready', phase: 'plan', reason: '', nextAction: '', updatedAt: now });
     cycle.definitions = [...(cycle.definitions || []), { version: cycle.version, goal, criteria: structuredClone(cycle.criteria), principles: cycle.principles, at: now }];
@@ -67,6 +74,8 @@ export function applyLoopCommand(task, taskId, { expectedRevision, commandId, co
     const rounds = cycle.rounds.filter(r => r.version === cycle.version);
     const pending = rounds.find(r => !r.results && !r.closedAt);
     if (command.type === 'start') {
+      const readiness = contractReadiness(task.contract, cycles.find(c => !c.parentId));
+      if (readiness.level >= 2 && !readiness.ready) throw new Error(`ゴールの契約が足りません: ${contractMissingText(readiness, cycles.find(c => !c.parentId)?.criteria)}`);
       if (!['ready', 'review'].includes(cycle.status) || pending) throw new Error('実行中・停止中・完了したループは開始できません');
       if (rounds.length >= cycle.maxRounds) throw new Error('周回の上限です。基準と進め方を見直してください');
       if (cycle.rounds.length >= 500) throw new Error('履歴の上限です。新しいタスクで続けてください');
@@ -124,5 +133,5 @@ export function applyLoopCommand(task, taskId, { expectedRevision, commandId, co
   }
   task.loop = { revision: current.revision + 1, cycles, commands: [...(task.loop?.commands || []), { id: commandId, hash }].slice(-100) };
   task.updatedAt = now;
-  return { ...loopRecord(task, taskId), cycleId: cycle.id, saved: true, conflict: false, nextPrompt: cycle.status === 'active' ? loopPrompt(taskId, cycle) : null };
+  return { ...loopRecord(task, taskId), cycleId: cycle.id, saved: true, conflict: false, nextPrompt: cycle.status === 'active' ? loopPrompt(taskId, cycle, task.contract) : null };
 }
