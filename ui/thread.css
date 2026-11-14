@@ -157,9 +157,9 @@
 /* The unique continue action stays beside the thread heading, including in the narrow dock. */
 .thread-continue { flex: none; max-width: min(260px, 42%); min-width: 0; }
 .thread-continue-buttons { display: flex; gap: 2px; align-items: center; }
-.thread-continue .resume-main { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; max-width: 100%; min-width: 0; padding: 0 8px; border-radius: 7px; white-space: nowrap; }
+.thread-continue .resume-main { flex: 1 1 auto; width: auto; display: inline-flex; align-items: center; gap: 6px; min-height: 30px; max-width: 100%; min-width: 0; padding: 0 8px; border-radius: 7px; white-space: nowrap; }
 .thread-continue .continue-label { overflow: hidden; text-overflow: ellipsis; }
-.thread-continue .continue-reason { font-size: 11px; line-height: 1.4; color: var(--card-muted); overflow-wrap: anywhere; padding-top: 4px; }
+.thread-continue .continue-reason { font-size: 12px; line-height: 1.4; color: var(--card-muted); overflow-wrap: anywhere; padding-top: 4px; }
 .thread-continue .continue-options { flex: none; }
 .continue-menu { display: flex; flex-direction: column; gap: 3px; }
 .continue-menu .menu-item { display: flex; align-items: center; gap: 8px; text-align: left; }

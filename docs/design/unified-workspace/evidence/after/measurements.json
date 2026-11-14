@@ -8,14 +8,14 @@
     {
       "view": "board",
       "theme": "light",
-      "cardUsableMs": 7,
+      "cardUsableMs": 8,
       "headerActions": 1,
       "questionText": "質問（元アプリで答えます）検証方法を選んでください実機架空データ"
     },
     {
       "view": "board",
       "theme": "dark",
-      "cardUsableMs": 7,
+      "cardUsableMs": 8,
       "headerActions": 1,
       "questionText": "質問（元アプリで答えます）検証方法を選んでください実機架空データ"
     },
@@ -29,7 +29,7 @@
     {
       "view": "timeline",
       "theme": "dark",
-      "cardUsableMs": 4,
+      "cardUsableMs": 8,
       "headerActions": 1,
       "questionText": "質問（元アプリで答えます）検証方法を選んでください実機架空データ"
     }

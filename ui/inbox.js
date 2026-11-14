@@ -25,6 +25,7 @@ function inboxRow(x) {
     const p = paneDocked() && panes[0]?.id === card.id ? panes[0] : null;
     const run = {
       Enter: () => inboxExpand(card.id),
+      ...(!task ? { o: () => resume(card.id) } : {}),
       r: () => p?.el.querySelector('[data-sec="send"] textarea')?.focus(),
       m: () => listPicker(row, card, list.id),
       l: () => labelPicker(row, card.id, card, () => {}),

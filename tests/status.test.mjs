@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { codexRawStatus, claudeRawStatus, settle, refineClaude, STALE_MS } from '../server/status.mjs';
+import { codexRawStatus, claudeRawStatus, codexStatusFromRecords, claudeStatusFromRecords, localStatus, annotateStatus, settle, refineClaude, STALE_MS, RECENT_MS } from '../server/status.mjs';
 import { RemotePool } from '../server/remote/pool.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -52,11 +52,64 @@ test('claude status rules', () => {
   assert.equal(refineClaude('running', 'needs_input'), 'running');
 });
 
-test('stale running/waiting becomes idle', () => {
+test('running expires after inactivity, but unanswered waiting lasts through the recent-session boundary', () => {
   const now = 1_800_000_000_000;
+  assert.equal(settle('running', now - STALE_MS, now), 'running');
   assert.equal(settle('running', now - STALE_MS - 1, now), 'idle');
   assert.equal(settle('waiting', now - 1000, now), 'waiting');
+  assert.equal(settle('waiting', now - STALE_MS - 1, now), 'waiting');
+  assert.equal(settle('waiting', now - RECENT_MS, now), 'waiting');
+  assert.equal(settle('waiting', now - RECENT_MS - 1, now), 'idle');
   assert.equal(settle('completed', now - STALE_MS * 10, now), 'completed');
+});
+
+test('local unanswered questions remain readable after 15 minutes, while answers, new turns and 24 hours clear the wait', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-wait-age-'));
+  const now = 1_800_000_000_000;
+  const codexAsk = { ...fc('functions.request_user_input', 'q'), payload: { ...fc('functions.request_user_input', 'q').payload, arguments: JSON.stringify({ questions: [{ question: '続けてよいですか？' }] }) } };
+  const claudeAsk = asst('tool_use', [{ type: 'tool_use', id: 'q', name: 'AskUserQuestion', input: { questions: [{ question: '続けてよいですか？' }] } }]);
+  try {
+    for (const [agent, waiting, answer, next] of [
+      ['codex', [ev('task_started'), codexAsk], fco('q'), ev('task_started')],
+      ['claude', [user('依頼'), claudeAsk], user([{ type: 'tool_result', tool_use_id: 'q' }]), user('次の依頼')],
+    ]) {
+      for (const [label, records, age, expected, question] of [
+        ['unanswered', waiting, STALE_MS + 60_000, 'waiting', '続けてよいですか？'],
+        ['answered', [...waiting, answer], STALE_MS + 60_000, 'idle', null],
+        ['new-turn', [...waiting, next], STALE_MS + 60_000, 'idle', null],
+        ['24h-boundary', waiting, RECENT_MS, 'waiting', '続けてよいですか？'],
+        ['past-24h', waiting, RECENT_MS + 1, 'idle', null],
+      ]) {
+        const file = path.join(dir, `${agent}-${label}.jsonl`);
+        fs.writeFileSync(file, records.map(r => JSON.stringify(r)).join('\n') + '\n');
+        fs.utimesSync(file, new Date(now - age), new Date(now - age));
+        const session = { agent, sourcePath: file, updatedAt: now - age };
+        assert.equal(await localStatus(session, now), expected, `${agent} ${label}`);
+        assert.equal(session.signals?.waitText ?? null, question, `${agent} ${label} question`);
+      }
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('Python raw status and remote settlement retain unanswered waits with the same age boundaries as local status', async () => {
+  const pool = new RemotePool({ ssh: path.join(here, 'fake-ssh.sh') });
+  const host = { id: 'h-wait-age', alias: 'fx', label: 'fx', local: false, sshArgs: [] };
+  const now = 1_800_000_000_000;
+  for (const [agent, records, fromRecords] of [
+    ['codex', [ev('task_started'), fc('functions.request_user_input_async', 'q')], codexStatusFromRecords],
+    ['claude', [user('依頼'), asst('tool_use', [{ type: 'tool_use', id: 'q', name: 'AskUserQuestion' }])], claudeStatusFromRecords],
+  ]) {
+    const res = await pool.run(host, { mode: 'status', agent, records });
+    assert.equal(res.raw, 'waiting');
+    for (const age of [STALE_MS + 1, RECENT_MS, RECENT_MS + 1]) {
+      const session = { agent, host, updatedAt: now - age, statusMtimeMs: now - age, rawStatus: res.raw };
+      await annotateStatus([session], now);
+      assert.equal(session.status, age > RECENT_MS ? 'idle' : 'waiting', `${agent} ${age}`);
+      assert.equal(session.status, fromRecords(records, now - age, now));
+    }
+  }
 });
 
 test('python collector agrees on every case', async () => {

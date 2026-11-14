@@ -237,7 +237,10 @@ await step('conversation labels and draft', async () => {
   try {
     pane.focus(); pane.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await w(200);
     if (opens.length !== 1 || opens[0].cardId !== 'codex:t1') throw new Error('o did not use the unique continue action');
-    const options = pane.querySelector('.continue-options'); options.focus(); options.click(); await w(100);
+    const options = pane.querySelector('.continue-options');
+    const routeRect=options.getBoundingClientRect();
+    if(!options.contains(document.elementFromPoint(routeRect.x+routeRect.width/2,routeRect.y+routeRect.height/2)))throw new Error('route selector obscured by a neighboring header action');
+    options.focus(); options.click(); await w(100);
     if (!document.querySelector('.continue-menu button') || !document.activeElement.closest('.popover')) throw new Error('route menu focus missing');
     key('Escape'); await w(100);
     if (document.activeElement !== options) throw new Error('route menu lost return focus');
@@ -489,6 +492,8 @@ test('the board, the ribbon, the time axis and the card layers run without page 
         if(${view === 'timeline'}&&document.querySelectorAll('#paneLayer .pane').length!==1)throw new Error('timeline must show only its selected card');
         if(pane.getBoundingClientRect().right>1280)throw new Error('selected card outside viewport');
         const header=pane.querySelector('.th-head'),button=header.querySelector('.resume-main');
+        const route=header.querySelector('.continue-options'),rect=route.getBoundingClientRect();
+        if(!route.contains(document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2)))throw new Error('route selector not reachable by pointer');
         const b=button.getBoundingClientRect(),h=header.getBoundingClientRect();
         if(b.right>h.right+1||b.left<h.left-1||b.bottom>800)throw new Error('continue button clipped');
         return {view:${JSON.stringify(view)},theme:${JSON.stringify(theme)},cardUsableMs:Math.round(performance.now()-started),headerActions:1,questionText:pane.querySelector('.cx-wait-question').textContent};

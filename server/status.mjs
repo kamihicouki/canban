@@ -17,7 +17,10 @@ export const STALE_MS = 15 * 60e3; // "running" with no writes for this long is 
 export const TAIL_BYTES = 256 * 1024;
 
 export function settle(state, mtimeMs, now = Date.now()) {
-  if ((state === 'running' || state === 'waiting') && now - mtimeMs > STALE_MS) return 'idle';
+  // A question normally makes no new log writes until the human answers it.
+  const age = now - mtimeMs;
+  if (state === 'running' && age > STALE_MS) return 'idle';
+  if (state === 'waiting' && age > RECENT_MS) return 'idle';
   return state;
 }
 

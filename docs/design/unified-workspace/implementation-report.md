@@ -2,7 +2,7 @@
 
 ## 対象
 
-2026-11-14、origin/main `248f88a7640440721a7eb02a5a263c93cd2bb5d8` を基点とする `codex/unified-workspace-design-20261114`、0.29.78。PR #93。
+2026-11-14、origin/main `248f88a7640440721a7eb02a5a263c93cd2bb5d8` を基点とする `codex/unified-workspace-design-20261114`、0.29.79（初回実装0.29.78、Fable評価対応0.29.79）。PR #93。
 
 Claude DesktopのFable 5.2（UIのモデル欄と`claude-fable-5-2`を確認）へ依頼し、架空データの実操作から設計・仕様・試作を作成してもらった。会話名は「Canban統合作業環境のプロダクト設計」。Codexが実装と独立コードレビューを担当した。
 
@@ -39,3 +39,7 @@ Claude DesktopのFable 5.2（UIのモデル欄と`claude-fable-5-2`を確認）�
 - ガントは基点で追加済みだが既存部品文書の表示契約に未統合で、固定進捗や仮の日程が残る。今回は色・iの契約だけを直し、データの正確性はU5で対処する。
 - 利用面バッジは現行の観測規則を維持。Codex Desktopが実際に書く値の網羅確認はなく、推測でCLIをAppへ変えない。
 - Claudeの比較・評価と架空データのChrome試験は、登録済みChrome拡張や元アプリで同じ会話へ再開できた証拠とは区別する。今回の成果を登録拡張・ストア版へ反映済みとは扱わない。
+
+## Claudeによる実装後評価
+
+[implementation-review.md](implementation-review.md) に実操作の結果を保存した。質問・下書き・読む位置・拡大とドッキングを確認した一方、経路選択の重なり、無効のoの無言、15分で質問が消える既存処理を発見した。[review-resolution.md](review-resolution.md)の方針で0.29.79に修正し、実行経路の自動切替は行わない。

@@ -411,6 +411,7 @@ document.addEventListener('keydown', e => {
     else if (e.shiftKey && k === 'X' && terminalAvailable(p) && cardTerms.get(p.id)?.id && !cardTerms.get(p.id)?.closed) run = () => endTerminal(p);
     else if (k === 't' && terminalAvailable(p)) run = () => toggleThreadSide(p, 'terminal');
     else if (p.kind === 'session' && (k === 'z' || k === 'Delete')) run = () => paneKeyButton(p, k)?.click();
+    else if (p.kind === 'session' && k === 'o') run = () => resume(p.id);
     else if (/^[olgmh]$/.test(k)) run = () => paneKeyButton(p, k)?.click();
   }
   if (run) { e.preventDefault(); run(); }

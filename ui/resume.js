@@ -39,7 +39,12 @@ async function resume(cardId, opts = {}) {
     // All entry points, including keyboard shortcuts, honor the open pane's current route guard.
     const pane = panes.find(p => p.id === cardId);
     const action = pane?.continueState?.(opts);
-    if (action?.disabled) { toast(action.reason, true); return; }
+    if (action?.disabled) {
+      toast(action.reason, true);
+      // Offer a choice when the default route is unavailable; never execute a different route automatically.
+      if (!opts.route) pane?.el?.querySelector('.continue-options')?.click();
+      return;
+    }
     if (action) opts = { ...opts, route: action.route };
     if (cardId.startsWith('claude:') && (opts.route === 'desktop' || !opts.route && launchPrefs().route === 'desktop' && !claudeExecutionHomes.has(cardId))) {
       const result = await desktopAccounts.startResume(cardId);

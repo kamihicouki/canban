@@ -60,3 +60,27 @@ test('keyboard continuation is blocked by the open pane route guard before any n
   assert.equal(opened, 0);
   assert.equal(message, '所有アカウントを確認中');
 });
+
+test('o explains an unavailable default route and opens explicit choices without native launch', () => {
+  const resumeSource = fs.readFileSync(new URL('../ui/resume.js', import.meta.url), 'utf8');
+  const overlay = fs.readFileSync(new URL('../ui/card-overlay.js', import.meta.url), 'utf8');
+  const start = overlay.indexOf("document.addEventListener('keydown', e => {");
+  const keys = overlay.slice(start, overlay.indexOf('// ---- a small ?', start));
+  let handler, opened = 0, choices = 0, message = '', prevented = false;
+  const pane = { id: 'claude:a', kind: 'session',
+    continueState: () => ({ disabled: true, reason: '開けるか確認できていません: 所有アカウントを確認中', route: 'desktop' }),
+    el: { querySelector: selector => selector === '.continue-options' ? { click: () => { choices++; } } : null } };
+  const context = vm.createContext({ panes: [pane], paneLayer: { hidden: false }, exchangeTrail: null,
+    focusedPane: () => pane, paneDocked: () => true, inDockedPane: () => true, typingIn: () => false,
+    document: { addEventListener: (name, fn) => { handler = fn; }, querySelector: () => null },
+    paneKeyButton: () => ({ disabled: true, click() {} }),
+    toast: text => { message = text; },
+    bridge: { callTool: () => { opened++; } }, desktopAccounts: { startResume: () => { opened++; } },
+  });
+  vm.runInContext(`${resumeSource}\n${keys}`, context);
+  handler({ key: 'o', target: pane.el, preventDefault: () => { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.match(message, /所有アカウントを確認中/);
+  assert.equal(choices, 1, 'unavailable default offers explicit route choices');
+  assert.equal(opened, 0, 'unknown Desktop must not silently launch Terminal');
+});

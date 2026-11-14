@@ -31,19 +31,19 @@ function fixture(cards) {
     scrollIntoView() {}
   }
   let root;
-  const opened = [];
+  const opened = [], resumed = [];
   const ctx = { state, document, CSS: { escape: x => x }, h: (...args) => new Node(...args),
     timelineOn: () => true, paneDocked: () => false, panes: [], PANE_MODES: [],
     faceGlyph: () => new Node('span'), faceWho: () => new Node('span'), dotPill: () => null, exchangePill: () => null,
     fmtDate: x => String(x), relTime: x => String(x), prefetchSession() {},
-    openCard: id => opened.push(id),
+    openCard: id => opened.push(id), resume: id => resumed.push(id),
     $: (selector, parent = root) => parent?.querySelector(selector.replace(/^#board /, '')),
     $$: selector => root.querySelectorAll(selector.replace(/^#board /, '')),
   };
   const timeline = read('lifetime.js').slice(read('lifetime.js').indexOf('const TIMELINE_GROUP_CAP ='));
   const model = vm.runInNewContext(read('lifetime-model.js') + '\n' + timeline + '\n' + read('inbox.js') + '\n({ renderInbox, refreshInboxList, inboxStep, inboxSelect });', ctx);
   root = model.renderInbox(state.board);
-  return { state, root, model, document, opened, rows: () => root.querySelectorAll('.irow'), list: () => root.querySelector('.inbox-list') };
+  return { state, root, model, document, opened, resumed, rows: () => root.querySelectorAll('.irow'), list: () => root.querySelector('.inbox-list') };
 }
 const children = () => [
   { id: 'old', title: '古い会話', status: 'completed', updatedAt: 1 },
@@ -98,4 +98,21 @@ test('when a live update removes the more button, focus returns to its task row'
   f.model.refreshInboxList();
   assert.equal(f.document.activeElement.dataset.cardId, 'job');
   assert.equal(f.opened.length, 0);
+});
+
+
+test('timeline o continues sessions through the guarded resume action and leaves tasks alone', () => {
+  const f = fixture([{ id: 'job', title: '仕事', kind: 'task', status: 'waiting', links: children(), updatedAt: 4 }]);
+  const press = (row, extra = {}) => {
+    const event = { target: row, key: 'o', preventDefault() { this.prevented = true; }, stopPropagation() {}, ...extra };
+    row.events.keydown(event);
+    return event;
+  };
+  const task = f.rows()[0], session = f.rows()[1];
+  assert.equal(press(task).prevented, undefined);
+  assert.equal(press(session).prevented, true);
+  assert.deepEqual(f.resumed, [session.dataset.cardId]);
+  press(session, { ctrlKey: true });
+  press(session, { target: session.children[0] });
+  assert.equal(f.resumed.length, 1, 'typing and modified keys never resume a session');
 });
