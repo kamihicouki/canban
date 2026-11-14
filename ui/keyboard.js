@@ -26,7 +26,13 @@ document.addEventListener('keydown', e => {
   if (e.altKey && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.isComposing && e.code === 'KeyC' && !laneHides('directory') && (document.querySelector('.category-picker') || !typingIn(e.target) && !document.querySelector('dialog[open], .popover'))) {
     e.preventDefault(); openCategoryPicker();
   }
+  if (e.altKey && !e.shiftKey && !e.metaKey && !e.ctrlKey && e.code === 'KeyU' && !e.isComposing && inboxOn() && paneLayer.hidden && !typingIn(e.target) && !document.querySelector('.popover, dialog[open]')) { e.preventDefault(); inboxToggleUnbundled(); }
   if (e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey && e.code === 'KeyU' && !e.isComposing && !e.target.closest?.('.term-host') && !document.querySelector('.popover, dialog[open]')) { e.preventDefault(); toggleAuxiliaryUi(); }
+  if (e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.isComposing && ['KeyH', 'KeyN'].includes(e.code) && !e.target.closest?.('.term-host') && !document.querySelector('.popover, dialog[open]')) {
+    const pane = focusedPane();
+    const action = e.code === 'KeyH' ? pane?.quoteTaskHandoff : pane?.appendTaskReport;
+    if (action && pane.kind === 'task') { e.preventDefault(); action(); }
+  }
   if (e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey && e.code === 'KeyR' && !e.isComposing && !e.target.closest?.('.term-host') && !document.querySelector('.popover, dialog[open]')) {
     const id = selectedRelatedCardId();
     if (id) { e.preventDefault(); openCardRelations(e.target.closest?.('[data-card-id]') || e.target, id); }
@@ -100,7 +106,7 @@ function refreshShortcutHints() {
   const input = document.activeElement;
   const typing = typingIn(input);
   const modKey = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
-  const globalKeys = [...(!laneHides('directory') ? [['Alt+C', 'カテゴリ']] : []), ['?', 'キー一覧'], [`${modKey}K`, 'コマンド']];
+  const globalKeys = [...(inboxOn() && paneLayer.hidden ? [['Alt+U', '未整理の会話']] : []),...(!laneHides('directory') ? [['Alt+C', 'カテゴリ']] : []), ['?', 'キー一覧'], [`${modKey}K`, 'コマンド']];
   const inCard = overlayOpen() || inDockedPane(input);
   let entries;
   if (upper) entries = [];
@@ -120,7 +126,7 @@ function refreshShortcutHints() {
       ['⇧←', '左のリストへ', !adjacentPaneList(focusedPane(), -1)], ['⇧→', '右のリストへ', !adjacentPaneList(focusedPane(), 1)],
       ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
       ...(focusedPane()?.kind === 'session' ? [['o', '続ける'], ['x', '仕事にまとめる'], ['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
-      ...(panePromptInput() ? [['i', '指示欄'], ['Alt+M', voiceMode.active ? '音声対話OFF' : '音声対話']] : []), ...(panes.some(x => x.choices?.length) ? [['Alt+1〜9', '選択肢で答える']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ['f', '変更'], ...(terminalAvailable(focusedPane()) ? [['t', 'ターミナル'], ...(cardTerms.get(focusedPane().id)?.closed ? [['Shift+R', '開き直す']] : cardTerms.get(focusedPane().id)?.id ? [['Shift+X', 'シェルを終了']] : [])] : [])] : []), ['r', '更新'], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys,
+      ...(focusedPane()?.kind === 'task' ? [['Alt+Shift+H', '引継ぎを引用'], ['Alt+Shift+N', '報告を追記']] : []), ...(panePromptInput() ? [['i', '指示欄'], ['Alt+M', voiceMode.active ? '音声対話OFF' : '音声対話']] : []), ...(panes.some(x => x.choices?.length) ? [['Alt+1〜9', '選択肢で答える']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ['f', '変更'], ...(terminalAvailable(focusedPane()) ? [['t', 'ターミナル'], ...(cardTerms.get(focusedPane().id)?.closed ? [['Shift+R', '開き直す']] : cardTerms.get(focusedPane().id)?.id ? [['Shift+X', 'シェルを終了']] : [])] : [])] : []), ['r', '更新'], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys,
       ...(exchangeTrail ? [['Shift+1 / 2 / 3', '関連カードのビュー'], ['Esc / Shift+Esc', '訪問を戻る / 進む'], ['Shift+Home', '起点へ']] : typeof canReturnPaletteOutsideCard === 'function' && canReturnPaletteOutsideCard() ? [['Esc', '参照元のカードへ戻る']] : docked ? [['Enter', '大きく開く'], ['Esc', '一覧へ戻る']] : [['Esc', timelineOn() ? '時間軸へ戻す' : '閉じる']])];
   }
   else if (typing) entries = input.id === 'q' ? [['↓ / Enter', 'カードへ'], ['Esc', '検索をクリア']] : [['⌘K / Ctrl+K', 'コマンド']];
@@ -142,7 +148,7 @@ const SHORTCUTS = [
   ['時間（寿命）', [
     ['i', 'ボード → 時間軸 → ガント → ボードを切り替え'], ['時間の帯で ← →', '日を移動（Home / End で最古 / 今日）。Enter で照らす'],
     ['Esc', '照らすのをやめる（ボード）'], ['⌘K', '「期間: …」「…のカードを照らす」'],
-    ['Alt+Shift+U', '補助表示を固定 / 最小'], ['x', 'セッションを仕事にまとめる（⌘Kでも選択）'], ['Alt+Shift+R', '関連するカードを開く（⌘Kでも選択）'], ['補助表示の中で p', 'その部品を固定 / 最小'], ['時間軸の一覧で j / k', '選んだカードを右に開く'], ['時間軸の一覧で Enter', 'カードを大きく開く（Esc で右へ戻す）'], ['時間軸のセッションで o', '既定の経路で続ける（利用不可なら理由と経路選択）'], ['時間軸の一覧で r / 1 2 3 / d', '返信欄へ / 表示 / 詳細パネル'], ['時間軸のカードで Esc', '一覧へ戻る'],
+    ['Alt+U', '時間軸: 未整理の会話を開閉'], ['Alt+Shift+U', '補助表示を固定 / 最小'], ['x', 'セッションを仕事にまとめる（⌘Kでも選択）'], ['Alt+Shift+R', '関連するカードを開く（⌘Kでも選択）'], ['補助表示の中で p', 'その部品を固定 / 最小'], ['時間軸の一覧で j / k', '選んだカードを右に開く'], ['時間軸の一覧で Enter', 'カードを大きく開く（Esc で右へ戻す）'], ['時間軸のセッションで o', '既定の経路で続ける（利用不可なら理由と経路選択）'], ['時間軸の一覧で r / 1 2 3 / d', '返信欄へ / 表示 / 詳細パネル'], ['時間軸のカードで Esc', '一覧へ戻る'],
   ]],
   ['キーの案内', [['見出しをドラッグ / 矢印キー', '置き場所: 右上・右下・下端・左下（Home で下端）'], ['– / 見出しで Enter', '畳む / 開く']]],
   ['dot', [['Shift+V', 'dotのセッションを含める / 除く（ボード・時間軸）'], ['⌘K', 'dotだけ / 含める / 除く']]],
@@ -157,7 +163,7 @@ const SHORTCUTS = [
     ['o', '再開（既定）'], ['d / t', 'デスクトップ / ターミナルで再開'], ['w n s e', 'ターミナル: 新規ウィンドウ / 新規タブ / 分割 / 既存'],
   ]],
   ['カードを開いている間', [
-    ['Alt+D', 'Claude Desktop の起動アカウントを選ぶ（作成ダイアログでも共通）'],
+    ['Alt+Shift+H', 'タスク: 引継ぎを依頼欄に引用追記'], ['Alt+Shift+N', 'タスク: 依頼欄を報告として追記（エージェント送信なし）'], ['Alt+D', 'Claude Desktop の起動アカウントを選ぶ（作成ダイアログでも共通）'],
     ['Alt+a', 'Claude の実行アカウントを選ぶ（このマシンのセッション）/ タスク: 開始するアカウントを選ぶ'],
     ['Shift+← / →', '左右の隣のリストへ移動（端で停止、入力中・配置調整中は無効）'],
     ['j / k', '表示リストの次 / 前のカードを開く（端で停止）'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['v', '表示モード切替: 全画面 / スプリット / シート'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'], ['y', '思考・実行ステップタイムラインを開閉'],
@@ -186,6 +192,11 @@ async function commandPalette() {
   const actions = [
     { label: state.auxiliaryMode === 'pinned' ? '補助表示をすべて最小にする' : '補助表示をすべて固定する', run: toggleAuxiliaryUi, hint: 'Alt+Shift+U' },
     ...auxiliaryCommands(),
+    ...(!paneLayer.hidden && focusedPane()?.kind === 'task' && focusedPane()?.quoteTaskHandoff ? [
+      { label: '引継ぎを依頼欄に引用追記', run: () => focusedPane().quoteTaskHandoff(), hint: 'Alt+Shift+H' },
+      { label: '依頼欄を報告として追記（エージェント送信なし）', run: () => focusedPane().appendTaskReport(), hint: 'Alt+Shift+N' }
+    ] : []),
+    ...(inboxOn() && paneLayer.hidden ? [{ label: '未整理の会話を開く / 閉じる', run: inboxToggleUnbundled, hint: 'Alt+U' }] : []),
     ...(!paneLayer.hidden && focusedPane()?.el.querySelector('.cx-wait-question:not([hidden])') ? [{ label: '質問と選択肢を開く / 閉じる', run: () => { const q=focusedPane().el.querySelector('.cx-wait-question'); q.open=!q.open; q.querySelector('summary').focus(); }, hint: '質問内 Enter' }] : []),
     ...(relationId ? [{ label: '関連するカードを開く', run: () => openCardRelations(null, relationId), hint: 'Alt+Shift+R' }] : []),
     ...(workId ? [{ label: '仕事にまとめる', run: () => workBundlePicker(document.activeElement, workId), hint: 'x' }] : []),

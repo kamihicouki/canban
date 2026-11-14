@@ -1,0 +1,31 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {spawn} from 'node:child_process';
+import {makeFixtures} from './helpers.mjs';
+const root=path.resolve(import.meta.dirname,'..');
+test('production sessionDetail returns local Codex conversation and permission while global all-provider listing never finishes',{timeout:20000},async t=>{
+ const fx=makeFixtures(),dir=fs.mkdtempSync(path.join(os.tmpdir(),'canban-fast-detail-'));
+ t.after(()=>{fx.cleanup();fs.rmSync(dir,{recursive:true,force:true});});
+ const child=spawn(process.execPath,['--import',path.join(root,'tests/fixtures/stalled-claude-loader.mjs'),'--input-type=module','-'],{cwd:root,env:{...process.env,CANBAN_DATA_DIR:dir,CANBAN_CODEX_HOME:fx.codexHome,CANBAN_CLAUDE_HOME:fx.claudeHome,CANBAN_CLAUDE_DESKTOP_DIR:fx.desktopDir,CANBAN_LAUNCH_DRYRUN:'1',CANBAN_BACKGROUND:'0',CANBAN_SEARCH_INDEX:'0'},stdio:['pipe','pipe','pipe']});
+ t.after(()=>child.kill());let stdout='',stderr='';child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);
+ child.stdin.end(`
+ import assert from 'node:assert/strict';
+ import {Store} from './server/store.mjs';
+ import {buildBoard,sessionDetail} from './server/board.mjs';
+ import {stalledListingCalls} from './server/sources/claude.mjs';
+ const store=new Store();let completed=false;
+ void buildBoard(store,{days:0},{readOnly:true}).then(()=>{completed=true;});
+ for(let i=0;i<100&&stalledListingCalls===0;i++)await new Promise(r=>setTimeout(r,10));
+ assert.ok(stalledListingCalls>0,'global listing entered the permanently pending provider');
+ const before=JSON.stringify(await store.load());
+ const d=await sessionDetail(store,'codex:t1',{messages:14});
+ assert.equal(d.session.id,'codex:t1');assert.ok(d.recentMessages.length);assert.ok(d.feed.items.length);
+ assert.equal(d.dispatch.permission.agent,'codex');assert.equal(d.dispatch.permission.elevated,false);
+ assert.equal(d.relatedCoverage.state,'unavailable');assert.equal(completed,false);
+ assert.equal(JSON.stringify(await store.load()),before,'lookup does not mark seen or change task state');
+ console.log(JSON.stringify({id:d.session.id,relatedCoverage:d.relatedCoverage.state,globalListingStillPending:!completed,localMessagesAvailable:true,permissionAvailable:true,lookupReadOnly:true}));
+ await store.close();process.exit(0);
+ `);
+ const outcome=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{child.kill();reject(Error('detail did not escape blocked global listing; '+stderr.slice(-900)));},15000);child.on('error',e=>{clearTimeout(timer);reject(e);});child.on('close',(code,signal)=>{clearTimeout(timer);resolve({code,signal});});});
+ assert.equal(outcome.code,0,stderr);const result=JSON.parse(stdout.trim());assert.equal(result.globalListingStillPending,true);assert.equal(result.lookupReadOnly,true);
+});

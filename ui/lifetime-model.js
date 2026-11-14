@@ -91,3 +91,47 @@ function splitByLife(cards, now = Date.now()) {
   for (const c of cards) (lifeOf(c, now) === 'dormant' ? dormant : awake).push(c);
   return { awake, dormant };
 }
+
+// Work state is the explicit list, never the terminal state of its agents.
+const WORK_TIME_GROUPS = [['need', '要対応'], ['live', '進行中'], ['missing', '次の行動が未記入'], ['other', 'そのほか'], ['unbundled', '仕事にまとめていない会話']];
+const workTimestamp = value => { const n = typeof value === 'number' ? value : typeof value === 'string' ? Date.parse(value) : NaN; return Number.isFinite(n) && n > 0 ? n : null; };
+const workText = value => typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+function workAttention(card) {
+  const sessions = card.kind === 'task' ? card.links || [] : [card];
+  if (sessions.some(c => knownLifeStatus(c) === 'waiting')) return '質問・確認待ち';
+  if (sessions.some(c => c.requests?.failed)) return '依頼が失敗';
+  if (sessions.some(c => c.requests?.paused)) return '依頼が停止';
+  if (sessions.some(c => knownLifeStatus(c) === 'aborted')) return '中断';
+  if (card.unread || sessions.some(c => c.unread)) return '返答あり';
+  return '';
+}
+function workGroupOf(card, list) {
+  if (card.kind !== 'task') return workAttention(card) ? 'need' : knownLifeStatus(card) === 'running' ? 'live' : 'unbundled';
+  if (workAttention(card)) return 'need';
+  const listTitle = list.title || list.name;
+  if (listTitle === '進行中') return 'live';
+  if ((list.isDefault || listTitle === '受信箱') && !workText(card.handoff?.nextAction?.text)) return 'missing';
+  return 'other';
+}
+function workOverview(card) {
+  const purpose = workText(card.description).match(/^.*?[。！？!?]|^.+$/)?.[0]?.trim() || '目的は未記入';
+  const sessions = card.links || [];
+  const counts = { running: 0, waiting: 0, aborted: 0, completed: 0, unknown: 0, idle: 0 };
+  for (const c of sessions) { const status = knownLifeStatus(c); counts[status == null ? 'unknown' : Object.hasOwn(counts, status) ? status : 'idle']++; }
+  const names = { running: '実行中', waiting: '入力待ち', aborted: '中断', completed: '応答済み', unknown: '未取得', idle: '待機' };
+  const summary = sessions.length ? `会話${sessions.length}: ` + Object.entries(counts).filter(([,n]) => n).map(([k,n]) => names[k]+n).join('・') : '会話なし';
+  const latest = [...sessions].filter(c => workText(typeof c.last === 'string' ? c.last : c.last?.text)).sort((a,b) => (workTimestamp(b.last?.at) || workTimestamp(b.updatedAt) || 0) - (workTimestamp(a.last?.at) || workTimestamp(a.updatedAt) || 0))[0];
+  const agentName = c => ({ codex: 'Codex', claude: 'Claude', antigravity: 'Antigravity' }[c?.agent] || c?.agent || 'エージェント');
+  const last = latest?.last;
+  const lastText = workText(typeof last === 'string' ? last : last?.text);
+  const latestSpeaker = last?.role === 'user' ? 'ユーザー' : agentName(latest);
+  const preview = lastText && typeof promptPreviewModel !== 'undefined' ? promptPreviewModel.parse(lastText) : null;
+  const readable = preview ? workText(preview.body) || preview.blocks.map(b => b.label).join('・') : lastText;
+  const current = readable ? `${latestSpeaker}: ${readable}` : summary;
+  const next = card.handoff?.nextAction;
+  const sourceAgent = next?.sourceSessionId?.split(':')[0];
+  return { purpose, current, summary, currentAt: typeof last === 'object' ? workTimestamp(last?.at) : null,
+    currentSource: lastText ? `${latestSpeaker}の最終返答` : '',
+    next: workText(next?.text) || '次の行動は未記入', nextAt: workTimestamp(next?.at),
+    nextSource: next?.text ? next.source === 'reported' ? sourceAgent ? `${agentName({agent:sourceAgent.split('@')[0]})}（指定）の提案` : '報告者の提案（報告元未指定）' : '記入済み' : '' };
+}

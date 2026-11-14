@@ -146,6 +146,10 @@ export async function findCodexSession(nativeId, { home = null, now = Date.now()
     if (!x) continue;
     const s = sessionOf(c, h, x);
     s.subagent = s.subagent || c.edges.some((e) => e.child === nativeId);
+    const children = c.edges.filter(e => e.parent === nativeId && c.rows.has(e.child)).map(e => sessionKey('codex', LOCAL_HOST, e.child));
+    if (children.length) s.children = children;
+    const parent = c.edges.find(e => e.child === nativeId && c.rows.has(e.parent));
+    if (parent) s.parentId = sessionKey('codex', LOCAL_HOST, parent.parent);
     return s;
   }
   return null;

@@ -92,6 +92,11 @@ function fillChoice(p, choice) {
   input.setSelectionRange(input.value.length, input.value.length);
   input.closest('.send-section')?.scrollIntoView({ block: 'nearest' });
 }
+// A restrictive fallback is a sending policy, not an observed session permission.
+function dispatchPermissionView(p, remote = false) {
+  if (!p || p.source === 'fallback') return { text: remote ? '🔒 権限は送信時にリモートで確認します' : '🔒 権限は未取得', title: p ? `記録を読み取れないため、送信には制限的な設定を使います（${p.label}）。元のセッションの権限を確認できた意味ではありません。` : 'セッションの権限を確認できていません' };
+  return { text: `${p.elevated ? '⚠ 制限なし: ' : '🔒 '}${p.label}`, title: `このセッションの設定を引き継ぎます（${p.source === 'database' ? 'Codex の DB' : 'セッションの記録'}）` };
+}
 function renderDispatch(d) {
   const s = d.session;
   const D = d.dispatch;
@@ -108,10 +113,8 @@ function renderDispatch(d) {
     return box;
   }
   const p = D.permission;
-  const permChip = p
-    ? h('span', { class: `perm-chip${p.elevated ? ' elevated' : ''}`, title: `このセッションの設定を引き継ぎます（${p.source === 'session' ? 'セッションの記録' : p.source === 'database' ? 'Codex の DB' : '読み取れないため最も制限的な設定'}）`,
-      text: `${p.elevated ? '⚠ 制限なし: ' : '🔒 '}${p.label}` })
-    : h('span', { class: 'perm-chip', text: s.host ? '🔒 権限は送信時にリモートで確認します' : '🔒 権限を確認できません' });
+  const permissionView = dispatchPermissionView(p, !!s.host);
+  const permChip = h('span', { class: `perm-chip${p?.elevated ? ' elevated' : ''}`, ...permissionView });
   const ta = h('textarea', { placeholder: 'このセッションに送るプロンプト（⌘/Ctrl + Enter で今すぐ送信）', 'aria-label': '送るプロンプト' });
   const ack = p?.elevated ? h('input', { type: 'checkbox', 'aria-label': '制限なしで実行されることを確認しました' }) : null;
   const busy = s.status === 'running' || s.status === 'waiting' || !!s.codexFollowUps;
@@ -164,16 +167,31 @@ function renderDispatch(d) {
 // The input before the detail arrives: the same composer and draft, so typing can start at once;
 // sending waits for the session's permission and queue, which come with the detail.
 function renderPendingDispatch(card) {
-  const box = h('div', { class: 'send-section' });
+  const box = h('div', { class: 'send-section', 'data-session-load': 'loading', 'aria-busy': 'true' });
   if (!state.board?.settings?.dispatch?.enabled) return box;
   const ta = h('textarea', { placeholder: 'このセッションに送るプロンプト（⌘/Ctrl + Enter で今すぐ送信）', 'aria-label': '送るプロンプト' });
-  const wait = () => toast('セッションの詳細を読み込み中です。入力は保持しています');
+  const wait = () => toast(box.dataset.sessionLoad === 'failed' ? '詳細を取得できませんでした。会話の再読み込みで確認してください。下書きは保持しています' : 'セッションの詳細を読み込み中です。入力は保持しています');
   const composer = promptComposer(ta, { key: `dispatch:${card.id}`, context: () => ({ cardId: card.id }), submit: wait,
     leading: [h('span', { class: 'perm-chip', text: '🔒 権限を確認中…' })],
     actions: [h('button', { class: 'send-round', type: 'button', disabled: true, title: '詳細を読み込み中', 'aria-label': '今すぐ送信', html: picon('send', 15) })],
     keys: [keyHint(['⌘', 'Enter'], '送信'), keyHint(['⌥', 'Enter'], 'キューへ'), keyHint(['$'], 'スキル')] });
   box.append(h('div', { class: 'cx-choices', role: 'group', 'aria-label': '選択肢で答える', hidden: true }), h('div', { class: 'send-box' }, composer.root));
   return box;
+}
+
+// Failure is a terminal read state, not an indefinitely pending permission check.
+function setPendingDispatchState(root, stage) {
+  const box = root.matches?.('.send-section[data-session-load]') ? root : root.querySelector?.('.send-section[data-session-load]');
+  if (!box) return;
+  box.dataset.sessionLoad = stage;
+  box.setAttribute('aria-busy', String(stage === 'loading'));
+  const chip = box.querySelector('.perm-chip');
+  if (chip) chip.textContent = stage === 'failed' ? '🔒 権限は未取得 · 下書きを保持しています' : '🔒 権限を確認中…';
+  const button = box.querySelector('.send-round');
+  if (button) {
+    button.disabled = true;
+    button.title = stage === 'failed' ? '詳細未取得のため送信できません。会話を再読み込みしてください' : '詳細を読み込み中';
+  }
 }
 
 function requestRow(s,r,{index=-1,queue=[],review=null}={}) {

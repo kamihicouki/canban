@@ -68,6 +68,8 @@
     "canban_cancel_start_session",
     "canban_acknowledge_desktop_launch",
     "canban_get_desktop_launch_draft",
+    "canban_get_task",
+    "canban_append_task_note",
     "canban_link_session",
     "canban_unlink_session",
     "canban_update_task",
@@ -174,6 +176,8 @@
     "canban_cancel_start_session": "facab5f3ef4815c0419ec9de03f4fc3c8416fbb566f53719c999bbce88815616",
     "canban_acknowledge_desktop_launch": "36adcc8d2179eb810ab2ce6093dd7b7ecc133f587191002de7577f39cf437495",
     "canban_get_desktop_launch_draft": "8f20ef2d8a8de25b9cacf4acddc80882f3e9a8494389aa41d87e252af9255812",
+    "canban_get_task": "de54b5945ca4fb6a5f2243f58db02cd7d0cda3facf5f789925875c5a8deeefc0",
+    "canban_append_task_note": "7f2595ec36358ba443ba4e2f31ad8b9cd4f78a62f286bd16b1871fb1a9a9c577",
     "canban_link_session": "3a4ba92acfe2f7669ce5f62118bbccdc67b6dc7badc429a6812ce27a87fe1a31",
     "canban_unlink_session": "fd90a7201142246f935b979fa38fd25259fdd5caac1e94856cfd37f597da2798",
     "canban_update_task": "f767409effa644702035ec17c961b888547efcbd7362c9f5d88b211445d06cd6",
@@ -211,5 +215,5 @@
     "canban_get_ui_state": "3805f9b9bd60f6dc1df6bd8e58b00fcf0e0065e0354aa4e8e515df843f33b521",
     "canban_save_ui_state": "3e75c3bdc052134c461074b189d68c3520787c65e382eaf1f4391e85b0298859"
   },
-  "all": "80558cadebd9fceeba4e86c7bf47bf457e6c2224993c3429f5a82a83c804bfe1"
+  "all": "b515f010846878b8dfe96c8eab9a4927f1fbd023a82b9208f22ce02f9d421c38"
 }

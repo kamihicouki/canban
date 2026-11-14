@@ -68,7 +68,12 @@ http
         callTool:(name,args)=>fetch('/rpc',{method:'POST',body:JSON.stringify({name,arguments:args})}).then(r=>r.json()).then(r=>{if(r.error)throw new Error(r.error.message);return r.result}),
         openExternal:({href})=>{console.log('open',href);return Promise.resolve()}};</script>`;
       res.setHeader('content-type', 'text/html; charset=utf-8');
-      return res.end(r.result.contents[0].text.replace('<head>', `<head>${shim}`));
+      let html = r.result.contents[0].text.replace('<head>', `<head>${shim}`);
+      if (process.env.CANBAN_BROWSER_SMOKE === '1') {
+        // The first-open failure test must not inherit a pane visited by an earlier walk step.
+        html = html.replace('function showCards(ids, { dock } = {}) {', "window.__canbanSmokeForgetPane = id => { paneCache.delete(id); sessionPrefetch.delete(id); };\nfunction showCards(ids, { dock } = {}) {");
+      }
+      return res.end(html);
     }
     res.setHeader('content-type', 'text/html; charset=utf-8');
     res.end(HOST_PAGE(url.searchParams.get('theme') === 'dark' ? 'dark' : 'light'));

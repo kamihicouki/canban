@@ -59,6 +59,140 @@ function paintTaskRelated(p, card) {
   const heading = $('.th-sec-t', sec);
   if (heading?.firstChild) heading.firstChild.textContent = taskRelatedTitle(card);
 }
+
+function taskHandoffQuote(task, card, { snapshot = false } = {}) {
+  const links = card.links || [];
+  return [
+    '引継ぎ（保存された目的・観測状態・報告者の提案）',
+    `目的:\n${task.description || '未記入'}`,
+    `現在地（担当会話の状態${snapshot ? '・前回一覧の状態、現在は未確認' : ''}。仕事の完了確認とは別）:\n${links.length ? links.map(link => `${link.title}: ${link.statusKnown === false ? '状態未確認' : STATUS_LABELS[link.status] || '状態未確認'}`).join('\n') : '担当会話なし'}`,
+    `次の行動（提案）:\n${task.nextAction || '未記入'}`,
+    ...links.filter(link => link.last).map(link => `担当会話の最終返答（発言時刻未取得）・${link.title}:\n${link.last}`),
+    task.latestNoteSummary ? `最新報告の抜粋:\n${task.latestNoteSummary.text}` : '追記報告なし',
+  ].join('\n\n');
+}
+
+// Explicit quoting appends after the entire draft; an existing selection is never replaced.
+function appendTaskHandoffDraft(input, quote, EventType = Event) {
+  if (!input.value.endsWith(quote)) {
+    input.value += `${input.value ? '\n\n' : ''}${quote}`;
+    input.dispatchEvent(new EventType('input', { bubbles: true }));
+  }
+  input.focus();
+  input.setSelectionRange?.(input.value.length, input.value.length);
+}
+
+function taskHandoffSection(p, card, prompt, composer) {
+  let task = null, notes = [], nextCursor = null, busy = false, renderedSignature = '';
+  let inFlight = null, refreshPending = false, activeReadRevision = 0, renderedNotes = '', verified = false;
+  const boardRevision = () => p.taskCard?.handoff?.revision ?? 0;
+  const confirmed = () => verified && task && task.revision >= boardRevision();
+  const summary = h('div'), history = h('div');
+  // Keep the disclosure and its summary mounted across reports and session-state updates.
+  const historyTitle = h('summary', { text: '追記報告（未取得）' });
+  const historyBody = h('div');
+  const details = h('details', {}, historyTitle, historyBody);
+  const noteNodes = new Map();
+  history.replaceChildren(details);
+  const notice = h('p', { class: 'muted', role: 'status', 'aria-live': 'polite', text: '引継ぎを読み込み中…' });
+  const retry = h('button', { class: 'link-btn', type: 'button', text: '再読み込み', hidden: true, onclick: () => p.refreshTaskHandoff(true) });
+  const more = h('button', { class: 'link-btn', type: 'button', text: '報告の続きを読む', hidden: true, onclick: () => p.loadMoreTaskNotes() });
+  const quote = h('button', { class: 'btn', type: 'button', disabled: true, title: '引継ぎを依頼欄の末尾に引用（Alt+Shift+H）', onclick: () => p.quoteTaskHandoff() }, '引継ぎを引用 ', ...keycap('Alt+Shift+H'));
+  const save = h('button', { class: 'link-btn', type: 'button', title: '入力文を報告に追記（Alt+Shift+N）。エージェントへは送信しません', onclick: () => p.appendTaskReport() }, '入力文を報告に追記 ', ...keycap('Alt+Shift+N'));
+  const section = h('div', {}, summary, notice, retry, h('div', { class: 'row' }, quote, save), history, more);
+  const reportSource = value => value.sourceSessionId ? `報告元（指定）: ${value.sourceSessionId}` : '報告元: 指定なし';
+  const reportNodes = note => [
+    h('div', { class: 'muted', text: `${fmtDate(note.at)} · ${reportSource(note)} · 報告` }),
+    h('div', { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }, text: note.text }),
+    note.proposedNextAction !== undefined ? h('p', { class: 'muted', text: note.proposedNextAction === null ? '次の行動の提案を解除' : `次の行動（提案）: ${note.proposedNextAction}` }) : null,
+  ].filter(Boolean);
+  const draw = () => {
+    const current = p.taskCard || card, links = current.links || [];
+    const signature = JSON.stringify([links.map(link => [link.id, link.title, link.status, link.statusKnown, link.last]), !!p.taskHandoffSnapshot, task?.revision, notes.map(note => note.id), nextCursor]);
+    if (signature === renderedSignature) return;
+    renderedSignature = signature;
+    summary.replaceChildren(
+      h('p', { class: 'muted', text: `現在地（担当会話の状態${p.taskHandoffSnapshot ? '・前回一覧の状態、現在は未確認' : ''}）: ${links.length ? links.map(link => `${link.title} · ${link.statusKnown === false ? '状態未確認' : STATUS_LABELS[link.status] || '状態未確認'}`).join(' / ') : '担当会話なし'}。仕事の完了確認とは別です。` }),
+      task?.nextAction ? h('div', {}, h('strong', { text: '次の行動（提案）' }), h('p', { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }, text: task.nextAction }), h('p', { class: 'muted', text: task.nextActionReport ? `${fmtDate(task.nextActionReport.at)} · ${reportSource(task.nextActionReport)}` : '報告者の提案' })) : h('p', { class: 'muted', text: task ? '次の行動の提案は未記入です' : '次の行動の提案は未取得です' }),
+      ...links.filter(link => link.last).map(link => h('div', {}, h('strong', { text: `担当会話の最終返答 · ${link.title}` }), h('p', { class: 'muted', text: '発言時刻は未取得です。会話の更新時刻とは区別します。' }), h('div', { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }, text: link.last }))),
+      ...(task?.latestNoteSummary ? [h('div', {}, h('strong', { text: '最新報告の抜粋' }), ...reportNodes(task.latestNoteSummary))] : []),
+    );
+    historyTitle.textContent = task ? `追記報告 ${task.totalNotes}件（表示 ${notes.length}件）` : '追記報告（未取得）';
+    const notesSignature = JSON.stringify(notes.map(note => note.id));
+    if (notesSignature !== renderedNotes) {
+      renderedNotes = notesSignature;
+      historyBody.replaceChildren(
+        h('p', { class: 'muted', text: '報告元は指定されたIDです。認証済みの作者や人による承認・完了確認を表しません。' }),
+        ...notes.map(note => {
+          if (!noteNodes.has(note.id)) noteNodes.set(note.id, h('div', { class: 'th-sec' }, ...reportNodes(note)));
+          return noteNodes.get(note.id);
+        }));
+    }
+    more.hidden = !nextCursor; quote.disabled = busy || !confirmed();
+  };
+  const load = (after) => {
+    if (busy) return inFlight;
+    busy = true; more.disabled = retry.disabled = true; retry.hidden = true;
+    activeReadRevision = boardRevision(); quote.disabled = true;
+    notice.textContent = '引継ぎを読み込み中…';
+    inFlight = (async () => {
+      let success = false;
+      try {
+        const response = await bridge.callTool('canban_get_task', { taskId: p.id, ...(after ? { after } : {}) });
+        task = response.task;
+        // Reports are append-only: refresh the summary without dropping already
+        // opened history pages or replacing their reading anchors.
+        const known = new Map(notes.map(note => [note.id, note]));
+        for (const note of task.notes) if (!known.has(note.id)) known.set(note.id, note);
+        notes = [...known.values()];
+        nextCursor = task.totalNotes > notes.length ? notes.at(-1)?.id || task.nextCursor : null;
+        p.taskHandoffRevision = task.revision; verified = true;
+        notice.textContent = !confirmed() ? '新しい引継ぎの取得は未確認です。再読み込みしてください。' : task.totalNotes ? '報告と次の行動は提案です。承認や完了確認は行いません。' : '追記報告はまだありません。入力欄の文を報告として保存できます。';
+        retry.hidden = !!confirmed();
+        draw(); success = true;
+      } catch (error) { verified = false; draw(); notice.textContent = `引継ぎは未確認です: ${error.message}`; retry.hidden = false; }
+      finally { busy = false; more.disabled = retry.disabled = false; }
+      // A board update during this read may describe a newer snapshot. Coalesce it
+      // into one subsequent read rather than dropping it or repeatedly polling.
+      if (refreshPending) { refreshPending = false; return load(); }
+      quote.disabled = !confirmed();
+      return success && !!confirmed();
+    })();
+    return inFlight;
+  };
+  p.refreshTaskHandoff = async (force = false) => {
+    if (busy) {
+      if (force || boardRevision() > activeReadRevision) refreshPending = true;
+      return inFlight;
+    }
+    if (confirmed() && !force) { draw(); return true; }
+    return load();
+  };
+  p.loadMoreTaskNotes = () => nextCursor && load(nextCursor);
+  p.quoteTaskHandoff = () => {
+    if (busy || !confirmed()) return toast('新しい引継ぎを取得してから引用してください', true);
+    if (composer.draft.sending || composer.draft.launchRequest) return toast('進行中の開始依頼があります。新しい依頼に切り替えてから引用してください', true);
+    appendTaskHandoffDraft(prompt, taskHandoffQuote(task, p.taskCard || card, { snapshot: !!p.taskHandoffSnapshot }));
+  };
+  p.appendTaskReport = async () => {
+    if (save.disabled || composer.draft.sending) return;
+    const text = prompt.value;
+    if (!text.trim() || text.length > 20000) { prompt.focus(); return toast('報告本文は1〜20000文字で入力してください', true); }
+    const previous = composer.draft.handoffRequest;
+    const request = previous?.text === text ? previous : { text, clientRequestId: crypto.randomUUID() };
+    composer.draft.handoffRequest = request;
+    save.disabled = true; notice.textContent = '報告を保存中…';
+    try {
+      await bridge.callTool('canban_append_task_note', { taskId: p.id, ...request });
+      const readBack = await p.refreshTaskHandoff(true);
+      notice.textContent = readBack ? '報告を保存しました。入力文は保持しています。エージェントへは送信していません。' : '報告は保存済みですが、引継ぎの再取得は未確認です。入力文を保持しています。';
+    } catch (error) { notice.textContent = `報告を保存できませんでした: ${error.message}`; }
+    finally { save.disabled = false; }
+  };
+  draw();
+  p.refreshTaskHandoff(true);
+  return section;
+}
 async function taskLinkMenu(anchor, taskId) {
   try {
     const linked = findCard(taskId)?.card.linkedSessionIds || [];
@@ -73,7 +207,8 @@ async function taskLinkMenu(anchor, taskId) {
 }
 
 async function loadTask(p, found) {
-  if (p.rendered && workspace.hasDrafts(p.el)) { paintTaskRelated(p, found.card); return; } // what is being typed stays
+  p.taskCard = found.card;
+  if (p.rendered && workspace.hasDrafts(p.el)) { paintTaskRelated(p, found.card); p.refreshTaskHandoff?.(); return; } // what is being typed stays
   const cardId = p.id;
   const { card, list } = found;
   p.taskCard = card;
@@ -259,6 +394,7 @@ async function loadTask(p, found) {
     title: { nodes: [title] },
     status: { nodes: [h('div', { class: 'sub row' }, taskQuickAdd.button(), h('span', { class: 'badge task-badge', text: T.taskCard }), h('span', { class: 'row pane-status' }, h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]), h('span', { class: 'muted', text: 'リンクしたセッションの状態', title: 'タスクやGoalの完了とは別です' }))] },
     conv: { title: '説明', nodes: [desc], hint: '説明は Canban に保存します。新しいセッションの依頼文にも使います。' },
+    handoff: { title: '仕事の引継ぎ', nodes: [taskHandoffSection(p, card, prompt, composer)] },
     memo: { title: 'メモ', nodes: [memo] },
     cardRelations: { title: '関連するカード', nodes: [cardRelationsSection(cardId)], extra: h('span', {}, ...keycap('Alt+Shift+R')) },
     related: { title: taskRelatedTitle(card), extra: taskLinkButton(cardId), nodes: taskRelatedNodes(card), hint: 'ホームのセッションをこのカードへドラッグして紐付けることもできます。' },

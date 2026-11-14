@@ -1,4 +1,4 @@
-// Observed activity intervals. No durations, progress, or source state are inferred.
+// Creation-to-update spans. They do not establish continuous activity, progress, or planned work.
 const GANTT_DAY_MS = 86400000;
 function ganttTime(value) {
   if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? value : null;
