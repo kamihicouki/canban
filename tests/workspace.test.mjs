@@ -183,7 +183,7 @@ test('a session linked again while its task is open is loaded afresh, a card tha
   const start = html.indexOf('function reconcileCards('), source = html.slice(start, html.indexOf('\nasync function restoreCards(', start));
   const root = { id: 'task:t', kind: 'task', el: {} }, a = { id: 'codex:a', kind: 'session', d: {} }, b = { id: 'codex:b', kind: 'session', d: {} };
   const panes = [root, a], loaded = [];
-  const context = vm.createContext({ panes, paneLayer: { hidden: false }, $: () => null, h: () => ({}), STATUS_LABELS: {}, paintTaskRelated: () => {},
+  const context = vm.createContext({ panes, paneLayer: { hidden: false }, paneDocked: () => false, $: () => null, h: () => ({}), STATUS_LABELS: {}, paintTaskRelated: () => {},
     taskOverlayIds: (id, links, shown) => ({ ids: [id, ...[...shown.filter((x) => x !== id), ...links.map((l) => l.id)].filter((x, i, all) => all.indexOf(x) === i)] }),
     showCards: (ids) => panes.splice(0, panes.length, ...ids.map((id) => [root, a, b].find((p) => p.id === id))), loadSession: (p) => loaded.push(p.id), styleIs: () => false, taskThreadChoice: () => null });
   vm.runInContext(`${source}\nreconcileCards({lists:[{cards:[{id:'task:t',status:'idle',links:[{id:'codex:a'},{id:'codex:b'}]}]}]});`, context);
@@ -194,11 +194,34 @@ test('in the threads style a task stays beside one session, the one chosen', () 
   const start = html.indexOf('function reconcileCards('), source = html.slice(start, html.indexOf('\nasync function restoreCards(', start));
   const root = { id: 'task:t', kind: 'task', el: {} }, a = { id: 'codex:a', kind: 'session', d: {} }, b = { id: 'codex:b', kind: 'session', d: {} };
   const panes = [root, a], shownIds = [];
-  const context = vm.createContext({ panes, paneLayer: { hidden: false }, $: () => null, h: () => ({}), STATUS_LABELS: {}, paintTaskRelated: () => {},
+  const context = vm.createContext({ panes, paneLayer: { hidden: false }, paneDocked: () => false, $: () => null, h: () => ({}), STATUS_LABELS: {}, paintTaskRelated: () => {},
     taskOverlayIds: (id, links, shown, max) => ({ ids: [id, ...[...shown, ...links.map((l) => l.id)].filter((x, i, all) => all.indexOf(x) === i).slice(0, max)] }),
     showCards: (ids) => { shownIds.push(ids); panes.splice(0, panes.length, ...ids.map((id) => [root, a, b].find((p) => p.id === id))); }, loadSession: () => {}, styleIs: () => true, taskThreadChoice: () => 'codex:b' });
   vm.runInContext(`${source}\nreconcileCards({lists:[{cards:[{id:'task:t',status:'idle',links:[{id:'codex:a'},{id:'codex:b'}]}]}]});`, context);
   assert.deepEqual(shownIds, [['task:t', 'codex:b']]);
+});
+test('a docked task refreshes its status and links without opening a child or replacing its draft', () => {
+  const html = boardHtml();
+  const start = html.indexOf('function reconcileCards('), source = html.slice(start, html.indexOf('\nasync function restoreCards(', start));
+  const draft = { value: '保持するタスクの下書き' }, root = { id: 'task:t', kind: 'task', el: { draft } };
+  const panes = [root], related = [], statusPaints = [];
+  const card = { id: root.id, status: 'waiting', links: [{ id: 'claude:new', status: 'waiting' }] };
+  const context = vm.createContext({ panes, paneLayer: { hidden: false }, paneDocked: () => true,
+    $: () => ({ replaceChildren: (...nodes) => statusPaints.push(nodes) }), h: () => ({}), STATUS_LABELS: { waiting: '入力待ち' },
+    paintTaskRelated: (pane, updated) => related.push([pane, updated]),
+    taskOverlayIds: () => assert.fail('a docked task must not build a horizontal group'),
+    showCards: () => assert.fail('a docked refresh must retain its card DOM'),
+    loadSession: () => assert.fail('a linked child is loaded only when selected'),
+  });
+  vm.runInContext(source, context);
+  context.reconcileCards({ lists: [{ cards: [card] }] });
+  assert.deepEqual(panes, [root]);
+  assert.equal(root.status, 'waiting');
+  assert.equal(root.taskCard, card);
+  assert.deepEqual(related, [[root, card]]);
+  assert.equal(statusPaints[0][1], '入力待ち');
+  assert.equal(root.el.draft, draft);
+  assert.equal(draft.value, '保持するタスクの下書き');
 });
 test('the filters in effect become chips, except the axis the lanes follow', () => {
   const html = boardHtml();

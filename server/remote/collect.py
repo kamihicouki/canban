@@ -32,8 +32,11 @@ SUMMARY_PROMPTS = 3
 TAIL_BYTES = 768 * 1024
 STATUS_TAIL_BYTES = 256 * 1024
 RECENT_MS = 24 * 3600 * 1000
-ASK_TOOLS = {"request_user_input", "AskUserQuestion", "ExitPlanMode"}
+ASK_TOOLS = {"request_user_input", "request_user_input_async", "AskUserQuestion", "ExitPlanMode"}
 TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$")
+
+def is_ask_tool(name):
+    return re.split(r"\.|__", str(name or ""))[-1] in ASK_TOOLS
 
 def parse_ts(value):
     """ISO-8601 -> epoch milliseconds (matches JS Date.parse for the formats agents write)."""
@@ -121,12 +124,13 @@ def codex_raw_status(records):
             t = p.get("type")
             if t == "task_started":
                 state = "running"
+                asks.clear()
             elif t == "task_complete":
                 state = "completed"
             elif t == "turn_aborted":
                 state = "aborted"
         elif o.get("type") == "response_item":
-            if p.get("type") == "function_call" and p.get("name") in ASK_TOOLS and p.get("call_id"):
+            if p.get("type") == "function_call" and is_ask_tool(p.get("name")) and p.get("call_id"):
                 asks.add(p["call_id"])
             elif p.get("type") == "function_call_output" and p.get("call_id"):
                 asks.discard(p["call_id"])
@@ -146,10 +150,12 @@ def claude_raw_status(records, desktop_status=None):
         items = c if isinstance(c, list) else []
         if o["type"] == "assistant":
             for it in items:
-                if isinstance(it, dict) and it.get("type") == "tool_use" and it.get("name") in ASK_TOOLS and it.get("id"):
+                if isinstance(it, dict) and it.get("type") == "tool_use" and is_ask_tool(it.get("name")) and it.get("id"):
                     asks.add(it["id"])
             state = "completed" if msg.get("stop_reason") in ("end_turn", "stop_sequence") else "running"
         else:
+            if not o.get("isMeta") and not any(isinstance(it, dict) and it.get("type") == "tool_result" for it in items):
+                asks.clear()
             for it in items:
                 if isinstance(it, dict) and it.get("type") == "tool_result" and it.get("tool_use_id"):
                     asks.discard(it["tool_use_id"])

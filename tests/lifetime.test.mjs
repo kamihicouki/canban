@@ -6,7 +6,7 @@ import vm from 'node:vm';
 import { boardHtml } from '../server/ui.mjs';
 
 const source = fs.readFileSync(new URL('../ui/lifetime-model.js', import.meta.url), 'utf8');
-const m = vm.runInNewContext(`${source}\n({ lifeOf, daysAgo, timeGroupOf, dayHistogram, splitByLife, DAY_MS, TIME_GROUPS, LIFE_LABELS });`);
+const m = vm.runInNewContext(`${source}\n({ lifeOf, daysAgo, timeGroupOf, dayHistogram, splitByLife, rowWaitLine, timelineChildren, DAY_MS, TIME_GROUPS, LIFE_LABELS });`);
 const plain = (v) => JSON.parse(JSON.stringify(v));
 const now = new Date(2026, 9, 8, 15, 0).getTime();
 const ago = (days, hours = 0) => now - days * m.DAY_MS - hours * 3600000;
@@ -69,4 +69,49 @@ test('shared card styling and lifetime remain wired in across selectable layouts
   assert.match(html, /id="ribbon"/);
   assert.match(html, /splitByLife\(list\.cards\)/);
   assert.match(html, /i: toggleBoardView/);
+});
+
+
+test('unknown session states age by time and do not make a task live or needing attention', () => {
+  for (const status of ['waiting', 'running', 'aborted']) {
+    const unknown = { status, statusKnown: false, updatedAt: ago(3) };
+    assert.equal(m.timeGroupOf(unknown, now), 'week');
+    assert.equal(m.lifeOf(unknown, now), 'active');
+    const task = { kind: 'task', status: 'running', links: [unknown], updatedAt: ago(12) };
+    assert.equal(m.timeGroupOf(task, now), 'month');
+    assert.equal(m.lifeOf(task, now), 'active');
+    assert.equal(m.rowWaitLine(task), '状態は未取得');
+  }
+  assert.equal(m.timeGroupOf({ kind: 'task', status: 'idle', links: [{ status: 'aborted' }, { status: 'running' }], updatedAt: ago(12) }, now), 'need');
+});
+
+test('timeline row text explains actual waiting, running and unknown states without making up a question', () => {
+  assert.equal(m.rowWaitLine({ status: 'waiting', signals: { wait: 'question', waitText: 'Luhn 検証を\n入れますか？' } }), '質問: Luhn 検証を 入れますか？');
+  assert.equal(m.rowWaitLine({ status: 'waiting', signals: { wait: 'plan' } }), '計画の確認待ち');
+  assert.equal(m.rowWaitLine({ status: 'waiting', signals: { waitText: '  ' } }), '入力待ち');
+  assert.equal(m.rowWaitLine({ status: 'waiting', signals: { waitText: { question: 'not text' } } }), '入力待ち');
+  assert.equal(m.rowWaitLine({ status: 'running', activity: '型を確認しています' }), '型を確認しています');
+  assert.equal(m.rowWaitLine({ status: 'aborted' }), '中断');
+  assert.equal(m.rowWaitLine({ status: 'waiting', statusKnown: false, signals: { waitText: 'old question' } }), '状態は未取得');
+  for (const status of ['completed', 'idle', 'running']) assert.equal(m.rowWaitLine({ status }), '');
+});
+
+test('linked timeline sessions sort by urgency and recency, cap at three and keep the selected child visible', () => {
+  const links = [
+    { id: 'old', status: 'completed', updatedAt: ago(10) },
+    { id: 'run', status: 'running', updatedAt: ago(0) },
+    { id: 'wait', status: 'waiting', updatedAt: ago(2) },
+    { id: 'error', status: 'aborted', updatedAt: ago(1) },
+    { id: 'unknown', status: 'waiting', statusKnown: false, updatedAt: ago(3) },
+  ];
+  const task = { kind: 'task', links };
+  const first = m.timelineChildren(task);
+  assert.deepEqual(plain(first.children.map(c => c.id)), ['wait', 'error', 'run']);
+  assert.equal(first.more, 2);
+  assert.deepEqual(plain(m.timelineChildren(task, { expanded: true }).children.map(c => c.id)), ['wait', 'error', 'run', 'unknown', 'old']);
+  const selected = m.timelineChildren(task, { selected: 'old' });
+  assert.deepEqual(plain(selected.children.map(c => c.id)), ['wait', 'error', 'old']);
+  assert.equal(selected.more, 2);
+  assert.deepEqual(links.map(c => c.id), ['old', 'run', 'wait', 'error', 'unknown']);
+  assert.deepEqual(plain(m.timelineChildren({ links: [] })), { children: [], more: 0 });
 });

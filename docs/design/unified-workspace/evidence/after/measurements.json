@@ -1,0 +1,39 @@
+{
+  "viewport": [
+    1280,
+    800
+  ],
+  "fixture": "makeFixtures + real unanswered question; no real sends",
+  "samples": [
+    {
+      "view": "board",
+      "theme": "light",
+      "cardUsableMs": 8,
+      "headerActions": 1,
+      "questionText": "質問（元アプリで答えます）検証方法を選んでください実機架空データ"
+    },
+    {
+      "view": "board",
+      "theme": "dark",
+      "cardUsableMs": 8,
+      "headerActions": 1,
+      "questionText": "質問（元アプリで答えます）検証方法を選んでください実機架空データ"
+    },
+    {
+      "view": "timeline",
+      "theme": "light",
+      "cardUsableMs": 4,
+      "headerActions": 1,
+      "questionText": "質問（元アプリで答えます）検証方法を選んでください実機架空データ"
+    },
+    {
+      "view": "timeline",
+      "theme": "dark",
+      "cardUsableMs": 8,
+      "headerActions": 1,
+      "questionText": "質問（元アプリで答えます）検証方法を選んでください実機架空データ"
+    }
+  ],
+  "baseline": null,
+  "limitation": "No paired baseline timing; timings are observations, not a speedup claim."
+}

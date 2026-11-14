@@ -69,16 +69,24 @@ function picker(anchor, { title, items, multi = false, selected = [], onPick, on
   const sel = new Set(selected);
   const input = h('input', { class: 'text-input picker-input', placeholder, 'aria-label': `${title}を絞り込み`, autocomplete: 'off' });
   const listEl = h('div', { class: 'picker-list', role: 'listbox', 'aria-label': title, 'aria-multiselectable': multi ? 'true' : null });
-  let active = 0, rows = [];
+  let active = 0, rows = [], composing = false, explicitSelection = false;
   const mark = () => {
     listEl.querySelectorAll('.picker-row').forEach((el) => el.classList.toggle('active', Number(el.dataset.i) === active));
     listEl.querySelector('.picker-row.active')?.scrollIntoView({ block: 'nearest' });
   };
-  const paint = () => {
+  const paint = ({ preserveActive = false } = {}) => {
+    const selectedValue = preserveActive ? rows[active]?.it?.value : undefined;
     const raw = input.value.trim();
     const hit = matcher(raw);
     const currentItems = typeof items === 'function' ? items() : items;
-    rows = currentItems.filter((it) => hit(`${it.group || ''} ${it.label} ${it.description || ''} ${it.hint ?? ''} ${it.keywords || ''} ${it.badge || ''}`)).slice(0, limit).map((it) => ({ it }));
+    const matches = currentItems.filter((it) => hit(`${it.group || ''} ${it.label} ${it.description || ''} ${it.hint ?? ''} ${it.keywords || ''} ${it.badge || ''}`));
+    rows = matches.slice(0, limit).map((it) => ({ it }));
+    if (selectedValue !== undefined) {
+      let selectedIndex = rows.findIndex(row => row.it.value === selectedValue);
+      const selected = selectedIndex < 0 ? matches.find(it => it.value === selectedValue) : null;
+      if (selected && rows.length) { selectedIndex = rows.length - 1; rows[selectedIndex] = { it: selected }; }
+      if (selectedIndex >= 0) active = selectedIndex;
+    }
     if (onCreate && raw && !currentItems.some((it) => norm(it.label) === norm(raw))) rows.push({ create: raw });
     active = Math.max(0, Math.min(active, rows.length - 1));
     let group;
@@ -87,7 +95,7 @@ function picker(anchor, { title, items, multi = false, selected = [], onPick, on
       if (r.it?.group && r.it.group !== group) { group = r.it.group; out.push(h('div', { class: 'picker-group', text: group })); }
       const on = r.it && sel.has(r.it.value);
       out.push(h('button', { class: 'picker-row', role: 'option', 'aria-selected': String(!!on), 'data-i': i, tabindex: -1, type: 'button',
-        onpointerdown: (e) => e.preventDefault(), onclick: () => choose(i), onmousemove: () => { if (active !== i) { active = i; mark(); } } },
+        onpointerdown: (e) => e.preventDefault(), onclick: () => choose(i), onmousemove: () => { explicitSelection = true; if (active !== i) { active = i; mark(); } } },
         r.create ? h('span', { class: 'grow', text: `＋「${r.create}」${createText}` }) : [
           h('span', { class: 'picker-check', text: on ? '✓' : '' }),
           r.it.badge ? h('span', { class: 'picker-badge', text: r.it.badge }) : null,
@@ -117,19 +125,21 @@ function picker(anchor, { title, items, multi = false, selected = [], onPick, on
     closePopover(p);
     onPick(r.it.value, r.it);
   };
-  input.addEventListener('input', () => { active = 0; paint(); });
+  input.addEventListener('compositionstart', () => { composing = true; });
+  input.addEventListener('compositionend', () => { composing = false; explicitSelection = false; active = 0; paint(); });
+  input.addEventListener('input', event => { if (composing || event.isComposing) return; explicitSelection = false; active = 0; paint(); });
   input.addEventListener('keydown', (e) => {
-    if (e.isComposing) return;
-    if (e.key === 'ArrowDown' || (e.key === 'n' && e.ctrlKey)) { e.preventDefault(); active = Math.min(rows.length - 1, active + 1); mark(); }
-    else if (e.key === 'ArrowUp' || (e.key === 'p' && e.ctrlKey)) { e.preventDefault(); active = Math.max(0, active - 1); mark(); }
+    if (e.isComposing || composing || e.keyCode === 229) return;
+    if (e.key === 'ArrowDown' || (e.key === 'n' && e.ctrlKey)) { e.preventDefault(); explicitSelection = true; active = Math.min(rows.length - 1, active + 1); mark(); }
+    else if (e.key === 'ArrowUp' || (e.key === 'p' && e.ctrlKey)) { e.preventDefault(); explicitSelection = true; active = Math.max(0, active - 1); mark(); }
     else if (e.key === 'Enter') { e.preventDefault(); choose(active); }
     else if (e.key === ' ' && multi && !input.value) { e.preventDefault(); choose(active); }
   });
   const p = popover(anchor, title, h('div', { class: 'picker' }, input, listEl, footer), { width, stack });
-  p.refreshItems = paint;
+  p.refreshItems = () => { if (!composing) { if (!explicitSelection) active = 0; paint({ preserveActive: explicitSelection }); } };
   paint();
   const cur = rows.findIndex((r) => r.it && sel.has(r.it.value));
-  if (cur > 0 && !multi) { active = cur; mark(); }
+  if (cur >= 0 && !multi) { active = cur; explicitSelection = true; mark(); }
   input.focus();
   return p;
 }

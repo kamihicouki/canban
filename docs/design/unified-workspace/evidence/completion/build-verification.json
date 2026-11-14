@@ -1,0 +1,25 @@
+{
+  "checkedAt": "2026-11-14T11:09:09.153Z",
+  "versions": [
+    [
+      "package.json",
+      "0.29.80"
+    ],
+    [
+      "manifest.json",
+      "0.29.80"
+    ],
+    [
+      ".codex-plugin/plugin.json",
+      "0.29.80"
+    ],
+    [
+      "dist/chrome/manifest.json",
+      "0.29.80"
+    ]
+  ],
+  "boardJsSHA256": "d5cb8a884abb61143c96051bdd5a332540b92d883aeb3ed88b7c2e95af02c4ea",
+  "sourceEqualsBuild": true,
+  "sourceCssEqualsBuild": true,
+  "registeredChromeUpdated": false
+}

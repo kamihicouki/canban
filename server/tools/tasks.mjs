@@ -28,7 +28,7 @@ export function taskTools({ store }) {
     name: 'canban_link_session',
     title: 'セッションをタスクカードに紐付け',
     description: '既存のセッションをタスクカードに紐付ける（紐付いたセッションはタスクカードの中に表示される）。',
-    inputSchema: { type: 'object', properties: { taskId: { type: 'string' }, sessionId: { type: 'string' } }, required: ['taskId', 'sessionId'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { taskId: { type: 'string' }, sessionId: { type: 'string' }, expectedTaskId: { type: ['string', 'null'], description: '操作前に確認した所属。異なる場合は変更しない' } }, required: ['taskId', 'sessionId'], additionalProperties: false },
     _meta: appAndModel,
     handler: async (a) => {
       const { sessions } = await allSessions(await store.load());
@@ -38,7 +38,7 @@ export function taskTools({ store }) {
       return { text: '紐付けました', structured: await store.linkSession(a) };
     },
   },
-  appTool('canban_unlink_session', 'セッションの紐付けを解除', { taskId: { type: 'string' }, sessionId: { type: 'string' } }, ['taskId', 'sessionId'], (a) => store.unlinkSession(a)),
+  appTool('canban_unlink_session', 'セッションの紐付けを解除', { taskId: { type: 'string' }, sessionId: { type: 'string' }, expectedTaskId: { type: ['string', 'null'], description: '操作前に確認した所属。異なる場合は変更しない' } }, ['taskId', 'sessionId'], (a) => store.unlinkSession(a)),
   appTool('canban_update_task', 'タスクカードを更新', { cardId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, context: taskContextSchema, sourceContext: { anyOf: [sourceSelectionSchema, { type: 'null' }] }, directory: { type: ['string', 'null'] }, labels: { type: 'array', items: { type: 'string' } } }, ['cardId'], (a) => store.updateTask(a)),
   {
     name: 'canban_set_session_card_state',
@@ -66,7 +66,7 @@ export function taskTools({ store }) {
       return { text: 'エージェントのセッションを操作しました', structured: result };
     },
   },
-  appTool('canban_delete_task', 'タスクカードを削除', { cardId: { type: 'string' } }, ['cardId'], (a) => store.deleteTask(a)),
+  appTool('canban_delete_task', 'タスクカードを削除', { cardId: { type: 'string' }, expectedTask: { type: 'object', description: '作成時のタスク内容。変更されていれば削除しない' } }, ['cardId'], (a) => store.deleteTask(a)),
   appTool('canban_clear_pending', '開始待ちを取り消す', { taskId: { type: 'string' } }, ['taskId'], (a) => store.clearPending(a)),
   {
     name: 'canban_get_task_dashboard',

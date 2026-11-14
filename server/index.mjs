@@ -55,6 +55,7 @@ import { createTaskTools, taskTools } from './tools/tasks.mjs';
 import { startTools } from './tools/start.mjs';
 import { desktopTools } from './tools/desktop.mjs';
 import { loopTools } from './tools/loop.mjs';
+import { cardRelationTools } from './tools/card-relations.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // The Codex plugin manifest is absent when installed another way (Claude Desktop extension, a bare copy).
@@ -244,6 +245,7 @@ const TOOLS = [
   ...promptImageTools(toolContext),
   ...desktopTools(toolContext),
   ...taskTools(toolContext),
+  ...cardRelationTools(toolContext),
   ...loopTools(toolContext),
   ...statsTools(toolContext),
   ...boardConfigTools(toolContext),

@@ -18,7 +18,7 @@ async function taskFixture({ agent = 'codex', targets = {}, draft = {}, result =
     desktopAccounts: { refresh: async () => ({ accountSwitch, activeAccount: activeAccounts.length > 1 ? activeAccounts.shift() : activeAccounts[0] }), defaultAccount: () => 'claude:b', problem: () => accountSwitch ? null : '認証保持の再確認が必要です' },
     promptComposer: (input, options) => composer = { ...options, input, root: node('composer'), draft, payload: () => ({ imageIds: draft.images?.map(i => i.id) || [] }), setSending: v => { draft.sending = v; }, contextChanged() {}, clear() { draft.images = []; input.value = ''; } },
     workspace: { draftValues: new Map(), trackDrafts() {} }, taskRequestText: () => 'fake prompt', cardListControls: () => node('list'), cardCrumb: () => node('crumb'),
-    TASK_SESSIONS_MAX: 5, taskOverlayIds: () => ({ total: 0 }), taskQuickAdd: { button() {}, summary() {} }, sourceDetails() {}, keycap: () => [], keyHint: () => node('hint'), picon: () => '',
+    TASK_SESSIONS_MAX: 5, taskOverlayIds: () => ({ total: 0 }), taskQuickAdd: { button() {}, summary() {} }, sourceDetails() {}, cardRelationsSection: cardId => node('relations', { 'data-card-relations': cardId }), keycap: () => [], keyHint: () => node('hint'), picon: () => '',
     STATUS_LABELS: {}, T: {}, routeLabel: () => 'desktop', shortcutHelp: () => '', optsFromEvent: () => ({}), accountItems: () => [], accountName: x => x,
     renderTaskThreadPane: (p, card, secs) => { sections = secs; }, paintPaneButtons() {}, applyPaneAttrs() {}, sourceRefKey: () => '', load() {}, toast() {}, crypto: { randomUUID: () => 'new-id' },
   };

@@ -1,0 +1,83 @@
+{
+  "conditions": "isolated makeFixtures; t1 updated now and c2 with 220 messages plus unanswered AskUserQuestion; 1280x800; no real sends; per-view fresh navigation; single timing sample until feed content and composer exist, excluding 150ms screenshot settling; not a performance claim",
+  "measurements": [
+    {
+      "cardId": "claude:c2",
+      "view": "timeline",
+      "theme": "light",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 31,
+      "pane": {
+        "x": 544,
+        "y": 64,
+        "width": 724,
+        "height": 724
+      },
+      "main": {
+        "x": 544,
+        "y": 166.796875,
+        "width": 724,
+        "height": 621.203125
+      },
+      "conversation": {
+        "x": 544,
+        "y": 166.796875,
+        "width": 724,
+        "height": 447.703125
+      },
+      "input": {
+        "x": 581,
+        "y": 678,
+        "width": 656,
+        "height": 28
+      },
+      "ribbonHeight": 0,
+      "paneBarHeight": 0,
+      "keyGuideMin": "true",
+      "source": "completion",
+      "threadHeaderHeight": 40
+    },
+    {
+      "cardId": "claude:c2",
+      "view": "timeline",
+      "theme": "dark",
+      "viewport": [
+        1280,
+        800
+      ],
+      "cardUsableMs": 29,
+      "pane": {
+        "x": 544,
+        "y": 64,
+        "width": 724,
+        "height": 724
+      },
+      "main": {
+        "x": 544,
+        "y": 166.796875,
+        "width": 724,
+        "height": 621.203125
+      },
+      "conversation": {
+        "x": 544,
+        "y": 166.796875,
+        "width": 724,
+        "height": 447.703125
+      },
+      "input": {
+        "x": 581,
+        "y": 678,
+        "width": 656,
+        "height": 28
+      },
+      "ribbonHeight": 0,
+      "paneBarHeight": 0,
+      "keyGuideMin": "true",
+      "source": "completion",
+      "threadHeaderHeight": 40
+    }
+  ]
+}

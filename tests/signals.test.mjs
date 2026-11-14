@@ -2,7 +2,64 @@
 // model / mode, and Codex rate limits — all from log records.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { claudeSignals, codexSignals, limitsFrom, noteLimits, currentLimits, resetLimitsForTest, cardSignals } from '../server/signals.mjs';
+import { claudeSignals, codexSignals, limitsFrom, noteLimits, currentLimits, resetLimitsForTest, cardSignals, newAcc, foldSignals, signalsView } from '../server/signals.mjs';
+
+test('waiting questions expose bounded text and labels, restore older outstanding asks, and clear on answers', () => {
+  const ask = (id, input, name = 'AskUserQuestion') => ({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name, input }] } });
+  const answer = id => ({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'answered' }] } });
+  const acc = newAcc('claude');
+  foldSignals(acc, [ask('first', { questions: [{ question: '  最初の\n質問ですか？ ', options: [{ label: 'はい' }, { label: 'いいえ' }] }] }),
+    ask('last', { questions: [{ question: 'x'.repeat(150), options: Array.from({ length: 8 }, (_, i) => ({ label: `${i}${'y'.repeat(50)}`, description: 'private metadata' })) }] })]);
+  const last = signalsView(acc);
+  assert.equal(last.waitText, 'x'.repeat(120));
+  assert.equal(last.waitOptions.length, 6);
+  assert.ok(last.waitOptions.every(x => x.length === 40));
+  assert.ok(!JSON.stringify(last).includes('private metadata'));
+  foldSignals(acc, [answer('last')]);
+  assert.equal(signalsView(acc).waitText, '最初の 質問ですか？');
+  assert.deepEqual(signalsView(acc).waitOptions, ['はい', 'いいえ']);
+  assert.equal(acc.asks.get('first'), 'question', 'existing accumulator wait kinds remain compatible');
+  foldSignals(acc, [ask('plan', { plan: 'not a question' }, 'ExitPlanMode')]);
+  assert.deepEqual([signalsView(acc).wait, signalsView(acc).waitText, signalsView(acc).waitOptions], ['plan', null, null]);
+  foldSignals(acc, [answer('plan'), answer('first')]);
+  assert.deepEqual([signalsView(acc).wait, signalsView(acc).waitText, signalsView(acc).waitOptions], [null, null, null]);
+  foldSignals(acc, [ask('next', { questions: [{ question: '次の質問' }] }), { type: 'user', message: { content: '新しい依頼' } }]);
+  assert.equal(signalsView(acc).waitText, null);
+});
+
+test('Codex question shapes and namespaced async tools carry only actual question fields', () => {
+  const call = (id, name, args) => ({ type: 'response_item', payload: { type: 'function_call', name, call_id: id, arguments: JSON.stringify(args) } });
+  const a = call('q', 'functions.request_user_input_async', { questions: [{ title: 'どの方法を使いますか？', options: ['方法A', '方法B'] }] });
+  const s = codexSignals([a]);
+  assert.deepEqual([s.wait, s.waitText, s.waitOptions], ['question', 'どの方法を使いますか？', ['方法A', '方法B']]);
+  assert.deepEqual(cardSignals(s).waitOptions, ['方法A', '方法B']);
+  assert.equal(cardSignals(s).waitText, s.waitText);
+  const b = call('q2', 'mcp__functions__request_user_input', { questions: [{ question: '同期の問い', options: [{ label: '選択肢' }] }] });
+  assert.equal(codexSignals([b]).waitText, '同期の問い');
+  assert.equal(codexSignals([a, { type: 'response_item', payload: { type: 'function_call_output', call_id: 'q' } }]).waitText, null);
+  assert.equal(codexSignals([a, { type: 'event_msg', payload: { type: 'task_started' } }]).waitText, null);
+  const malformed = codexSignals([call('bad', 'request_user_input', { questions: [{ question: { raw: 'JSON' }, options: [{ description: 'not a label' }] }] })]);
+  assert.deepEqual([malformed.waitText, malformed.waitOptions], [null, null]);
+});
+
+test('malformed question argument shapes cannot stop signal collection or invent question text', () => {
+  const call = args => ({ type: 'response_item', payload: { type: 'function_call', name: 'request_user_input', call_id: 'q', arguments: JSON.stringify(args) } });
+  for (const args of [null, true, 42, 'not a question object', [], [{ question: 'not a top-level question' }], { questions: [null] }, { questions: [[]] }]) {
+    const acc = newAcc('codex');
+    assert.doesNotThrow(() => foldSignals(acc, [call(args)]), JSON.stringify(args));
+    assert.deepEqual([signalsView(acc).wait, signalsView(acc).waitText, signalsView(acc).waitOptions], ['question', null, null]);
+    foldSignals(acc, [{ type: 'response_item', payload: { type: 'function_call_output', call_id: 'q' } }, call({ questions: [{ question: '次の問いは読めますか？' }] })]);
+    assert.equal(signalsView(acc).waitText, '次の問いは読めますか？', 'a later valid question is still collected');
+  }
+});
+
+test('Antigravity questions expose explicit text and clear at the next user input', () => {
+  const acc = newAcc('antigravity');
+  foldSignals(acc, [{ type: 'PLANNER_RESPONSE', step_index: 4, tool_calls: [{ id: 'q', name: 'ask_question', arguments: JSON.stringify({ question: '  実行して\nよいですか？ ', options: [{ label: '続行' }, '中止'] }) }] }]);
+  assert.deepEqual([signalsView(acc).waitText, signalsView(acc).waitOptions], ['実行して よいですか？', ['続行', '中止']]);
+  foldSignals(acc, [{ type: 'USER_INPUT', content: '続行' }]);
+  assert.deepEqual([signalsView(acc).wait, signalsView(acc).waitText, signalsView(acc).waitOptions], [null, null, null]);
+});
 
 test('claude: context, to-do list, files of the current turn, sub-agents, waiting kind, model and mode', () => {
   const recs = [

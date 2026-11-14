@@ -176,6 +176,22 @@ test('supervised agent environments never inherit the loop UI capability', () =>
   const env = M.cleanEnv({ PATH: '/bin', CANBAN_UI_TOKEN: 'ui-fixture-only', CANBAN_DATA_DIR: dataDir, KEEP: 'yes' });
   assert.equal(env.CANBAN_UI_TOKEN, undefined); assert.equal(env.CANBAN_DATA_DIR, dataDir); assert.equal(env.KEEP, 'yes');
 });
+test('unanswered questions older than fifteen minutes still block follow-up dispatch until answered', () => {
+  const now = Date.now(), mtimeMs = now - 20 * 60e3;
+  for (const agent of ['codex', 'claude']) {
+    const ask = agent === 'codex'
+      ? { type: 'response_item', payload: { type: 'function_call', name: 'request_user_input', call_id: 'pending-question', arguments: '{}' } }
+      : { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'AskUserQuestion', id: 'pending-question', input: {} }] } };
+    const answer = agent === 'codex'
+      ? { type: 'response_item', payload: { type: 'function_call_output', call_id: 'pending-question', output: '{}' } }
+      : { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'pending-question', content: 'answer' }] } };
+    const records = [...(agent === 'codex' ? [{ type: 'event_msg', payload: { type: 'task_started' } }] : []), ask];
+    assert.match(M.timingProblem({ agent }, { records, mtimeMs }, now), /入力待ち/);
+    assert.equal(M.timingProblem({ agent }, { records: [...records, answer], mtimeMs }, now), null);
+    assert.equal(M.timingProblem({ agent }, { records, mtimeMs: now - 24 * HOUR - 1 }, now), null);
+  }
+});
+
 test('send now: prompt on stdin, inherited sandbox, agent env scrubbed, result recorded', async () => {
   const d = freshDispatcher();
   const r = await d.submit({ cardId: 'codex:th-ok', prompt: 'テストを直して\n"quote" $(rm -rf /)', when: 'now' });

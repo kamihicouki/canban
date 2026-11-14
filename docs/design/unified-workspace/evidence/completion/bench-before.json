@@ -1,0 +1,145 @@
+{
+  "at": "2026-11-14T09:36:47.180Z",
+  "sessions": 5,
+  "rows": [
+    {
+      "op": "allSessions (cold)",
+      "ms": 36
+    },
+    {
+      "op": "allSessions (warm, cache expired)",
+      "ms": 5
+    },
+    {
+      "op": "allSessions (warm, cached)",
+      "ms": 1
+    },
+    {
+      "op": "buildBoard (warm)",
+      "ms": 9
+    },
+    {
+      "op": "buildBoard (cache expired)",
+      "ms": 10
+    },
+    {
+      "op": "sessionDetail (latest)",
+      "ms": 22
+    },
+    {
+      "op": "tick.dispatch (no requests)",
+      "ms": 0
+    }
+  ],
+  "ops": {
+    "codexApp.read": {
+      "count": 1,
+      "p50": 1,
+      "p95": 1,
+      "max": 1,
+      "last": 1,
+      "budget": 30
+    },
+    "antigravity.list": {
+      "count": 3,
+      "p50": 0,
+      "p95": 1,
+      "max": 1,
+      "last": 0,
+      "budget": null
+    },
+    "gemini.list": {
+      "count": 3,
+      "p50": 0,
+      "p95": 1,
+      "max": 1,
+      "last": 0,
+      "budget": null
+    },
+    "cursor.list": {
+      "count": 3,
+      "p50": 0,
+      "p95": 1,
+      "max": 1,
+      "last": 0,
+      "budget": null
+    },
+    "chatgpt.list": {
+      "count": 3,
+      "p50": 0,
+      "p95": 0,
+      "max": 0,
+      "last": 0,
+      "budget": null
+    },
+    "grok.list": {
+      "count": 3,
+      "p50": 0,
+      "p95": 0,
+      "max": 0,
+      "last": 0,
+      "budget": null
+    },
+    "remote.list": {
+      "count": 7,
+      "p50": 0,
+      "p95": 0,
+      "max": 0,
+      "last": 0,
+      "budget": 50
+    },
+    "codex.list": {
+      "count": 3,
+      "p50": 3,
+      "p95": 6,
+      "max": 6,
+      "last": 3,
+      "budget": 50
+    },
+    "claude.list": {
+      "count": 3,
+      "p50": 4,
+      "p95": 8,
+      "max": 8,
+      "last": 4,
+      "budget": 100
+    },
+    "status": {
+      "count": 7,
+      "p50": 0,
+      "p95": 0,
+      "max": 0,
+      "last": 0,
+      "budget": 100
+    },
+    "sessions.all": {
+      "count": 7,
+      "p50": 1,
+      "p95": 13,
+      "max": 13,
+      "last": 1,
+      "budget": 300
+    },
+    "buildBoard": {
+      "count": 2,
+      "p50": 10,
+      "p95": 10,
+      "max": 10,
+      "last": 10,
+      "budget": 300
+    },
+    "sessionDetail": {
+      "count": 1,
+      "p50": 21,
+      "p95": 21,
+      "max": 21,
+      "last": 21,
+      "budget": 300
+    }
+  },
+  "loop": {
+    "p99": 24,
+    "max": 26
+  },
+  "rssMB": 66
+}

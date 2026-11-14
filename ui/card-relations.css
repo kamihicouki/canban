@@ -1,0 +1,13 @@
+.card-relations { min-width: 0; }
+.cr-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.cr-back[hidden] { display: none; }
+.cr-back { display: inline-flex; gap: 5px; align-items: center; }
+.cr-status { font-size: 12px; line-height: 1.6; margin: 8px 0; overflow-wrap: anywhere; }
+.cr-list { display: flex; flex-direction: column; gap: 6px; }
+.cr-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px; border: 1px solid var(--btn-subtle-hover); border-radius: 8px; background: var(--card-bg); }
+.cr-copy { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; }
+.cr-direction { font-size: 11px; color: var(--card-muted); }
+.cr-title { text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.cr-title:disabled { color: var(--card-muted); cursor: default; }
+.cr-meta, .cr-search-state { font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.cr-remove { flex: none; }
