@@ -4,6 +4,7 @@ import { taskContextSchema } from '../task-context.mjs';
 import { sourceSelectionSchema } from '../category-bindings.mjs';
 import { codexLifecycle } from '../session-actions.mjs';
 import { appOnly, appAndModel, appTool, resolveList } from './shared.mjs';
+import { taskHandoffRecord } from '../task-handoff.mjs';
 
 export function createTaskTools({ store }) {
   return [
@@ -24,6 +25,20 @@ export function createTaskTools({ store }) {
 
 export function taskTools({ store }) {
   return [
+  {
+    name: 'canban_get_task', title: 'タスクと引継ぎを読む',
+    description: '保存済みのタスク目的・所属・紐付けと追記報告を読み取り専用で取得する。セッション本文や実行状態は取得しない。nextActionは報告者の提案で、人による確認ではない。',
+    inputSchema: { type: 'object', properties: { taskId: { type: 'string' }, after: { type: 'string', description: '直前ページのnextCursor' }, limit: { type: 'integer', minimum: 1, maximum: 20, default: 10 } }, required: ['taskId'], additionalProperties: false },
+    annotations: { readOnlyHint: true }, _meta: appAndModel,
+    handler: async args => ({ text: 'タスクと引継ぎ（報告・提案）', structured: taskHandoffRecord(await store.load(), args) }),
+  },
+  {
+    name: 'canban_append_task_note', title: 'タスクに引継ぎ報告を追記',
+    description: '報告を原文で追記する。既存の説明・メモ・会話・完了確認は変更しない。報告元IDは指定値であり認証済み作者ではない。次の行動は提案として保存し、更新・解除には取得したrevisionを指定する。同じclientRequestIdで再送可能。',
+    inputSchema: { type: 'object', properties: { taskId: { type: 'string' }, text: { type: 'string', minLength: 1, maxLength: 20000 }, sourceSessionId: { type: 'string' }, nextAction: { type: ['string', 'null'], minLength: 1, maxLength: 2000 }, expectedRevision: { type: 'integer', minimum: 0 }, clientRequestId: { type: 'string', minLength: 1, maxLength: 128 } }, required: ['taskId', 'text', 'clientRequestId'], additionalProperties: false },
+    _meta: appAndModel,
+    handler: async args => { const result = await store.appendTaskNote(args); return { text: result.conflict ? '引継ぎが更新されています。再取得してください' : result.duplicate ? '保存済みの報告です' : '引継ぎ報告を追記しました', structured: result }; },
+  },
   {
     name: 'canban_link_session',
     title: 'セッションをタスクカードに紐付け',

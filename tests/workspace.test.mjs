@@ -125,7 +125,7 @@ test('a session that cannot be read keeps its card with a reload button; a genui
   const source = html.slice(html.indexOf('async function loadSession('), html.indexOf('async function openTaskCard('));
   const p = {id:'codex:mock',d:null,el:{replaceChildren(...nodes){this.nodes=nodes;}}}, panes = [p];
   let error = new Error('db_busy'), closed = 0;
-  const context = vm.createContext({ panes, takeSessionDetail: async () => {throw error;}, paintPendingSession: () => {},
+  const context = vm.createContext({ panes, takeSessionDetail: async () => {throw error;}, paintPendingSession: () => {}, setPendingDispatchState() {},
     closeCards: () => {closed++;}, h: (tag,attrs,...kids) => ({tag,attrs,kids}), toast: () => {}, renderPaneKeepingDrafts: () => {} });
   await vm.runInContext(`${source}\nloadSession(panes[0],{restore:true});`,context);
   assert.equal(closed,0); assert.ok(p.el.nodes.some(n => n.attrs.text === '再読み込み'));
@@ -138,11 +138,11 @@ test('a session that cannot be read keeps its card with a reload button; a genui
 test('a session whose head is already shown reports a failed load in the conversation only, and the reload puts the placeholder back', async () => {
   const html = boardHtml();
   const source = html.slice(html.indexOf('async function loadSession('), html.indexOf('async function openTaskCard('));
-  const conv = { removeAttribute(){}, replaceChildren(...nodes){this.nodes=nodes;} };
+  const conv = { setAttribute(){}, removeAttribute(){}, replaceChildren(...nodes){this.nodes=nodes;} };
   let failedShown = false;
   const p = {id:'codex:mock',d:null,pending:true,el:{replaceChildren(){throw new Error('the whole card must stay');},querySelector:(sel)=>sel==='.th-conv'?conv:sel==='.conv-failed'&&failedShown?{}:null}};
   let painted = 0;
-  const context = vm.createContext({ panes:[p], takeSessionDetail: async () => {throw new Error('db_busy');}, paintPendingSession: () => {painted++;},
+  const context = vm.createContext({ panes:[p], takeSessionDetail: async () => {throw new Error('db_busy');}, paintPendingSession: () => {painted++;}, setPendingDispatchState() {}, conversationLoadingPlaceholder:()=>({}),
     closeCards: () => {}, h: (tag,attrs,...kids) => ({tag,attrs,kids}), toast: () => {}, renderPaneKeepingDrafts: () => {} });
   await vm.runInContext(`${source}\nloadSession(panes[0]);`,context);
   assert.equal(painted,0); // already pending: the head is not rebuilt
@@ -150,7 +150,7 @@ test('a session whose head is already shown reports a failed load in the convers
   assert.ok(conv.nodes[0].kids.some(n => n.attrs.text === '再読み込み'));
   failedShown = true;
   await vm.runInContext(`loadSession(panes[0]);`,context);
-  assert.equal(painted,1); // retrying shows the lines again while it loads
+  assert.equal(painted,0); // retrying only replaces the conversation; the composer is retained
 });
 test('the card that was open comes back after a reload, and only that one', async () => {
   const html = boardHtml();

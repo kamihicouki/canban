@@ -503,18 +503,29 @@ function paintPendingSession(p) {
 }
 async function loadSession(p, { restore = false } = {}) {
   let d;
-  if (!p.d && (!p.pending || p.el.querySelector?.('.conv-failed'))) paintPendingSession(p);
+  if (!p.d) {
+    if (!p.pending) paintPendingSession(p);
+    else if (p.el.querySelector?.('.conv-failed')) {
+      const conv = p.el.querySelector('.th-conv');
+      conv?.setAttribute('aria-busy', 'true');
+      conv?.replaceChildren(conversationLoadingPlaceholder());
+      setPendingDispatchState(p.el, 'loading');
+    }
+  }
   try {
     d = await takeSessionDetail(p.id);
   } catch (e) {
     if (!panes.includes(p)) return;
     if (restore && e.message.startsWith('セッションが見つかりません:')) return closeCards();
     if (p.d) return toast(e.message, true);
-    const failed = [h('p', { class: 'muted pane-loading', text: `読み込みに失敗しました: ${e.message}` }),
-      h('button', { class: 'btn', text: '再読み込み', onclick: () => loadSession(p) })];
+    const snapshot = p.pendingCard?.last;
+    const failed = [
+      typeof snapshot === 'string' && snapshot ? h('div', { class: 'msg assistant' }, h('div', { class: 'who', text: '一覧に保存された最終返答 · 発言時刻は未取得' }), snapshot) : null,
+      h('p', { class: 'muted pane-loading', text: `会話を取得できませんでした。下書きは保持しています: ${e.message}` }),
+      h('button', { class: 'btn', text: '再読み込み', onclick: () => loadSession(p) })].filter(Boolean);
     // With the head already shown, only the conversation reports the failure; the input keeps what was typed.
     const conv = p.pending && p.el.querySelector?.('.th-conv');
-    if (conv) { conv.removeAttribute('aria-busy'); conv.replaceChildren(h('div', { class: 'conv-failed', role: 'alert' }, ...failed)); return; }
+    if (conv) { setPendingDispatchState(p.el, 'failed'); conv.removeAttribute('aria-busy'); conv.replaceChildren(h('div', { class: 'conv-failed', role: 'alert' }, ...failed)); return; }
     p.el.replaceChildren(...failed,
       h('button', { class: 'pane-close', style: { margin: '8px 16px 16px' }, text: '閉じる', onclick: () => closeCards() }));
     return;
@@ -920,6 +931,7 @@ function renderPane(p, d) {
     : [h('p', { class: 'muted', text: d.messagesError ? `メッセージを取得できませんでした: ${d.messagesError}` : 'メッセージはありません' })];
 
   const related = [
+    d.relatedCoverage && d.relatedCoverage.state !== 'current' ? h('p', { class: 'muted', text: d.relatedCoverage.state === 'snapshot' ? `関連セッションは保存済み一覧から表示しています（取得: ${d.relatedCoverage.at ? fmtDate(d.relatedCoverage.at) : '時刻未取得'}）。現在の全件とは限りません。` : '関連セッションは未取得です。0件と確認された状態ではありません。' }) : null,
     d.task ? h('div', { class: 'msg' }, `このセッションは${T.taskCard} `, h('button', { class: 'link-btn', text: `「${d.task.title}」`, onclick: () => openCard(d.task.id) }), ' に紐付いています。') : null,
     d.children && d.children.length ? h('div', { class: 'sub-h', text: `サブエージェント（${d.children.length}）` }) : null,
     ...(d.children || []).map((c) => h('button', { class: 'sub-row', onclick: () => openCard(c.id) },

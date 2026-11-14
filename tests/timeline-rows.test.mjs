@@ -34,7 +34,7 @@ function fixture(cards) {
   const opened = [], resumed = [];
   const ctx = { state, document, CSS: { escape: x => x }, h: (...args) => new Node(...args),
     timelineOn: () => true, paneDocked: () => false, panes: [], PANE_MODES: [],
-    faceGlyph: () => new Node('span'), faceWho: () => new Node('span'), dotPill: () => null, exchangePill: () => null,
+    picon: () => '', faceGlyph: () => new Node('span'), faceWho: () => new Node('span'), dotPill: () => null, exchangePill: () => null,
     fmtDate: x => String(x), relTime: x => String(x), prefetchSession() {},
     openCard: id => opened.push(id), resume: id => resumed.push(id),
     $: (selector, parent = root) => parent?.querySelector(selector.replace(/^#board /, '')),
@@ -55,19 +55,22 @@ const children = () => [
 test('the timeline keeps a job and its urgent sessions together without duplicating standalone sessions', () => {
   const links = children();
   const f = fixture([{ id: 'job', title: '決済フォーム', kind: 'task', status: 'waiting', links, updatedAt: 4 }, links[2]]);
-  assert.deepEqual(f.rows().map(r => r.dataset.cardId), ['job', 'wait', 'error', 'run']);
+  assert.deepEqual(f.rows().map(r => r.dataset.cardId), ['job']);
+  f.root.querySelector('.irow-more').onclick();
+  assert.deepEqual(f.rows().map(r => r.dataset.cardId), ['job', 'wait', 'error', 'run', 'old']);
   const waiting = f.root.querySelector('.irow[data-card-id="wait"]');
   assert.equal(waiting.querySelector('.irow-w').text, '質問: 追加しますか？');
   assert.equal(waiting.attrs.role, 'option');
   const more = f.root.querySelector('.irow-more');
   assert.equal(more.tag, 'button'); assert.equal(more.closest('.irow'), null);
   more.onclick();
-  assert.deepEqual(f.rows().map(r => r.dataset.cardId), ['job', 'wait', 'error', 'run', 'old']);
+  assert.deepEqual(f.rows().map(r => r.dataset.cardId), ['job']);
 });
 
 test('keyboard next enters the child session and refreshing only the list preserves focus and scroll', () => {
   const links = children();
   const f = fixture([{ id: 'job', title: '仕事', kind: 'task', status: 'waiting', links, updatedAt: 4 }]);
+  f.root.querySelector('.irow-more').onclick();
   f.model.inboxStep(1);
   assert.equal(f.opened.at(-1), 'wait');
   assert.equal(f.document.activeElement.dataset.cardId, 'wait');
@@ -85,7 +88,7 @@ test('collapsing keeps a selected late child visible without changing the opened
   f.root.querySelector('.irow-more').onclick();
   f.model.inboxSelect('old', { focus: true });
   f.root.querySelector('.irow-more').onclick();
-  assert.deepEqual(f.rows().map(r => r.dataset.cardId), ['job', 'wait', 'error', 'old']);
+  assert.deepEqual(f.rows().map(r => r.dataset.cardId), ['job', 'old']);
   assert.equal(f.document.activeElement.dataset.cardId, 'old');
   assert.equal(f.opened.at(-1), 'old');
 });
@@ -94,7 +97,7 @@ test('when a live update removes the more button, focus returns to its task row'
   const task = { id: 'job', title: '仕事', kind: 'task', status: 'waiting', links: children(), updatedAt: 4 };
   const f = fixture([task]);
   f.root.querySelector('.irow-more').focus();
-  task.links = task.links.slice(0, 2);
+  task.links = [];
   f.model.refreshInboxList();
   assert.equal(f.document.activeElement.dataset.cardId, 'job');
   assert.equal(f.opened.length, 0);
@@ -108,6 +111,7 @@ test('timeline o continues sessions through the guarded resume action and leaves
     row.events.keydown(event);
     return event;
   };
+  f.root.querySelector('.irow-more').onclick();
   const task = f.rows()[0], session = f.rows()[1];
   assert.equal(press(task).prevented, undefined);
   assert.equal(press(session).prevented, true);
@@ -115,4 +119,20 @@ test('timeline o continues sessions through the guarded resume action and leaves
   press(session, { ctrlKey: true });
   press(session, { target: session.children[0] });
   assert.equal(f.resumed.length, 1, 'typing and modified keys never resume a session');
+});
+
+test('newer timestamps do not reorder work that was already being read', () => {
+  const cards = [{ id: 'a', kind: 'task', title: 'A', updatedAt: 3 }, { id: 'b', kind: 'task', title: 'B', updatedAt: 2 }];
+  const f=fixture(cards);
+  cards[1].updatedAt=10;
+  f.model.refreshInboxList();
+  assert.deepEqual(f.rows().map(r=>r.dataset.cardId), ['a','b']);
+});
+
+test('work rows expose purpose, observed context and proposed next action without agent completion glyph', () => {
+  const f=fixture([{id:'job',title:'人の仕事',kind:'task',description:'依頼の目的。補足。',links:[{id:'s',agent:'claude',status:'completed',last:'確認しました'}],handoff:{nextAction:{text:'差分を読む',source:'reported',sourceSessionId:'claude:s',at:10}}}]);
+  const facts=f.rows()[0].querySelectorAll('.irow-fact');
+  assert.equal(facts[0].children[1].text,'依頼の目的。');
+  assert.match(facts[1].children[1].text,/Claude.*確認しました/);
+  assert.match(facts[2].children[1].text,/Claude（指定）の提案.*差分を読む/);
 });

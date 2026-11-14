@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import { resolveDataDirectory } from './data-directory.mjs';
 import { normalizeTaskDashboard, taskDashboardRecord } from './task-dashboard.mjs';
 import { normalizeTaskContext } from './task-context.mjs';
+import { appendTaskHandoff } from './task-handoff.mjs';
 import { legacySessionCategory, migrateSourceData, resolveCategory, normalizeSourceSelections, normalizeCategoryBindings } from './category-bindings.mjs';
 import { sessionSourceView, sourceKey } from './source-model.mjs';
 import { validateSourceFilterCompatibility } from './source-filters.mjs';
@@ -437,6 +438,13 @@ export class Store {
   }
 
   // ---- task cards (not backed by a session) -------------------------------
+  appendTaskNote(args) {
+    return this.mutate(state => {
+      const result = appendTaskHandoff(state, args);
+      return result.saved ? result : { [SKIP_WRITE]: true, value: result };
+    });
+  }
+
   async createTask({ title, listId, description = '', directory, labels, context, sourceContext, clientRequestId, slackSource }) {
     title = String(title || '').trim();
     if (!title) throw new Error('カード名を入力してください');

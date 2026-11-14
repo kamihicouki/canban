@@ -1,14 +1,14 @@
-// The same cards by observed activity interval. Labels and bars share one scrolling list;
+// The same cards by their creation-to-update span. Labels and bars share one scrolling list;
 // selecting a row docks the existing card on its right, without a second WBS panel.
 state.gantt = { sel: null, scroll: 0 };
 const ganttOn = () => state.view === 'gantt';
 const ganttRows = () => $$('#board .gantt-row');
 function ganttDescription(card, bar, due) {
   const parts = [card.title];
-  if (!bar) parts.push(card.kind === 'task' && !card.links?.length ? 'セッションなし' : '活動の時刻は未取得、または表示期間外');
+  if (!bar) parts.push(card.kind === 'task' && !card.links?.length ? 'セッションなし' : '作成・更新の時刻は未取得、または表示期間外');
   else {
-    parts.push(bar.startKnown ? `開始: ${fmtDate(bar.start)}` : '開始の時刻は未取得');
-    parts.push(`${bar.active && bar.startKnown ? '現在まで観測' : '最終更新'}: ${fmtDate(bar.end)}`);
+    parts.push(bar.startKnown ? `作成: ${fmtDate(bar.start)}` : '作成の時刻は未取得');
+    parts.push(`${bar.active && bar.startKnown ? '現在（状態のみ確認）' : '最終更新'}: ${fmtDate(bar.end)}`);
   }
   if (due) parts.push(`${due.overdue ? '期限超過' : '期限'}: ${fmtDate(due.at)}${due.position == null ? '（表示期間外）' : ''}`);
   return parts.join('\n');
@@ -23,7 +23,7 @@ function ganttRow(it, range, now) {
     card.archived ? h('span', { class: 'gantt-archived', text: 'アーカイブ済み' }) : null,
     h('time', { title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }));
   const label = h('div', { class: 'gantt-row-label' },
-    h('div', { class: 'gantt-row-heading' }, faceGlyph(status, known), title), meta,
+    h('div', { class: 'gantt-row-heading' }, isTask ? h('span', { class: 'irow-work-mark', html: picon('note', 14), 'aria-hidden': 'true' }) : faceGlyph(status, known), title), meta,
     waiting ? h('div', { class: 'gantt-row-wait', text: waiting }) : null);
   const track = h('div', { class: 'gantt-row-track', 'aria-hidden': 'true' });
   if (bar) track.append(h('span', { class: `gantt-bar-item ${isTask ? 'task-bracket' : 'session-bar'}${bar.point ? ' is-point' : ''}${bar.active ? ' is-live' : ''}`,
@@ -65,12 +65,12 @@ function renderGantt(board) {
     calendar.append(h('span', { style: { left: `${i / ticks * 100}%` }, text: new Date(time).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }) }));
   }
   const calendarHead = h('div', { class: 'gantt-calendar' }, h('span', { class: 'gantt-calendar-caption', text: `${items.length}件` }), calendar);
-  const list = h('div', { class: 'gantt-list', role: 'listbox', 'aria-label': '観測した活動の期間', 'aria-describedby': 'ganttLegend' },
+  const list = h('div', { class: 'gantt-list', role: 'listbox', 'aria-label': '作成から最終更新までの範囲', 'aria-describedby': 'ganttLegend' },
     calendarHead, ...items.map(item => ganttRow(item, range, now)));
   if (!items.length) list.append(h('p', { class: 'gantt-empty', text: '表示するカードがありません' }));
   if (!state.gantt.sel) list.querySelector('.gantt-row')?.setAttribute('tabindex', '0');
   const panel = h('section', { class: 'gantt-timeline', 'aria-label': 'ガント' },
-    h('p', { class: 'gantt-legend', id: 'ganttLegend', text: '帯は観測した活動の期間です。予定ではありません' }), list);
+    h('p', { class: 'gantt-legend', id: 'ganttLegend', text: '帯は作成から最終更新までの範囲です。連続した活動や予定ではありません' }), list);
   const dock = h('section', { class: 'inbox-main gantt-main', 'aria-label': '選んだカード', hidden: !state.gantt.sel });
   const view = h('div', { class: `gantt-view${state.gantt.sel ? ' has-selection' : ''}` }, panel, dock);
   queueMicrotask(() => { if (list.isConnected) list.scrollTop = state.gantt.scroll || 0; });

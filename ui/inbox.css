@@ -1,6 +1,6 @@
 /* 時間軸: a list that needs you first; the selected card is docked on its right (the pane layer over .inbox-main). */
 .inbox { flex: 1; align-self: stretch; min-width: 0; min-height: 0; display: flex; gap: 16px; }
-.inbox-side { width: clamp(240px, 20vw, 300px); flex: none; min-height: 0; display: flex; flex-direction: column; background: var(--card-hover); border-radius: 12px; box-shadow: var(--card-shadow); }
+.inbox-side { width: clamp(300px, 31vw, 410px); flex: none; min-height: 0; display: flex; flex-direction: column; background: var(--card-hover); border-radius: 12px; box-shadow: var(--card-shadow); }
 .inbox-heading { flex: none; display: flex; align-items: baseline; gap: 10px; padding: 18px 16px; border-bottom: 1px solid var(--btn-subtle); color: var(--card-fg); font-size: 14px; }
 .inbox-heading h2 { margin: 0; font-size: inherit; }
 .inbox-heading span { font-size: 12px; color: var(--card-muted); }
@@ -28,3 +28,19 @@
 .irow-time { flex: none; font-size: 11.5px; color: var(--list-muted); margin-top: 2px; }
 .inbox-main { flex: 1; min-width: 0; min-height: 0; display: grid; place-items: center; border-radius: 12px; color: var(--on-board-dim); font-size: 13px; }
 .inbox-empty { padding: 24px; text-align: center; }
+
+.card.irow-work { padding: 8px 8px; gap: 6px; }
+.irow-work .irow-t { -webkit-line-clamp: 1; font-size: 14px; }
+.irow-work-mark { color: var(--card-muted); line-height: 21px; }
+.irow-work .irow-time { font-size: 10px; }
+.irow-work .irow-s { font-size: 11px; }
+.irow-work .irow-w { margin-top: 2px; color: var(--tone-wait); }
+.irow-fact { display: flex; gap: 6px; margin-top: 2px; min-width: 0; font-size: 12px; line-height: 1.5; color: var(--card-fg); }
+.irow-fact > span:first-child { flex: 0 0 36px; color: var(--card-muted); }
+.irow-fact > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-unbundled > summary, .inbox-automation > summary { padding: 10px 8px; cursor: pointer; font-size: 12px; color: var(--card-muted); }
+.inbox-unbundled > summary:focus-visible, .inbox-automation > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: 6px; }
+.iwork { position: relative; flex: none; }
+.iwork > .irow-more { position: absolute; right: 8px; top: 29px; margin: 0; padding: 0 4px; line-height: 18px; font-size: 11px; }
+.irow-work .irow-s { padding-right: 96px; }
+.irow-fact { margin-top: 0; line-height: 1.4; }

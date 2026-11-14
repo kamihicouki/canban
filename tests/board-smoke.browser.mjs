@@ -21,7 +21,8 @@ const WALK = `
 const w = (t = 400) => new Promise((r) => setTimeout(r, t));
 const key = (k, o = {}) => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, ...o }));
 const errs = [];
-const step = async (name, fn, t = 500) => { try { await fn(); } catch (e) { errs.push(name + ': ' + e.message); } await w(t); };
+let fixtureQuestionTaskId;
+const step = async (name, fn, t = 500) => { if (${JSON.stringify(process.env.CANBAN_SMOKE_STEP || '')} && !name.includes(${JSON.stringify(process.env.CANBAN_SMOKE_STEP || '')})) return; try { await fn(); } catch (e) { errs.push(name + ': ' + e.message); } await w(t); };
 await step('default minimal chrome and explicit pinning', async () => {
   if(document.querySelectorAll('.topbar').length!==1)throw new Error('more than one app bar');
   if(document.querySelector('#ribbon').getBoundingClientRect().height!==0)throw new Error('ribbon reserves space before pinning');
@@ -111,9 +112,9 @@ await step('task start keeps unknown result and uses new payload only after an e
     input.value='edited fake task request';input.dispatchEvent(new Event('input',{bubbles:true}));await w(100);
     if(calls.length!==2)throw new Error('editing automatically relaunched');
     await submit();
-    if(!calls[2])throw new Error('edited request did not start; calls='+calls.length+'; toast='+document.querySelector('.toast')?.textContent);if(calls[2].prompt!==input.value||calls[2].clientRequestId===calls[1].clientRequestId)throw new Error('edited prompt reused old launch');
+    if(!calls[2])throw new Error('edited request did not start; calls='+calls.length+'; ids='+[...document.querySelectorAll('.pane')].map(p=>p.dataset.cardId)+'; body='+document.querySelector('.pane')?.textContent.slice(-750)+'; toast='+document.querySelector('.toast')?.textContent);if(calls[2].prompt!==input.value||calls[2].clientRequestId===calls[1].clientRequestId)throw new Error('edited prompt reused old launch');
     const folder=document.querySelector('#paneLayer input[aria-label="作業フォルダ"]');folder.value='/r/other';folder.dispatchEvent(new Event('change',{bubbles:true}));await submit();
-    if(!calls[3])throw new Error('changed folder did not start; calls='+calls.length+'; toast='+document.querySelector('.toast')?.textContent);if(calls[3].cwd!=='/r/other'||calls[3].clientRequestId===calls[2].clientRequestId)throw new Error('edited start setting reused old launch');
+    if(!calls[3])throw new Error('changed folder did not start; calls='+calls.length+'; ids='+[...document.querySelectorAll('.pane')].map(p=>p.dataset.cardId)+'; body='+document.querySelector('.pane')?.textContent.slice(-750)+'; toast='+document.querySelector('.toast')?.textContent);if(calls[3].cwd!=='/r/other'||calls[3].clientRequestId===calls[2].clientRequestId)throw new Error('edited start setting reused old launch');
     document.querySelector('#paneLayer button[aria-label="開始する場所を選ぶ"]').click();
     const newRequestRow=[...document.querySelectorAll('.popover .menu-item')].find(button=>button.textContent.includes('新しい依頼に切り替える'));
     const rowRect=newRequestRow.getBoundingClientRect(), toastRect=document.querySelector('.toast').getBoundingClientRect();
@@ -121,12 +122,12 @@ await step('task start keeps unknown result and uses new payload only after an e
     newRequestRow.click();
     if(calls.length!==4)throw new Error('new-request choice automatically launched');
     await submit();
-    if(!calls[4])throw new Error('menu new request did not start; calls='+calls.length+'; toast='+document.querySelector('.toast')?.textContent);if(calls[4].prompt!==calls[3].prompt||calls[4].clientRequestId===calls[3].clientRequestId)throw new Error('unchanged explicit new request reused old ID');
+    if(!calls[4])throw new Error('menu new request did not start; calls='+calls.length+'; ids='+[...document.querySelectorAll('.pane')].map(p=>p.dataset.cardId)+'; body='+document.querySelector('.pane')?.textContent.slice(-750)+'; toast='+document.querySelector('.toast')?.textContent);if(calls[4].prompt!==calls[3].prompt||calls[4].clientRequestId===calls[3].clientRequestId)throw new Error('unchanged explicit new request reused old ID');
     key('k',{metaKey:true});
     const fresh=[...document.querySelectorAll('.picker-row')].find(button=>button.textContent.includes('タスク: 新しい依頼に切り替える'));
     if(!fresh)throw new Error('palette new-request action missing');fresh.click();
     if(calls.length!==5)throw new Error('palette new-request action automatically launched');
-    await submit();if(!calls[5])throw new Error('palette new request did not start; calls='+calls.length+'; toast='+document.querySelector('.toast')?.textContent);if(calls[5].clientRequestId===calls[4].clientRequestId)throw new Error('palette new-request action reused old ID');
+    await submit();if(!calls[5])throw new Error('palette new request did not start; calls='+calls.length+'; ids='+[...document.querySelectorAll('.pane')].map(p=>p.dataset.cardId)+'; body='+document.querySelector('.pane')?.textContent.slice(-750)+'; toast='+document.querySelector('.toast')?.textContent);if(calls[5].clientRequestId===calls[4].clientRequestId)throw new Error('palette new-request action reused old ID');
 
   } finally {window.openai.callTool=tool;key('Escape');document.querySelector('.pane-close')?.click();await rpc('canban_unlink_session',{taskId,sessionId:'codex:t1'});key('r');await w(500);}
 });
@@ -178,6 +179,7 @@ await step('palette', () => key('k', { metaKey: true }));
 await step('esc', () => key('Escape'));
 await step('group the fictional question with a task', async () => {
   const id = document.querySelector('.card.task').dataset.cardId;
+  fixtureQuestionTaskId=id;
   const response = await fetch('/rpc', { method: 'POST', body: JSON.stringify({ name: 'canban_link_session', arguments: { taskId: id, sessionId: 'claude:c2' } }) });
   if (!response.ok) throw new Error('fixture link failed');
   key('r'); await w(900);
@@ -205,6 +207,7 @@ await step('task Enter and Esc preserve the draft while changing card grouping',
   if(document.querySelector('.pane[data-card-id="'+taskId+'"] [data-sec="send"] textarea')?.value!=='往復しても保持する下書き')throw new Error('returning from task link lost draft');
 });
 await step('read the linked question without answering it', async () => {
+  document.querySelector('.iwork .irow-more')?.click();
   const child = document.querySelector('.irow-sub[data-card-id="claude:c2"]');
   if (!child?.closest('.iwork')) throw new Error('linked session is not under its task');
   if (!child.querySelector('.irow-w')?.textContent.includes('検証方法を選んでください')) throw new Error('waiting question missing from child row');
@@ -218,8 +221,10 @@ await step('read the linked question without answering it', async () => {
   if (document.querySelectorAll('#paneLayer .pane').length !== 1) throw new Error('timeline selected more than one card');
   if (pane.getBoundingClientRect().right > 1280) throw new Error('selected conversation extends beyond viewport');
   if (!pane.querySelector('.th-head .resume-main')) throw new Error('continue missing from heading');
+  const visibleRows=[...document.querySelectorAll('.irow')].filter(row=>row.checkVisibility());
+  const nextId=visibleRows[Math.min(visibleRows.length-1,visibleRows.indexOf(child)+1)].dataset.cardId;
   child.focus(); key('j'); await w(700);
-  if (document.querySelector('.irow[aria-selected="true"]')?.dataset.cardId !== 'codex:t1') throw new Error('j did not walk to the next linked session');
+  if (document.querySelector('.irow[aria-selected="true"]')?.dataset.cardId !== nextId) throw new Error('j did not walk to the next visible work/session row');
 });
 await step('row', () => document.querySelector('.irow[data-card-id="codex:t1"]').click(), 1500);
 await step('conversation labels and draft', async () => {
@@ -280,7 +285,8 @@ await step('timeline exchanges keyboard', async () => {
   if (!document.querySelector('#paneLayer').classList.contains('docked')) throw new Error('Esc closed the docked card');
 });
 await step('restore standalone fictional Claude session', async () => {
-  const taskId = document.querySelector('.irow-sub[data-card-id="claude:c2"]').closest('.iwork').dataset.taskId;
+  const taskId = fixtureQuestionTaskId;
+  if(!taskId)throw new Error('fictional linked task ID missing');
   await fetch('/rpc', { method: 'POST', body: JSON.stringify({ name: 'canban_unlink_session', arguments: { taskId, sessionId: 'claude:c2' } }) });
   key('r'); await w(700);
 });
@@ -460,6 +466,81 @@ await step('search archived work outside the board without changing filters', as
   if(board.scrollLeft!==left||list.scrollTop!==top||localStorage.getItem('sk:filters')!==filters)throw new Error('outside search changed board scope or scroll');
   input.value='';input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.pane-close')?.click();
 });
+await step('task handoff keyboard quote and report keep the draft without launching an agent', async () => {
+  document.querySelector('.pane-close')?.click();
+  document.querySelector('#viewSwitch [aria-label="ボード"]').click();await w(200);
+  const original=window.openai.callTool;let sends=0;
+  const created=await original('canban_create_task',{title:'引継ぎの架空検証',description:'複数の会話を読み、次の仕事を引き継ぐ'});
+  const taskId=(created.structuredContent||created.result||created).cardId;
+  document.querySelector('#refresh').click();
+  for(let i=0;i<50&&!document.querySelector('.card[data-card-id="'+taskId+'"]');i++)await w(100);
+  document.querySelector('.card[data-card-id="'+taskId+'"]').click();
+  for(let i=0;i<50&&!document.querySelector('.pane[data-card-id="'+taskId+'"] [data-sec="send"] textarea');i++)await w(100);
+  const pane=document.querySelector('.pane[data-card-id="'+taskId+'"]');
+  let input=pane.querySelector('[data-sec="send"] textarea');
+  window.openai.callTool=async(name,args)=>{
+    if(['canban_dispatch','canban_start_session'].includes(name)){sends++;throw new Error('fixture forbids agent launch');}
+    return original(name,args);
+  };
+  try {
+    for(let i=0;i<50&&!pane.querySelector('[data-sec="handoff"] button.btn:not([disabled])');i++)await w(100);
+    if(pane.querySelector('[data-sec="handoff"]').textContent.includes('null'))throw new Error('handoff exposed a raw null value');
+    input=pane.querySelector('[data-sec="send"] textarea');
+    input.value='手動で書いた未送信の下書き';input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();
+    key('H',{altKey:true,shiftKey:true,code:'KeyH'});await w(100);
+    if(!input.value.startsWith('手動で書いた未送信の下書き')||input.value==='手動で書いた未送信の下書き')throw new Error('handoff quote replaced draft or did not append: '+document.querySelector('.toast')?.textContent);
+    const quoted=input.value;key('N',{altKey:true,shiftKey:true,code:'KeyN'});
+    for(let i=0;i<50&&!pane.querySelector('[data-sec="handoff"]')?.textContent.includes('報告を保存しました');i++)await w(100);
+    const response=await original('canban_get_task',{taskId}),data=response.structuredContent||response.result||response;
+    if(!(data.task||data.result?.task)?.notes?.some(note=>note.text===quoted))throw new Error('report was not read back from fictional task API');
+    if(input.value!==quoted||sends!==0)throw new Error('report cleared draft or launched agent');
+  }finally{window.openai.callTool=original;document.querySelector('.pane-close')?.click();}
+});
+await step('failed detail retry preserves real composer draft, caret and reading position without sending', async () => {
+  document.querySelector('.pane-close')?.click();
+  document.querySelector('#viewSwitch [aria-label="ボード"]').click();await w(200);
+  const original=window.openai.callTool;
+  const detail=await original('canban_get_session',{cardId:'claude:retry-detail',messages:80});
+  document.querySelector('.pane-close')?.click();await w(100);
+  window.__canbanSmokeForgetPane('claude:retry-detail');
+  let attempts=0,sends=0;
+  window.openai.callTool=async(name,args)=>{
+    if(name==='canban_dispatch'||name==='canban_send_prompt'||name==='canban_enqueue_prompt'){sends++;throw new Error('fixture forbids sending');}
+    if(name==='canban_get_session'&&args.cardId==='claude:retry-detail'){
+      attempts++;if(attempts===1)throw new Error('fixture tools/call failed');
+      return detail;
+    }
+    return original(name,args);
+  };
+  try {
+    document.querySelector('.card[data-card-id="claude:retry-detail"]').click();
+    for(let i=0;i<50&&!document.querySelector('.pane[data-card-id="claude:retry-detail"] .conv-failed');i++)await w(100);
+    const pane={el:document.querySelector('.pane[data-card-id="claude:retry-detail"]')};
+    if(!pane?.el?.querySelector('.conv-failed'))throw new Error('real loadSession did not display detail failure; attempts='+attempts+'; panes='+document.querySelectorAll('.pane').length+'; ids='+[...document.querySelectorAll('.pane')].map(p=>p.dataset.cardId)+'; body='+document.querySelector('.pane')?.textContent.slice(-750)+'; toast='+document.querySelector('.toast')?.textContent);
+    const input=pane.el.querySelector('.send-box textarea');
+    if(!input)throw new Error('failure removed pending composer');
+    if(pane.el.querySelector('.send-section').dataset.sessionLoad!=='failed')throw new Error('permission remained loading after failure');
+    if(!pane.el.querySelector('.send-round')?.disabled)throw new Error('failed permission enabled sending');
+    input.value='失敗後も保持する未送信の下書き';input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();input.setSelectionRange(2,7);
+    const board=document.querySelector('#board'),left=board.scrollLeft;
+    pane.el.querySelector('.conv-failed button').click();
+    for(let i=0;i<50&&pane.el.querySelector('.conv-failed, [data-session-load]');i++)await w(100);
+    let restored=pane.el.querySelector('.send-box textarea');
+    if(!pane.el.querySelector('.feed')||pane.el.querySelector('.conv-failed'))throw new Error('retry did not render actual session detail');
+    if(restored?.value!==input.value||restored.selectionStart!==2||restored.selectionEnd!==7||document.activeElement!==restored)throw new Error('retry lost draft, caret or focus');
+    if(!pane.el.querySelector('.perm-chip')||pane.el.querySelector('[data-session-load]'))throw new Error('retry did not replace pending permission with detail permission');
+    const feed=pane.el.querySelector('.feed');
+    feed.scrollTop=Math.min(350,feed.scrollHeight-feed.clientHeight);const reading=feed.scrollTop;
+    if(reading<=0)throw new Error('fixture conversation did not produce a reading position');
+    pane.el.focus({preventScroll:true});key('r');
+    for(let i=0;i<50&&attempts<3;i++)await w(100);await w(100);
+    restored=pane.el.querySelector('.send-box textarea');
+    if(restored.value!==input.value||restored.selectionStart!==2||restored.selectionEnd!==7)throw new Error('detail refresh lost draft or caret');
+    if(Math.abs(pane.el.querySelector('.feed').scrollTop-reading)>1||board.scrollLeft!==left)throw new Error('detail refresh moved conversation or board scroll');
+    if(sends!==0||attempts<3)throw new Error('unexpected send or retry path bypass');
+    restored.value='';restored.dispatchEvent(new Event('input',{bubbles:true}));
+  } finally {window.openai.callTool=original;document.querySelector('.pane-close')?.click();}
+});
 await step('minimal secondary chrome keeps conversation space', async () => {
   if(document.body.dataset.auxiliaryMode!=='minimal')document.querySelector('#auxiliaryBtn').click();
   if(document.querySelector('#ribbon').getBoundingClientRect().height!==0)throw new Error('minimal ribbon still reserves space');
@@ -472,6 +553,7 @@ test('the board, the ribbon, the time axis and the card layers run without page 
   const longStamp=new Date().toISOString();
   for(let i=0;i<220;i++)fs.appendFileSync(path.join(fx.claudeHome,'projects','-r-web','c2.jsonl'),JSON.stringify({type:i%2?'assistant':'user',timestamp:longStamp,message:{content:[{type:'text',text:'架空の長会話 '+i+'。'+('会話の読む位置と下書きを維持します。'.repeat(12))}]}})+'\n');
   fs.appendFileSync(path.join(fx.claudeHome, 'projects', '-r-web', 'c2.jsonl'), JSON.stringify({ type: 'assistant', timestamp: new Date().toISOString(), message: { content: [{ type: 'tool_use', id: 'fixture-question', name: 'AskUserQuestion', input: { questions: [{ question: '検証方法を選んでください', options: [{ label: '実機' }, { label: '架空データ' }] }] } }] } }) + '\n');
+  fs.copyFileSync(path.join(fx.claudeHome,'projects','-r-web','c2.jsonl'),path.join(fx.claudeHome,'projects','-r-web','retry-detail.jsonl'));
   const appDir = path.dirname(fx.desktopDir);
   fs.writeFileSync(path.join(appDir,'config.json'),JSON.stringify({lastKnownAccountUuid:'fixture-account'}));
   fs.writeFileSync(path.join(appDir,'ccd-session-presets.json'),JSON.stringify({byAccount:{'fixture-account':{presets:[{id:'fixture-env',name:'複数フォルダの環境',target:{kind:'local',cwd:'/r/web',additionalFolders:['/r/api']}}]}}}));
@@ -492,7 +574,7 @@ test('the board, the ribbon, the time axis and the card layers run without page 
   const port = 4700 + Math.floor(Math.random() * 200);
   const host = spawn(process.execPath, ['tests/dev-host.mjs', String(port)], { cwd: root, stdio: 'ignore',
     env: { ...process.env, CANBAN_DATA_DIR: dataDir, CANBAN_CODEX_HOME: fx.codexHome, CANBAN_CLAUDE_HOME: fx.claudeHome, CANBAN_CLAUDE_DESKTOP_DIR: fx.desktopDir,
-      CANBAN_LAUNCH_DRYRUN: '1', CANBAN_SEARCH_INDEX: '0', CANBAN_BACKGROUND: '0' } });
+      CANBAN_LAUNCH_DRYRUN: '1', CANBAN_SEARCH_INDEX: '0', CANBAN_BACKGROUND: '0', CANBAN_BROWSER_SMOKE: '1' } });
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-smoke-chrome-'));
   const cdpPort = port + 1000;
   const chrome = spawn(chromeBin, ['--headless=new', `--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profile}`, '--no-first-run', 'about:blank'], { stdio: 'ignore' });
@@ -524,6 +606,27 @@ test('the board, the ribbon, the time axis and the card layers run without page 
   const r = await cdp('Runtime.evaluate', { expression: `(async () => { ${WALK} })()`, awaitPromise: true, returnByValue: true });
   assert.equal(r.result?.exceptionDetails, undefined, JSON.stringify(r.result?.exceptionDetails));
   assert.deepEqual(r.result.result.value.errs, []);
+  if (process.env.CANBAN_WORK_SHOTS) {
+    const dir=path.resolve(process.env.CANBAN_WORK_SHOTS);fs.mkdirSync(dir,{recursive:true});
+    for (const theme of ['light','dark']) {
+      const rendered=await cdp('Runtime.evaluate',{expression: `(async()=>{
+        document.querySelector('.pane-close')?.click();
+        document.documentElement.dataset.theme=${JSON.stringify(theme)};
+        document.querySelector('#viewSwitch [aria-label="時間軸"]').click();await new Promise(r=>setTimeout(r,250));
+        [...document.querySelectorAll('.irow-work')].find(row=>row.textContent.includes('引継ぎの架空検証')).click();
+        for(let i=0;i<50&&!document.querySelector('.pane[data-kind="task"] [data-sec="handoff"]');i++)await new Promise(r=>setTimeout(r,100));
+        const pane=document.querySelector('.pane[data-kind="task"]');
+        if(!pane?.querySelector('[data-sec="send"] textarea'))throw new Error('task screenshot lacks composer');
+        for(let i=0;i<50&&!pane.querySelector('[data-sec="handoff"]').textContent.includes('手動で書いた未送信の下書き');i++)await new Promise(r=>setTimeout(r,100));
+        if(pane.querySelector('[data-sec="handoff"]').textContent.includes('null'))throw new Error('screenshot handoff contains raw null');
+        return {theme:${JSON.stringify(theme)},viewport:[innerWidth,innerHeight],taskId:pane.dataset.cardId};
+      })()`,awaitPromise:true,returnByValue:true});
+      assert.equal(rendered.result.exceptionDetails,undefined,JSON.stringify(rendered.result.exceptionDetails));
+      const shot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+      fs.writeFileSync(path.join(dir,`task-work-${theme}.png`),Buffer.from(shot.result.data,'base64'));
+    }
+    await cdp('Runtime.evaluate',{expression: `document.querySelector('.pane-close')?.click();document.querySelector('#viewSwitch [aria-label="ボード"]').click()`});
+  }
   const openLive = await cdp('Runtime.evaluate', { expression: `(async()=>{document.querySelector('.card[data-card-id="codex:t1"]').click();for(let i=0;i<40&&!document.querySelector('.pane[data-card-id="codex:t1"] .exchange-touchpoint');i++)await new Promise(r=>setTimeout(r,100));return !!document.querySelector('.pane[data-card-id="codex:t1"] .exchange-touchpoint')})()`, awaitPromise:true, returnByValue:true });
   assert.equal(openLive.result?.result?.value,true,'open existing card before live receipt');
   fs.appendFileSync(fx.rollout, JSON.stringify({timestamp:new Date().toISOString(),type:'event_msg',payload:{type:'item_completed',item:{type:'UserMessage',id:'live-receipt',content:[{type:'text',text:'<codex_delegation><source_thread_id>t2</source_thread_id><input>開いたまま届いた結果</input></codex_delegation>'}]}}})+'\n');
