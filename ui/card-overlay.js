@@ -180,9 +180,22 @@ function setCardsDocked(dock) {
     showCards([id], { dock: true });
     return;
   }
+  if (dock && panes.length > 1) {
+    const selected = timelineOn() ? state.inbox.sel : typeof ganttOn === 'function' && ganttOn() ? state.gantt.sel : null;
+    const keep = panes.find(p => p.id === selected) || focusedPane() || panes[0];
+    showCards([keep.id], { dock: true });
+    store.set('openCard', null);
+    return;
+  }
   paneLayer.classList.toggle('docked', dock);
   paneMetrics(); paintPaneBar(); workspace.syncShell();
   store.set('openCard', dock ? null : panes[0]?.id ?? null);
+  // Expanding a task restores its ordinary task-and-session overlay immediately.
+  // Reconciliation keeps the task DOM and loads only a session restored from cache.
+  if (!dock && panes[0]?.kind === 'task') {
+    const task = state.board?.lists.flatMap(l => l.cards).find(c => c.id === panes[0].id) || panes[0].taskCard;
+    if (task) reconcileCards({ lists: [{ cards: [task] }] });
+  }
 }
 function expandCards() {
   if (!paneDocked()) return;
@@ -398,6 +411,7 @@ document.addEventListener('keydown', e => {
     else if (e.shiftKey && k === 'X' && terminalAvailable(p) && cardTerms.get(p.id)?.id && !cardTerms.get(p.id)?.closed) run = () => endTerminal(p);
     else if (k === 't' && terminalAvailable(p)) run = () => toggleThreadSide(p, 'terminal');
     else if (p.kind === 'session' && (k === 'z' || k === 'Delete')) run = () => paneKeyButton(p, k)?.click();
+    else if (p.kind === 'session' && k === 'o') run = () => resume(p.id);
     else if (/^[olgmh]$/.test(k)) run = () => paneKeyButton(p, k)?.click();
   }
   if (run) { e.preventDefault(); run(); }
@@ -418,7 +432,11 @@ async function openCard(cardId, { restore = false, dock } = {}) {
   const shown = !paneLayer.hidden && panes.find((p) => p.id === cardId);
   if (cardKind(cardId) === 'view') return openView(viewOf(cardId), { shown });
   dock ??= paneDocked();
-  if (shown && !paneLayer.hidden) setCardsDocked(dock);
+  // An explicit card ID wins over the timeline's previous selection before docking detaches peers.
+  if (shown && dock && panes.length > 1) {
+    showCards([cardId], { dock: true });
+    store.set('openCard', null);
+  } else if (shown && !paneLayer.hidden) setCardsDocked(dock);
   if (cardKind(cardId) === 'task') return openTaskCard(cardId, { restore, shown, dock });
   if (shown) return loadSession(shown); // already on the layer: refresh it where it stands
   for (const l of state.board?.lists || []) for (const c of l.cards) if (c.id === cardId && c.unread) { c.unread = false; if (!dock) render(); }
@@ -506,7 +524,7 @@ async function openTaskCard(cardId, { restore = false, shown = null, dock } = {}
   // Threads: the task beside one session at a time (the one chosen last, else the latest); the others are a click away.
   const choice = taskThreadChoice(cardId, found.card.links);
   const { ids } = taskOverlayIds(cardId, found.card.links, choice ? [choice] : [], 1);
-  showCards(ids, { dock });
+  showCards(dock ? [cardId] : ids, { dock });
   const [root, ...sessions] = panes;
   await Promise.all([loadTask(root, found), ...sessions.map((p) => loadSession(p))]);
   if (panes.includes(root) && !restore && !shown && !dock) root.el.focus({ preventScroll: true });
@@ -532,6 +550,7 @@ function reconcileCards(board) {
   const status = $('.pane-status', root.el);
   if (status) status.replaceChildren(h('span', { class: `sdot s-${card.status}` }), STATUS_LABELS[card.status]);
   paintTaskRelated(root, card);
+  if (paneDocked()) return; // Linked sessions are separate selectable rows in the timeline.
   const shown = panes.map((p) => p.id);
   const { ids } = taskOverlayIds(root.id, card.links, [taskThreadChoice(root.id, card.links)].filter(Boolean), 1);
   if (ids.join() === shown.join()) return;
@@ -773,17 +792,77 @@ function renderPane(p, d) {
   // This snapshot describes the old owner-based route. The shared picker reads
   // the selected Desktop account and its current connection state instead.
   const desktopNote = managedDesktop && L.desktop?.accountMismatch ? null : L.desktop?.note;
+  let desktopContinueState = null;
+  let continueMain, continueReason;
+  const continuation = (opts = {}) => {
+    const explicitHome = claudeExecutionHomes.has(s.id);
+    const chosen = opts.route || (explicitHome ? 'terminal' : launchPrefs().route);
+    const route = !opts.route && chosen === 'desktop' && !L.desktop && L.terminal?.command ? 'terminal' : chosen;
+    return continueAction({ ...s, status: p.status || s.status }, L, s.capabilities, {
+      route, targetLabel: TARGET_LABELS[opts.target || launchPrefs().target], terminalAvailable: !!term,
+      desktopState: managedDesktop ? desktopContinueState : null,
+      pending: managedDesktop ? desktopContinueState : null,
+    });
+  };
+  function paintContinue() {
+    if (!continueMain) return;
+    const action = continuation();
+    continueMain.disabled = action.disabled;
+    continueMain.setAttribute('aria-label', action.label);
+    continueMain.title = [action.label, action.reason, shortcutHelp()].filter(Boolean).join('\n');
+    continueMain.querySelector('.continue-label').textContent = action.label;
+    continueReason.textContent = action.reason;
+    continueReason.hidden = !action.disabled || !action.reason;
+  }
+  const managedResume = managedDesktop ? desktopResumeControl(s.id, { onPaint: value => {
+    desktopContinueState = value; paintContinue();
+  } }) : null;
+  const continueRun = opts => {
+    const action = continuation(opts);
+    if (action.disabled) return toast(action.reason, true);
+    return resume(s.id, { ...opts, route: action.route });
+  };
+  continueMain = h('button', { class: 'btn-primary resume-main', 'data-pane-key': 'o', type: 'button',
+    onclick: event => continueRun(optsFromEvent(event)) }, h('span', { html: picon('free', 14) }), h('span', { class: 'continue-label' }), ...keycap('o'));
+  continueReason = h('div', { class: 'continue-reason', hidden: true });
+  const continueOptions = h('button', { class: 'th-tool continue-options', type: 'button', 'aria-label': '開く経路を選ぶ', title: '開く経路を選ぶ',
+    onclick: () => {
+      const choices = [['desktop', null, null, 'd'], ['terminal', null, null, 't'], ...Object.entries(TARGET_LABELS).map(([target, label], i) => ['terminal', target, label, ['w', 'n', 's', 'e'][i]])];
+      const body = h('div', { class: 'continue-menu' }, ...choices.map(([route, target, label, key]) => {
+        const opts = { route, ...(target ? { target } : {}) }, action = continuation(opts);
+        const supported = !target || term?.targets.includes(target);
+        const disabled = action.disabled || !supported;
+        const reason = supported ? action.reason : 'このターミナルでは未対応です';
+        const text = label ? `${action.label}・${label}` : action.label;
+        return h('button', { class: 'menu-item', type: 'button', disabled, title: reason, 'aria-keyshortcuts': key, 'aria-label': text,
+          onclick: () => { closePopover(); continueRun(opts); } }, h('span', { html: picon(route === 'desktop' ? 'free' : 'terminal', 14) }),
+          h('span', {}, h('span', { text }), disabled && reason ? h('small', { class: 'muted', text: reason }) : null), ...keycap(key));
+      }));
+      body.addEventListener('keydown', event => {
+        const choice = choices.find(([, , , key]) => key === event.key);
+        if (!choice || event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
+        event.preventDefault(); event.stopPropagation();
+        const [route, target] = choice;
+        if (target && !term?.targets.includes(target)) return;
+        const opts = { route, ...(target ? { target } : {}) };
+        if (continuation(opts).disabled) return;
+        closePopover(); continueRun(opts);
+      });
+      const menu = popover(continueOptions, '開く経路', body, { width: 320 });
+      menu.querySelector('button:not(.close):not(:disabled)')?.focus();
+    } }, h('span', { html: picon('chev', 12) }));
+  const continueControl = h('div', { class: 'thread-continue' }, h('div', { class: 'thread-continue-buttons' }, continueMain, s.sourceKind === 'codex-cloud' ? null : continueOptions), continueReason);
+  p.continueState = continuation;
+  p.paintContinue = paintContinue;
+  paintContinue();
   const resumeBox = s.sourceKind === 'codex-cloud' ? h('div', { class: 'resume-box' },
-    h('button', { class: 'btn-primary resume-main', 'data-pane-key': 'o', type: 'button', title: L.desktop.url, onclick: () => resume(s.id, { route: 'desktop' }) }, h('span', { html: picon('free', 14) }), 'Codexで開く', ...keycap('o')),
     h('div', { class: 'muted', text: d.dispatch.unavailableReason })) : h('div', { class: 'resume-box' },
     accountPicker ? h('div', { class: 'field-label' }, h('span', { text: '実行アカウント' }), ...keycap('Alt+a')) : null,
     accountPicker,
     accountPicker ? h('div', { class: 'muted', text: 'CLI の再開と指示に使うアカウントです。Desktop の起動は下の選択を使います。' }) : null,
     accountPicker ? h('div', { class: 'muted claude-thinking-note', text: '別アカウントでは過去の思考を再計算します。組織の思考に関する通知が出ても、会話履歴は引き継がれます。' }) : null,
-    h('button', { class: 'btn-primary resume-main', 'data-pane-key': 'o', title: `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`, onclick: (e) => resume(s.id, optsFromEvent(e)) },
-      h('span', { text: '▶ 再開' }), ...keycap('o')),
     h('div', { class: 'field-label', text: 'デスクトップアプリ' }),
-    managedDesktop ? desktopResumeControl(s.id) : L.desktop
+    managedDesktop ? managedResume : L.desktop
       ? h('button', { class: 'side-btn', 'data-resume-desktop': '', text: `↗ ${L.desktop.label}`, title: L.desktop.url, onclick: () => resume(s.id, { route: 'desktop' }) })
       : h('div', { class: 'muted', text: s.host ? 'リモートのセッションはターミナルで再開します' : 'このセッションはデスクトップアプリでは開けません' }),
     desktopNote ? h('div', { class: 'muted', text: `${L.desktop.accountMismatch ? '⚠ ' : ''}${desktopNote}` }) : null,
@@ -798,7 +877,7 @@ function renderPane(p, d) {
     const option = executionAccounts.find(a => a.id === selected);
     const desktop = resumeBox.querySelector('[data-resume-desktop]');
     if (desktop && s.agent !== 'claude') { desktop.disabled = !!selected && !option?.desktop?.link; desktop.title = selected ? option?.desktop?.reason || option?.desktop?.link?.note || '実行アカウントを選び直してください' : L.desktop?.url || ''; }
-    resumeBox.querySelector('.resume-main').title = selected ? '選択した Claude CLI アカウントで再開' : `既定: ${routeLabel(d.settings.launch.route, L)}・⌥ で切替\n${shortcutHelp()}`;
+    paintContinue();
     const note = p.el.querySelector('.claude-execution-note');
     if (note) note.textContent = selected ? `実行アカウント: ${option ? accountName(option.account) : '選択したアカウント（利用できません）'}` : `実行アカウント: ${s.accountLabel || '元のアカウント'}`;
   }
@@ -871,7 +950,8 @@ function renderPane(p, d) {
     ...(d.pr.checkRuns || []).map((c) => h('div', { class: 'check-row' }, h('span', { class: `ck ck-${/fail|error|cancel|timed/.test(c.state) ? 'failing' : /success|pass|neutral|skipped/.test(c.state) ? 'passing' : 'pending'}`, text: /fail|error|cancel|timed/.test(c.state) ? '✗' : /success|pass|neutral|skipped/.test(c.state) ? '✓' : '●' }), ` ${c.name}`)))] };
   if (related.length) secs.related = { nodes: related };
   secs.first = { nodes: [h('div', { class: 'msg user', text: s.preview || '-' })] };
-  secs.resume = { nodes: [resumeBox] };
+  secs.resume = { title: '再開の設定', nodes: [resumeBox] };
+  secs.continue = { nodes: [continueControl] };
   secs.task = { nodes: [taskSel] };
   secs.add = { title: T.category, nodes: [dirBtn] };
   secs.prio = { nodes: [prio, due] };
@@ -882,6 +962,7 @@ function renderPane(p, d) {
   ].filter(Boolean) };
 
   p.status = s.status || 'idle';
+  paintContinue();
   p.activity = activityText(s.activity, p.status, s.signals);
   if (!d.feed) p.lastText = s.preview || '';
   el.setAttribute('aria-label', `セッション詳細: ${s.title}`);

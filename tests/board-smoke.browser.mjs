@@ -169,7 +169,51 @@ await step('theme', () => document.querySelector('[data-look]').click());
 await step('esc', () => key('Escape'));
 await step('palette', () => key('k', { metaKey: true }));
 await step('esc', () => key('Escape'));
+await step('group the fictional question with a task', async () => {
+  const id = document.querySelector('.card.task').dataset.cardId;
+  const response = await fetch('/rpc', { method: 'POST', body: JSON.stringify({ name: 'canban_link_session', arguments: { taskId: id, sessionId: 'claude:c2' } }) });
+  if (!response.ok) throw new Error('fixture link failed');
+  key('r'); await w(900);
+});
 await step('time axis', () => key('i'), 1000);
+await step('task Enter and Esc preserve the draft while changing card grouping', async () => {
+  const row = document.querySelector('.iwork > .irow');
+  if (!row) throw new Error('task row missing');
+  row.click();
+  for (let i=0;i<50&&!document.querySelector('.pane[data-kind="task"] [data-sec="send"] textarea');i++) await w(100);
+  const task = document.querySelector('.pane[data-kind="task"]'), taskId = task.dataset.cardId;
+  const draft = task.querySelector('[data-sec="send"] textarea');
+  if (!draft) throw new Error('task composer missing');
+  draft.value = '往復しても保持する下書き'; draft.dispatchEvent(new Event('input', { bubbles: true }));
+  row.focus(); row.dispatchEvent(new KeyboardEvent('keydown', { key:'Enter', bubbles:true }));
+  if(document.querySelector('#paneLayer').classList.contains('docked')||document.querySelectorAll('#paneLayer .pane').length!==2)throw new Error('expanded task did not restore its linked conversation');
+  task.focus(); key('Escape'); await w(200);
+  if(!document.querySelector('#paneLayer').classList.contains('docked')||document.querySelectorAll('#paneLayer .pane').length!==1)throw new Error('Esc left multiple docked cards');
+  const restored=document.querySelector('.pane[data-card-id="'+taskId+'"]');
+  if(restored?.querySelector('[data-sec="send"] textarea')?.value!=='往復しても保持する下書き')throw new Error('task draft lost on Enter/Esc');
+  restored.querySelector('.task-related-row[data-session-id="claude:c2"] .link-btn').click();
+  for(let i=0;i<50&&!document.querySelector('.pane[data-card-id="claude:c2"] .cx-wait-question:not([hidden])');i++)await w(100);
+  if(document.querySelectorAll('#paneLayer .pane').length!==1||!document.querySelector('.pane[data-card-id="claude:c2"]'))throw new Error('task link restored multiple docked cards');
+  row.click(); await w(300);
+  if(document.querySelector('.pane[data-card-id="'+taskId+'"] [data-sec="send"] textarea')?.value!=='往復しても保持する下書き')throw new Error('returning from task link lost draft');
+});
+await step('read the linked question without answering it', async () => {
+  const child = document.querySelector('.irow-sub[data-card-id="claude:c2"]');
+  if (!child?.closest('.iwork')) throw new Error('linked session is not under its task');
+  if (!child.querySelector('.irow-w')?.textContent.includes('検証方法を選んでください')) throw new Error('waiting question missing from child row');
+  if (document.querySelectorAll('.irow[data-card-id="claude:c2"]').length !== 1) throw new Error('linked session duplicated');
+  child.click();
+  for (let i=0;i<50&&!document.querySelector('.pane .cx-wait-question:not([hidden])');i++) await w(100);
+  const question = document.querySelector('.pane .cx-wait-question:not([hidden])');
+  if (!question?.textContent.includes('架空データ')) throw new Error('question choices unreadable');
+  if (question.querySelector('button,input')) throw new Error('native approval became actionable here');
+  const pane = question.closest('.pane');
+  if (document.querySelectorAll('#paneLayer .pane').length !== 1) throw new Error('timeline selected more than one card');
+  if (pane.getBoundingClientRect().right > 1280) throw new Error('selected conversation extends beyond viewport');
+  if (!pane.querySelector('.th-head .resume-main')) throw new Error('continue missing from heading');
+  child.focus(); key('j'); await w(700);
+  if (document.querySelector('.irow[aria-selected="true"]')?.dataset.cardId !== 'codex:t1') throw new Error('j did not walk to the next linked session');
+});
 await step('row', () => document.querySelector('.irow[data-card-id="codex:t1"]').click(), 1500);
 await step('conversation labels and draft', async () => {
   const pane = document.querySelector('.pane[data-kind="session"]');
@@ -181,6 +225,26 @@ await step('conversation labels and draft', async () => {
   const stamp = pane.querySelector('.fi-user time');
   if (stamp?.getAttribute('datetime') !== '2026-09-20T00:00:01.000Z') throw new Error('message timestamp changed');
   if (!pane.querySelector('.fi-asst .fi-who')?.textContent.includes('Codex')) throw new Error('assistant speaker missing');
+  const main = pane.querySelector('.th-head .resume-main');
+  if (!main || pane.querySelectorAll('.resume-main').length !== 1) throw new Error('continue must have one entry in the heading');
+  if (!main.getAttribute('aria-label')?.includes('Codex')) throw new Error('continue route has no accessible label');
+  if (pane.querySelector('.th-side .resume-main')) throw new Error('primary continue left in details');
+  const originalTool = window.openai.callTool, opens = [];
+  window.openai.callTool = async (name,args) => {
+    if (name === 'canban_open_session') { opens.push(args); return { structuredContent: { route: 'desktop', exact: true } }; }
+    return originalTool(name,args);
+  };
+  try {
+    pane.focus(); pane.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await w(200);
+    if (opens.length !== 1 || opens[0].cardId !== 'codex:t1') throw new Error('o did not use the unique continue action');
+    const options = pane.querySelector('.continue-options');
+    const routeRect=options.getBoundingClientRect();
+    if(!options.contains(document.elementFromPoint(routeRect.x+routeRect.width/2,routeRect.y+routeRect.height/2)))throw new Error('route selector obscured by a neighboring header action');
+    options.focus(); options.click(); await w(100);
+    if (!document.querySelector('.continue-menu button') || !document.activeElement.closest('.popover')) throw new Error('route menu focus missing');
+    key('Escape'); await w(100);
+    if (document.activeElement !== options) throw new Error('route menu lost return focus');
+  } finally { window.openai.callTool = originalTool; }
   const input = pane.querySelector('.send-box textarea');
   if (!input) throw new Error('composer unavailable');
   input.value = '未送信の下書き';
@@ -207,6 +271,11 @@ await step('timeline exchanges keyboard', async () => {
   if (!document.querySelector('.exchange-popover')) throw new Error('timeline Shift+M did not open popup');
   key('Escape');
   if (!document.querySelector('#paneLayer').classList.contains('docked')) throw new Error('Esc closed the docked card');
+});
+await step('restore standalone fictional Claude session', async () => {
+  const taskId = document.querySelector('.irow-sub[data-card-id="claude:c2"]').closest('.iwork').dataset.taskId;
+  await fetch('/rpc', { method: 'POST', body: JSON.stringify({ name: 'canban_unlink_session', arguments: { taskId, sessionId: 'claude:c2' } }) });
+  key('r'); await w(700);
 });
 await step('board', () => key('i'), 800);
 await step('session', () => document.querySelector('.card.face:not(.task)').click(), 3000);
@@ -336,6 +405,7 @@ return { errs, sessionOpened: !!document.querySelector('.th-conv') || true };
 
 test('the board, the ribbon, the time axis and the card layers run without page errors', { timeout: 120000, skip: !fs.existsSync(chromeBin) && 'no Chrome' }, async (t) => {
   const fx = makeFixtures();
+  fs.appendFileSync(path.join(fx.claudeHome, 'projects', '-r-web', 'c2.jsonl'), JSON.stringify({ type: 'assistant', timestamp: new Date().toISOString(), message: { content: [{ type: 'tool_use', id: 'fixture-question', name: 'AskUserQuestion', input: { questions: [{ question: '検証方法を選んでください', options: [{ label: '実機' }, { label: '架空データ' }] }] } }] } }) + '\n');
   const appDir = path.dirname(fx.desktopDir);
   fs.writeFileSync(path.join(appDir,'config.json'),JSON.stringify({lastKnownAccountUuid:'fixture-account'}));
   fs.writeFileSync(path.join(appDir,'ccd-session-presets.json'),JSON.stringify({byAccount:{'fixture-account':{presets:[{id:'fixture-env',name:'複数フォルダの環境',target:{kind:'local',cwd:'/r/web',additionalFolders:['/r/api']}}]}}}));
@@ -397,6 +467,44 @@ test('the board, the ribbon, the time axis and the card layers run without page 
   assert.equal(closeLive.result?.exceptionDetails,undefined);
 
   assert.deepEqual(pageErrors.filter((e) => !/ResizeObserver/.test(e)), []);
+  if (process.env.CANBAN_UNIFIED_SHOTS) {
+    const dir = path.resolve(process.env.CANBAN_UNIFIED_SHOTS);
+    fs.mkdirSync(dir, { recursive: true });
+    const measurements = [];
+    for (const view of ['board', 'timeline']) for (const theme of ['light', 'dark']) {
+      const capture = await cdp('Runtime.evaluate', { expression: `(async()=>{
+        const w=ms=>new Promise(r=>setTimeout(r,ms));
+        document.querySelector('.pane-close')?.click(); await w(200);
+        const rpc=async(name,args)=>fetch('/rpc',{method:'POST',body:JSON.stringify({name,arguments:args})}).then(r=>r.json());
+        const packet=await rpc('canban_get_board',{days:0});
+        const task=packet.result.structuredContent.lists.flatMap(l=>l.cards).find(c=>c.kind==='task');
+        await rpc(${JSON.stringify(view === 'timeline' ? 'canban_link_session' : 'canban_unlink_session')},{taskId:task.id,sessionId:'claude:c2'});
+        document.dispatchEvent(new KeyboardEvent('keydown',{key:'r',bubbles:true})); await w(600);
+        if(!!document.querySelector('.inbox')!==${view === 'timeline'}) document.dispatchEvent(new KeyboardEvent('keydown',{key:'i',bubbles:true}));
+        document.documentElement.dataset.theme=${JSON.stringify(theme)}; await w(500);
+        for(const b of document.querySelectorAll('.fold-head[aria-expanded="false"]'))b.click();
+        const row=document.querySelector('#board .card[data-card-id="claude:c2"]');
+        if(!row)throw new Error('fictional question card missing');
+        const started=performance.now();row.click();
+        for(let i=0;i<100&&!document.querySelector('.pane .cx-wait-question:not([hidden])');i++)await w(50);
+        const pane=document.querySelector('.pane[data-card-id="claude:c2"]');
+        if(!pane?.querySelector('.cx-wait-question:not([hidden])'))throw new Error('question not visible');
+        if(${view === 'timeline'}&&document.querySelectorAll('#paneLayer .pane').length!==1)throw new Error('timeline must show only its selected card');
+        if(pane.getBoundingClientRect().right>1280)throw new Error('selected card outside viewport');
+        const header=pane.querySelector('.th-head'),button=header.querySelector('.resume-main');
+        const route=header.querySelector('.continue-options'),rect=route.getBoundingClientRect();
+        if(!route.contains(document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2)))throw new Error('route selector not reachable by pointer');
+        const b=button.getBoundingClientRect(),h=header.getBoundingClientRect();
+        if(b.right>h.right+1||b.left<h.left-1||b.bottom>800)throw new Error('continue button clipped');
+        return {view:${JSON.stringify(view)},theme:${JSON.stringify(theme)},cardUsableMs:Math.round(performance.now()-started),headerActions:1,questionText:pane.querySelector('.cx-wait-question').textContent};
+      })()`, awaitPromise: true, returnByValue: true });
+      assert.equal(capture.result.exceptionDetails, undefined, JSON.stringify(capture.result.exceptionDetails));
+      measurements.push(capture.result.result.value);
+      const shot = await cdp('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+      fs.writeFileSync(path.join(dir, `${view}-${theme}.png`), Buffer.from(shot.result.data, 'base64'));
+    }
+    fs.writeFileSync(path.join(dir, 'measurements.json'), JSON.stringify({ viewport: [1280,800], fixture: 'makeFixtures + real unanswered question; no real sends', samples: measurements, baseline: null, limitation: 'No paired baseline timing; timings are observations, not a speedup claim.' }, null, 2));
+  }
   if (process.env.CANBAN_SMOKE_SHOTS) {
     const dir = path.resolve(process.env.CANBAN_SMOKE_SHOTS);
     fs.mkdirSync(dir, { recursive: true });

@@ -111,13 +111,13 @@ function refreshShortcutHints() {
     entries = [['k', '前のカード', index <= 0], ['j', '次のカード', index < 0 || index === cards.length - 1],
       ['⇧←', '左のリストへ', !adjacentPaneList(focusedPane(), -1)], ['⇧→', '右のリストへ', !adjacentPaneList(focusedPane(), 1)],
       ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
-      ...(focusedPane()?.kind === 'session' ? [['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
+      ...(focusedPane()?.kind === 'session' ? [['o', '続ける'], ['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
       ...(panePromptInput() ? [['i', '指示欄'], ['Alt+M', voiceMode.active ? '音声対話OFF' : '音声対話']] : []), ...(panes.some(x => x.choices?.length) ? [['Alt+1〜9', '選択肢で答える']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ['f', '変更'], ...(terminalAvailable(focusedPane()) ? [['t', 'ターミナル'], ...(cardTerms.get(focusedPane().id)?.closed ? [['Shift+R', '開き直す']] : cardTerms.get(focusedPane().id)?.id ? [['Shift+X', 'シェルを終了']] : [])] : [])] : []), ['r', '更新'], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys,
       ...(exchangeTrail ? [['Shift+1 / 2 / 3', '関連カードのビュー'], ['Esc / Shift+Esc', '訪問を戻る / 進む'], ['Shift+Home', '起点へ']] : docked ? [['Enter', '大きく開く'], ['Esc', '一覧へ戻る']] : [['Esc', timelineOn() ? '時間軸へ戻す' : '閉じる']])];
   }
   else if (typing) entries = input.id === 'q' ? [['↓ / Enter', 'カードへ'], ['Esc', '検索をクリア']] : [['⌘K / Ctrl+K', 'コマンド']];
   else if (workspace.utilityPage()) entries = [...globalKeys, ['Esc', 'パネルを閉じる']];
-  else if (input?.matches('.irow')) entries = [['j / k', '次 / 前'], ['Enter', '大きく開く'], ['r', '返信'], ['1 2 3', 'テキスト / プレビュー / 要点'], ['d', '詳細パネル'], ['l', 'ラベル'], ['m', 'リストへ移動'], ['i', 'ボード'], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys];
+  else if (input?.matches('.irow')) entries = [['j / k', '次 / 前'], ['Enter', '大きく開く'], ...(panes[0]?.kind === 'session' ? [['o', '続ける']] : []), ['r', '返信'], ['1 2 3', 'テキスト / プレビュー / 要点'], ['d', '詳細パネル'], ['l', 'ラベル'], ['m', 'リストへ移動'], ['i', 'ボード'], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys];
   else if (input?.matches('.card')) entries = [['j / k', '次 / 前'], ['Enter', '開く'], ['Space', 'その場で返信'], ['l', 'ラベル'], ['m', 'リストへ移動'], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys];
   else entries = [['j / k', 'カード選択'], ['/', '検索'], ['c', 'タスク追加'], ['i', timelineOn() ? 'ボード' : '時間軸'], ...(state.lens ? [['Esc', '照らすのをやめる']] : []), ['b', 'ナビゲーション'], ['a / u', '分析 / Usage'], ['r', '更新'], ...globalKeys];
   paintKeyGuide(entries);
@@ -134,7 +134,7 @@ const SHORTCUTS = [
   ['時間（寿命）', [
     ['i', 'ボード（リストごと）と時間軸（時間ごと）を切り替え'], ['時間の帯で ← →', '日を移動（Home / End で最古 / 今日）。Enter で照らす'],
     ['Esc', '照らすのをやめる（ボード）'], ['⌘K', '「期間: …」「…のカードを照らす」'],
-    ['時間軸の一覧で j / k', '選んだカードを右に開く'], ['時間軸の一覧で Enter', 'カードを大きく開く（Esc で右へ戻す）'], ['時間軸の一覧で r / 1 2 3 / d', '返信欄へ / 表示 / 詳細パネル'], ['時間軸のカードで Esc', '一覧へ戻る'],
+    ['時間軸の一覧で j / k', '選んだカードを右に開く'], ['時間軸の一覧で Enter', 'カードを大きく開く（Esc で右へ戻す）'], ['時間軸のセッションで o', '既定の経路で続ける（利用不可なら理由と経路選択）'], ['時間軸の一覧で r / 1 2 3 / d', '返信欄へ / 表示 / 詳細パネル'], ['時間軸のカードで Esc', '一覧へ戻る'],
   ]],
   ['キーの案内', [['見出しをドラッグ / 矢印キー', '置き場所: 右上・右下・下端・左下（Home で下端）'], ['– / 見出しで Enter', '畳む / 開く']]],
   ['dot', [['Shift+V', 'dotのセッションを含める / 除く（ボード・時間軸）'], ['⌘K', 'dotだけ / 含める / 除く']]],
@@ -235,8 +235,9 @@ async function commandPalette() {
         return { label: `カードを${step < 0 ? '左' : '右'}のリスト「${target.title}」へ移動`, run: () => movePaneAdjacent(p, step), hint: `Shift+${step < 0 ? '←' : '→'}` };
       }),
       ...(sessionPane ? [
+        { label: 'セッションを続ける（既定の経路）', run: () => resume(sessionPane.id), hint: 'o' },
         ...(sessionPane.id?.startsWith('claude:') ? [
-          { label: `${desktopAccounts.selected(sessionPane.id) ? accountName(desktopAccounts.selected(sessionPane.id)) : '選択アカウント'} で Claude Desktop を開く`, run: () => resume(sessionPane.id, { route: 'desktop' }), hint: 'o' },
+          { label: `${desktopAccounts.selected(sessionPane.id) ? accountName(desktopAccounts.selected(sessionPane.id)) : '選択アカウント'} で Claude Desktop を開く`, run: () => resume(sessionPane.id, { route: 'desktop' }) },
           ...(['prepared','waiting-for-quit','waiting-for-login','opening'].includes(desktopAccounts.resumes.get(sessionPane.id)?.result?.state) ? [{ label: 'Claude Desktop の再開待機を取り消す', run: () => desktopAccounts.cancelResume(sessionPane.id) }] : []),
         ] : []),
         ...(terminalAvailable(sessionPane) ? [

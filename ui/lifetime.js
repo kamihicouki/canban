@@ -17,7 +17,7 @@ function setBoardView(view) {
   if (workspace.utilityPage()) workspace.navigate('home', { reload: false });
   if (state.board) render();
 }
-const toggleBoardView = () => setBoardView(state.view === 'board' ? 'timeline' : (state.view === 'timeline' ? 'gantt' : 'board'));
+const toggleBoardView = () => setBoardView(timelineOn() ? 'board' : 'timeline');
 
 // ---- the view switch in the app bar: one control, the key beside it ----
 function renderViewSwitch() {
