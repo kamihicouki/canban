@@ -11,12 +11,25 @@ document.addEventListener('keydown', e => {
   if (e.code === 'KeyL' && (openViewKind() === 'orbit' || focusedPane()?.kind === 'task' || document.activeElement?.closest?.('.card')?.dataset.cardId?.startsWith('task:'))) { e.preventDefault(); focusTaskLoop(); }
 }, true);
 document.addEventListener('keydown', e => {
+  if (e.altKey && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.isComposing && (e.code === 'KeyM' || e.key === 'm' || e.key === 'M') && !document.querySelector('.popover')) {
+    if (!paneLayer.hidden || document.querySelector('.task-quick-dialog[open]') || voiceMode.active) {
+      e.preventDefault();
+      voiceMode.toggle();
+      refreshShortcutHints();
+      return;
+    }
+  }
   if (e.altKey && !e.metaKey && !e.ctrlKey && !e.isComposing && e.code === 'KeyA' && !typingIn(e.target) && !document.querySelector('.popover')) {
     const picker = claudeAccountPicker(focusedPane());
     if (picker) { e.preventDefault(); picker.click(); }
   }
   if (e.altKey && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.isComposing && e.code === 'KeyC' && !laneHides('directory') && (document.querySelector('.category-picker') || !typingIn(e.target) && !document.querySelector('dialog[open], .popover'))) {
     e.preventDefault(); openCategoryPicker();
+  }
+  if (e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey && e.code === 'KeyU' && !e.isComposing && !e.target.closest?.('.term-host') && !document.querySelector('.popover, dialog[open]')) { e.preventDefault(); toggleAuxiliaryUi(); }
+  if (e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey && e.code === 'KeyR' && !e.isComposing && !e.target.closest?.('.term-host') && !document.querySelector('.popover, dialog[open]')) {
+    const id = selectedRelatedCardId();
+    if (id) { e.preventDefault(); openCardRelations(e.target.closest?.('[data-card-id]') || e.target, id); }
   }
   // Alt+1〜9: the agent's options into the input, also while typing there (⌥ digits would only type symbols).
   const digit = /^Digit([1-9])$/.exec(e.code);
@@ -36,6 +49,7 @@ function quickAdd() {
   const listId = focused?.closest?.('.list')?.dataset.listId;
   return taskQuickAdd.open({ listId, lane: state.lanes.find(l => l.key === laneName) });
 }
+const nextBoardViewLabel = () => ({ board: '時間軸', timeline: 'ガント', gantt: 'ボード' })[state.view] || 'ボード';
 function shortcutHints(entries, className = '') {
   return h('div', { class: `shortcut-hints ${className}`, 'aria-label': 'この画面のキー' },
     ...entries.map(([key, label, disabled = false]) => h('span', { class: 'shortcut-hint', 'aria-disabled': disabled ? 'true' : null },
@@ -45,6 +59,7 @@ function shortcutHints(entries, className = '') {
 // The originating lane survives a board redraw even when the same card occurs in several label lanes.
 function displayedListCards(id, origin = cardReturn) {
   if (inboxOn()) return inboxRows().filter(el => el.getClientRects().length);
+  if (typeof ganttOn === 'function' && ganttOn()) return ganttRows().filter(el => el.getClientRects().length);
   const lists = $$('#board .list');
   const originList = origin?.closest?.('.list');
   const lane = originList?.closest('.lane')?.dataset.lane;
@@ -57,6 +72,7 @@ function stepDisplayedCard(delta) {
   const overlay = overlayOpen() || inDockedPane(document.activeElement);
   if (overlay) return stepOpenCard(delta);
   if (inboxOn()) return inboxStep(delta);
+  if (typeof ganttOn === 'function' && ganttOn()) return ganttStep(delta);
   const focused = document.activeElement?.closest?.('#board .card');
   const id = overlay ? panes[0]?.id : focused?.dataset.cardId;
   const cards = id ? displayedListCards(id, overlay ? cardReturn : focused) : $$('#board .card').filter(el => el.getClientRects().length);
@@ -90,7 +106,10 @@ function refreshShortcutHints() {
   if (upper) entries = [];
   else if (inCard && input.closest('.term-host')) entries = [['Shift+Esc', 'カードのキーへ戻る'], [`${modKey}K`, 'コマンド']];
   else if (inCard && typing) entries = [
-    ...(input.closest('[data-sec="send"]') && input.closest('.prompt-composer') ? [[`${modKey}Enter`, input.closest('.pane').dataset.kind === 'task' ? 'セッション開始' : '送信']] : []),
+    ...(input.closest('[data-sec="send"]') && input.closest('.prompt-composer') ? [
+      [`${modKey}Enter`, input.closest('.pane').dataset.kind === 'task' ? 'セッション開始' : '送信'],
+      ['Alt+M', '音声入力'],
+    ] : []),
     ['Esc', '入力を抜ける'], [`${modKey}K`, 'コマンド'],
   ];
   else if (inCard && panes[0]?.kind === 'view') entries = [[{ analytics: 'a', usage: 'u', orbit: 'Shift+O' }[openViewKind()], '閉じる'], ['r', '更新'], ...globalKeys, ['Esc', '閉じる']];
@@ -100,15 +119,15 @@ function refreshShortcutHints() {
     entries = [['k', '前のカード', index <= 0], ['j', '次のカード', index < 0 || index === cards.length - 1],
       ['⇧←', '左のリストへ', !adjacentPaneList(focusedPane(), -1)], ['⇧→', '右のリストへ', !adjacentPaneList(focusedPane(), 1)],
       ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
-      ...(focusedPane()?.kind === 'session' ? [['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
-      ...(panePromptInput() ? [['i', '指示欄']] : []), ...(panes.some(x => x.choices?.length) ? [['Alt+1〜9', '選択肢で答える']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ['f', '変更'], ...(terminalAvailable(focusedPane()) ? [['t', 'ターミナル'], ...(cardTerms.get(focusedPane().id)?.closed ? [['Shift+R', '開き直す']] : cardTerms.get(focusedPane().id)?.id ? [['Shift+X', 'シェルを終了']] : [])] : [])] : []), ['r', '更新'], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys,
-      ...(exchangeTrail ? [['Shift+1 / 2 / 3', '関連カードのビュー'], ['Esc / Shift+Esc', '訪問を戻る / 進む'], ['Shift+Home', '起点へ']] : docked ? [['Enter', '大きく開く'], ['Esc', '一覧へ戻る']] : [['Esc', timelineOn() ? '時間軸へ戻す' : '閉じる']])];
+      ...(focusedPane()?.kind === 'session' ? [['o', '続ける'], ['x', '仕事にまとめる'], ['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
+      ...(panePromptInput() ? [['i', '指示欄'], ['Alt+M', voiceMode.active ? '音声対話OFF' : '音声対話']] : []), ...(panes.some(x => x.choices?.length) ? [['Alt+1〜9', '選択肢で答える']] : []), ...(focusedPane()?.el.dataset.detail === 'thread' && focusedPane()?.kind === 'session' ? [['d', '詳細パネル'], ['f', '変更'], ...(terminalAvailable(focusedPane()) ? [['t', 'ターミナル'], ...(cardTerms.get(focusedPane().id)?.closed ? [['Shift+R', '開き直す']] : cardTerms.get(focusedPane().id)?.id ? [['Shift+X', 'シェルを終了']] : [])] : [])] : []), ['r', '更新'], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys,
+      ...(exchangeTrail ? [['Shift+1 / 2 / 3', '関連カードのビュー'], ['Esc / Shift+Esc', '訪問を戻る / 進む'], ['Shift+Home', '起点へ']] : typeof canReturnPaletteOutsideCard === 'function' && canReturnPaletteOutsideCard() ? [['Esc', '参照元のカードへ戻る']] : docked ? [['Enter', '大きく開く'], ['Esc', '一覧へ戻る']] : [['Esc', timelineOn() ? '時間軸へ戻す' : '閉じる']])];
   }
   else if (typing) entries = input.id === 'q' ? [['↓ / Enter', 'カードへ'], ['Esc', '検索をクリア']] : [['⌘K / Ctrl+K', 'コマンド']];
   else if (workspace.utilityPage()) entries = [...globalKeys, ['Esc', 'パネルを閉じる']];
-  else if (input?.matches('.irow')) entries = [['j / k', '次 / 前'], ['Enter', '大きく開く'], ['r', '返信'], ['1 2 3', 'テキスト / プレビュー / 要点'], ['d', '詳細パネル'], ['l', 'ラベル'], ['m', 'リストへ移動'], ['i', 'ボード'], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys];
+  else if (input?.matches('.irow, .gantt-row')) entries = [['j / k', '次 / 前'], ['Enter', '大きく開く'], ...(panes[0]?.kind === 'session' ? [['o', '続ける'], ['x', '仕事にまとめる']] : []), ['r', '返信'], ['1 2 3', 'テキスト / プレビュー / 要点'], ['d', '詳細パネル'], ['l', 'ラベル'], ['m', 'リストへ移動'], ['i', nextBoardViewLabel()], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys];
   else if (input?.matches('.card')) entries = [['j / k', '次 / 前'], ['Enter', '開く'], ['Space', 'その場で返信'], ['l', 'ラベル'], ['m', 'リストへ移動'], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys];
-  else entries = [['j / k', 'カード選択'], ['/', '検索'], ['c', 'タスク追加'], ['i', timelineOn() ? 'ボード' : '時間軸'], ...(state.lens ? [['Esc', '照らすのをやめる']] : []), ['b', 'ナビゲーション'], ['a / u', '分析 / Usage'], ['r', '更新'], ...globalKeys];
+  else entries = [['j / k', 'カード選択'], ['/', '検索'], ['c', 'タスク追加'], ['i', nextBoardViewLabel()], ...(state.lens ? [['Esc', '照らすのをやめる']] : []), ['b', 'ナビゲーション'], ['a / u', '分析 / Usage'], ['r', '更新'], ...globalKeys];
   paintKeyGuide(entries);
 }
 document.addEventListener('focusin', refreshShortcutHints);
@@ -121,9 +140,9 @@ const SHORTCUTS = [
     ['c', '作成ダイアログを開く'], ['1〜9', '保存したビューに切り替え'], ['a', '分析を開く / 閉じる'], ['Shift+O', '軌道シートを開く / 閉じる'], ['Shift+L', 'タスクの改善ループへ'], ['r', '再読み込み'], ['?', 'この一覧'],
   ]],
   ['時間（寿命）', [
-    ['i', 'ボード（リストごと）と時間軸（時間ごと）を切り替え'], ['時間の帯で ← →', '日を移動（Home / End で最古 / 今日）。Enter で照らす'],
+    ['i', 'ボード → 時間軸 → ガント → ボードを切り替え'], ['時間の帯で ← →', '日を移動（Home / End で最古 / 今日）。Enter で照らす'],
     ['Esc', '照らすのをやめる（ボード）'], ['⌘K', '「期間: …」「…のカードを照らす」'],
-    ['時間軸の一覧で j / k', '選んだカードを右に開く'], ['時間軸の一覧で Enter', 'カードを大きく開く（Esc で右へ戻す）'], ['時間軸の一覧で r / 1 2 3 / d', '返信欄へ / 表示 / 詳細パネル'], ['時間軸のカードで Esc', '一覧へ戻る'],
+    ['Alt+Shift+U', '補助表示を固定 / 最小'], ['x', 'セッションを仕事にまとめる（⌘Kでも選択）'], ['Alt+Shift+R', '関連するカードを開く（⌘Kでも選択）'], ['補助表示の中で p', 'その部品を固定 / 最小'], ['時間軸の一覧で j / k', '選んだカードを右に開く'], ['時間軸の一覧で Enter', 'カードを大きく開く（Esc で右へ戻す）'], ['時間軸のセッションで o', '既定の経路で続ける（利用不可なら理由と経路選択）'], ['時間軸の一覧で r / 1 2 3 / d', '返信欄へ / 表示 / 詳細パネル'], ['時間軸のカードで Esc', '一覧へ戻る'],
   ]],
   ['キーの案内', [['見出しをドラッグ / 矢印キー', '置き場所: 右上・右下・下端・左下（Home で下端）'], ['– / 見出しで Enter', '畳む / 開く']]],
   ['dot', [['Shift+V', 'dotのセッションを含める / 除く（ボード・時間軸）'], ['⌘K', 'dotだけ / 含める / 除く']]],
@@ -141,7 +160,7 @@ const SHORTCUTS = [
     ['Alt+D', 'Claude Desktop の起動アカウントを選ぶ（作成ダイアログでも共通）'],
     ['Alt+a', 'Claude の実行アカウントを選ぶ（このマシンのセッション）/ タスク: 開始するアカウントを選ぶ'],
     ['Shift+← / →', '左右の隣のリストへ移動（端で停止、入力中・配置調整中は無効）'],
-    ['j / k', '表示リストの次 / 前のカードを開く（端で停止）'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'],
+    ['j / k', '表示リストの次 / 前のカードを開く（端で停止）'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['v', '表示モード切替: 全画面 / スプリット / シート'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'], ['y', '思考・実行ステップタイムラインを開閉'],
     ['z', 'エージェントのセッションをアーカイブ / 復元'], ['Delete', 'セッションと会話履歴を削除（確認あり）'], ['i', '指示の入力欄へ'], ['Tab / Enter', 'タスクの開始メニュー: 新しい依頼に切り替える（開始は⌘Enter）'], ['Alt+1〜9', 'エージェントの選択肢を入力欄へ（送信は ⌘Enter）'], ['$', '入力欄: スキルを選ぶ（⌘Kからも選択）'], ['d / f / t', 'スレッド表示: 詳細パネル / 変更 / ターミナルを開閉'], ['Shift+Esc', 'ターミナル: カードのキーへ戻る（Esc はシェルへ送る）'], ['Shift+R / Shift+X', 'カード: 終了したターミナルを開き直す / シェルを終了'], ['⌥Enter', '入力欄: キューに追加（⌘Enter は送信）'], ['o', '再開'], ['l g m', 'ラベル / ' + T.category + ' / リスト移動'], ['c', '作成ダイアログを開く'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
   ]],
   ['作成ダイアログ', [['⌘Enter / Ctrl+Enter', 'タスクを作成 / アプリを開く'], ['Alt+D', 'Claude Desktop の起動アカウントを選ぶ'], ['Enter', 'タイトル欄: タスクを作成'], ['Esc', '下書きを残して閉じる']]],
@@ -156,13 +175,21 @@ function showShortcuts() {
   p.querySelector('.close').focus();
 }
 async function commandPalette() {
+  const paletteOrigin = capturePaletteOrigin();
   if (!desktopAccounts.view) await desktopAccounts.refresh().catch(() => null);
   const exchangeCard = selectedExchangeCard();
   const sessionPane = !paneLayer.hidden && focusedPane()?.kind === 'session' && focusedPane()?.d?.session ? focusedPane() : null;
   const b = state.board;
   if (!b) return;
   const f = state.filters;
+  const workId = selectedWorkSessionId(), relationId = selectedRelatedCardId();
   const actions = [
+    { label: state.auxiliaryMode === 'pinned' ? '補助表示をすべて最小にする' : '補助表示をすべて固定する', run: toggleAuxiliaryUi, hint: 'Alt+Shift+U' },
+    ...auxiliaryCommands(),
+    ...(!paneLayer.hidden && focusedPane()?.el.querySelector('.cx-wait-question:not([hidden])') ? [{ label: '質問と選択肢を開く / 閉じる', run: () => { const q=focusedPane().el.querySelector('.cx-wait-question'); q.open=!q.open; q.querySelector('summary').focus(); }, hint: '質問内 Enter' }] : []),
+    ...(relationId ? [{ label: '関連するカードを開く', run: () => openCardRelations(null, relationId), hint: 'Alt+Shift+R' }] : []),
+    ...(workId ? [{ label: '仕事にまとめる', run: () => workBundlePicker(document.activeElement, workId), hint: 'x' }] : []),
+    ...(workBundleUndoAvailable() ? [{ label: '仕事にまとめた操作を取り消す', run: undoWorkBundle }] : []),
     { label: openViewKind() === 'analytics' ? '分析を閉じる' : '分析を開く', run: toggleAnalytics, hint: 'a' },
     { label: openViewKind() === 'usage' ? 'Agent Usage を閉じる' : 'Agent Usage を開く', run: () => toggleView('usage'), hint: 'u' },
     { label: openViewKind() === 'orbit' ? '軌道を閉じる' : '軌道を開く', run: () => toggleView('orbit'), hint: 'Shift+O' },
@@ -188,7 +215,7 @@ async function commandPalette() {
           input?.closest('.prompt-composer')?.scrollIntoView({ block: 'nearest' });
         }, hint: '$' },
       ] : []),
-      { label: 'カードを閉じる', run: closeCards, hint: 'Esc' },
+      { label: canReturnPaletteOutsideCard() ? '参照元のカードへ戻る' : 'カードを閉じる', run: closeCards, hint: 'Esc' },
     ] : []),
     ...DRAWER_PAGES.map((page) => ({ label: `${WORKSPACE_PAGES.find(([id]) => id === page)[1]}を開く`, run: () => workspace.navigate(page) })),
     { label: '再読み込み', run: () => paneLayer.hidden ? load({ refresh: true }) : openCard(panes[0].id), hint: 'r' },
@@ -217,14 +244,16 @@ async function commandPalette() {
     ...(!laneHides('directory') ? [{ label: 'すべてのカテゴリを選ぶ', run: () => openCategoryPicker(), hint: 'Alt+C' }] : []),
     ...(!laneHides('directory') && state.filters.directory ? [{ label: `選択中のカテゴリを${categoryIsPinned(state.filters.directory) ? '固定解除' : '固定'}`, run: () => setCategoryPin(state.filters.directory), hint: '一覧内 Alt+P' }] : []),
     { label: 'Slack資料の追加ボタンへ', run: () => focusedPane()?.el.querySelector('.slack-add-prompt')?.focus(), hint: 'Alt+s' },
+    ...(document.querySelector('.prompt-mic') ? [{ label: voiceMode.active ? '音声対話モードを停止' : '音声対話モードを開始', run: () => voiceMode.toggle(), hint: 'Alt+M' }] : []),
     ...(!paneLayer.hidden && focusedPane()?.kind !== 'view' ? [
       ...[-1, 1].filter(step => adjacentPaneList(focusedPane(), step)).map(step => {
         const p = focusedPane(), target = adjacentPaneList(p, step);
         return { label: `カードを${step < 0 ? '左' : '右'}のリスト「${target.title}」へ移動`, run: () => movePaneAdjacent(p, step), hint: `Shift+${step < 0 ? '←' : '→'}` };
       }),
       ...(sessionPane ? [
+        { label: 'セッションを続ける（既定の経路）', run: () => resume(sessionPane.id), hint: 'o' },
         ...(sessionPane.id?.startsWith('claude:') ? [
-          { label: `${desktopAccounts.selected(sessionPane.id) ? accountName(desktopAccounts.selected(sessionPane.id)) : '選択アカウント'} で Claude Desktop を開く`, run: () => resume(sessionPane.id, { route: 'desktop' }), hint: 'o' },
+          { label: `${desktopAccounts.selected(sessionPane.id) ? accountName(desktopAccounts.selected(sessionPane.id)) : '選択アカウント'} で Claude Desktop を開く`, run: () => resume(sessionPane.id, { route: 'desktop' }) },
           ...(['prepared','waiting-for-quit','waiting-for-login','opening'].includes(desktopAccounts.resumes.get(sessionPane.id)?.result?.state) ? [{ label: 'Claude Desktop の再開待機を取り消す', run: () => desktopAccounts.cancelResume(sessionPane.id) }] : []),
         ] : []),
         ...(terminalAvailable(sessionPane) ? [
@@ -245,7 +274,7 @@ async function commandPalette() {
     ...Object.entries(LANE_HEIGHTS).map(([v, [t]]) => ({ label: `レーンの高さ: ${t}`, run: () => { f.laneHeight = v; saveFilters(); render(); } })),
     { label: 'キーボードショートカット', run: showShortcuts, hint: '?' },
     ...LAYOUTS.map(([id, name]) => ({ label: `レイアウト: ${name}`, run: () => setLayout(id) })),
-    { label: timelineOn() ? 'ボードで表示' : '時間軸で表示', run: toggleBoardView, hint: 'i' },
+    ...[['board', 'ボード'], ['timeline', '時間軸'], ['gantt', 'ガント']].map(([view, name]) => ({ label: name + 'で表示', run: () => setBoardView(view), hint: name === nextBoardViewLabel() ? 'i' : '' })),
     ...PERIODS.filter(([k]) => Number(f.days) !== k).map(([k, n]) => ({ label: `期間: ${n}`, run: () => setScope({ days: k }) })),
     ...Object.entries(LIFE_LABELS).map(([k, n]) => ({ label: `${n}のカードを照らす`, run: () => pinLens({ life: k }) })),
     ...[['light', 'ライト'], ['dark', 'ダーク'], ['system', 'システム']].map(([k, n]) => ({ label: `色: ${n}`, run: () => setThemePref(k) })),
@@ -260,25 +289,29 @@ async function commandPalette() {
   b.directories.forEach((d) => add(`${T.category}`, '📂', d.name, () => setScope({ directory: d.id }), { hint: d.count, color: d.color }));
   (b.sourceFacets || []).forEach(f => add('元アプリ', '', sourceFacetLabel(f, b.sourceFacets), () => toggleSourceFilter(f.ref), { hint: `${f.count}カード`, keywords: sourceFacetTitle(f) }));
   b.labels.forEach((l) => add('ラベルで絞り込み', '🏷', l.name, () => setScope({ label: l.id }), { color: l.color }));
-  for (const l of b.lists) for (const c of l.cards) {
-    add('カード', l.title, c.title, () => {
+  const paletteCards = paletteBoardCards(b);
+  for (const c of paletteCards) {
+    add('カード', c.paletteList, c.title, () => {
       openCard(c.id);
-    }, { dot: c.status !== 'idle' ? c.status : null, hint: c.directory?.name || c.project || '', keywords: `${c.branch || ''} ${c.agent || ''}` });
+    }, { dot: c.statusKnown !== false && c.status !== 'idle' ? c.status : null, description: paletteCardDescription(c, c.archived ? 'アーカイブ済み' : ''), hint: c.updatedAt ? relTime(c.updatedAt) : '', keywords: `${c.branch || ''} ${c.agent || ''} ${c.project || ''}` });
   }
+  const outside = createPaletteSearchView({ cards: paletteCards, filters: { ...f } });
   const currentItems = () => {
     const answers = (sessionPane?.choices || []).map((choice, i) => ({ value: `answer:${i}`, label: `答える: ${choice.key} ${choice.title}`, group: '操作', badge: '操作', hint: i < 9 ? `Alt+${i + 1}` : '', choice }));
-    return [...items.slice(0, answerAt), ...answers, ...items.slice(answerAt)];
+    return [...outside.items(), ...items.slice(0, answerAt), ...answers, ...items.slice(answerAt)];
   };
   const p = picker(document.querySelector('dialog[open] .desktop-account-picker') || document.querySelector('dialog[open]') || $('#q'), {
     title: 'コマンド', items: currentItems, width: 560, placeholder: `カード・ビュー・${T.category}・操作を検索…`, limit: 200,
     onPick: (v, item) => {
-      if (item.choice) {
+      if (item.cardId) { openPaletteOutsideCard(item.cardId, paletteOrigin); }
+      else if (item.choice) {
         if (sessionPane?.choices?.some(c => c.key === item.choice.key && c.title === item.choice.title && c.reply === item.choice.reply)) fillChoice(sessionPane, item.choice);
       } else run.get(v)?.();
     },
   });
   p.refreshChoices = p.refreshItems;
   p.classList.add('palette');
+  outside.attach(p);
 }
 document.addEventListener('keydown', (e) => {
   if (e.defaultPrevented || e.isComposing || e.keyCode === 229 || document.querySelector('dialog[open]')) return;
@@ -313,6 +346,27 @@ $('#refresh').addEventListener('click', () => load({ refresh: true }).then(() =>
 
 // board: wheel over empty space scrolls horizontally like Trello
 $('#board').addEventListener('wheel', (e) => {
-  if (e.target.closest('.cards') || state.filters.swimlane) return;
+  if (e.target.closest('.cards, .inbox-list, .gantt-list') || state.filters.swimlane) return;
   if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { $('#board').scrollLeft += e.deltaY; e.preventDefault(); }
 }, { passive: false });
+
+function selectedWorkSessionId() {
+  const pane = !paneLayer.hidden && (!paneDocked() || inDockedPane(document.activeElement)) ? focusedPane() : null;
+  if (pane?.kind === 'session') return pane.id;
+  const id = document.activeElement?.closest?.('[data-card-id]')?.dataset.cardId
+    || (inboxOn() ? state.inbox.sel : typeof ganttOn === 'function' && ganttOn() ? state.gantt.sel : null);
+  return id && cardKind(id) === 'session' ? id : null;
+}
+document.addEventListener('keydown', e => {
+  if (e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.key !== 'x' || typingIn(e.target) || document.querySelector('.popover, dialog[open]')) return;
+  const id = selectedWorkSessionId();
+  if (id) { e.preventDefault(); workBundlePicker(e.target.closest('[data-card-id]') || e.target, id); }
+});
+
+function selectedRelatedCardId() {
+  const pane = !paneLayer.hidden && (!paneDocked() || inDockedPane(document.activeElement)) ? focusedPane() : null;
+  const id = pane?.kind !== 'view' ? pane?.id : null;
+  const selected = id || document.activeElement?.closest?.('[data-card-id]')?.dataset.cardId
+    || (inboxOn() ? state.inbox.sel : typeof ganttOn === 'function' && ganttOn() ? state.gantt.sel : null);
+  return selected && cardKind(selected) !== 'view' ? selected : null;
+}

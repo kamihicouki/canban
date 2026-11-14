@@ -42,6 +42,7 @@
 .rb-week::after { content: ""; position: absolute; right: -2px; bottom: 12px; height: 26px; border-right: 1px dashed var(--on-board-dim); opacity: .7; }
 .rb-mark { opacity: .8; }
 .rb-clear { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 14px; background: var(--pressed-bg); color: var(--pressed-fg); font-size: 12px; font-weight: 600; white-space: nowrap; flex: none; }
+.rb-clear[hidden] { display: none; }
 .rb-clear .x { font-size: 10px; opacity: .7; }
 .rb-period { display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--on-board-btn); flex: none; }
 .rb-period button { height: 28px; padding: 0 9px; border-radius: 7px; font-size: 12.5px; font-weight: 600; color: var(--on-board-dim); white-space: nowrap; }

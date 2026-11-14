@@ -1,0 +1,22 @@
+{
+  "checkedAt": "2026-11-14T11:10:25.508673+00:00",
+  "conditions": "isolated fictional fixtures; Chrome 1280x800; no real sends or approvals; browser files sequential",
+  "commands": [
+    {
+      "command": "npm test",
+      "tests": 840,
+      "pass": 840,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    {
+      "command": "node --test --test-concurrency=1 tests/board-smoke.browser.mjs tests/layouts.browser.mjs tests/work-bundle.browser.mjs tests/card-relations.browser.mjs tests/dock-view-switch.browser.mjs tests/board-wheel.browser.mjs",
+      "tests": 8,
+      "pass": 8,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    }
+  ]
+}

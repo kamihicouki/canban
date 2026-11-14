@@ -10,7 +10,8 @@ const laneHides = (key) => state.filters.swimlane === key || LANE_FILTER[state.f
 function filterChips(b) {
   const f = state.filters, out = [];
   const add = (text, patch) => out.push({ text, patch });
-  if (f.agent !== 'all' && !laneHides('agent')) add(f.agent === 'codex' ? 'Codex' : 'Claude', { agent: 'all' });
+  const agLbl = typeof agentLabel === 'function' ? agentLabel(f.agent) : ({ codex: 'Codex', claude: 'Claude Code', antigravity: 'Antigravity', gemini: 'Gemini CLI', cursor: 'Cursor', chatgpt: 'ChatGPT', grok: 'Grok' }[f.agent] || f.agent);
+  if (f.agent !== 'all' && !laneHides('agent')) add(agLbl, { agent: 'all' });
   if (f.status) add(STATUS_LABELS[f.status] || f.status, { status: '' });
   if (f.directory && !laneHides('directory')) add(f.directory === '__none' ? 'カテゴリ無し' : b?.directories.find((d) => d.id === f.directory)?.name || f.directory, { directory: '' });
   if (f.project && !laneHides('project')) add(f.project, { project: '' });
@@ -61,11 +62,19 @@ function setScope(patch) {
 function scopePicker(anchor) {
   const b = state.board;
   const f = state.filters;
+  const agentCounts = b?.totals?.byAgent || {};
   picker(anchor, {
     title: `${T.category}・元アプリで絞り込み`, width: 340,
-    selected: [...(f.sourceFilters || []).map(x => `source:${sourceRefKey(x.ref)}`), f.directory ? `d:${f.directory}` : null, f.project ? `p:${f.project}` : null, f.workingFolder ? `wf:${f.workingFolder}` : null, f.folder ? `f:${f.folder}` : null, f.section ? `s:${f.section}` : null, f.label ? `l:${f.label}` : null, !f.label && !f.directory && !f.project && !f.folder && !f.workingFolder && !f.section ? '' : null].filter((x) => x != null),
+    selected: [...(f.sourceFilters || []).map(x => `source:${sourceRefKey(x.ref)}`), f.agent && f.agent !== 'all' ? `ag:${f.agent}` : null, f.directory ? `d:${f.directory}` : null, f.project ? `p:${f.project}` : null, f.workingFolder ? `wf:${f.workingFolder}` : null, f.folder ? `f:${f.folder}` : null, f.section ? `s:${f.section}` : null, f.label ? `l:${f.label}` : null, (!f.agent || f.agent === 'all') && !f.label && !f.directory && !f.project && !f.folder && !f.workingFolder && !f.section ? '' : null].filter((x) => x != null),
     items: [
       { value: '', label: 'すべて（絞り込みを解除）' },
+      ...(!laneHides('agent') ? Object.entries(AGENT_META).map(([ag, meta]) => ({
+        value: `ag:${ag}`,
+        label: meta.app,
+        keywords: `${ag} ${meta.label} ${meta.app}`,
+        hint: agentCounts[ag]?.total ? `${agentCounts[ag].total}件` : '',
+        group: T.aiApps,
+      })) : []),
       ...directoryItems(false).map((it) => ({ ...it, value: `d:${it.value}`, group: `${T.category}` })),
       ...(b.sourceFacets || []).filter(x => !laneHides(sourceAxis(x.ref))).map(x => ({ value: `source:${x.key}`, label: sourceFacetLabel(x, b.sourceFacets), description: sourceFacetHint(x), keywords: sourceFacetTitle(x), hint: `${x.count}カード`, group: '元アプリ' })),
       ...(!laneHides('workingFolder') ? workingFolderFacets(b) : []).map((x) => ({ value: `wf:${x.cwd}`, label: x.name, description: (x.origins || []).map(o => o === 'planned' ? '開始予定' : '観測').join('・'), keywords: x.cwd, hint: x.count, group: '作業フォルダ' })),
@@ -74,7 +83,8 @@ function scopePicker(anchor) {
 
     ],
     onPick: (v) => {
-      if (!v) return setScope({ directory: '', project: '', folder: '', workingFolder: '', section: '', label: '', sourceFilters: [], cardKind: 'all' });
+      if (!v) return setScope({ agent: 'all', directory: '', project: '', folder: '', workingFolder: '', section: '', label: '', sourceFilters: [], cardKind: 'all' });
+      if (v.startsWith('ag:')) return setScope({ agent: f.agent === v.slice(3) ? 'all' : v.slice(3) });
       if (v.startsWith('source:')) return toggleSourceFilter(b.sourceFacets.find(x => x.key === v.slice(7)).ref);
       if (v.startsWith('l:')) return setScope({ label: f.label === v.slice(2) ? '' : v.slice(2) });
       if (v.startsWith('s:')) return setScope({ section: f.section === v.slice(2) ? '' : v.slice(2) });
@@ -182,11 +192,62 @@ function newCategoryInput(b) {
       act('canban_create_directory', { name: e.target.value.trim(), color: COLORS[(b.directories.length + 1) % COLORS.length] }, { okMsg: `${T.category}を作成しました` }).catch(() => {});
     } });
 }
+function aiAppsFilterNodes(b, f, hit, seg) {
+  const byAgent = b.totals?.byAgent || {};
+  const countOf = (ag) => byAgent[ag]?.total ?? (ag === 'codex' ? b.totals?.codex || 0 : ag === 'claude' ? b.totals?.claude || 0 : 0);
+  const extraAgents = Object.keys(AGENT_META).filter((ag) => ag !== 'codex' && ag !== 'claude');
+  const activeExtras = extraAgents.filter((ag) => countOf(ag) > 0 || f.agent === ag);
+  const idleExtras = extraAgents.filter((ag) => !activeExtras.includes(ag));
+  const out = [seg(T.aiApps, [['all', 'すべて'], ['codex', 'Codex'], ['claude', 'Claude']], (k) => f.agent === k, (k) => setScope({ agent: k }))];
+  const appRows = [];
+  for (const ag of activeExtras) {
+    const meta = AGENT_META[ag];
+    if (!hit(meta.label) && !hit(meta.app)) continue;
+    const stats = byAgent[ag] || { total: countOf(ag), running: 0, waiting: 0 };
+    const on = f.agent === ag;
+    appRows.push(h('button', {
+      type: 'button',
+      class: `side-app-row${on ? ' active' : ''}`,
+      'aria-pressed': String(on),
+      title: `${meta.app} で絞り込み（${SURFACE_META[meta.defaultSurface]?.title || ''}）`,
+      onclick: () => setScope({ agent: on ? 'all' : ag }),
+    },
+      h('span', { class: 'side-app-dot', style: { background: meta.color } }),
+      h('span', { class: 'grow ellipsis', text: meta.label }),
+      ...liveBadges(stats),
+      sideCountEl(stats.total)));
+  }
+  if (idleExtras.length && !state.sideQ.trim()) {
+    appRows.push(h('button', {
+      type: 'button',
+      class: 'side-row side-more',
+      title: 'すべての AI App から選ぶ',
+      onclick: (e) => picker(e.currentTarget, {
+        title: `${T.aiApps}で絞り込み`,
+        width: 280,
+        selected: [f.agent || 'all'],
+        items: [
+          { value: 'all', label: 'すべての AI App' },
+          ...Object.entries(AGENT_META).map(([ag, meta]) => ({
+            value: ag,
+            label: meta.app,
+            description: SURFACE_META[meta.defaultSurface]?.title || '',
+            hint: countOf(ag) ? `${countOf(ag)}件` : '0件',
+          })),
+        ],
+        onPick: (v) => setScope({ agent: v === f.agent ? 'all' : v }),
+      }),
+    }, h('span', { class: 'grow', text: `ほかの AI App（${idleExtras.length}）…` })));
+  }
+  if (appRows.length) out.push(h('div', { class: 'side-apps' }, ...appRows));
+  return out;
+}
+
 // 絞り込み: nothing chosen shows every card; pressing a value shows only those, pressing it again lifts it.
 function filterSection(b, hit = () => true) {
   const f = state.filters, nodes = [sideHead('絞り込み', filterChips(b).length ? h('button', { class: 'side-mini', title: '絞り込みをすべて解除', text: '解除', onclick: clearFilters }) : null)];
   const seg = (label, items, on, pick) => h('div', { class: 'side-seg', role: 'group', 'aria-label': label }, items.map(([k, t]) => h('button', { type: 'button', 'aria-pressed': String(on(k)), text: t, onclick: () => pick(k) })));
-  if (!laneHides('agent')) nodes.push(seg(T.aiApps, [['all', 'すべて'], ['codex', 'Codex'], ['claude', 'Claude']], (k) => f.agent === k, (k) => setScope({ agent: k })));
+  if (!laneHides('agent')) nodes.push(...aiAppsFilterNodes(b, f, hit, seg));
   const group = (title, rows, extra, always = false) => { const shown = rows.filter((r) => r && hit(r.label)); if (shown.length || always) nodes.push(sideHead(title, extra), ...shown.map((r) => r.el)); };
   const choice = (label, on, pick, lead, ...tail) => ({ label, el: h('button', { class: `side-row${on ? ' active' : ''}`, 'aria-pressed': String(on), onclick: pick }, lead, h('span', { class: 'grow ellipsis', text: label }), ...tail) });
   group('状態', ['running', 'waiting', 'completed', 'aborted', 'idle'].filter((k) => b.statusCounts?.[k] || f.status === k).map((k) =>
@@ -265,7 +326,7 @@ function renderSidebar(b) {
       h('span', { class: 'side-ic side-key', text: i < 9 ? String(i + 1) : '' }), h('span', { class: 'grow ellipsis', text: v.name })))));
   secs.push(laneSection(b, hit), filterSection(b, hit));
   const had = document.activeElement === state.sideInput;
-  el.replaceChildren(h('div', { class: 'side-scroll' }, ...secs), sideFoot(b));
+  el.replaceChildren(h('div', { class: 'side-scroll' }, ...(layoutParts.rail ? [layoutParts.rail] : []), ...secs), sideFoot(b));
   $('.side-scroll', el).scrollTop = scroll;
   if (had) state.sideInput.focus();
 }

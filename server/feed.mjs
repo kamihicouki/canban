@@ -6,6 +6,7 @@ import path from 'node:path';
 import { clip, cleanPrompt } from './sources/util.mjs';
 import { textOf, isHumanPrompt } from './sources/claude.mjs';
 import { rolloutFile, zstdTail } from './sources/readonly.mjs';
+import { readMultiAgentRecords } from './sources/multi-agents.mjs';
 
 export const FEED_TAIL_BYTES = 512 * 1024; // first read of a session
 export const FEED_MAX_DELTA = 1024 * 1024; // larger appends restart from the tail
@@ -17,6 +18,10 @@ const OUT_MAX = 600;
 // `offset` is where the next read continues; a partial last line is left for it.
 // A compressed rollout (`.jsonl.zst`) is decompressed down to the bytes that can be asked for.
 export async function readLines(file, { start = null, tailBytes = FEED_TAIL_BYTES } = {}) {
+  if (file && (file.includes('#composer:') || file.includes('#chatgpt:') || file.endsWith('.json'))) {
+    const records = start != null && start > 0 ? [] : await readMultiAgentRecords(file);
+    return { records, offset: records.length, size: records.length, reset: false };
+  }
   file = rolloutFile(file);
   const zst = file.endsWith('.zst') ? await zstdTail(file, Math.max(tailBytes, FEED_MAX_DELTA)) : null;
   const fh = zst ? null : await fsp.open(file, 'r');
@@ -234,8 +239,73 @@ export function claudeItems(records) {
   return out;
 }
 
+export function multiAgentItems(records) {
+  const out = [];
+  for (const r of records) {
+    if (!r || typeof r !== 'object') continue;
+    const at = r.created_at || r.timestamp || r.createdAt || null;
+    // Antigravity transcript.jsonl format
+    if (r.type === 'USER_INPUT' || r.source === 'USER_EXPLICIT') {
+      const raw = typeof r.content === 'string' ? r.content : '';
+      const reqMatch = /<USER_REQUEST>\s*([\s\S]*?)\s*<\/USER_REQUEST>/i.exec(raw);
+      const t = reqMatch ? reqMatch[1].trim() : cleanPrompt(raw);
+      if (t) out.push({ k: 'user', id: r.step_index != null ? `step-${r.step_index}` : null, at, text: clip(t, TEXT_MAX) });
+      continue;
+    }
+    if (r.type === 'PLANNER_RESPONSE') {
+      if (typeof r.thinking === 'string' && r.thinking.trim()) {
+        out.push({ k: 'thinking', at, text: clip(r.thinking.trim(), TEXT_MAX) });
+      }
+      if (Array.isArray(r.tool_calls)) {
+        for (const tc of r.tool_calls) {
+          if (!tc) continue;
+          const name = toolLabel(tc.name || tc.tool_name || 'tool');
+          const args = parseArgs(tc.arguments || tc.args || tc.input || {});
+          const summary = String(args.toolSummary || args.CommandLine || args.Path || args.query || Object.values(args).find((x) => typeof x === 'string') || '').replace(/\s+/g, ' ').trim();
+          out.push({
+            k: 'tool',
+            id: tc.id || `tc-${r.step_index || 0}-${name}`,
+            at,
+            name,
+            summary: clip(summary, 240),
+            state: r.status === 'ERROR' ? 'error' : 'ok',
+          });
+        }
+      }
+      if (typeof r.content === 'string' && r.content.trim()) {
+        out.push({ k: 'assistant', id: r.step_index != null ? `step-${r.step_index}` : null, at, text: clip(r.content.trim(), TEXT_MAX) });
+      }
+      if (r.status === 'ERROR') out.push({ k: 'turn', at, state: 'aborted' });
+      else if (r.status === 'DONE' && (!Array.isArray(r.tool_calls) || !r.tool_calls.length)) out.push({ k: 'turn', at, state: 'completed' });
+      continue;
+    }
+    // Generic / Gemini / Cursor / ChatGPT / Grok records
+    const role = String(r.role || r.author?.role || r.sender || r.type || '').toLowerCase();
+    const rawText = typeof r.text === 'string'
+      ? r.text
+      : typeof r.content === 'string'
+        ? r.content
+        : Array.isArray(r.parts)
+          ? r.parts.map((p) => (typeof p === 'string' ? p : p?.text || '')).filter(Boolean).join('\n')
+          : typeof r.message?.content === 'string'
+            ? r.message.content
+            : '';
+    if (!rawText.trim()) continue;
+    if (role === 'user' || role === 'human') {
+      const t = cleanPrompt(rawText);
+      if (t) out.push({ k: 'user', at, text: clip(t, TEXT_MAX) });
+    } else if (role === 'assistant' || role === 'model' || role === 'agent' || role === 'bot' || role === 'gemini' || role === 'grok') {
+      out.push({ k: 'assistant', at, text: clip(rawText.trim(), TEXT_MAX) });
+      out.push({ k: 'turn', at, state: 'completed' });
+    }
+  }
+  return out;
+}
+
 export function itemsFor(agent, records, ctx) {
-  return agent === 'codex' ? codexItems(records, ctx) : claudeItems(records);
+  if (agent === 'codex') return codexItems(records, ctx);
+  if (agent === 'claude') return claudeItems(records);
+  return multiAgentItems(records);
 }
 
 // Fold 'result' items into the tool they complete; keep the last `limit` items.

@@ -2,6 +2,8 @@
 // A card is shown on its own layer above the board. Its width and height are kept per kind of card —
 // "session" and "task" — and shared by every card of that kind.
 const CARD_KINDS = ['session', 'task'];
+const CARD_VIEW_MODES = [['full', '全画面'], ['split', 'スプリット'], ['sheet', 'シート']];
+const normalizeCardViewMode = (v) => (CARD_VIEW_MODES.some(([k]) => k === v) ? v : 'full');
 const CARD_WIDTH_DEF = { session: 1000, task: 760 };
 const CARD_WIDTH_MIN = 560, CARD_WIDTH_MAX = 1600;
 const CARD_HEIGHT_DEF = { session: 860, task: 860 };
@@ -21,10 +23,10 @@ function cardBoardGeometry(width, reserve = {}) {
 // The key guide: one panel on every screen, docked at a corner of the stage or as a strip along its foot.
 // Where it sits is shared UI state ('keyGuide'); it floats over the stage and takes no room.
 const KEY_GUIDE_DOCKS = ['tr', 'br', 'bottom', 'bl']; // clockwise: the arrows on its title walk this ring
-const KEY_GUIDE_DEF = { dock: 'bottom', min: false };
+const KEY_GUIDE_DEF = { dock: 'br', min: true };
 const KEY_GUIDE_WIDTH = 200, KEY_GUIDE_ROOM = 216;
 function normalizeKeyGuide(value) {
-  return { dock: KEY_GUIDE_DOCKS.includes(value?.dock) ? value.dock : KEY_GUIDE_DEF.dock, min: value?.min === true };
+  return { dock: KEY_GUIDE_DOCKS.includes(value?.dock) ? value.dock : KEY_GUIDE_DEF.dock, min: typeof value?.min === 'boolean' ? value.min : KEY_GUIDE_DEF.min };
 }
 // Where a guide dropped at (x, y) — fractions of the stage — lands: the strip in the middle of the foot,
 // else the nearest corner. The top left belongs to the navigation and the ribbon, so the top is always the right.
@@ -70,4 +72,33 @@ function taskRequestText(title, description, note) {
 function neighborCardId(ids, current, step) {
   const i = ids.indexOf(current);
   return i < 0 ? null : ids[i + step] ?? null;
+}
+
+// A continuation label states the actual route; a usable CLI route never proves Desktop is usable.
+function continueAction(card, launch = {}, capabilities = {}, options = {}) {
+  const cloud = card.sourceKind === 'codex-cloud' || !!card.dot;
+  const route = cloud ? 'desktop' : options.route || 'desktop';
+  const name = ({ codex: 'Codex', claude: 'Claude', antigravity: 'Antigravity', cursor: 'Cursor' })[card.agent] || '元アプリ';
+  const waiting = card.statusKnown !== false && card.status === 'waiting';
+  const open = capabilities?.open;
+  let capability = open?.routes?.[route] || open || { status: 'unknown', reason: '操作条件は未取得です' };
+  // Cloud opens the Codex shell, not this exact conversation (whose capability is unsupported).
+  if (cloud && launch.desktop?.url && capability.status === 'unsupported') capability = { status: 'available' };
+  // The existing managed Desktop control refreshes account ownership/connection state before every launch.
+  if (route === 'desktop' && options.desktopState && capability.status !== 'blocked') capability = options.desktopState;
+  let label = route === 'terminal' ? 'ターミナルで再開' : cloud ? 'Codex を開く'
+    : launch.desktop?.exact === false ? '同じフォルダーで新しく開く' : `${name} で${waiting ? '答える' : '開く'}`;
+  let reason = route === 'terminal' ? options.targetLabel || '' : cloud ? '会話は元アプリで読みます'
+    : launch.desktop?.exact === false ? `この会話は${name}では直接開けません。続きはターミナルで再開できます`
+    : waiting ? '質問・承認は元アプリで答えます' : '';
+  const present = route === 'terminal' ? !!launch.terminal?.command && options.terminalAvailable !== false : !!launch.desktop;
+  let disabled = !present || capability.status !== 'available';
+  if (disabled) reason = !present ? route === 'terminal' ? options.terminalAvailable === false ? '対応ターミナルが見つかりません' : 'CLI の再開経路はありません' : 'デスクトップアプリで開く経路はありません'
+    : `${capability.status === 'unknown' ? '開けるか確認できていません: ' : ''}${capability.reason || 'この経路は利用できません'}`;
+  if (route === 'desktop' && options.pending) {
+    label = options.pending.waiting ? '再開結果を確認' : label;
+    disabled = disabled || options.pending.disabled;
+    reason = options.pending.reason || reason;
+  }
+  return { label, reason, disabled, route };
 }

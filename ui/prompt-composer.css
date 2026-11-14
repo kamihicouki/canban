@@ -18,6 +18,7 @@
 /* The Codex-style box shared by session follow-ups, task starts and the create dialog. */
 .cx-box { display: flex; flex-direction: column; gap: 6px; background: var(--input-bg); border: 1px solid var(--btn-subtle-hover); border-radius: 16px; padding: 12px 10px 6px 16px; box-shadow: 0 2px 8px color-mix(in srgb, var(--card-fg) 4%, transparent); }
 .cx-box:focus-within { border-color: var(--accent); }
+.cx-box.voice-active { border-color: var(--tone-err); box-shadow: 0 0 0 2px color-mix(in srgb, var(--tone-err) 22%, transparent); }
 .prompt-composer .cx-box > textarea, .prompt-composer .cx-box > textarea.note { width: 100%; min-height: 28px; max-height: 180px; border: 0; border-radius: 0; outline: 0; resize: none; background: none; font: inherit; font-size: var(--reading-size); line-height: 1.6; padding: 0 6px 0 0; box-shadow: none; color: inherit; field-sizing: content; }
 .cx-box > .prompt-assets { margin: 0; }
 .prompt-toolbar { display: flex; align-items: center; gap: 4px; margin: 0 0 0 -6px; min-width: 0; }
@@ -25,6 +26,8 @@
 .cx-ico { height: 28px; min-width: 28px; padding: 0 7px; border-radius: 8px; display: inline-grid; place-items: center; color: var(--card-muted); font-size: 14px; font-weight: 600; flex: none; }
 .cx-ico:hover:not(:disabled) { background: var(--btn-subtle-hover); color: var(--card-fg); }
 .cx-ico:disabled, .send-round:disabled { opacity: .5; cursor: default; }
+.cx-ico.prompt-mic.listening { color: var(--tone-err); background: var(--tone-err-bg); animation: pulse-mic 1.2s infinite ease-in-out; }
+@keyframes pulse-mic { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .7; transform: scale(1.08); } }
 .prompt-toolbar .perm-chip { max-width: 240px; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; height: 28px; padding: 0 9px; border-radius: 8px; font-size: 12.5px; color: var(--card-muted); white-space: nowrap; margin: 0; background: none; }
 .prompt-toolbar .perm-chip.elevated { color: var(--tone-wait); background: var(--tone-wait-bg); }
 .prompt-toolbar .help-tip { flex: none; }
@@ -49,3 +52,17 @@
 .cx-choice-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cx-rec { flex: none; font-size: 11px; font-weight: 700; color: var(--accent); }
 .cx-choice .keycap { flex: none; opacity: .7; }
+/* The originating app's unanswered question is readable beside the draft, never actionable here. */
+/* Outstanding questions stay readable in one line; choices open by keyboard or pointer. */
+.cx-wait-question { margin: 0 0 6px; border: 1px solid var(--btn-subtle-hover); border-radius: 8px; background: var(--card-hover); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.cx-wait-question[hidden] { display: none; }
+.cx-wait-summary { display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 32px; padding: 4px 10px; }
+.cx-wait-summary::before { content: '›'; font-size: 17px; }
+.cx-wait-question[open] .cx-wait-summary::before { transform: rotate(90deg); }
+.cx-wait-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cx-wait-summary small { flex: none; color: var(--card-muted); font-size: 11px; }
+.cx-wait-body { padding: 4px 12px 10px; }
+.cx-wait-body p { margin: 0; white-space: pre-wrap; }
+.cx-wait-body ul { margin: 6px 0; padding-left: 20px; }
+.cx-wait-body small { color: var(--card-muted); }
+.cx-busy-key { white-space: nowrap; font-size: 12px; }

@@ -60,6 +60,19 @@ export async function readJson(p) {
   }
 }
 
+export async function readText(p, maxBytes = 64 * 1024) {
+  const fh = await fsp.open(p, 'r');
+  try {
+    const { size } = await fh.stat();
+    const len = Math.min(size, maxBytes);
+    const buf = Buffer.alloc(len);
+    await fh.read(buf, 0, len, 0);
+    return buf.toString('utf8');
+  } finally {
+    await fh.close();
+  }
+}
+
 // Iterate JSON lines of a file opened with the 'r' flag. Malformed lines are skipped.
 export async function* readJsonLines(p) {
   const stream = fs.createReadStream(p, { flags: 'r', encoding: 'utf8' });

@@ -21,7 +21,7 @@ test('assembled board: one style, one script, every include inlined, script comp
   new vm.Script(scripts[0][1]); // throws on a syntax error
   const src = fs.readFileSync(path.join(ui, 'board.html'), 'utf8');
   const included = [...src.matchAll(/@include ([\w-]+\.(?:css|js))/g)].map((m) => m[1]).sort();
-  assert.deepEqual(included, ['accounts.css', 'accounts.js', 'analytics.js', 'app-bar.js', 'base.css', 'board-render.js', 'board.css', 'boot.js', 'bridge.js', 'card-board.js', 'card-face.css', 'card-face.js', 'card-interior.css', 'card-overlay-layer.js', 'card-overlay-model.js', 'card-overlay-setup.js', 'card-overlay.css', 'card-overlay.js', 'card-terminal.css', 'card-terminal.js', 'desktop-accounts.js', 'drag.js', 'exchanges-model.js', 'exchanges-trail-model.js', 'exchanges-trail.css', 'exchanges-trail.js', 'exchanges.css', 'exchanges.js', 'header.css', 'header.js', 'icons.js', 'inbox.css', 'inbox.js', 'key-guide.css', 'key-guide.js', 'keyboard.js', 'lanes.js', 'layouts.css', 'layouts.js', 'lifetime-model.js', 'lifetime.css', 'lifetime.js', 'load.js', 'loop-model.js', 'loop.css', 'loop.js', 'message-preview.js', 'popover.js', 'prompt-composer.css', 'prompt-composer.js', 'realtime.js', 'requests.js', 'resume.js', 'search.js', 'settings.js', 'sidebar-categories.js', 'sidebar.js', 'slack.css', 'slack.js', 'source-facets.js', 'state.js', 'status.js', 'task-detail.js', 'task-quick-add-model.js', 'task-quick-add.css', 'task-quick-add.js', 'thread.css', 'thread.js', 'vendor-xterm.css', 'vendor-xterm.js', 'workspace-model.js', 'workspace.css', 'workspace.js']);
+  assert.deepEqual(included, ['accounts.css', 'accounts.js', 'analytics.js', 'app-bar.js', 'auxiliary-ui.css', 'auxiliary-ui.js', 'base.css', 'board-render.js', 'board.css', 'boot.js', 'bridge.js', 'card-board.js', 'card-face.css', 'card-face.js', 'card-interior.css', 'card-overlay-layer.js', 'card-overlay-model.js', 'card-overlay-setup.js', 'card-overlay.css', 'card-overlay.js', 'card-relations-model.js', 'card-relations.css', 'card-relations.js', 'card-terminal.css', 'card-terminal.js', 'desktop-accounts.js', 'drag.js', 'exchanges-model.js', 'exchanges-trail-model.js', 'exchanges-trail.css', 'exchanges-trail.js', 'exchanges.css', 'exchanges.js', 'gantt-model.js', 'gantt.css', 'gantt.js', 'header.css', 'header.js', 'icons.js', 'inbox.css', 'inbox.js', 'key-guide.css', 'key-guide.js', 'keyboard.js', 'lanes.js', 'layouts.css', 'layouts.js', 'lifetime-model.js', 'lifetime.css', 'lifetime.js', 'load.js', 'loop-model.js', 'loop.css', 'loop.js', 'message-preview.js', 'palette-search-model.js', 'palette-search.js', 'popover.js', 'prompt-composer.css', 'prompt-composer.js', 'realtime.js', 'requests.js', 'resume.js', 'search.js', 'settings.js', 'sidebar-categories.js', 'sidebar.js', 'slack.css', 'slack.js', 'source-facets.js', 'state.js', 'status.js', 'task-detail.js', 'task-quick-add-model.js', 'task-quick-add.css', 'task-quick-add.js', 'thread.css', 'thread.js', 'vendor-xterm.css', 'vendor-xterm.js', 'work-bundle-model.js', 'work-bundle.js', 'workspace-model.js', 'workspace.css', 'workspace.js']);
   for (const f of included) assert.ok(html.includes(fs.readFileSync(path.join(ui, f), 'utf8').trimEnd().replaceAll('__CANBAN_VERSION__', '9.9.9').replaceAll('__CANBAN_UI_TOKEN__', '')), f);
   // board.html is the page's skeleton: markup and the order of its parts, no code of its own.
   assert.ok(src.length < 12000, `board.html grew to ${src.length} bytes; put code in a part of its own`);
@@ -74,4 +74,28 @@ test('rule replay prevents duplicate clicks, reports zero moves and restores but
   finish.resolve({ result: { moved: 1, errors: ['host unavailable'] } });
   await partial;
   assert.match(messages[1], /1 件.*一部のセッション/);
+});
+
+
+test('thinking timeline click and y retain the button and announce the current toggle state', () => {
+  const thread = fs.readFileSync(path.join(ui, 'thread.js'), 'utf8');
+  const overlay = fs.readFileSync(path.join(ui, 'card-overlay.js'), 'utf8');
+  const button = { pressed: 'false', setAttribute(name, value) { assert.equal(name, 'aria-pressed'); this.pressed = value; } };
+  const p = { timelineHidden: true, timelineEl: { hidden: true }, el: {} };
+  let paints = 0;
+  const context = vm.createContext({ p, $$: (selector, el) => { assert.equal(el, p.el); return [button]; },
+    paintThreadTimeline: pane => { assert.equal(pane, p); pane.timelineEl.hidden = pane.timelineHidden; paints++; } });
+  const helper = thread.match(/function toggleThreadTimeline\(p\) \{[\s\S]*?\n\}/)?.[0];
+  if (helper) vm.runInContext(helper, context);
+  const click = thread.split('function renderThreadPane')[1].match(/data-side-tab': 'timeline'[^\n]*?onclick: (\(\) => .*?) }, h\('span'/)[1];
+  const key = overlay.match(/k === 'y'\) run = (.*);/)[1];
+  vm.runInContext('(' + click + ')()', context);
+  assert.equal(p.timelineHidden, false);
+  assert.equal(p.timelineEl.hidden, false);
+  assert.equal(button.pressed, 'true', 'click announces the open timeline');
+  vm.runInContext('(' + key + ')()', context);
+  assert.equal(p.timelineHidden, true);
+  assert.equal(p.timelineEl.hidden, true);
+  assert.equal(button.pressed, 'false', 'y announces the closed timeline');
+  assert.equal(paints, 2);
 });

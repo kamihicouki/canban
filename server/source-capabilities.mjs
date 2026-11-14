@@ -43,6 +43,7 @@ export function capabilitiesFor({ session = null, target = null, account = null,
   if (mismatch) result.sendPrompt = blocked('選択中のアカウントとセッションのアカウントが異なります');
   else if (ownershipUnknown) result.sendPrompt = capability('sendPrompt', 'unknown', 'セッションの所有アカウントは未取得です');
   else if (isCloudSession(session)) result.sendPrompt = capability('sendPrompt', 'unsupported', 'このクラウドセッションへの追加依頼には対応していません');
+  else if (!['codex', 'claude'].includes(session.agent)) result.sendPrompt = capability('sendPrompt', 'unsupported', 'このエージェントへの1ターン送信には対応していません。元アプリまたはCLIで再開してください');
   else if (['running', 'waiting'].includes(session.status)) result.sendPrompt = blocked('実行中・入力待ちには元アプリで答えてください');
   else if (!observation || observation.status !== 'known' || !observation.mtimeMs || !Array.isArray(observation.records) || !observation.dispatch || session.statusKnown === false) result.sendPrompt = capability('sendPrompt', 'unknown', '最新の状態・権限・送信設定は未取得です');
   else {

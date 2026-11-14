@@ -13,6 +13,7 @@ import { sessionSourceView, sourceKey } from './source-model.mjs';
 import { validateSourceFilterCompatibility } from './source-filters.mjs';
 import { attachSlackReference } from './slack-store.mjs';
 import { loopRecord, applyLoopCommand, loopProgress } from './loop.mjs';
+import { normalizeManualRelations, canonicalManualRelation, addManualRelation, removeManualRelation, queryManualRelations } from './card-relations.mjs';
 
 export const STORE_VERSION = 1;
 export const LIST_COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
@@ -178,6 +179,7 @@ export function defaultState() {
     directories: [],
     cards: {},
     remoteHosts: {},
+    manualCardRelations: [],
     uiState: { revision: 0, state: null },
     settings: defaultSettings(),
   };
@@ -198,6 +200,7 @@ export function normalize(s) {
     ...(s?.categoryMapping?.version === 1 ? { categoryMapping: structuredClone(s.categoryMapping) } : {}),
     cards: s?.cards && typeof s.cards === 'object' ? s.cards : {},
     remoteHosts: s?.remoteHosts && typeof s.remoteHosts === 'object' ? s.remoteHosts : {},
+    manualCardRelations: normalizeManualRelations(s?.manualCardRelations),
     uiState: normalizeUiStateRecord(s?.uiState),
     settings: normalizeSettings(s?.settings),
   };
@@ -280,6 +283,35 @@ export class Store {
       writeBoard(result?.replacement || state);
       return result?.replacement ? undefined : result;
     }, { fence: currentFence });
+  }
+
+  // Manual relations never mutate task links, agent history or execution metadata.
+  getCardRelations({ cardId }) {
+    return { cardId, relations: queryManualRelations(this.load().manualCardRelations, cardId) };
+  }
+
+  linkCardRelation(input) {
+    const canonical = canonicalManualRelation(input);
+    return this.mutate(s => {
+      const result = addManualRelation(s.manualCardRelations, canonical, { id: newId('relation'), createdAt: new Date().toISOString() });
+      const value = { relation: result.relation, created: result.created };
+      if (!result.created) return { [SKIP_WRITE]: true, value };
+      for (const cardId of [canonical.fromId, canonical.toId]) {
+        if (cardId.startsWith('task:') && s.cards[cardId]?.kind !== 'task') throw new Error('タスクカードが見つかりません');
+      }
+      s.manualCardRelations = result.relations;
+      return value;
+    });
+  }
+
+  unlinkCardRelation(input) {
+    return this.mutate(s => {
+      const result = removeManualRelation(s.manualCardRelations, input);
+      const value = { relationId: result.relationId, removed: result.removed };
+      if (!result.removed) return { [SKIP_WRITE]: true, value };
+      s.manualCardRelations = result.relations;
+      return value;
+    });
   }
 
   // ---- lists -------------------------------------------------------------
@@ -458,9 +490,12 @@ export class Store {
     });
   }
 
-  deleteTask({ cardId }) {
+  deleteTask({ cardId, expectedTask }) {
     return this.mutate((s) => {
       if (s.cards[cardId]?.kind !== 'task') throw new Error('タスクカードが見つかりません');
+      if (expectedTask !== undefined && JSON.stringify(s.cards[cardId]) !== JSON.stringify(expectedTask)) throw new Error('タスクが変更されているため削除しません');
+      // Automatic bundle cleanup also respects later user edits stored outside the task record.
+      if (expectedTask !== undefined && s.manualCardRelations.some(edge => edge.fromId === cardId || edge.toId === cardId)) throw new Error('タスクの関連が変更されているため削除しません');
       delete s.cards[cardId];
       return { deleted: cardId };
     });
@@ -524,10 +559,14 @@ export class Store {
     });
   }
 
-  linkSession({ taskId, sessionId }) {
+  linkSession({ taskId, sessionId, expectedTaskId }) {
     return this.mutate((s) => {
       const task = s.cards[taskId];
       if (task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
+      if (expectedTaskId !== undefined) {
+        const owner = Object.entries(s.cards).find(([, c]) => c.kind === 'task' && c.links?.includes(sessionId))?.[0] || null;
+        if (owner !== expectedTaskId) throw new Error('所属が変更されているため操作を取り消しました');
+      }
       if (sessionId.startsWith('task:')) throw new Error('タスクカード同士は紐付けられません');
       for (const c of Object.values(s.cards)) if (c.kind === 'task') c.links = (c.links || []).filter((x) => x !== sessionId);
       task.links = [...(task.links || []), sessionId];
@@ -535,10 +574,14 @@ export class Store {
     });
   }
 
-  unlinkSession({ taskId, sessionId }) {
+  unlinkSession({ taskId, sessionId, expectedTaskId }) {
     return this.mutate((s) => {
       const task = s.cards[taskId];
       if (task?.kind !== 'task') throw new Error('タスクカードが見つかりません');
+      if (expectedTaskId !== undefined) {
+        const owner = Object.entries(s.cards).find(([, c]) => c.kind === 'task' && c.links?.includes(sessionId))?.[0] || null;
+        if (owner !== expectedTaskId) throw new Error('所属が変更されているため操作を取り消しました');
+      }
       task.links = (task.links || []).filter((x) => x !== sessionId);
       return { taskId, links: task.links };
     });

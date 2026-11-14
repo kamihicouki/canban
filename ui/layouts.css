@@ -59,12 +59,10 @@ body:not([data-layout="trello"]) .list { box-shadow: none; }
   /* B: rail (where) → context column (views and categories, or the management page) → board. */
   body[data-layout="rail"] .app-content {
     grid-template-rows: auto auto minmax(0, 1fr);
-    grid-template-areas: "rail side top" "rail side err" "rail side main";
+    grid-template-areas: "side top top" "side err err" "side panel main";
   }
-  body[data-layout="rail"] .shell > .mgmt-drawer { grid-area: side; min-height: 0; }
-  body[data-layout="rail"]:not([data-page="home"]) .shell > .sidebar { display: none; }
+  body[data-layout="rail"] .shell > .mgmt-drawer { grid-area: panel; min-height: 0; }
   body[data-layout="rail"] .layout-rail { display: flex; }
-  body[data-layout="rail"] .topbar .brand { display: none; } /* the rail lists every place */
   body[data-layout="rail"] .sidebar { background: var(--header-bg); }
 
   /* D: app bar with tabs, then the live HUD across the whole width, then spaces, panel and the board. */
@@ -76,16 +74,18 @@ body:not([data-layout="trello"]) .list { box-shadow: none; }
 body[data-layout="rail"] .shell { position: static; }
 
 /* B: the rail */
-.layout-rail { flex-direction: column; align-items: center; gap: 2px; width: 76px; padding: 10px 0; background: var(--side-bg); border-right: 1px solid var(--chrome-line); overflow-y: auto; }
+.layout-rail { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 2px; width: auto; padding: 4px; background: var(--side-bg); border-right: 1px solid var(--chrome-line); overflow-y: auto; }
 .rail-logo .logo-mark { width: 32px; height: 32px; margin: 2px 0 12px; }
 .rail-item { width: 64px; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 0 7px; border-radius: 10px; color: var(--header-dim); font-size: 11px; font-weight: 600; position: relative; }
 .rail-item:hover { background: var(--header-btn); color: var(--header-fg); }
 .rail-item[aria-current="true"] { background: var(--pressed-bg); color: var(--pressed-fg); }
 .rail-item[aria-current="true"]::before { content: ""; position: absolute; left: -6px; top: 12px; bottom: 12px; width: 3px; border-radius: 2px; background: var(--pressed-fg); }
-.rail-sep { width: 40px; height: 1px; margin: 6px 0; background: var(--chrome-line); flex: none; }
+.rail-sep { width: 100%; height: 1px; margin: 2px 0; background: var(--chrome-line); flex: none; }
 
 /* C: omnibar: no sidebar; categories as a strip in the app bar, places in the dock */
 body[data-layout="omni"] #sidebar, body[data-layout="omni"] #sideBtn, body[data-layout="omni"] .board-name { display: none; }
+body[data-layout="omni"] .topbar { background: color-mix(in srgb, var(--header-bg) 75%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--chrome-line); }
+body[data-layout="omni"] .lifetime-wrap { background: color-mix(in srgb, var(--side-bg) 60%, transparent); backdrop-filter: blur(10px); }
 body[data-layout="omni"] .topbar .hsearch-wrap { flex: 0 1 380px !important; }
 body[data-layout="omni"] .topbar .hsearch { height: 36px; border-radius: 10px; }
 body[data-layout="omni"] .topbar > .spacer { display: none; }
@@ -98,7 +98,7 @@ body[data-layout="omni"] .cat-strip { display: flex; flex: 1 1 auto !important; 
 .cat-pill[aria-pressed="true"] { background: var(--header-fg); color: var(--header-bg); }
 .cat-pill[aria-pressed="true"] .n { color: var(--header-bg); opacity: .7; }
 body[data-layout="omni"] .layout-dock { display: flex; }
-body[data-layout="omni"] .board { padding-bottom: 152px; }
+body[data-layout="omni"] .board { padding-bottom: 12px; }
 .layout-dock { position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 100; align-items: flex-end; gap: 4px; padding: 7px; border-radius: 18px;
   background: var(--dock-bg); backdrop-filter: blur(14px); border: 1px solid var(--chrome-line); box-shadow: 0 14px 40px var(--layout-shadow); max-width: calc(100vw - 24px); overflow-x: auto; }
 .dock-item { width: 70px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0 6px; border-radius: 12px; font-size: 11px; font-weight: 600; color: var(--list-muted); position: relative; flex: none; }

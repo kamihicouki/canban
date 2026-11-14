@@ -1,7 +1,17 @@
 import { sourceKey, sessionSourceView, expandSourceView } from './source-model.mjs';
 
 export const SOURCE_RELATIONS = ['memberOf', 'displayedIn', 'requestedWith', 'startedWith'];
-const categoryRelation = ref => ({ 'codex:project': 'memberOf', 'codex:section': 'displayedIn', 'claude:group': 'displayedIn', 'claude:environment': 'startedWith' })[`${ref?.provider}:${ref?.kind}`];
+const categoryRelation = ref => ({
+  'codex:project': 'memberOf',
+  'codex:section': 'displayedIn',
+  'claude:group': 'displayedIn',
+  'claude:environment': 'startedWith',
+  'antigravity:brain': 'memberOf',
+  'gemini:project': 'memberOf',
+  'cursor:workspace': 'memberOf',
+  'chatgpt:project': 'memberOf',
+  'grok:workspace': 'memberOf',
+})[`${ref?.provider}:${ref?.kind}`];
 export function normalizeCategoryBindings(value) {
   const selections = normalizeSourceSelections(value);
   if (selections.some(b => categoryRelation(b.ref) !== b.relation)) throw new Error('カテゴリ対応の出典の関係を確認してください');

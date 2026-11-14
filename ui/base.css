@@ -15,6 +15,8 @@
   --tone-err: #ae2e24; --tone-err-bg: #ffeceb; --tone-done: #0055cc; --tone-done-bg: #e9f2ff;
   --tone-idle: #44546f; --tone-idle-bg: rgba(9, 30, 66, 0.06);
   --ag-codex: #0a7c62; --ag-codex-bg: #dff5ee; --ag-claude: #a8462a; --ag-claude-bg: #fdeee8; --ag-task: #5e4db2; --ag-task-bg: #f3f0ff;
+  --ag-gemini: #1557b0; --ag-gemini-bg: #e0edff; --ag-antigravity: #3730a3; --ag-antigravity-bg: #e5e4ff;
+  --ag-cursor: #0369a1; --ag-cursor-bg: #dff2fe; --ag-chatgpt: #0b6e54; --ag-chatgpt-bg: #dcf7ef; --ag-grok: #334155; --ag-grok-bg: #e8eef5;
   --logo-bg: #fff;
   --logo-fg: #0c66e4;
   --list-bg: #f1f2f4;
@@ -48,6 +50,11 @@
   --focus: #388bff;
   --codex: #12a381;
   --claude: #d46f4c;
+  --gemini: #1a73e8;
+  --antigravity: #4f46e5;
+  --cursor: #0284c7;
+  --chatgpt: #10a37f;
+  --grok: #475569;
   --c-gray: #8590a2; --c-blue: #579dff; --c-green: #4bce97; --c-yellow: #f5cd47; --c-orange: #fea362;
   --c-red: #f87168; --c-purple: #9f8fef; --c-pink: #e774bb; --c-sky: #6cc3e0; --c-lime: #94c748;
   --txt-bg: #fbfbfc; --txt-fg: #1d2733; --txt-dim: #6b778c; --note-bg: #fdf0a6; --note-fg: #3d3200;
@@ -75,6 +82,8 @@
   --tone-err: #fd9891; --tone-err-bg: #5d1f1a; --tone-done: #85b8ff; --tone-done-bg: #09326c;
   --tone-idle: #9fadbc; --tone-idle-bg: rgba(255, 255, 255, 0.06);
   --ag-codex: #6cd4b6; --ag-codex-bg: #0f3a30; --ag-claude: #f0a281; --ag-claude-bg: #4a2617; --ag-task: #b8acf6; --ag-task-bg: #352c63;
+  --ag-gemini: #93c5fd; --ag-gemini-bg: #172b4d; --ag-antigravity: #a5b4fc; --ag-antigravity-bg: #1e1b4b;
+  --ag-cursor: #7dd3fc; --ag-cursor-bg: #0c2d48; --ag-chatgpt: #6ee7b7; --ag-chatgpt-bg: #0f392b; --ag-grok: #cbd5e1; --ag-grok-bg: #1e293b;
   --logo-bg: #579dff;
   --logo-fg: #1d2125;
   --list-bg: #101204;

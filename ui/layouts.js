@@ -44,14 +44,14 @@ function applyLayout() {
   if (!content) return;
   if (state.layout === 'rail' && matchMedia('(min-width: 721px)').matches) {
     layoutParts.rail = h('nav', { class: 'layout-rail', 'aria-label': '場所' },
-      h('span', { class: 'rail-logo', html: LOGO_SVG }),
       ...['home', 'analytics', 'usage', 'orbit', 'slackTimeline'].map(p => placeBtn(p, 'rail-item', { size: 21 })), h('span', { class: 'rail-sep' }),
       ...MANAGE_PLACES.map(p => placeBtn(p, 'rail-item', { size: 21 })), placeBtn('look', 'rail-item', { size: 21 }));
-    content.prepend(layoutParts.rail);
+    $('#sidebar').prepend(layoutParts.rail);
   }
   if (state.layout === 'omni') {
     layoutParts.dock = h('nav', { class: 'layout-dock', 'aria-label': '場所' },
-      ...['home', 'analytics', 'usage', 'orbit', 'slackTimeline', ...MANAGE_PLACES, 'look'].map(p => placeBtn(p, 'dock-item', { size: 22 })));
+      layoutParts.dockOpen = h('button', { class: 'dock-open', type: 'button', title: '場所を開く（⌘K）', onclick: e => openMinimalDock(e.currentTarget) }, h('span', { html: picon('board', 18) }), '場所'),
+      layoutParts.dockItems = h('div', { class: 'dock-items' }, ...['home', 'analytics', 'usage', 'orbit', 'slackTimeline', ...MANAGE_PLACES, 'look'].map(p => placeBtn(p, 'dock-item', { size: 22 }))));
     layoutParts.filterBtn = h('button', { class: 'hbtn omni-filter', type: 'button', 'aria-haspopup': 'dialog', onclick: e => {
       const b = state.board; if (!b) return;
       popover(e.currentTarget, 'レーンと絞り込み', h('div', { class: 'sidebar omni-pop' }, laneSection(b, () => true), filterSection(b)), { width: 320 });
@@ -69,6 +69,7 @@ function applyLayout() {
   }
   if (state.board) renderSidebar(state.board);
   paintLayoutChrome();
+  applyAuxiliaryUi();
   fitHeader();
 }
 matchMedia('(min-width: 721px)').addEventListener('change', () => applyLayout());
@@ -84,7 +85,7 @@ function setLayout(id) {
 
 // Called after every board render and page change.
 function paintLayoutChrome() {
-  for (const key of ['rail', 'dock', 'tabs', 'hud']) if (layoutParts[key]) layoutParts[key].inert = overlayOpen();
+  for (const key of ['rail', 'dock', 'tabs', 'hud']) if (layoutParts[key]) layoutParts[key].inert = overlayOpen() && !layoutParts[key].closest('.auxiliary-panel');
   for (const button of $$('[data-place=slackTimeline]')) button.setAttribute('aria-pressed', String(slackUi.visible));
   const here = currentPlace();
   for (const b of $$('[data-place]')) b.setAttribute('aria-current', String(b.dataset.place === here));
@@ -92,6 +93,7 @@ function paintLayoutChrome() {
   if (!b) return;
   if (state.layout === 'omni') paintStrip(b);
   if (state.layout === 'hud') paintHud(b);
+  applyAuxiliaryUi();
 }
 
 // C: the strip lists the lanes (a press jumps to one) or, without lanes, the categories (a press filters).
@@ -113,7 +115,7 @@ function paintStrip(b) {
 }
 
 function paintHud(b) {
-  const live = b.lists.flatMap((l) => l.cards).filter((c) => c.status === 'running' || c.status === 'waiting')
+  const live = auxiliaryLiveCards(b)
     .sort((x, y) => (x.status === 'waiting' ? 0 : 1) - (y.status === 'waiting' ? 0 : 1) || (y.updatedAt || 0) - (x.updatedAt || 0));
   const waiting = live.filter((c) => c.status === 'waiting').length;
   const head = h('div', { class: 'hud-head' }, h('b', { text: String(live.length) }), h('span', { text: '動いている' }),
@@ -122,7 +124,7 @@ function paintHud(b) {
   layoutParts.hud.replaceChildren(head, ...live.slice(0, 12).map((c) => {
     const doing = activityText(c.activity, c.status, c.signals);
     return h('button', { class: `hud-tile${c.status === 'waiting' ? ' is-waiting' : ''}`, type: 'button', title: c.title, onclick: () => openCard(c.id) },
-      h('span', { class: 'hud-r1' }, faceGlyph(c.status), h('span', { text: STATUS_LABELS[c.status] || STATUS_LABELS.idle }), faceWho(c.agent)),
+      h('span', { class: 'hud-r1' }, faceGlyph(c.status), h('span', { text: STATUS_LABELS[c.status] || STATUS_LABELS.idle }), faceWho(c.agent, c)),
       h('span', { class: 'hud-t', text: c.title }),
       h('span', { class: 'hud-act', text: doing || relTime(c.updatedAt) }));
   }));

@@ -25,8 +25,8 @@ test('the key guide keeps a readable right margin and the cards keep the middle'
 });
 
 test('the key guide docks where it is dropped and walks the docks with the arrows', () => {
-  assert.deepEqual(plain(model.normalizeKeyGuide(null)), { dock: 'bottom', min: false });
-  assert.deepEqual(plain(model.normalizeKeyGuide({ dock: 'tl', min: 'yes' })), { dock: 'bottom', min: false });
+  assert.deepEqual(plain(model.normalizeKeyGuide(null)), { dock: 'br', min: true });
+  assert.deepEqual(plain(model.normalizeKeyGuide({ dock: 'tl', min: 'yes' })), { dock: 'br', min: true });
   assert.deepEqual(plain(model.normalizeKeyGuide({ dock: 'bl', min: true })), { dock: 'bl', min: true });
   assert.equal(model.keyGuideDockAt(.5, .95), 'bottom');
   assert.equal(model.keyGuideDockAt(.1, .1), 'tr', 'the top left is the navigation’s: the top is the right');

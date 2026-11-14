@@ -5,6 +5,7 @@
 //   files   { count, names }   files the current turn edited
 //   subRunning                 Claude sub-agents (Task / Agent) still running
 //   wait    'question' | 'plan' | null   what a waiting session waits for
+//   waitText / waitOptions    bounded text and labels of the latest unanswered question
 //   model / effort / mode      as last applied (mode: Claude permission mode, Codex sandbox)
 // Codex also logs its account's rate limits; limitsFrom() picks the latest.
 import path from 'node:path';
@@ -24,6 +25,31 @@ function parse(a) {
   } catch {
     return {};
   }
+}
+
+export function waitKind(name) {
+  const key = String(name || '').split(/\.|__/).at(-1);
+  return Object.hasOwn(WAIT_KIND, key) ? WAIT_KIND[key] : null;
+}
+
+function questionText(value, max) {
+  if (typeof value !== 'string') return null;
+  return Array.from(value.replace(/\s+/gu, ' ').trim()).slice(0, max).join('') || null;
+}
+
+function questionDetails(args) {
+  const input = parse(args);
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return { text: null, options: null };
+  const q = Array.isArray(input.questions) ? input.questions[0] : input;
+  if (!q || typeof q !== 'object' || Array.isArray(q)) return { text: null, options: null };
+  const text = questionText(q.question ?? q.title, 120);
+  const options = Array.isArray(q.options) ? q.options.map(o => questionText(typeof o === 'string' ? o : o?.label, 40)).filter(Boolean).slice(0, 6) : [];
+  return { text, options: options.length ? options : null };
+}
+
+function addAsk(acc, id, kind, args) {
+  acc.asks.set(id, kind);
+  acc.askDetails.set(id, kind === 'question' ? questionDetails(args) : { text: null, options: null });
 }
 
 function planOf(steps, textKey) {
@@ -51,13 +77,14 @@ function filesView(set) {
 // Signals are folded record by record, so a growing log only needs its appended lines
 // (status.mjs keeps one accumulator per log and feeds it the delta).
 export function newAcc(agent) {
-  return { agent, ctx: null, plan: null, files: new Set(), subs: new Set(), asks: new Map(), model: null, effort: null, mode: null };
+  return { agent, ctx: null, plan: null, files: new Set(), subs: new Set(), asks: new Map(), askDetails: new Map(), model: null, effort: null, mode: null };
 }
 
 function newTurn(acc) {
   acc.files = new Set();
   acc.subs.clear();
   acc.asks.clear();
+  acc.askDetails.clear();
 }
 
 function foldClaude(acc, o) {
@@ -78,13 +105,15 @@ function foldClaude(acc, o) {
       if (EDIT_TOOLS.has(it.name) && (i.file_path || i.notebook_path)) acc.files.add(i.file_path || i.notebook_path);
       else if (it.name === 'TodoWrite') acc.plan = planOf(i.todos, 'content');
       if (SUB_TOOLS.has(it.name) && it.id) acc.subs.add(it.id);
-      if (WAIT_KIND[it.name] && it.id) acc.asks.set(it.id, WAIT_KIND[it.name]);
+      const kind = waitKind(it.name);
+      if (kind && it.id) addAsk(acc, it.id, kind, i);
     }
   } else if (o.type === 'user') {
     if (Array.isArray(c) && c.some((x) => x?.type === 'tool_result')) {
       for (const it of c) if (it?.type === 'tool_result') {
         acc.subs.delete(it.tool_use_id);
         acc.asks.delete(it.tool_use_id);
+        acc.askDetails.delete(it.tool_use_id);
       }
     } else if (!o.isMeta) newTurn(acc); // a new prompt starts a new turn
   }
@@ -111,28 +140,58 @@ function foldCodex(acc, o) {
       const a = parse(p.arguments);
       if (p.name === 'update_plan') acc.plan = planOf(a.plan, 'step');
       else if (p.name === 'apply_patch') for (const f of patchPaths(a.input ?? a.patch)) acc.files.add(f);
-      if (WAIT_KIND[p.name] && p.call_id) acc.asks.set(p.call_id, WAIT_KIND[p.name]);
+      const kind = waitKind(p.name);
+      if (kind && p.call_id) addAsk(acc, p.call_id, kind, a);
     } else if (p.type === 'custom_tool_call' && p.name === 'apply_patch') {
       for (const f of patchPaths(p.input)) acc.files.add(f);
     } else if ((p.type === 'function_call_output' || p.type === 'custom_tool_call_output') && p.call_id) {
       acc.asks.delete(p.call_id);
+      acc.askDetails.delete(p.call_id);
     }
   }
 }
 
+function foldMultiAgent(acc, o) {
+  if (!o || typeof o !== 'object') return;
+  if (o.model && typeof o.model === 'string') acc.model = o.model;
+  if (o.type === 'USER_INPUT' || o.source === 'USER_EXPLICIT') {
+    newTurn(acc);
+    return;
+  }
+  if (o.type === 'PLANNER_RESPONSE' && Array.isArray(o.tool_calls)) {
+    for (const tc of o.tool_calls) {
+      if (!tc) continue;
+      const name = String(tc.name || tc.tool_name || '');
+      const args = parse(tc.arguments || tc.args || tc.input || {});
+      if ((/edit_file|write_file/i.test(name) || EDIT_TOOLS.has(name)) && (args.Path || args.file_path)) {
+        acc.files.add(args.Path || args.file_path);
+      }
+      if (/ask_question/i.test(name) || waitKind(name)) {
+        addAsk(acc, tc.id || `ask-${o.step_index || 0}`, waitKind(name) || 'question', args);
+      }
+    }
+  } else if (o.type === 'GENERIC' && o.source === 'MODEL') {
+    // Tool result step in Antigravity clears pending non-question state if needed
+  }
+}
+
 export function foldSignals(acc, records) {
-  const fold = acc.agent === 'codex' ? foldCodex : foldClaude;
+  const fold = acc.agent === 'codex' ? foldCodex : acc.agent === 'claude' ? foldClaude : foldMultiAgent;
   for (const o of records) fold(acc, o);
   return acc;
 }
 
 export function signalsView(acc) {
+  const [askId, wait] = [...acc.asks].at(-1) || [];
+  const question = wait === 'question' ? acc.askDetails.get(askId) : null;
   return {
     ctx: acc.ctx,
     plan: acc.plan,
     files: filesView(acc.files),
     subRunning: acc.agent === 'codex' ? 0 : acc.subs.size,
-    wait: [...acc.asks.values()].pop() || null,
+    wait: wait || null,
+    waitText: question?.text || null,
+    waitOptions: question?.options || null,
     model: acc.model,
     effort: acc.effort,
     mode: acc.mode,

@@ -10,7 +10,7 @@ const PANE_DEF = { mode: 'preview' };
 const oneOf = (v, list, d) => (list.some(([k]) => k === v) ? v : d);
 const paneGlobal = (() => {
   const s = store.get('paneGlobal', {}) || {};
-  return { mode: oneOf(s.mode, PANE_MODES, PANE_DEF.mode) };
+  return { mode: oneOf(s.mode, PANE_MODES, PANE_DEF.mode), viewMode: oneOf(s.viewMode, CARD_VIEW_MODES, 'full') };
 })();
 const saveGlobal = () => store.set('paneGlobal', paneGlobal);
 const PANE_SECS = {

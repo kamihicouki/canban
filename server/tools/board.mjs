@@ -42,11 +42,11 @@ export function boardTools({ store, ICONS, UI_URI }) {
     name: 'canban_get_board',
     title: 'ボードを取得',
     description: 'カンバンボード全体（リスト・カード・ラベル）を取得する（UI 用）。',
-    inputSchema: { type: 'object', properties: { ...filterProps, refresh: { type: 'boolean' } }, additionalProperties: false },
+    inputSchema: { type: 'object', properties: { ...filterProps, refresh: { type: 'boolean' }, readOnly: { type: 'boolean', description: '保存・自動化・既読化をせず、紐付いたセッションも独立したカードとして取得する' } }, additionalProperties: false },
     annotations: { readOnlyHint: true },
     _meta: appOnly,
     handler: async (args) => {
-      const board = await buildBoard(store, args, { force: !!args.refresh });
+      const board = await buildBoard(store, args, { force: !!args.refresh, readOnly: args.readOnly === true, includeLinkedSessions: args.readOnly === true });
       return { text: `${board.totals.shown} cards`, structured: board };
     },
   },
@@ -58,18 +58,18 @@ export function boardTools({ store, ICONS, UI_URI }) {
     annotations: { readOnlyHint: true },
     _meta: appAndModel,
     handler: async (args) => {
-      const board = await buildBoard(store, { days: 0, ...args });
+      const board = await buildBoard(store, { days: 0, ...args }, { readOnly: true, includeLinkedSessions: true });
       const wanted = args.list ? resolveList(board.lists, args.list)?.id : null;
       const rows = [];
       for (const l of board.lists) {
         if (wanted && l.id !== wanted) continue;
-        for (const c of l.cards) rows.push({ cardId: c.id, list: l.title, listId: l.id, agent: c.agent, title: c.title, project: c.project, directory: c.directory?.name || null, updatedAt: new Date(c.updatedAt || 0).toISOString() });
+        for (const c of l.cards) rows.push({ cardId: c.id, list: l.title, listId: l.id, agent: c.agent, surface: c.surface || null, subagent: !!c.subagent, sourceKind: c.sourceKind || null, cloud: c.cloud || null, dot: c.dot || null, kind: c.kind || 'session', archived: !!c.archived, status: c.status || 'idle', statusKnown: c.statusKnown !== false, title: c.title, project: c.project, directory: c.directory?.name || null, updatedAt: new Date(c.updatedAt || 0).toISOString() });
       }
       rows.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
       const limited = rows.slice(0, Math.min(Number(args.limit) || 30, 200));
       return {
         text: limited.map((r) => `${r.cardId} [${r.list}] (${r.agent}/${r.directory ? `📂${r.directory}` : r.project ?? '-'}) ${r.title}`).join('\n') || '該当なし',
-        structured: { results: limited, total: rows.length, lists: board.lists.map((l) => ({ id: l.id, title: l.title })) },
+        structured: { results: limited, total: rows.length, lists: board.lists.map((l) => ({ id: l.id, title: l.title })), errors: board.errors || [], searchCoverage: { fulltextDays: 90, fulltextMinimumCharacters: 3, fulltextApplied: !!board.filters.fulltext && [...board.filters.q].length >= 3, index: board.search } },
       };
     },
   },

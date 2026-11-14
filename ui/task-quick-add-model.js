@@ -1,8 +1,10 @@
 // Pure defaults shared by every task creation entry point. No viewport/hover inference.
 function sessionCreationDefaults(board, context) {
   const prefs = board.settings?.launch || {};
-  const agent = ['codex', 'claude'].includes(context.agent) ? context.agent : context.account?.split(':')[0] === 'claude' ? 'claude' : 'codex';
-  return { agent, route: prefs.route || 'desktop', terminal: prefs.terminal || 'terminal', target: prefs.target || 'new-window',
+  const validAgents = ['codex', 'claude', 'gemini', 'antigravity', 'cursor', 'chatgpt', 'grok'];
+  const agent = validAgents.includes(context.agent) ? context.agent : context.account?.split(':')[0] === 'claude' ? 'claude' : 'codex';
+  const defaultRoute = ['gemini', 'grok'].includes(agent) ? 'terminal' : (prefs.route || 'desktop');
+  return { agent, route: defaultRoute, terminal: prefs.terminal || 'terminal', target: prefs.target || 'new-window',
     hostId: context.host || 'local', cwd: '', prompt: '', account: context.account?.startsWith(`${agent}:`) ? context.account : null };
 }
 

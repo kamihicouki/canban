@@ -1,0 +1,51 @@
+/* One chronological card list; the selected card uses the existing overlay dock. */
+.gantt-view { display: flex; flex: 1; min-width: 0; min-height: 0; gap: 12px; align-self: stretch; }
+.gantt-timeline { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; background: var(--card-bg); color: var(--card-fg); border-radius: 12px; box-shadow: var(--card-shadow); overflow: hidden; }
+.gantt-view.has-selection .gantt-timeline { flex: 0 0 clamp(240px, 25vw, 340px); }
+.gantt-legend { flex: none; margin: 0; padding: 10px 12px; font-size: 12px; line-height: 1.5; color: var(--card-muted); border-bottom: 1px solid var(--btn-subtle-hover); }
+.gantt-list { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; --gantt-label: min(42%, 260px); }
+.gantt-calendar { display: grid; grid-template-columns: var(--gantt-label) minmax(0, 1fr); position: sticky; top: 0; z-index: 1; height: 30px; background: var(--card-hover); color: var(--card-muted); border-bottom: 1px solid var(--btn-subtle-hover); font-size: 11px; }
+.gantt-calendar-caption { padding: 7px 12px; }
+.gantt-calendar-track { position: relative; margin-right: 12px; }
+.gantt-calendar-track > span { position: absolute; top: 8px; transform: translateX(-50%); white-space: nowrap; }
+.gantt-calendar-track > span:first-child { transform: none; }
+.gantt-calendar-track > span:last-child { transform: translateX(-100%); }
+.card.gantt-row { display: grid; grid-template-columns: var(--gantt-label) minmax(0, 1fr); align-items: stretch; min-height: 64px; padding: 0 12px 0 0; margin: 0; border-radius: 0; background: var(--card-bg); box-shadow: none; border-bottom: 1px solid var(--btn-subtle); cursor: pointer; }
+.card.gantt-row:hover { background: var(--card-hover); }
+.card.gantt-row[aria-selected="true"] { background: var(--chat-human-bg); box-shadow: inset 3px 0 var(--accent); }
+.card.gantt-row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.gantt-row-label { min-width: 0; padding: 10px 8px 10px 12px; }
+.gantt-row.is-child .gantt-row-label { padding-left: 26px; }
+.gantt-row-heading { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.gantt-row-title { min-width: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gantt-row-meta { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 4px; font-size: 11px; color: var(--card-muted); }
+.gantt-row-meta .who { min-width: 0; overflow: hidden; }
+.gantt-row-meta time { margin-left: auto; white-space: nowrap; }
+.gantt-row-wait { margin-top: 4px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gantt-row[data-status="waiting"] .gantt-row-wait { color: var(--tone-wait); }
+.gantt-row[data-status="aborted"] .gantt-row-wait { color: var(--tone-err); }
+.gantt-row[data-status="unknown"] .gantt-row-wait { color: var(--card-muted); }
+.gantt-row-track { position: relative; min-width: 0; border-left: 1px solid var(--btn-subtle-hover); }
+.gantt-bar-item { position: absolute; top: 50%; height: 8px; transform: translateY(-50%); border-radius: 3px; box-sizing: border-box; background: var(--card-muted); }
+.gantt-bar-item.task-bracket { height: 14px; border: 1px solid var(--ag-task); background: var(--ag-task-bg); }
+.gantt-bar-item.is-point { height: 7px; width: 7px !important; transform: translate(-50%, -50%); border-radius: 50%; }
+.gantt-row[data-status="completed"] .session-bar { background: var(--tone-done); }
+.gantt-row[data-status="waiting"] .session-bar { background: var(--tone-wait); }
+.gantt-row[data-status="running"] .session-bar { background: var(--tone-run); }
+.gantt-row[data-status="aborted"] .session-bar { background: var(--tone-err); }
+.gantt-live-mark { position: absolute; right: 0; top: 50%; transform: translate(50%, -50%); display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--card-bg); color: var(--tone-run); }
+.gantt-row[data-status="waiting"] .gantt-live-mark { color: var(--tone-wait); }
+.gantt-row[data-status="running"] .gantt-live-mark svg { animation: spin 1.2s linear infinite; }
+.gantt-due { position: absolute; top: 5px; transform: translateX(-50%); font-size: 11px; color: var(--card-muted); }
+.gantt-due.is-overdue, .gantt-deadline-label.is-overdue { color: var(--tone-err); }
+.gantt-deadline-label { grid-column: 1 / -1; padding: 0 0 6px 12px; font-size: 11px; color: var(--card-muted); }
+.gantt-now-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--focus); opacity: .45; pointer-events: none; }
+.gantt-missing { position: absolute; top: 50%; left: 6px; right: 0; transform: translateY(-50%); font-size: 11px; line-height: 1.5; color: var(--card-muted); }
+.gantt-empty { padding: 24px; color: var(--card-muted); font-size: 14px; }
+.gantt-main[hidden] { display: none; }
+.gantt-main { flex: 1; min-width: 0; min-height: 0; }
+@media (max-width: 840px) { .gantt-view.has-selection .gantt-timeline { flex-basis: 220px; } .gantt-list { --gantt-label: 58%; } }
+@media (prefers-reduced-motion: reduce) { .gantt-row[data-status="running"] .gantt-live-mark svg { animation: none; } }
+
+/* A docked list has room for the endpoint dates; full width keeps intermediate ticks. */
+.gantt-view.has-selection .gantt-calendar-track > span:not(:first-child):not(:last-child) { visibility: hidden; }

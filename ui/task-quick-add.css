@@ -49,6 +49,8 @@
 .session-choice input { accent-color: var(--accent); margin: 0; }
 .session-choice > span { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--list-muted); }
 .session-choice strong { color: var(--list-fg); font-size: 14px; }
+.session-more-apps { margin-top: 8px; width: 100%; justify-content: flex-start; font-size: 13px; color: var(--list-muted); background: var(--modal-panel); border: 1px solid var(--btn-subtle-hover); }
+.session-more-apps.active { border-color: var(--accent); background: var(--btn-subtle); color: var(--list-fg); font-weight: 600; }
 .creation-route-note { margin: -4px 0 8px; font-size: 13px; line-height: 1.5; color: var(--list-muted); }
 .task-context-summary { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0; }
 .task-context-summary span { padding: 3px 6px; font-size: 12px; border-radius: 5px; background: var(--modal-panel); }

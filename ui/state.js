@@ -2,7 +2,31 @@
 const PAGE = 40;
 const COLORS = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'sky', 'lime'];
 const COLOR_NAMES = { gray: 'グレー', blue: '青', green: '緑', yellow: '黄', orange: 'オレンジ', red: '赤', purple: '紫', pink: 'ピンク', sky: '水色', lime: 'ライム' };
-const SHARED_UI_KEYS = ['filters', 'themePref', 'layout', 'boardView', 'sidebar', 'workspacePage', 'paneGlobal', 'cardWidths', 'cardHeights', 'collapsedLanes', 'keyGuide', 'exchangeTrailView', 'categoryPins'];
+const AGENT_META = {
+  codex: { label: 'Codex', app: 'Codex', color: 'var(--codex)', defaultSurface: 'cli' },
+  claude: { label: 'Claude', app: 'Claude Code', color: 'var(--claude)', defaultSurface: 'cli' },
+  gemini: { label: 'Gemini', app: 'Gemini CLI', color: 'var(--gemini)', defaultSurface: 'cli' },
+  antigravity: { label: 'Antigravity', app: 'Antigravity', color: 'var(--antigravity)', defaultSurface: 'ide' },
+  cursor: { label: 'Cursor', app: 'Cursor', color: 'var(--cursor)', defaultSurface: 'ide' },
+  chatgpt: { label: 'ChatGPT', app: 'ChatGPT', color: 'var(--chatgpt)', defaultSurface: 'desktop' },
+  grok: { label: 'Grok', app: 'Grok', color: 'var(--grok)', defaultSurface: 'cli' },
+};
+const SURFACE_META = {
+  cli: { label: 'CLI', short: 'CLI', title: 'ターミナル / CLI' },
+  desktop: { label: 'Desktop', short: 'App', title: 'デスクトップアプリ' },
+  ide: { label: 'IDE', short: 'IDE', title: 'IDE / エディタ' },
+  cloud: { label: 'Cloud', short: 'Cloud', title: 'クラウド / Web' },
+};
+const agentLabel = (agent) => AGENT_META[agent]?.label || (agent ? String(agent) : 'AI App');
+const agentAppLabel = (agent) => AGENT_META[agent]?.app || agentLabel(agent);
+const cardSurface = (card) => {
+  if (!card || card.kind === 'task') return null;
+  if (card.surface && SURFACE_META[card.surface]) return card.surface;
+  if (card.sourceKind === 'codex-cloud' || card.cloud || card.host?.cloud) return 'cloud';
+  if (card.canDesktop && card.desktopExact && card.agent === 'claude') return 'desktop';
+  return AGENT_META[card.agent]?.defaultSurface || null;
+};
+const SHARED_UI_KEYS = ['filters', 'themePref', 'layout', 'boardView', 'sidebar', 'workspacePage', 'paneGlobal', 'cardWidths', 'cardHeights', 'collapsedLanes', 'keyGuide', 'exchangeTrailView', 'categoryPins', 'auxiliaryPrefs'];
 const sharedUi = { revision: null, ready: false, dirty: false, blocked: false, applying: false, inflight: false, generation: 0, timer: null, checkTimer: null };
 const store = {
   get(k, d) { try { const v = localStorage.getItem(`sk:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },

@@ -27,16 +27,29 @@ function render() {
   const listScrollKey = (l) => JSON.stringify([l.closest('.lane')?.dataset.lane || '', l.dataset.listId]);
   const scrollTop = boardEl.scrollTop;
   const inboxScroll = $('.inbox-list', boardEl)?.scrollTop || 0;
+  const ganttScroll = $('.gantt-list', boardEl)?.scrollTop || 0;
   boardEl.querySelectorAll('.list').forEach((l) => listScroll.set(listScrollKey(l), $('.cards', l)?.scrollTop || 0));
 
   const focused = document.activeElement;
   const focusedCard = boardEl.contains(focused) ? focused.closest('.card')?.dataset.cardId : null;
   const frag = document.createDocumentFragment();
-  boardEl.classList.toggle('with-lanes', !!state.filters.swimlane && !inboxOn());
+  const retainedInbox = inboxOn() && $('#board > .inbox');
+  const retainedGantt = ganttOn() && $('#board > .gantt-view');
+  boardEl.classList.toggle('with-lanes', !!state.filters.swimlane && !inboxOn() && !ganttOn());
   boardEl.style.setProperty('--lane-max-h', (LANE_HEIGHTS[state.filters.laneHeight] || LANE_HEIGHTS.normal)[1]);
   state.lanes = state.filters.swimlane ? buildLanes(b, state.filters.swimlane) : [];
   if (state.soloLane && !state.lanes.some((l) => l.key === state.soloLane)) state.soloLane = null;
-  if (inboxOn()) frag.append(renderInbox(b));
+  if (retainedInbox) {
+    refreshInboxList();
+    const empty = $('.inbox-empty', retainedInbox);
+    if (empty) empty.textContent = inboxRows().length ? 'カードを選ぶと、ここで読んで返信できます' : '';
+  }
+  else if (retainedGantt) {
+    const fresh = renderGantt(b);
+    $('.gantt-list', retainedGantt).replaceChildren(...$('.gantt-list', fresh).childNodes);
+  }
+  else if (inboxOn()) frag.append(renderInbox(b));
+  else if (ganttOn()) frag.append(renderGantt(b));
   else if (state.filters.swimlane) {
     if (state.soloLane) {
       frag.append(h('div', { class: 'solo-bar' }, `「${state.lanes.find(l => l.key === state.soloLane)?.name}」だけを表示中`,
@@ -47,10 +60,15 @@ function render() {
     for (const list of b.lists) frag.append(renderList(list));
     frag.append(renderAddList());
   }
-  if (state.filters.swimlane && !inboxOn() && slackUi.visible) { const lanes = h('div', { class: 'slack-lanes' }, frag); boardEl.replaceChildren(lanes); }
-  else boardEl.replaceChildren(frag);
+  // A live update keeps the native scrolling list; detaching it can discard an in-flight wheel.
+  if (!retainedInbox && !retainedGantt) {
+    if (state.filters.swimlane && !inboxOn() && !ganttOn() && slackUi.visible) { const lanes = h('div', { class: 'slack-lanes' }, frag); boardEl.replaceChildren(lanes); }
+    else boardEl.replaceChildren(frag);
+  }
   boardEl.classList.toggle('with-slack', slackUi.visible);
-  const slackNode = slackUi.boardNode(); if (slackNode) boardEl.prepend(slackNode);
+  const slackNode = slackUi.boardNode();
+  if (slackNode) boardEl.prepend(slackNode);
+  else boardEl.querySelector(':scope > .slack-timeline')?.remove();
   renderSidebar(b);
   renderRibbon(b);
   renderViewSwitch();
@@ -62,6 +80,7 @@ function render() {
   boardEl.scrollTop = scrollTop;
   boardEl.querySelectorAll('.list').forEach((l) => { const c = $('.cards', l); if (c) c.scrollTop = listScroll.get(listScrollKey(l)) || 0; });
   const inboxList = $('.inbox-list', boardEl); if (inboxList) inboxList.scrollTop = inboxScroll;
+  if (retainedGantt) $('.gantt-list', retainedGantt).scrollTop = ganttScroll;
   syncDockedCard();
   bridge.reportSize();
 }

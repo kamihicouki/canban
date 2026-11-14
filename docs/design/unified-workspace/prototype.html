@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Canban 統合作業環境 試作（架空データ）</title>
+<style>
+  :root {
+    --bg1: #1d5fc4; --bg2: #3a4fc0; --surface: #ffffff; --surface-2: #f3f5f8; --line: #dfe3ea;
+    --text: #172033; --muted: #5d6880; --on-board: #ffffff; --sel: #e8f0ff; --sel-line: #2563eb;
+    --wait: #a15c00; --wait-bg: #fff4dc; --run: #1a7f4b; --err: #b42318; --chip: #eef1f6;
+    --codex: #1a7f4b; --claude: #b4532a; --agy: #3b3fb5; --primary: #2563eb; --on-primary: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg1: #0f1b33; --bg2: #151a3a; --surface: #1c2230; --surface-2: #252c3c; --line: #343d52;
+    --text: #e7ebf3; --muted: #9aa5bd; --sel: #1f3566; --sel-line: #7aa7ff;
+    --wait: #ffc56b; --wait-bg: #3a2c10; --run: #5fd39a; --err: #ff8b80; --chip: #2b3346;
+    --codex: #5fd39a; --claude: #f0a07c; --agy: #a5a8ff; --primary: #4f86f7;
+  } }
+  :root[data-theme="dark"] {
+    --bg1: #0f1b33; --bg2: #151a3a; --surface: #1c2230; --surface-2: #252c3c; --line: #343d52;
+    --text: #e7ebf3; --muted: #9aa5bd; --sel: #1f3566; --sel-line: #7aa7ff;
+    --wait: #ffc56b; --wait-bg: #3a2c10; --run: #5fd39a; --err: #ff8b80; --chip: #2b3346;
+    --codex: #5fd39a; --claude: #f0a07c; --agy: #a5a8ff; --primary: #4f86f7;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; color: var(--text);
+    background: linear-gradient(135deg, var(--bg1), var(--bg2)); min-height: 100vh; }
+  .note { color: var(--on-board); padding: 10px 16px; font-size: 13px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .note button, .tabs button { font: inherit; border: 1px solid rgba(255,255,255,.4); background: rgba(255,255,255,.12); color: var(--on-board); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+  .tabs { display: flex; gap: 6px; }
+  .tabs button[aria-pressed="true"] { background: var(--surface); color: var(--text); border-color: var(--surface); font-weight: 700; }
+  .stage { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; padding: 0 16px 16px; height: 700px; }
+  .panel { background: var(--surface); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+  .list { overflow: auto; padding: 4px 8px 12px; }
+  .head { padding: 12px 16px; font-weight: 700; border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: baseline; }
+  .head small { color: var(--muted); font-weight: 400; }
+  .gh { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .04em; padding: 12px 8px 4px; }
+  .row { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; gap: 8px; padding: 8px; border-radius: 8px; border-left: 3px solid transparent; cursor: default; }
+  .row[aria-selected="true"] { background: var(--sel); border-left-color: var(--sel-line); }
+  .row.sub { margin-left: 18px; padding: 6px 8px; }
+  .t { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub .t { font-weight: 600; font-size: 13px; }
+  .w { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+  .w.wait { color: var(--wait); } .w.err { color: var(--err); }
+  .s { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; min-width: 0; }
+  .time { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .who { font-weight: 700; } .who.codex { color: var(--codex); } .who.claude { color: var(--claude); } .who.agy { color: var(--agy); }
+  .surf, .mark { font-size: 10.5px; background: var(--chip); border-radius: 4px; padding: 0 5px; color: var(--muted); white-space: nowrap; }
+  .g { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--muted); margin-top: 3px; }
+  .g.run { border-color: var(--run); border-right-color: transparent; }
+  .g.wait { border-color: var(--wait); background: var(--wait); box-shadow: inset 0 0 0 3px var(--surface); }
+  .g.task { border-radius: 4px; border-color: var(--primary); }
+  .more { font-size: 12px; color: var(--muted); padding: 2px 8px 6px 44px; }
+  .th-head { padding: 16px 20px 12px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: start; }
+  .th-head h1 { font-size: 20px; margin: 0 0 4px; }
+  .btn { font: inherit; border: 0; border-radius: 8px; padding: 7px 12px; background: var(--primary); color: var(--on-primary); font-weight: 700; display: inline-flex; gap: 8px; align-items: center; white-space: nowrap; }
+  .btn.ghost { background: var(--chip); color: var(--text); font-weight: 600; }
+  kbd { font: 11px ui-monospace, monospace; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; opacity: .8; }
+  .why { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); }
+  .conv { flex: 1; overflow: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 640px; padding: 10px 14px; border-radius: 12px; background: var(--surface-2); }
+  .msg.me { align-self: flex-end; background: var(--sel); }
+  .ask { margin: 0 20px 12px; padding: 12px 14px; border-radius: 10px; background: var(--wait-bg); border: 1px solid var(--wait); }
+  .ask b { color: var(--wait); font-size: 12.5px; display: block; margin-bottom: 4px; }
+  .ask ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
+  .composer { margin: 0 20px 16px; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; color: var(--muted); }
+  /* flow */
+  .flow { overflow: auto; flex: 1; }
+  .legend { padding: 8px 16px; font-size: 12.5px; color: var(--muted); border-bottom: 1px solid var(--line); }
+  .grid { display: grid; grid-template-columns: 300px repeat(14, minmax(44px, 1fr)); min-width: 940px; position: relative; }
+  .grid > div { border-bottom: 1px solid var(--line); min-height: 34px; padding: 6px 8px; }
+  .day { font-size: 11px; color: var(--muted); text-align: center; border-left: 1px solid var(--line); }
+  .day.today { color: var(--err); font-weight: 700; }
+  .name { display: flex; gap: 6px; align-items: center; font-size: 13px; min-width: 0; }
+  .name.child { padding-left: 26px; }
+  .lane { grid-column: 2 / -1; position: relative; padding: 0 !important; }
+  .bar { position: absolute; top: 10px; height: 14px; border-radius: 7px; background: var(--muted); opacity: .55; }
+  .bar.run { background: var(--run); opacity: 1; } .bar.wait { background: var(--wait); opacity: 1; }
+  .bar.env { top: 6px; height: 22px; background: transparent; border: 1.5px solid var(--primary); opacity: 1; border-radius: 6px; }
+  .dot { position: absolute; top: 11px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); }
+  .due { position: absolute; top: 4px; bottom: 4px; width: 2px; background: var(--err); }
+  .due::after { content: "期限"; position: absolute; top: -2px; left: 4px; font-size: 10px; color: var(--err); }
+  .now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--err); left: calc(300px + (100% - 300px) * 13.5 / 14); }
+  [hidden] { display: none !important; }
+  @media (max-width: 760px) { .stage { grid-template-columns: 1fr; height: auto; } .panel { min-height: 360px; } }
+</style>
+</head>
+<body>
+<div class="note">
+  <strong>試作・架空データ</strong>
+  <span>実装ではなく、design.md §6 の目安です。操作は表示の切り替えと行の選択だけ。</span>
+  <span class="tabs" role="group" aria-label="表示">
+    <button id="tabTime" aria-pressed="true">時間軸</button>
+    <button id="tabFlow" aria-pressed="false">流れ（観測した活動）</button>
+  </span>
+  <button id="theme">ライト／ダーク</button>
+</div>
+
+<div class="stage" id="viewTime">
+  <aside class="panel" aria-label="仕事の一覧">
+    <div class="head">カード <small>7件</small></div>
+    <div class="list" role="listbox">
+      <div class="gh">要対応 1</div>
+      <div class="row" data-k="task"><span class="g task"></span><div><div class="t">決済フォーム</div><div class="s"><span class="mark">タスク</span>3 セッション</div></div><span class="time">2分前</span></div>
+      <div class="row sub" aria-selected="true" data-k="c3"><span class="g wait"></span><div><div class="t">カード番号検証</div><div class="w wait">質問: Luhn 検証を入れますか？</div><div class="s"><span class="who claude">Claude</span><span class="surf">CLI</span>feat/checkout-validate</div></div><span class="time">2分前</span></div>
+      <div class="row sub" data-k="a1"><span class="g run"></span><div><div class="t">E2E テスト</div><div class="w">run_command: npm run e2e · 1/3</div><div class="s"><span class="who agy">Antigravity</span><span class="surf">IDE</span></div></div><span class="time">1分前</span></div>
+      <div class="row sub" data-k="t4"><span class="g"></span><div><div class="t">入力検証</div><div class="s"><span class="who codex">Codex</span><span class="surf">CLI</span>feat/checkout-validate</div></div><span class="time">3日前</span></div>
+      <div class="gh">実行中 1</div>
+      <div class="row" data-k="t1"><span class="g run"></span><div><div class="t">ログイン修正</div><div class="w">作業中…</div><div class="s"><span class="who codex">Codex</span><span class="surf">App</span>fix/login</div></div><span class="time">たった今</span></div>
+      <div class="gh">昨日 2</div>
+      <div class="row" data-k="c4"><span class="g"></span><div><div class="t">トップページ: 全ルート計測</div><div class="s"><span class="who claude">Claude</span><span class="surf">CLI</span>perf/top</div></div><span class="time">1日前</span></div>
+      <div class="row" data-k="t6"><span class="g"></span><div><div class="t">CI のキャッシュを直す</div><div class="s"><span class="who codex">Codex</span><span class="surf">CLI</span>ci/cache</div></div><span class="time">1日前</span></div>
+      <div class="gh">今週 1</div>
+      <div class="row" data-k="a2"><span class="g"></span><div><div class="t">用語集の英訳を作って</div><div class="s"><span class="who agy">Antigravity</span><span class="surf">IDE</span></div></div><span class="time">2日前</span></div>
+      <div class="more">休眠中 2 · アーカイブ済みは ⌘K で探せます</div>
+    </div>
+  </aside>
+
+  <section class="panel" aria-label="選んだカード">
+    <div class="th-head">
+      <div>
+        <h1 id="title">決済フォーム: カード番号検証</h1>
+        <div class="s"><span class="who claude" id="who">Claude</span><span class="surf" id="surf">CLI</span><span id="state">入力待ち</span><span>·</span><span id="work">決済フォーム（3 セッション）</span></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <span class="btn ghost">まとめる <kbd>x</kbd></span>
+        <span class="btn" id="go">Claude で答える <kbd>o</kbd> ▾</span>
+      </div>
+      <div class="why" id="why">この会話は Claude デスクトップでは直接開けません。ターミナルで再開して答えます。</div>
+    </div>
+    <div class="conv">
+      <div class="msg me">決済フォームのカード番号検証を仕上げて</div>
+      <div class="msg">桁数検証の方式を選んでください。</div>
+    </div>
+    <div class="ask" id="ask">
+      <b>質問（元アプリで答えます）</b>
+      Luhn 検証を入れますか？
+      <ul><li>はい</li><li>いいえ</li></ul>
+    </div>
+    <div class="composer">このセッションに送る依頼（入力待ちの間は順番待ちに入ります）</div>
+  </section>
+</div>
+
+<div class="stage" id="viewFlow" hidden style="grid-template-columns:minmax(0,1fr)">
+  <section class="panel">
+    <div class="head">流れ <small>直近14日</small></div>
+    <div class="legend">帯は観測した活動の期間です。予定ではありません。進み具合の％は出しません。期限はカードに設定があるときだけ印が付きます。</div>
+    <div class="flow">
+      <div class="grid" id="grid"></div>
+    </div>
+  </section>
+</div>
+
+<script>
+  const $ = (s) => document.querySelector(s);
+  const cards = {
+    c3: ['決済フォーム: カード番号検証', 'claude', 'Claude', 'CLI', '入力待ち', 'Claude で答える', 'この会話は Claude デスクトップでは直接開けません。ターミナルで再開して答えます。', true],
+    a1: ['決済フォーム: E2E テスト', 'agy', 'Antigravity', 'IDE', '実行中', 'Antigravity で開く', '同じ会話へ届くかは、この環境では確認できていません。', false],
+    t4: ['決済フォーム: 入力検証', 'codex', 'Codex', 'CLI', '応答済み', 'ターミナルで再開', '新規タブで codex resume を開きます。', false],
+    t1: ['ログイン修正', 'codex', 'Codex', 'App', '実行中', 'Codex で開く', '実行中は追加の依頼を送れません。', false],
+    c4: ['トップページ: 全ルート計測', 'claude', 'Claude', 'CLI', '待機中', 'ターミナルで再開', '', false],
+    t6: ['CI のキャッシュを直す', 'codex', 'Codex', 'CLI', '応答済み', 'ターミナルで再開', '', false],
+    a2: ['用語集の英訳を作って', 'agy', 'Antigravity', 'IDE', '応答済み', 'Antigravity で開く', '同じ会話へ届くかは、この環境では確認できていません。', false],
+  };
+  for (const row of document.querySelectorAll('.row')) row.addEventListener('click', () => {
+    const c = cards[row.dataset.k]; if (!c) return;
+    for (const r of document.querySelectorAll('.row')) r.removeAttribute('aria-selected');
+    row.setAttribute('aria-selected', 'true');
+    $('#title').textContent = c[0]; $('#who').textContent = c[2]; $('#who').className = 'who ' + c[1];
+    $('#surf').textContent = c[3]; $('#state').textContent = c[4];
+    $('#go').innerHTML = c[5] + ' <kbd>o</kbd> ▾'; $('#why').textContent = c[6]; $('#why').hidden = !c[6];
+    $('#ask').hidden = !c[7];
+    $('#work').textContent = row.classList.contains('sub') ? '決済フォーム（3 セッション）' : 'まとめていません';
+  });
+  // flow: [label, who class, who, surface, child?, kind, start(day index 0..13.5), end, due?]
+  const rows = [
+    ['決済フォーム', '', 'タスク', '', false, 'env', 10.4, 13.5, 13.9],
+    ['カード番号検証', 'claude', 'Claude', 'CLI', true, 'wait', 13.3, 13.5],
+    ['E2E テスト', 'agy', 'Antigravity', 'IDE', true, 'run', 13.4, 13.5],
+    ['入力検証', 'codex', 'Codex', 'CLI', true, '', 10.4, 10.6],
+    ['ログイン修正', 'codex', 'Codex', 'App', false, 'run', 12.8, 13.5],
+    ['トップページ: 全ルート計測', 'claude', 'Claude', 'CLI', false, '', 12.2, 12.5],
+    ['CI のキャッシュを直す', 'codex', 'Codex', 'CLI', false, 'dot', 12.4, 12.4],
+    ['用語集の英訳を作って', 'agy', 'Antigravity', 'IDE', false, 'dot', 11.5, 11.5],
+    ['用語集の整理（開始の時刻は未取得）', 'codex', 'Codex', 'CLI', false, 'dot', 1.5, 1.5],
+  ];
+  const grid = $('#grid'), pct = (d) => (d / 14 * 100) + '%';
+  grid.append(Object.assign(document.createElement('div'), { textContent: '' }));
+  for (let i = 13; i >= 0; i--) { const d = new Date(Date.now() - i * 864e5); grid.append(Object.assign(document.createElement('div'), { className: 'day' + (i ? '' : ' today'), textContent: i ? `${d.getMonth() + 1}/${d.getDate()}` : '今日' })); }
+  for (const [label, cls, who, surf, child, kind, a, b, due] of rows) {
+    const name = document.createElement('div'); name.className = 'name' + (child ? ' child' : '');
+    name.innerHTML = `<span class="t" style="font-weight:${child ? 500 : 700}"></span>` + (cls ? `<span class="who ${cls}">${who}</span><span class="surf">${surf}</span>` : `<span class="mark">${who}</span>`);
+    name.firstChild.textContent = label;
+    const lane = document.createElement('div'); lane.className = 'lane';
+    const mark = document.createElement('span');
+    if (kind === 'dot') { mark.className = 'dot'; mark.style.left = `calc(${pct(a)} - 6px)`; }
+    else { mark.className = 'bar ' + kind; mark.style.left = pct(a); mark.style.width = `max(8px, ${pct(b - a)})`; }
+    lane.append(mark);
+    if (due) { const d = document.createElement('span'); d.className = 'due'; d.style.left = pct(due); lane.append(d); }
+    grid.append(name, lane);
+  }
+  grid.append(Object.assign(document.createElement('span'), { className: 'now' }));
+  const show = (flow) => { $('#viewFlow').hidden = !flow; $('#viewTime').hidden = flow; $('#tabFlow').setAttribute('aria-pressed', flow); $('#tabTime').setAttribute('aria-pressed', !flow); };
+  $('#tabFlow').onclick = () => show(true); $('#tabTime').onclick = () => show(false);
+  $('#theme').onclick = () => { const r = document.documentElement, dark = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; r.dataset.theme = dark ? 'light' : 'dark'; };
+</script>
+</body>
+</html>

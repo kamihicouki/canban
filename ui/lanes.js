@@ -1,6 +1,7 @@
 // Part of board.html: included into its script by server/ui.mjs and shares its scope.
 // Swimlanes, snippets, saved views
 const LANE_MODES = { '': 'なし', directory: `${T.category}`, ...SOURCE_AXES, project: '旧プロジェクト', section: '旧セクション', host: 'マシン', account: 'アカウント', agent: 'AI Apps', label: 'ラベル' };
+const LANE_AGENT_LABELS = { codex: 'Codex', claude: 'Claude Code', gemini: 'Gemini CLI', antigravity: 'Antigravity', cursor: 'Cursor', chatgpt: 'ChatGPT', grok: 'Grok' };
 const NO_DIR = 'カテゴリ無し';
 function laneKey(card, mode) {
   if (SOURCE_AXES[mode]) return sourceLane(card, mode).name;
@@ -9,7 +10,7 @@ function laneKey(card, mode) {
     const sec = card.codexSection;
     return sec ? `§ ${sec.name}` : '（セクションなし）';
   }
-  if (mode === 'agent') return card.agent ? card.agent === 'codex' ? 'Codex' : 'Claude Code' : `${T.taskCard}`;
+  if (mode === 'agent') return card.agent ? (LANE_AGENT_LABELS[card.agent] || card.agent) : `${T.taskCard}`;
   if (mode === 'host') return card.host?.label || 'このマシン';
   if (mode === 'account') return accountLaneKey(card);
   if (mode === 'label') {
@@ -58,6 +59,11 @@ function buildLanes(b, mode) {
   if (mode === 'agent') {
     lane({ context: { agent: 'codex' } }, 'Codex');
     lane({ context: { agent: 'claude' } }, 'Claude Code');
+    for (const [ag, name] of Object.entries(LANE_AGENT_LABELS)) {
+      if (ag !== 'codex' && ag !== 'claude' && b.totals?.byAgent?.[ag]?.total > 0) {
+        lane({ context: { agent: ag } }, name);
+      }
+    }
     lane({ context: { agent: null } }, T.taskCard);
   }
   if (mode === 'host') {

@@ -54,9 +54,13 @@ function feedPush(f, it) {
     const kind = it.k === 'tool' ? toolKindOf(it.name)[0] : 'think';
     if (kind !== 'think') g._kinds.set(kind, (g._kinds.get(kind) || 0) + 1);
     paintToolGroup(g);
+    const p = typeof panes !== 'undefined' && panes.find((p) => live.feeds.get(p.id) === f);
+    if (p) paintThreadTimeline(p);
     return g;
   }
   f.edits ? f.list.insertBefore(el, f.edits.el) : f.list.append(el);
+  const p = typeof panes !== 'undefined' && panes.find((p) => live.feeds.get(p.id) === f);
+  if (p) paintThreadTimeline(p);
   return el;
 }
 function endTurn(f, it) {
@@ -168,16 +172,62 @@ function detailSection(id, title, nodes, { open = true, extra = null } = {}) {
   det.append(h('summary', {}, h('span', { class: 'dsec-t', text: title }), extra), h('div', { class: 'dsec-b' }, ...nodes));
   return det;
 }
+function buildThreadTimeline(p) {
+  const b = h('div', { class: 'th-timeline-b' });
+  const tl = h('aside', { class: 'th-timeline', 'aria-label': '思考・実行タイムライン' },
+    h('div', { class: 'th-timeline-h' }, h('span', { text: '思考・実行ステップ' }), h('span', { class: 'muted', html: picon('history', 13) })),
+    b
+  );
+  p.timelineEl = tl;
+  p.timelineBody = b;
+  paintThreadTimeline(p);
+  return tl;
+}
+function toggleThreadTimeline(p) {
+  p.timelineHidden = !p.timelineHidden;
+  $$('[data-side-tab="timeline"]', p.el).forEach(button => button.setAttribute('aria-pressed', String(!p.timelineHidden)));
+  paintThreadTimeline(p);
+}
+function paintThreadTimeline(p) {
+  if (p.timelineEl) p.timelineEl.hidden = !!p.timelineHidden;
+  if (!p.timelineBody || p.timelineHidden) return;
+  const feed = live.feeds.get(p.id);
+  const items = [];
+  if (feed?.list) {
+    for (const child of feed.list.children) {
+      if (child.classList.contains('fi-user')) {
+        const text = child.querySelector('.fi-content')?.textContent?.trim() || '指示';
+        items.push({ kind: 'user', label: text.slice(0, 36), target: child });
+      } else if (child.classList.contains('tg')) {
+        const sum = child.querySelector('.tg-sum')?.textContent?.trim() || '思考・ツール実行';
+        items.push({ kind: 'tool', label: sum.slice(0, 36), target: child });
+      } else if (child.classList.contains('fi-asst')) {
+        const text = child.querySelector('.fi-content')?.textContent?.trim() || '回答';
+        items.push({ kind: 'asst', label: text.slice(0, 36), target: child });
+      }
+    }
+  }
+  p.timelineEl.hidden = p.timelineHidden || items.length === 0;
+  p.timelineBody.replaceChildren(...items.map((it) => h('button', {
+    class: `th-tl-item ${it.kind}`,
+    type: 'button',
+    title: it.label,
+    onclick: () => it.target?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+  }, h('span', { class: 'tl-dot' }), h('span', { class: 'tl-text', text: it.label }))));
+}
+
 function renderThreadPane(p, d, secs, { card, listSel }) {
   const el = p.el, s = d.session;
   // One entry per panel: the labelled buttons in the header (with their keys) open and close it.
   const side = h('aside', { class: 'th-side', 'aria-label': '詳細パネル', hidden: true }, h('div', { class: 'th-side-b' }));
+  const timeline = buildThreadTimeline(p);
   // The attributes: every section the module layout has, in one reading order.
-  const order = [['progress', true], ['add', true], ['labels', true], ['prio', true], ['task', false], ['related', true], ['pr', true], ['memo', true], ['resume', true], ['detail', false], ['first', false], ['other', false], ['actions', false]];
+  const order = [['progress', true], ['add', true], ['labels', true], ['prio', true], ['task', false], ['cardRelations', false], ['related', true], ['pr', true], ['memo', true], ['resume', true], ['detail', false], ['first', false], ['other', false], ['actions', false]];
   p.detailNodes = order.filter(([id]) => secs[id]).map(([id, open]) => detailSection(id, secs[id].title ?? secTitle(id), secs[id].nodes, { open, extra: secs[id].extra }));
   const sig = s.signals, git = d.git;
   const chips = [
     dotPill(s),
+    card.archived || s.archived ? h('span', { class: 'th-archived', text: 'アーカイブ済み' }) : null,
     exchangePill({ ...s, kind: 'session', exchanges: p.exchangeData?.summary || (findCard(s.id)?.link || findCard(s.id)?.card)?.exchanges || { sent: 0, received: 0, total: 0 } }),
     dirPill(card.directory || { name: 'カテゴリ無し' }),
     git ? gitPill(git, s.branch) : s.branch ? h('span', { class: 'ellipsis', title: s.branch, text: `⎇ ${s.branch}` }) : null,
@@ -189,19 +239,23 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
     acctChip({ account: s.account, home: s.home }),
     h('span', { class: 'th-time', title: fmtDate(s.updatedAt), text: relTime(s.updatedAt) }),
   ].filter(Boolean);
-  const head = h('div', { class: 'th-head' }, secs.breadcrumb.nodes[0], h('span', { class: 'grow' }),
-    !s.host ? h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'changes', title: '作業フォルダの変更を右に開く・閉じる（f）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'f', onclick: () => toggleThreadSide(p, 'changes') }, h('span', { html: picon('diff', 14) }), '変更', h('span', { class: 'th-diffstat' }), ...keycap('f')) : null,
-    !s.host ? h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'terminal', title: 'プロジェクトのルートで開くターミナルを右に開く・閉じる（t）', 'aria-pressed': 'false', 'aria-keyshortcuts': 't', onclick: () => toggleThreadSide(p, 'terminal') }, h('span', { html: picon('terminal', 14) }), 'ターミナル', ...keycap('t')) : null,
-    h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'details', title: '属性・メモ・再開などを右に開く・閉じる（d）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'd', onclick: () => toggleThreadSide(p, 'details') }, h('span', { html: picon('panel', 14) }), '詳細', ...keycap('d')),
+  const head = h('div', { class: 'th-head' }, secs.breadcrumb.nodes[0],
+    ...secs.continue.nodes,
+    h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'timeline', title: '思考タイムラインを左に開く・閉じる（y）', 'aria-label': '思考タイムラインを開く・閉じる', 'aria-pressed': String(!p.timelineHidden), 'aria-keyshortcuts': 'y', onclick: () => toggleThreadTimeline(p) }, h('span', { html: picon('clock', 14) }), h('span', { class: 'th-tool-label', text: '思考' }), ...keycap('y')),
+    !s.host ? h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'changes', title: '作業フォルダの変更を右に開く・閉じる（f）', 'aria-label': '変更を開く・閉じる', 'aria-pressed': 'false', 'aria-keyshortcuts': 'f', onclick: () => toggleThreadSide(p, 'changes') }, h('span', { html: picon('diff', 14) }), h('span', { class: 'th-tool-label', text: '変更' }), h('span', { class: 'th-diffstat' }), ...keycap('f')) : null,
+    !s.host ? h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'terminal', title: 'プロジェクトのルートで開くターミナルを右に開く・閉じる（t）', 'aria-label': 'ターミナルを開く・閉じる', 'aria-pressed': 'false', 'aria-keyshortcuts': 't', onclick: () => toggleThreadSide(p, 'terminal') }, h('span', { html: picon('terminal', 14) }), h('span', { class: 'th-tool-label', text: 'ターミナル' }), ...keycap('t')) : null,
+    h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'details', title: '属性・メモ・再開などを右に開く・閉じる（d）', 'aria-label': '詳細パネルを開く・閉じる', 'aria-pressed': 'false', 'aria-keyshortcuts': 'd', onclick: () => toggleThreadSide(p, 'details') }, h('span', { html: picon('panel', 14) }), h('span', { class: 'th-tool-label', text: '詳細' }), ...keycap('d')),
     h('span', { class: 'ph-btns card-actions' }));
   const title = h('div', { class: 'th-title' }, secs.title.nodes[0]);
   const main = h('div', { class: 'th-main' },
     h('div', { class: 'th-conv', 'data-sec': 'conv' }, ...secs.conv.nodes),
     // Slack material sits beside the input it feeds (「依頼文に追加」), not in the details panel.
     h('div', { class: 'th-dock', 'data-sec': 'send' }, secs.slack ? h('details', { class: 'th-attach', 'data-sec': 'slack' }, h('summary', {}, h('span', { html: picon('message', 13) }), `Slack資料（${card.slackRefs.length}）`), ...secs.slack.nodes) : null, ...secs.send.nodes));
-  el.replaceChildren(...[head, threadStrip(p, d), title].filter(Boolean), h('div', { class: 'th-meta' }, secs.status.nodes[0], ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('session'));
+  el.replaceChildren(...[head, threadStrip(p, d), title].filter(Boolean), h('div', { class: 'th-meta' }, secs.status.nodes[0], secs.continue.reason, ...chips), h('div', { class: 'th-body' }, timeline, main, side), ...paneSizeHandles('session'));
   paintThreadStat(p, git);
   paintThreadSide(p);
+  paintThreadTimeline(p);
+  paintWaitingQuestion(el, s);
 }
 
 // The same frame before the detail arrives: the board's card already has the title, the state and the
@@ -224,7 +278,8 @@ function renderPendingThreadPane(p, card, listId) {
     acctChip(card),
     h('span', { class: 'th-time', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }),
   ].filter(Boolean);
-  const status = h('div', { class: 'sub row' }, h('span', { class: `badge ${card.agent}`, text: card.agent === 'codex' ? 'Codex' : 'Claude' }),
+  const status = h('div', { class: 'sub row' }, h('span', { class: `badge ${card.agent}`, text: agentLabel(card.agent) }),
+    cardSurface(card) ? h('span', { class: 'pill', text: SURFACE_META[cardSurface(card)]?.label || cardSurface(card) }) : null,
     h('span', { class: 'row pane-status' }, h('span', { class: `sdot s-${card.status || 'idle'}` }), card.statusKnown === false ? '状態未取得' : STATUS_LABELS[card.status || 'idle']));
   const main = h('div', { class: 'th-main' }, conv, h('div', { class: 'th-dock', 'data-sec': 'send' }, renderPendingDispatch(card)));
   p.el.replaceChildren(head, h('div', { class: 'th-title' }, h('h2', { text: card.title, title: card.title })), h('div', { class: 'th-meta' }, status, ...chips),
@@ -241,7 +296,7 @@ function taskSection(id, title, extra, nodes) {
 }
 function renderTaskThreadPane(p, card, secs) {
   const side = h('aside', { class: 'th-side', 'aria-label': '詳細パネル', hidden: true }, h('div', { class: 'th-side-b' }));
-  const order = [['add', true], ['prio', true], ['memo', true], ['other', false]];
+  const order = [['add', true], ['cardRelations', false], ['prio', true], ['memo', true], ['other', false]];
   p.detailNodes = order.filter(([id]) => secs[id]).map(([id, open]) => detailSection(id, secs[id].title ?? secTitle(id), secs[id].nodes, { open, extra: secs[id].extra }));
   const labels = card.labels.map((id) => state.board.labels.find((l) => l.id === id)).filter(Boolean);
   const chips = [
@@ -254,7 +309,7 @@ function renderTaskThreadPane(p, card, secs) {
     h('span', { class: 'th-time', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }),
   ].filter(Boolean);
   const head = h('div', { class: 'th-head' }, secs.breadcrumb.nodes[0], h('span', { class: 'grow' }),
-    h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'details', title: '属性・メモ・削除を右に開く・閉じる（d）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'd', onclick: () => toggleThreadSide(p, 'details') }, h('span', { html: picon('panel', 14) }), '詳細', ...keycap('d')),
+    h('button', { class: 'th-tool', type: 'button', 'data-side-tab': 'details', title: '属性・メモ・削除を右に開く・閉じる（d）', 'aria-pressed': 'false', 'aria-keyshortcuts': 'd', onclick: () => toggleThreadSide(p, 'details') }, h('span', { html: picon('panel', 14) }), h('span', { class: 'th-tool-label', text: '詳細' }), ...keycap('d')),
     h('span', { class: 'ph-btns card-actions' }));
   const title = h('div', { class: 'th-title' }, secs.title.nodes[0]);
   const main = h('div', { class: 'th-main' },
@@ -334,6 +389,7 @@ function taskThreadChoice(taskId, links) {
 }
 async function selectTaskThread(taskId, id) {
   store.set('taskThreads', { ...taskThreadsSaved(), [taskId]: id });
+  if (paneDocked()) return openCard(id, { dock: true });
   if (panes[0]?.id !== taskId) return openCard(id);
   showCards([taskId, id]);
   const p = panes[1];
@@ -346,6 +402,6 @@ function threadStrip(p, d) {
   const links = task.links.filter((l) => !l.subagent);
   return h('div', { class: 'th-threads', role: 'tablist', 'aria-label': `${T.taskCard}のスレッド` },
     ...links.map((l) => h('button', { class: 'th-thread', type: 'button', role: 'tab', 'aria-selected': String(l.id === p.id), title: l.title, onclick: () => l.id !== p.id && selectTaskThread(task.id, l.id) },
-      faceGlyph(l.status, l.statusKnown), faceWho(l.agent), h('span', { class: 'ellipsis', text: l.title }))),
+      faceGlyph(l.status, l.statusKnown), faceWho(l.agent, l), h('span', { class: 'ellipsis', text: l.title }))),
     h('button', { class: 'th-thread th-new', type: 'button', title: 'このタスクで新しいセッションを始める', onclick: () => { revealPane(task.id); requestAnimationFrame(() => panes[0]?.el.querySelector('[data-sec="send"] textarea')?.focus()); } }, h('span', { html: picon('plus', 13) }), '新しいスレッド'));
 }

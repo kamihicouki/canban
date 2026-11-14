@@ -132,7 +132,7 @@ test('remote image storage and skill discovery return paths on the target host',
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-function composerHarness() {
+function composerHarness(options = {}) {
   class Element {
     constructor(tag, attrs = {}, children = []) { this.tag = tag; this.children = children.filter(Boolean); this.events = {}; this.dataset = {}; this.value = attrs.value || ''; this.isConnected = true; Object.assign(this, attrs); this.classList = { add() {}, remove() {} }; }
     append(...items) { this.children.push(...items.filter(Boolean)); }
@@ -146,7 +146,14 @@ function composerHarness() {
   let calls = [], sends = 0;
   const bridge = { async callTool(name, args) { calls.push({ name, args }); return { result: name === 'canban_prompt_skills' ? { skills: [{ name: 'demo', path: '/skills/demo/SKILL.md', description: 'demo skill' }] } : { id: 'image-id', offset: args.offset + Buffer.from(args.data, 'base64').length, complete: true } }; } };
   class Reader { readAsDataURL(blob) { blob.arrayBuffer().then(b => { this.result = `data:image/png;base64,${Buffer.from(b).toString('base64')}`; this.onload(); }); } }
-  const context = vm.createContext({ h: (tag, attrs, ...children) => new Element(tag, attrs, children), picon: () => '', bridge, URL: { createObjectURL: () => 'blob:preview', revokeObjectURL() {} }, FileReader: Reader });
+  class MockSpeechRecognition {
+    constructor() { MockSpeechRecognition.instances.push(this); this.started = false; this.stopped = false; }
+    start() { this.started = true; this.onstart?.(); }
+    stop() { this.stopped = true; this.onend?.(); }
+  }
+  MockSpeechRecognition.instances = [];
+  const win = { SpeechRecognition: MockSpeechRecognition, ...(options.globals?.window || {}) };
+  const context = vm.createContext({ h: (tag, attrs, ...children) => new Element(tag, attrs, children), picon: () => '', bridge, URL: { createObjectURL: () => 'blob:preview', revokeObjectURL() {} }, FileReader: Reader, SpeechRecognition: MockSpeechRecognition, ...options.globals, window: win });
   vm.runInContext(fs.readFileSync(new URL('../ui/prompt-composer.js', import.meta.url), 'utf8') + '\nglobalThis.create = promptComposer;', context);
   const input = new Element('textarea'); const target = { agent: 'codex', cwd: '/repo' };
   const composer = context.create(input, { key: 'test', context: () => target, submit: () => { sends++; } });
@@ -218,4 +225,115 @@ test('composer draws one Codex-style box with caller controls in its bottom row'
   assert.equal(row[2], chip); assert.equal(row.at(-1), send);
   assert.equal(c.root.children[1].class, 'cx-place'); assert.equal(c.root.children[1].children[0], where);
   assert.equal(c.root.children[2].class, 'cx-keys');
+});
+
+test('composer toggles voice input, transcribes speech, responds to Alt+M and clears on stop/submit', async () => {
+  const h = composerHarness();
+  const micBtn = h.nodes().find(e => typeof e.class === 'string' && e.class.includes('prompt-mic'));
+  assert.ok(micBtn);
+  assert.equal(micBtn['aria-label'], '音声入力');
+
+  let prevented = false;
+  await h.input.fire('keydown', { key: 'm', altKey: true, preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(h.composer.isListening(), true);
+  assert.equal(micBtn['aria-label'], '音声入力を停止');
+
+  const recognition = h.context.window.SpeechRecognition.instances.at(-1);
+  assert.ok(recognition);
+  recognition.onresult({
+    results: [
+      Object.assign([{ transcript: '音声で' }], { isFinal: true }),
+      Object.assign([{ transcript: '指示を入力' }], { isFinal: false }),
+    ]
+  });
+  assert.equal(h.input.value, '音声で 指示を入力');
+  assert.equal(h.composer.draft.text, '音声で 指示を入力');
+
+  recognition.onresult({
+    results: [
+      Object.assign([{ transcript: '音声で指示を入力' }], { isFinal: true }),
+    ]
+  });
+  assert.equal(h.input.value, '音声で指示を入力');
+
+  await h.input.fire('keydown', { key: 'm', altKey: true, preventDefault() {} });
+  assert.equal(h.composer.isListening(), false);
+  assert.equal(micBtn['aria-label'], '音声入力');
+
+  h.composer.toggleSpeech();
+  assert.equal(h.composer.isListening(), true);
+  h.composer.clear();
+  assert.equal(h.composer.isListening(), false);
+});
+
+test('voiceMode switches active card across multiple composers, auto-submits after 5s silence, and reads replies via TTS', async () => {
+  const timers = [];
+  let spokenUtterances = [], cancelledTts = 0;
+  class MockUtterance {
+    constructor(text) { this.text = text; }
+  }
+  const speechSynthesis = {
+    speak(u) { spokenUtterances.push(u.text); },
+    cancel() { cancelledTts++; }
+  };
+  const h = composerHarness({
+    globals: {
+      setTimeout: (fn, ms) => { const t = { fn, ms, cleared: false }; timers.push(t); return t; },
+      clearTimeout: (t) => { if (t) t.cleared = true; },
+      window: { speechSynthesis, SpeechSynthesisUtterance: MockUtterance }
+    }
+  });
+  const vm = h.context.voiceMode;
+  assert.equal(vm.silenceMs, 5000);
+
+  let submitsA = 0, submitsB = 0;
+  const inputA = new h.Element('textarea'), inputB = new h.Element('textarea');
+  const compA = h.context.create(inputA, { key: 'card-a', context: () => h.target, submit: () => { submitsA++; compA.setSending(true); compA.clear(); compA.setSending(false); } });
+  const compB = h.context.create(inputB, { key: 'card-b', context: () => h.target, submit: () => { submitsB++; } });
+
+  compA.toggleSpeech();
+  assert.equal(compA.isListening(), true);
+  assert.equal(compB.isListening(), false);
+
+  const rec = h.context.window.SpeechRecognition.instances.at(-1);
+  rec.onresult({
+    results: [Object.assign([{ transcript: 'タスクAの実装を進めて' }], { isFinal: true })]
+  });
+  assert.equal(inputA.value, 'タスクAの実装を進めて');
+  const activeTimer = timers.find(t => !t.cleared);
+  assert.ok(activeTimer);
+  assert.equal(activeTimer.ms, 5000);
+
+  compB.toggleSpeech();
+  assert.equal(activeTimer.cleared, true);
+  assert.equal(compA.isListening(), false);
+  assert.equal(compB.isListening(), true);
+  assert.equal(inputA.value, 'タスクAの実装を進めて');
+
+  rec.onresult({
+    results: [
+      Object.assign([{ transcript: 'タスクAの実装を進めて' }], { isFinal: true }),
+      Object.assign([{ transcript: 'タスクBのテストを修正して' }], { isFinal: true })
+    ]
+  });
+  assert.equal(inputB.value, 'タスクBのテストを修正して');
+
+  const timerB = timers.find(t => !t.cleared);
+  assert.ok(timerB);
+  assert.equal(timerB.ms, 5000);
+  timerB.fn();
+  assert.equal(submitsB, 1);
+  assert.equal(vm.active, true);
+
+  vm.onAssistantMessage('card-b', '修正が完了しました。\n```js\nconst a = 1;\n```\n詳細は [こちら](https://example.com) を確認してください。');
+  assert.equal(spokenUtterances.at(-1), '修正が完了しました。 詳細は こちら を確認してください。');
+
+  const prevCancel = cancelledTts;
+  compA.toggleSpeech();
+  assert.ok(cancelledTts > prevCancel);
+  assert.equal(compA.isListening(), true);
+
+  vm.stop();
+  assert.equal(vm.active, false);
 });

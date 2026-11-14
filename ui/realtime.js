@@ -6,7 +6,7 @@ const fmtClock = (at) => (at ? new Date(at).toLocaleTimeString('ja-JP', { hour: 
 function feedItem(it, f) {
   if (it.k === 'user' || it.k === 'assistant') {
     const stamp = Date.parse(it.at);
-    const who = h('div', { class: 'fi-who' }, it.k === 'user' ? 'あなた' : f.pane.d?.session?.agent === 'claude' ? 'Claude' : 'Codex',
+    const who = h('div', { class: 'fi-who' }, it.k === 'user' ? 'あなた' : agentLabel(f.pane.d?.session?.agent || 'codex'),
       Number.isFinite(stamp) ? h('time', { datetime: new Date(stamp).toISOString(), title: fmtDate(stamp), text: fmtClock(it.at) }) : null);
     return it.k === 'user'
       ? h('div', { class: 'fi fi-user' }, who, h('div', { class: 'fi-content' }, h('span', { class: 'raw', text: exchangeModel.messageText(it.text) }), userMessageView(exchangeModel.messageText(it.text))))
@@ -41,6 +41,7 @@ function renderFeed(d, p) {
   // A user message consumes the earlier question; tool/turn records do not.
   const lastSaid = [...d.feed.items].reverse().find((it) => it.k === 'assistant' || it.k === 'user');
   p.lastText = lastSaid?.k === 'assistant' ? lastSaid.text : '';
+  if (p.lastText && typeof voiceMode !== 'undefined') voiceMode.lastSpokenText.set(f.cardId, p.lastText);
   if (!d.feed.items.length) list.append(h('div', { class: 'muted', text: 'まだやりとりはありません' }));
   live.feeds.set(f.cardId, f);
   paintFeedFoot(f);
@@ -72,7 +73,7 @@ function paintFeedFoot(f) {
 function applyFeed(f, feed) {
   if (feed.reset) { openCard(f.cardId); return; }
   const stick = atFeedEnd(f.list);
-  let added = 0;
+  let added = 0, newAssistantText = '';
   if (feed.items.length) f.list.querySelector(':scope > .muted')?.remove();
   for (const it of feed.items) {
     if (it.k === 'result') {
@@ -85,8 +86,8 @@ function applyFeed(f, feed) {
       if (group) paintToolGroup(group);
       continue;
     }
-    if (it.k === 'assistant') f.pane.lastText = it.text;
-    else if (it.k === 'user') f.pane.lastText = '';
+    if (it.k === 'assistant') { f.pane.lastText = it.text; newAssistantText = it.text; }
+    else if (it.k === 'user') { f.pane.lastText = ''; newAssistantText = ''; }
     if (feedPush(f, it)) added++;
   }
   // Keep the DOM bounded on long runs.
@@ -101,6 +102,9 @@ function applyFeed(f, feed) {
     f.signals = feed.signals || null;
     if (feed.git) { f.git = feed.git; paintThreadStat(f.pane, f.git); }
     paintFeedFoot(f);
+    f.pane.paintContinue?.();
+    const waitingRoot = f.pane.el.querySelector('.send-section');
+    if (waitingRoot && typeof paintWaitingQuestion === 'function') paintWaitingQuestion(waitingRoot, { ...f.pane.d?.session, status: f.status, signals: f.signals });
     f.edits?.paint();
     const box = f.pane.el.querySelector('.sig-box');
     if (box) {
@@ -117,6 +121,7 @@ function applyFeed(f, feed) {
   if (added || feed.status) paintChoices(f);
   if (added && f.pane.exchangeData) { paintExchangeTimeline(f.pane); scheduleExchangeRefresh(f.pane); }
   if (added) { if (stick) scrollFeedToEnd(f); else f.newBtn.hidden = false; }
+  if (newAssistantText && typeof voiceMode !== 'undefined') voiceMode.onAssistantMessage(f.cardId, newAssistantText);
 }
 
 // ---- the long poll ----
@@ -147,20 +152,28 @@ function findCard(id) {
 
 // Patch cards in place: a status change rebuilds the board (rules and counts follow it).
 function applyPatches(patches) {
-  let rebuild = false;
+  let rebuild = false, timelineChanged = false;
+  const timeline = typeof inboxOn === 'function' && inboxOn();
+  const gantt = typeof ganttOn === 'function' && ganttOn();
   for (const p of patches) {
     const hit = findCard(p.id);
     if (!hit) continue;
     const { card, list, link } = hit;
-    if (link) { if (link.status !== p.status) rebuild = true; continue; }
-    if (card.status !== p.status) { rebuild = true; continue; }
+    const target = link || card;
+    const changedStatus = target.status !== p.status || typeof p.statusKnown === 'boolean' && target.statusKnown !== p.statusKnown;
+    if (changedStatus) rebuild = true;
     const openHere = live.feeds.has(p.id);
-    if ((p.updatedAt || 0) > (card.updatedAt || 0) && !openHere) card.unread = true;
+    if ((p.updatedAt || 0) > (target.updatedAt || 0) && !openHere) target.unread = card.unread = true;
+    target.status = p.status;
+    if (typeof p.statusKnown === 'boolean') target.statusKnown = p.statusKnown;
+    target.updatedAt = Math.max(target.updatedAt || 0, p.updatedAt || 0);
     card.updatedAt = Math.max(card.updatedAt || 0, p.updatedAt || 0);
-    card.activity = p.activity;
-    card.signals = p.signals || null;
-    card.git = p.git || null;
-    const el = document.querySelector(`.card[data-card-id="${CSS.escape(p.id)}"]`);
+    target.activity = p.activity || null;
+    target.signals = p.signals || null;
+    target.git = p.git || null;
+    if (timeline || gantt) { timelineChanged = true; continue; }
+    if (changedStatus) continue;
+    const el = document.querySelector(`.card[data-card-id="${CSS.escape(card.id)}"]`);
     if (el && !state.drag && !el.querySelector('.peek-input:focus')) {
       const focused = el.contains(document.activeElement);
       const next = renderCard(card, list);
@@ -168,6 +181,7 @@ function applyPatches(patches) {
       if (focused) next.focus();
     }
   }
+  if (timelineChanged && !state.drag) { if (gantt) render(); else refreshInboxList(); }
   if (rebuild) scheduleLoad();
 }
 
@@ -198,6 +212,8 @@ function applyPresence(list) {
     if (JSON.stringify(before.get(id)) === JSON.stringify(live.viewers.get(id))) continue;
     const hit = findCard(id);
     const el = document.querySelector(`.card[data-card-id="${CSS.escape(id)}"]`);
+    // The time-axis row has its own structure; a viewer change must not replace it with a board face.
+    if (el?.classList.contains('irow')) continue;
     if (hit && !hit.link && el && !state.drag && !el.querySelector('.peek-input:focus')) {
       const focused = el.contains(document.activeElement);
       const next = renderCard(hit.card, hit.list);

@@ -84,7 +84,7 @@ function accountLabel(key) {
 }
 // How every picker, chip title and note names an account: the AI App, then the account
 // (server/accounts.mjs accountName() is the same), so Codex and Claude of one email differ.
-const ACCOUNT_AGENTS = { codex: 'Codex', claude: 'Claude' };
+const ACCOUNT_AGENTS = { codex: 'Codex', claude: 'Claude', gemini: 'Gemini', antigravity: 'Antigravity', cursor: 'Cursor', chatgpt: 'ChatGPT', grok: 'Grok' };
 function accountName(key) {
   if (!key) return 'アカウント不明';
   const agent = String(key).split(':')[0];
