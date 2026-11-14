@@ -165,12 +165,10 @@ function dormantFold(list, cards, lane) {
 // ---- 時間軸: the board by time (it reuses the inbox's reading pane) ----
 const TIMELINE_GROUP_CAP = 80;
 function timelineGroups(b) {
-  const now = Date.now();
-  const byGroup = new Map(TIME_GROUPS.map(([k]) => [k, []]));
-  for (const l of b.lists) for (const c of l.cards) byGroup.get(timeGroupOf(c, now)).push({ card: c, list: l });
-  const byNew = (a, c) => (c.card.updatedAt || 0) - (a.card.updatedAt || 0);
-  return TIME_GROUPS.map(([k, name]) => {
-    const xs = byGroup.get(k).sort(byNew);
-    return [name, xs.slice(0, TIMELINE_GROUP_CAP), xs.length - TIMELINE_GROUP_CAP, k];
+  const byGroup = new Map(WORK_TIME_GROUPS.map(([k]) => [k, []]));
+  for (const list of b.lists) for (const card of list.cards) byGroup.get(workGroupOf(card, list)).push({ card, list });
+  return WORK_TIME_GROUPS.map(([key, name]) => {
+    const xs = byGroup.get(key).sort((a,b) => Number(b.card.kind === 'task') - Number(a.card.kind === 'task') || (b.card.updatedAt || 0) - (a.card.updatedAt || 0));
+    return [name, xs.slice(0, TIMELINE_GROUP_CAP), Math.max(0, xs.length - TIMELINE_GROUP_CAP), key];
   });
 }

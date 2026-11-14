@@ -5,7 +5,7 @@ import { sessionSourceView, compactSourceView } from './source-model.mjs';
 import { leaderFor } from './leader.mjs';
 // Combines read-only session listings (local + enabled remote hosts) with the
 // Canban store into a board snapshot.
-import { listCodexSessions, codexMessagesFromRecords } from './sources/codex.mjs';
+import { listCodexSessions, findCodexSession, codexMessagesFromRecords } from './sources/codex.mjs';
 import { listClaudeSessions, claudeMessagesFromRecords } from './sources/claude.mjs';
 import {
   listAntigravitySessions,
@@ -42,9 +42,13 @@ import { SearchIndex } from './search.mjs';
 import { resolveDirectory } from './store.mjs';
 import { perf } from './perf.mjs';
 import { exchangeIndex } from './exchanges.mjs';
+import { createSourceReadCache } from './source-read-cache.mjs';
+import { taskHandoffSummary } from './task-handoff.mjs';
+import { createSessionDetailLookup, sessionSnapshotKey, matchingSessionSnapshot } from './session-detail-lookup.mjs';
 
 const LOCAL_TTL_MS = 4000;
-let localCache = null;
+const localSourceReads = createSourceReadCache(readLocalSessions, { ttlMs: LOCAL_TTL_MS });
+let lastSessionSnapshot = null;
 export const pool = new RemotePool();
 // On a cold start the board shows local sessions after this long; remote ones follow (pool.onLate).
 const REMOTE_FIRST_WAIT_MS = 1500;
@@ -53,7 +57,7 @@ const PR_WINDOW_MS = 30 * 86400e3; // look up PRs for sessions active in the las
 
 // The live watcher saw a change the listing must pick up (a new session, a desktop rename).
 export function dropLocalCache() {
-  localCache = null;
+  localSourceReads.drop();
 }
 
 export const KNOWN_AGENTS = ['codex', 'claude', 'gemini', 'antigravity', 'cursor', 'chatgpt', 'grok'];
@@ -67,8 +71,8 @@ export function inferSurface(s) {
   return 'cli';
 }
 
-async function localSessions({ force = false } = {}) {
-  if (!force && localCache && Date.now() - localCache.at < LOCAL_TTL_MS) return localCache.value;
+function localSessions(options = {}) { return localSourceReads.get(options); }
+async function readLocalSessions() {
   const [codex, claude, antigravity, gemini, cursor, chatgpt, grok] = await Promise.all([
     perf.timed('codex.list', () => listCodexSessions()),
     perf.timed('claude.list', () => listClaudeSessions()),
@@ -92,7 +96,6 @@ async function localSessions({ force = false } = {}) {
     errors: [codex.error, claude.error, antigravity.error, gemini.error, cursor.error, chatgpt.error, grok.error].filter(Boolean),
     codexAvailable: !codex.error,
   };
-  localCache = { at: Date.now(), value };
   return value;
 }
 
@@ -116,7 +119,9 @@ async function allSessionsImpl(state, { force = false } = {}) {
   if (configureAccounts(state.settings.accounts)) force = true; // homes changed: list again
   const hosts = await hostsWithState(state);
   const enabled = hosts.filter((h) => h.enabled);
-  const [local, remote] = await Promise.all([localSessions({ force }), perf.timed('remote.list', () => pool.sessions(enabled, { force, waitMs: force ? Infinity : REMOTE_FIRST_WAIT_MS }))]);
+  const localRead = localSessions({ force });
+  const generation = localSourceReads.generation();
+  const [local, remote] = await Promise.all([localRead, perf.timed('remote.list', () => pool.sessions(enabled, { force, waitMs: force ? Infinity : REMOTE_FIRST_WAIT_MS }))]);
   const app = await codexAppState();
   const all = mergeDotSessions([...local.sessions, ...remote], app, { includeCloud: local.codexAvailable });
   annotateCodexApp(all, app); // Codex projects, pins and follow-ups kept by the Codex app
@@ -130,7 +135,9 @@ async function allSessionsImpl(state, { force = false } = {}) {
     if (st.state === 'error' && st.error) errors.push(`${h.label}: ${st.error}`);
   }
   const cloudHosts = [...new Map(all.filter(isCloudSession).map(s => [s.host.id, { ...s.host, enabled: true }])).values()];
-  return { sessions: all, errors, hosts: [...hosts, ...cloudHosts], app };
+  const result = { sessions: all, errors, hosts: [...hosts, ...cloudHosts], app };
+  if (generation === localSourceReads.generation()) lastSessionSnapshot = { sessions: all, at: Date.now(), generation, key: sessionSnapshotKey(state) };
+  return result;
 }
 
 // Cards without an explicit order sort by recency: newest at the top.
@@ -431,6 +438,9 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
   const statusCounts = Object.fromEntries(STATUSES.map((k) => [k, 0]));
   const { requests: allRequests, paused } = (await requestsFor(store.dir).load());
   const reqs = requestSummary(allRequests, paused);
+  for (const [cardId, pause] of Object.entries(paused || {})) {
+    reqs.set(cardId, { ...(reqs.get(cardId) || { queued: 0, running: false }), paused: true, pauseReason: pause.reason || null, pausedAt: pause.at || null });
+  }
   const labelsById = new Map(state.labels.map((l) => [l.id, l]));
   const listIds = new Set(state.lists.map((l) => l.id));
   const buckets = new Map(state.lists.map((l) => [l.id, []]));
@@ -543,6 +553,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
       title: t.title,
       description: t.description || '',
       loop: loopSummaries[id] || null,
+      handoff: taskHandoffSummary(t),
       slackRefs: t.slackRefs || [],
       directory: dirView(dir),
       context: t.context || {},
@@ -558,7 +569,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
       target: t.target || null,
       launchSelection: t.launchSelection || null,
       launchReceipts: t.launchReceipts || [],
-      links: links.map((x) => ({ id: x.id, sourceView: compactSourceView(x.sourceView || sessionSourceView(x)), capabilities: compactCapabilities(capabilitiesFor({ session: x })), cwd: x.cwd || null, branch: x.branch || null, agent: x.agent, surface: inferSurface(x), account: x.account || null, title: x.title, status: x.status || 'idle', statusKnown: x.statusKnown !== false, signals: cardSignals(x.signals), activity: x.activity || null, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, createdAt: x.createdAt, updatedAt: x.updatedAt })),
+      links: links.map((x) => ({ id: x.id, sourceView: compactSourceView(x.sourceView || sessionSourceView(x)), capabilities: compactCapabilities(capabilitiesFor({ session: x })), cwd: x.cwd || null, branch: x.branch || null, agent: x.agent, surface: inferSurface(x), account: x.account || null, title: x.title, last: x.lastSaid || null, unread: (x.updatedAt || 0) > Math.max(seenAll, state.cards[x.id]?.seenAt || 0, t.seenAt || 0), requests: reqs.get(x.id) || null, status: x.status || 'idle', statusKnown: x.statusKnown !== false, signals: cardSignals(x.signals), activity: x.activity || null, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, createdAt: x.createdAt, updatedAt: x.updatedAt })),
       linkedSessionIds: [...(t.links || [])],
       missingLinks: (t.links || []).length - allLinks.length,
       pending: (t.pending || []).map((p) => ({ agent: p.agent, startedAt: p.startedAt, expired: now - p.startedAt > PENDING_MS })),
@@ -711,8 +722,24 @@ export async function findSession(store, cardId) {
   const { sessions, hosts } = await allSessions(state);
   const s = detailSessionState(sessions, state, cardId);
   if (!s) throw new Error('セッションが見つかりません');
-  return { session: s, state, host: !isCloudSession(s) && s.host?.local === false ? hosts.find((h) => h.id === s.host.id) : null };
+  return { session: s, state, host: !isCloudSession(s) && s.host?.local === false ? hosts.find((h) => h.id === s.host.id) : null,
+    sessions, coverage: { state: 'current', at: Date.now(), reason: null } };
 }
+
+const lookupSessionDetail = createSessionDetailLookup({
+  configure: state => { if (configureAccounts(state.settings.accounts)) dropLocalCache(); },
+  findLocalCodex: findCodexSession,
+  decorate: async (session, state) => {
+    const app = await codexAppState();
+    annotateCodexApp([session], app);
+    await annotateStatus([session]);
+    session.surface = inferSurface(session);
+    await prs.annotate([session]);
+    return detailSessionState([session], state, session.id);
+  },
+  getSnapshot: state => matchingSessionSnapshot(lastSessionSnapshot, state, localSourceReads.generation()),
+  fullLookup: findSession,
+});
 
 export function sessionDetail(...args) {
   return perf.timed('sessionDetail', () => sessionDetailImpl(...args));
@@ -728,7 +755,7 @@ export async function sessionExchanges(store, cardId) {
 }
 
 async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
-  const { session: s, state, host } = await findSession(store, cardId);
+  const { session: s, state, host, sessions: relatedSource, coverage: relatedCoverage } = await lookupSessionDetail(store, cardId);
   const card = state.cards[cardId] || {};
   let recent = [];
   let permission = null; // remote: checked when sending (saves an ssh round trip)
@@ -758,7 +785,6 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   const taskId = toTask.get(cardId) || null;
   const listCard = taskId ? state.cards[taskId] : card;
   const listId = listCard.listId && state.lists.some((l) => l.id === listCard.listId) ? listCard.listId : state.defaultListId;
-  const { sessions: relatedSource } = await allSessions(state);
   const all = sessionCardStates(relatedSource, state);
   const byId = new Map(all.map((x) => [x.id, x]));
   const key = branchKey(s);
@@ -783,6 +809,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     task: taskId ? { id: taskId, title: state.cards[taskId].title } : null,
     children,
     sameBranch,
+    relatedCoverage,
     pr: s.pr || null,
     repo: s.repo || null,
     parentId: s.parentId || null,

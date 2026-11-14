@@ -60,7 +60,7 @@ test('deadlines come only from explicit due dates; invalid and out-of-range dead
 test('rendering contains no fabricated percentages, future intervals, utility classes, or claims of execution', () => {
  const s=fs.readFileSync(new URL('../ui/gantt.js',import.meta.url),'utf8');
  assert.doesNotMatch(s,/75%|80%|50%|status === 'done'|Math\.max\(96|タスクが進行中です|text-\[|bg-black|text-sky|font-bold/);
- assert.match(s,/帯は観測した活動の期間です。予定ではありません/);
+ assert.match(s,/帯は作成から最終更新までの範囲です。連続した活動や予定ではありません/);
 });
 
 function viewFixture(cards) {

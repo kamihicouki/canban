@@ -260,9 +260,12 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
 
 // The same frame before the detail arrives: the board's card already has the title, the state and the
 // attribute line, so they and the input come at once; only the conversation waits, as a few lines in its place.
+function conversationLoadingPlaceholder() {
+  return h('div', { class: 'conv-wait', role: 'status', 'aria-label': '会話を読み込み中' }, ...['w1', 'w2', 'w3', 'w4'].map((w) => h('i', { class: w })));
+}
 function renderPendingThreadPane(p, card, listId) {
   const conv = h('div', { class: 'th-conv', 'data-sec': 'conv', 'aria-busy': 'true' },
-    h('div', { class: 'conv-wait', role: 'status', 'aria-label': '会話を読み込み中' }, ...['w1', 'w2', 'w3', 'w4'].map((w) => h('i', { class: w }))));
+    conversationLoadingPlaceholder());
   const tool = (tab, icon, label, key) => h('button', { class: 'th-tool', type: 'button', 'data-side-tab': tab, title: `${label}を右に開く・閉じる（${key}）。詳細が届くと開きます`, 'aria-pressed': 'false', 'aria-keyshortcuts': key, onclick: () => toggleThreadSide(p, tab) }, h('span', { html: picon(icon, 14) }), label, ...keycap(key));
   const head = h('div', { class: 'th-head' }, cardCrumb(cardListControls(p, listId)), h('span', { class: 'grow' }),
     !card.host ? tool('changes', 'diff', '変更', 'f') : null, !card.host ? tool('terminal', 'terminal', 'ターミナル', 't') : null,
@@ -314,7 +317,8 @@ function renderTaskThreadPane(p, card, secs) {
   const title = h('div', { class: 'th-title' }, secs.title.nodes[0]);
   const main = h('div', { class: 'th-main' },
     h('div', { class: 'th-conv th-task' },
-      taskSection('conv', '説明', null, secs.conv.nodes),
+      taskSection('conv', '目的・説明', null, secs.conv.nodes),
+      secs.handoff ? taskSection('handoff', secs.handoff.title, null, secs.handoff.nodes) : null,
       secs.slack ? taskSection('slack', 'Slack資料', null, secs.slack.nodes) : null,
       loopComponent(card, { compact: true }),
       taskSection('related', secs.related.title, secs.related.extra, secs.related.nodes)),
