@@ -29,6 +29,8 @@ test('read task is model-visible, reads once and preserves saved fields without 
   assert.equal(reads, 1);
   assert.equal(task.description, '原文');
   assert.equal(task.note, '個人メモ');
+  assert.equal(task.linkedSessionContext.state, 'unavailable');
+  assert.deepEqual(task.linkedSessions, []);
   assert.deepEqual(task.linkedSessionIds, ['codex:a']);
   assert.equal(list.title, '仕事');
   assert.deepEqual(state, before);

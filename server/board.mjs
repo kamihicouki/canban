@@ -44,6 +44,7 @@ import { perf } from './perf.mjs';
 import { exchangeIndex } from './exchanges.mjs';
 import { createSourceReadCache } from './source-read-cache.mjs';
 import { taskHandoffSummary } from './task-handoff.mjs';
+import { publishTaskContexts, taskContextScope } from './task-context-cache.mjs';
 import { createSessionDetailLookup, sessionSnapshotKey, matchingSessionSnapshot } from './session-detail-lookup.mjs';
 
 const LOCAL_TTL_MS = 4000;
@@ -420,6 +421,11 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
   const filters = normalizeFilters(rawFilters);
   const loopSummaries = await store.loopSummaries();
   let state = (await store.load());
+  // Derive shared context from this normal listing only; get_task never starts
+  // another provider scan. Fence settings changes while the listing is in flight.
+  const taskContextObservedAt = Date.now();
+  let taskContextKey = null;
+  try { taskContextKey = taskContextScope(store.dir, state); } catch { /* Optional cache cannot fail board acquisition. */ }
   const { sessions: sourceSessions, errors, hosts, app } = await allSessions(state, { force });
   const sessions = sessionCardStates(sourceSessions, state);
   await exchangeIndex.sync(sessions);
@@ -435,6 +441,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
     state = (await store.load());
   }
   const seenAll = state.settings.seenAllAt || 0;
+  if (taskContextKey) publishTaskContexts(store.dir, state, sessions, { now: taskContextObservedAt, scope: taskContextKey });
   const statusCounts = Object.fromEntries(STATUSES.map((k) => [k, 0]));
   const { requests: allRequests, paused } = (await requestsFor(store.dir).load());
   const reqs = requestSummary(allRequests, paused);
