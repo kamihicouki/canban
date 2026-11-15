@@ -7,7 +7,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { makeFixtures } from './helpers.mjs';
+import { makeFixtures, stopChild } from './helpers.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-mcp-'));
@@ -83,8 +83,8 @@ before(async () => {
   const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '0' } });
   assert.equal(init.result.serverInfo.name, 'canban');
 });
-after(() => {
-  child.kill();
+after(async () => {
+  await stopChild(child);
   fs.rmSync(dataDir, { recursive: true, force: true });
   fx.cleanup();
 });

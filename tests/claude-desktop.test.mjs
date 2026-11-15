@@ -7,7 +7,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { makeFixtures } from './helpers.mjs';
+import { makeFixtures, stopChild } from './helpers.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const readJson = (...p) => JSON.parse(fs.readFileSync(path.join(root, ...p), 'utf8'));
@@ -48,8 +48,8 @@ before(async () => {
     waiting.get(m.id)?.(m);
   });
 });
-after(() => {
-  child.kill();
+after(async () => {
+  await stopChild(child);
   for (const d of [bundle, dataDir]) fs.rmSync(d, { recursive: true, force: true });
   fx.cleanup();
 });

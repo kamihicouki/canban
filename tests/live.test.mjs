@@ -12,7 +12,7 @@ import { claudeItems, codexItems, foldResults, activityOf, readLines, readFeed, 
 import { Store } from '../server/store.mjs';
 import { rolloutFile, readTailJsonLines } from '../server/sources/readonly.mjs';
 import { LiveHub } from '../server/live.mjs';
-import { makeFixtures } from './helpers.mjs';
+import { makeFixtures, stopChild } from './helpers.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const line = (o) => `${JSON.stringify(o)}\n`;
@@ -70,6 +70,8 @@ test('claude records become messages, tool calls with results, and turn ends', a
   const done = claudeItems([{ type: 'assistant', message: { stop_reason: 'end_turn', content: [{ type: 'text', text: '直しました' }] } }]);
   assert.deepEqual(done.map((i) => i.k), ['assistant', 'turn']);
   assert.equal(activityOf(done), null);
+  const limited = claudeItems([{ type: 'assistant', isApiErrorMessage: true, error: 'rate_limit', message: { stop_reason: 'stop_sequence', content: [{ type: 'text', text: "You've hit your session limit" }] } }]);
+  assert.deepEqual(limited.map((i) => [i.k, i.state]), [['assistant', undefined], ['turn', 'aborted']]);
 });
 
 test('codex records: item_completed messages, shell / patch calls and their outputs', async () => {
@@ -265,7 +267,7 @@ test('canban_watch streams every session that is open in a pane', async () => {
     assert.deepEqual(behind.feed, behind.feeds['claude:c2']);
     assert.equal(behind.feed.items[0].summary, 'index.html');
   } finally {
-    child.kill();
+    await stopChild(child);
     fs.rmSync(dataDir, { recursive: true, force: true });
     fx.cleanup();
   }
@@ -349,7 +351,7 @@ test('canban_watch over stdio: patches the card and streams the open session', a
     const perfInfo = await call('canban_get_perf');
     assert.equal(perfInfo.live.active, true);
   } finally {
-    child.kill();
+    await stopChild(child);
     fs.rmSync(dataDir, { recursive: true, force: true });
     fx.cleanup();
   }

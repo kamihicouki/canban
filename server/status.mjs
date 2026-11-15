@@ -65,7 +65,9 @@ export function claudeRawStatus(records, desktopStatus = null) {
     if (o.type === 'assistant') {
       for (const it of items) if (it?.type === 'tool_use' && waitKind(it.name) && it.id) asks.add(it.id);
       const stop = o.message?.stop_reason;
-      state = stop === 'end_turn' || stop === 'stop_sequence' ? 'completed' : 'running';
+      // An API error or usage limit is written as a synthetic reply with stop_sequence: the turn did not finish.
+      if (o.isApiErrorMessage === true) state = 'aborted';
+      else state = stop === 'end_turn' || stop === 'stop_sequence' ? 'completed' : 'running';
     } else {
       if (!o.isMeta && !items.some(it => it?.type === 'tool_result')) asks.clear();
       for (const it of items) if (it?.type === 'tool_result' && it.tool_use_id) asks.delete(it.tool_use_id);
