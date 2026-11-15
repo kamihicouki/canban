@@ -345,7 +345,7 @@ document.addEventListener('keydown', (e) => {
   const run = {
     j: () => stepDisplayedCard(1), k: () => stepDisplayedCard(-1),
     '/': focusSearch, '?': showShortcuts, b: () => toggleSidebar(), '[': () => stepLane(-1), ']': () => stepLane(1),
-    r: () => load({ refresh: true }).then(() => toast('最新の状態に更新しました')), a: toggleAnalytics, u: () => toggleView('usage'),
+    r: refreshBoard, a: toggleAnalytics, u: () => toggleView('usage'),
     c: quickAdd, v: () => slackUi.toggle(), p: () => scopePicker($('#logo')), i: toggleBoardView,
     Escape: state.lens ? () => pinLens(null) : null,
   }[k];
@@ -358,7 +358,7 @@ document.addEventListener('keydown', (e) => {
 });
 $('#seenBtn').addEventListener('click', () => act('canban_mark_all_seen', {}, { okMsg: 'すべて既読にしました' }));
 $('#perfBtn').addEventListener('click', (e) => perfPanel(e.currentTarget));
-$('#refresh').addEventListener('click', () => load({ refresh: true }).then(() => toast('最新の状態に更新しました')));
+$('#refresh').addEventListener('click', refreshBoard);
 
 // board: wheel over empty space scrolls horizontally like Trello
 $('#board').addEventListener('wheel', (e) => {

@@ -1,0 +1,33 @@
+{
+  "generatedExtension": "chrome-extension://igjldpgldkbpioepgadcdiljkjgndbla",
+  "runtimeHashes": {
+    "board.html": "58d06eb2600880a53c57cc438fcbbe726f0ddc6731da094d0e9a0fca90305c70",
+    "board.js": "d4bc34c4954ccf4160fcf3e9dfe2d54b711b56ccc66ca968fb854d95bfc72f27",
+    "board.css": "975327e4daf2c6983bd916137f9b8d4d8c3303e90723f241786c0e5b57483f04"
+  },
+  "viewport": [
+    1280,
+    800
+  ],
+  "nativeTransport": "isolated controlled fake",
+  "observations": [
+    {
+      "theme": "light",
+      "initialBoardNull": true,
+      "failedLoadVisible": true,
+      "retryRecovered": true,
+      "refreshRetainedCategories": true,
+      "refreshFailureRetainedDomAndInput": true,
+      "validEmptyAccepted": true
+    },
+    {
+      "theme": "dark",
+      "initialBoardNull": true,
+      "failedLoadVisible": true,
+      "retryRecovered": true,
+      "refreshRetainedCategories": true,
+      "refreshFailureRetainedDomAndInput": true,
+      "validEmptyAccepted": true
+    }
+  ]
+}
