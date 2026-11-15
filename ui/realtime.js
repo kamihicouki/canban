@@ -33,7 +33,7 @@ function renderFeed(d, p) {
   const list = h('div', { class: 'feed', role: 'log', 'aria-live': 'polite', 'aria-label': 'セッションの会話' });
   const foot = h('div', { class: 'feed-foot' });
   const newBtn = h('button', { class: 'feed-new', text: '↓ 新着', hidden: true, onclick: () => scrollFeedToEnd(f) });
-  const f = { pane: p, cardId: d.session.id, offset: d.feed.offset, size: d.feed.size, codexItems: d.feed.codexItems, list, foot, newBtn, tools: new Map(), status: d.session.status || 'idle', activity: d.session.activity || null, signals: d.session.signals || null, git: d.git || null };
+  const f = { fromStart: d.feed.fromStart === true, workspaceLast: typeof workspaceLastMessage === 'function' ? workspaceLastMessage(d.feed.items) : null, pane: p, cardId: d.session.id, offset: d.feed.offset, size: d.feed.size, codexItems: d.feed.codexItems, list, foot, newBtn, tools: new Map(), status: d.session.status || 'idle', activity: d.session.activity || null, signals: d.session.signals || null, git: d.git || null };
   list.addEventListener('scroll', () => { if (atFeedEnd(list)) newBtn.hidden = true; });
   list.append(editSummary(f).el);
   for (const it of d.feed.items) feedPush(f, it);
@@ -72,7 +72,8 @@ function paintFeedFoot(f) {
 
 function applyFeed(f, feed) {
   if (feed.reset) { openCard(f.cardId); return; }
-  const stick = atFeedEnd(f.list);
+  const hiddenReading = f.pane?.el?.hidden && f.pane.workspaceReading;
+  const stick = hiddenReading ? hiddenReading.following : atFeedEnd(f.list);
   let added = 0, newAssistantText = '';
   if (feed.items.length) f.list.querySelector(':scope > .muted')?.remove();
   for (const it of feed.items) {
@@ -91,7 +92,7 @@ function applyFeed(f, feed) {
     if (feedPush(f, it)) added++;
   }
   // Keep the DOM bounded on long runs.
-  while (f.list.childElementCount > 400) f.list.firstElementChild.remove();
+  while (f.list.childElementCount > 400) { f.fromStart = false; f.list.firstElementChild.remove(); }
   f.offset = feed.offset;
   f.size = feed.size;
   f.codexItems = feed.codexItems;
@@ -119,8 +120,11 @@ function applyFeed(f, feed) {
     }
   }
   if (added || feed.status) paintChoices(f);
+  const workspaceLast = typeof workspaceLastMessage === 'function' ? workspaceLastMessage(feed.items) : null;
+  if (workspaceLast) f.workspaceLast = workspaceLast;
+  if (typeof paintWorkspaceContext === 'function') paintWorkspaceContext(f.pane);
   if (added && f.pane.exchangeData) { paintExchangeTimeline(f.pane); scheduleExchangeRefresh(f.pane); }
-  if (added) { if (stick) scrollFeedToEnd(f); else f.newBtn.hidden = false; }
+  if (added) { if (hiddenReading) { f.newBtn.hidden = !!stick; } else if (stick) scrollFeedToEnd(f); else f.newBtn.hidden = false; }
   if (newAssistantText && typeof voiceMode !== 'undefined') voiceMode.onAssistantMessage(f.cardId, newAssistantText);
 }
 

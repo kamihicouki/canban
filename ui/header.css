@@ -1,14 +1,14 @@
 /* The app bar: one translucent bar for the whole app and the board it shows (docs/ui-components.md).
    When it does not fit, labels fold first, then [data-pri] items move into ⋯ (ui/header.js). */
 .topbar { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; white-space: nowrap; color: var(--header-fg);
-  height: 52px; padding: 0 10px; background: var(--header-bg); flex: none; overflow: hidden; }
+  height: 40px; padding: 0 10px; background: var(--header-bg); flex: none; overflow: hidden; }
 .topbar > * { flex: none; }
 .topbar .spacer { flex: 1 1 0; min-width: 4px; }
 .brand { display: inline-flex; align-items: center; gap: 9px; padding: 0 6px 0 2px; color: var(--header-fg); }
-.brand .logo-mark { width: 28px; height: 28px; }
+.brand .logo-mark { width: 22px; height: 22px; }
 .brand-word { font: 700 19px/1 "Avenir Next", "Futura", "Century Gothic", -apple-system, sans-serif; letter-spacing: -.01em; }
 .board-name { margin: 0; font-size: 16px; font-weight: 700; }
-.board-name #logo { display: block; height: 32px; padding: 0 8px; border-radius: 6px; color: var(--header-fg); font: inherit; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-name #logo { display: block; height: 28px; padding: 0 8px; border-radius: 6px; color: var(--header-fg); font: inherit; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .board-name #logo:hover, .board-name #logo[aria-pressed="true"] { background: var(--header-btn); }
 .hsearch-wrap { position: relative; display: inline-flex; align-items: center; flex: 0 1 320px !important; min-width: 160px; }
 .hsearch-wrap > svg { position: absolute; left: 10px; color: var(--header-dim); pointer-events: none; }
@@ -19,7 +19,7 @@
 .topbar .quick-task-trigger .keycap { margin-left: 2px; }
 @media (max-width: 760px) { .hsearch-keys { display: none; } .topbar .hsearch { padding-right: 12px; } }
 .hbtn { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
-.hbtn.icon-only { width: 32px; padding: 0; justify-content: center; }
+.hbtn.icon-only { width: 28px; padding: 0; justify-content: center; }
 .hbtn.primary { background: var(--primary-bg); color: var(--primary-fg); }
 .hbtn.primary:hover { background: var(--primary-bg); opacity: .9; }
 .bar-sep { width: 1px; height: 22px; background: var(--header-btn-hover); margin: 0 2px; }

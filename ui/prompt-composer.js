@@ -392,6 +392,21 @@ function promptComposer(input, { key, context, submit, placeholder, leading = []
   picker.append(h('div', { class: 'row' }, search, h('button', { type: 'button', class: 'icon-btn', text: '✕', 'aria-label': 'スキル選択を閉じる', onclick: () => closeSkills() })), choices);
   const box = h('div', { class: 'cx-box' }, assets, input, toolbar, picker, notice, ...inside, fileInput);
   root.append(...[box, place.length ? h('div', { class: 'cx-place' }, ...place) : null, keys?.length ? h('div', { class: 'cx-keys' }, ...keys) : null].filter(Boolean));
+  // Quiet only the redundant key hints; launch receipts and permission notices remain visible.
+  const keysNode = root.querySelector?.('.cx-keys');
+  if (keysNode) {
+    const quietKeys = () => {
+      const quiet = !root.contains(document.activeElement) && !input.value;
+      for (const child of keysNode.children) if (child.classList.contains('key-hint') && child.hidden !== quiet) child.hidden = quiet;
+      const hidden = ![...keysNode.children].some(child => !child.hidden && (child.textContent?.trim() || child.querySelector?.('button,a,input')));
+      if (keysNode.hidden !== hidden) keysNode.hidden = hidden;
+    };
+    root.addEventListener('focusin', quietKeys);
+    root.addEventListener('focusout', () => queueMicrotask(quietKeys));
+    input.addEventListener('input', quietKeys);
+    if (typeof MutationObserver !== 'undefined') new MutationObserver(quietKeys).observe(keysNode, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['hidden'] });
+    quietKeys();
+  }
   // The text grows with its content up to the CSS max-height, like the Codex composer.
   const fit = () => { if (!input.style) return; input.style.height = 'auto'; input.style.height = `${input.scrollHeight}px`; };
   input.addEventListener('input', fit);

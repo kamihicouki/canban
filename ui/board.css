@@ -1,6 +1,6 @@
 /* Part of board.html (included by server/ui.mjs; shares its scope). */
 .hbtn, .hselect, .hsearch {
-  height: 32px; border-radius: 6px; background: var(--header-btn); color: var(--header-fg); border: 0; padding: 0 10px;
+  height: 28px; border-radius: 6px; background: var(--header-btn); color: var(--header-fg); border: 0; padding: 0 10px;
 }
 .hbtn:hover, .hselect:hover { background: var(--header-btn-hover); }
 .hbtn[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-fg); }

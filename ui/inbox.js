@@ -37,6 +37,7 @@ function inboxRow(x) {
       l: () => labelPicker(row, card.id, card, () => {}),
       d: () => p && toggleThreadSide(p, 'details'),
       f: () => p && p.kind === 'session' && !p.d?.session?.host && toggleThreadSide(p, 'changes'),
+      ...Object.fromEntries(['w','q','s','e','n'].map(key => [key, () => p && cardWorkspaceAction(key, p)])),
       ...Object.fromEntries(PANE_MODES.map(([mode], i) => [String(i + 1), () => setPaneMode(mode)])),
     }[e.key];
     if (!run) return;

@@ -38,6 +38,7 @@ new ResizeObserver(paneMetrics).observe(document.body);
 new ResizeObserver(paneMetrics).observe($('#board'));
 const cardSizeObserver = new ResizeObserver(entries => {
   for (const { target, contentRect } of entries) {
+    if (target.hidden) continue;
     const p = panes.find(p => p.el === target), feed = p && live.feeds.get(p.id);
     const following = feed && atFeedEnd(feed.list);
     target.style.setProperty('--card-visible-height', `${Math.round(contentRect.height)}px`);
@@ -52,6 +53,7 @@ function applyPaneAttrs(p) {
   p.el.dataset.mode = paneGlobal.mode;
   p.el.dataset.kind = p.kind;
   p.el.dataset.detail = 'thread';
+  if (p.kind !== 'view') p.el.dataset.shape = normalizeCardShape(paneGlobal.shape);
 }
 
 // ---- the bar over the cards: how the conversation is shown, reset layout, close ----
@@ -92,6 +94,7 @@ function cyclePaneViewMode() {
   setPaneViewMode(keys[(idx + 1) % keys.length]);
 }
 function applyPaneViewMode() {
+  if (typeof syncCardWorkspace === 'function') for (const p of panes) syncCardWorkspace(p);
   paneLayer.dataset.viewMode = paneDocked() ? 'docked' : (paneGlobal.viewMode || 'full');
 }
 
@@ -141,6 +144,7 @@ function showCards(ids, { dock } = {}) {
   paneLayer.hidden = false;
   applyCardWidths(); paneMetrics();
   for (const p of panes) { applyPaneAttrs(p); paintPaneButtons(p); restorePaneReading(p); if (p.kind !== 'view') cardSizeObserver.observe(p.el); }
+  if (typeof syncWorkspaceSelection === 'function') syncWorkspaceSelection();
   paintPaneBar();
   if (!restoringPanes && !paneDocked()) store.set('openCard', ids[0]);
   if (timelineOn() && cardKind(ids[0]) !== 'view') markInboxSel(ids[0]);
@@ -339,6 +343,8 @@ document.addEventListener('keydown', e => {
   if (paneDocked() && !inDockedPane(e.target)) return; // the 時間軸's list keeps its own Esc
   e.preventDefault();
   if (typingIn(e.target)) { e.target.blur(); return; } // the first Esc leaves the field, the next one closes the card
+  if (typeof cardWorkspaceOn === 'function' && cardWorkspaceOn() && workspaceContextOpen(workspacePane()) && (paneDocked() || workspacePane()?.el.clientWidth < 900)) { toggleWorkspaceContext(workspacePane(), false); return; }
+  if (typeof cardWorkspaceOn === 'function' && cardWorkspaceOn() && workspacePane()?.id !== panes[0]?.id && panes[0]?.kind === 'task') { revealPane(panes[0].id); return; }
   if (paneDocked()) { const row = selectedDockedRow(); if (row) row.focus(); else closeCards({ dock: false }); return; }
   if (exchangeTrail && e.shiftKey) { moveExchangeVisit(1); return; }
   if (moveExchangeVisit(-1)) return;
@@ -368,7 +374,7 @@ async function stepOpenCard(step) {
   await openCard(next);
   if (panes[0]?.id === next && !panes[0].el.contains(document.activeElement)) panes[0].el.focus({ preventScroll: true });
 }
-const focusedPane = () => { const el = document.activeElement?.closest?.('.pane'); return panes.find((p) => p.el === el) || (exchangeTrail && panes.find(p => p.id === exchangeTrail.visits[exchangeTrail.active].sessionId)) || panes[0]; };
+const focusedPane = () => { const el = document.activeElement?.closest?.('.pane'); return panes.find((p) => p.el === el) || (exchangeTrail && panes.find(p => p.id === exchangeTrail.visits[exchangeTrail.active].sessionId)) || (typeof cardWorkspaceOn === 'function' && cardWorkspaceOn() ? workspacePane() : panes[0]); };
 function stepPane(step) {
   const i = panes.indexOf(focusedPane()), target = panes[i + step];
   if (target) revealPane(target.id);
@@ -399,6 +405,7 @@ document.addEventListener('keydown', e => {
   let run = null;
   if (exchangeTrail && e.shiftKey && (/^Digit[123]$/.test(e.code) || /^[123]$/.test(k))) run = () => setExchangeTrailView(EXCHANGE_TRAIL_VIEWS[Number(e.code?.slice(-1) || k) - 1][0]);
   else if (exchangeTrail && e.shiftKey && k === 'Home') run = () => focusExchangeVisit(exchangeTrail.root);
+  else if (p && !e.shiftKey && /^[wqsen]$/.test(k) && typeof cardWorkspaceAction === 'function') run = () => cardWorkspaceAction(k, p);
   else if (k === 'Enter' && paneDocked() && e.target === p?.el) run = expandCards;
   else
   if (e.shiftKey && (k === 'ArrowLeft' || k === 'ArrowRight') && p && p.kind !== 'view'
@@ -560,6 +567,7 @@ function revealPane(id) {
   }
   const p = panes.find((x) => x.id === id);
   if (!p) return openCard(id);
+  if (typeof syncWorkspaceSelection === 'function') syncWorkspaceSelection(id);
   p.el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   p.el.focus({ preventScroll: true });
 }
