@@ -664,7 +664,7 @@ test('the board, the ribbon, the time axis and the card layers run without page 
       CANBAN_LAUNCH_DRYRUN: '1', CANBAN_SEARCH_INDEX: '0', CANBAN_BACKGROUND: '0', CANBAN_BROWSER_SMOKE: '1' } });
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-smoke-chrome-'));
   const cdpPort = port + 1000;
-  const chrome = spawn(chromeBin, ['--headless=new', `--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profile}`, '--no-first-run', 'about:blank'], { stdio: 'ignore' });
+  const chrome = spawn(chromeBin, ['--headless=new', ...(process.env.CI ? ['--no-sandbox'] : []), `--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profile}`, '--no-first-run', 'about:blank'], { stdio: 'ignore' });
   t.after(() => {
     host.kill(); chrome.kill(); fx.cleanup?.();
     setTimeout(() => { for (const d of [dataDir, profile]) try { fs.rmSync(d, { recursive: true, force: true }); } catch {} }, 300);

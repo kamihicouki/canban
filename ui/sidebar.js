@@ -61,6 +61,7 @@ function setScope(patch) {
 }
 function scopePicker(anchor) {
   const b = state.board;
+  if (!b) { toast(state.boardError ? 'ボードを読み込めませんでした。更新で再試行してください' : 'ボードを読み込んでいます。取得後に絞り込めます', !!state.boardError); return; }
   const f = state.filters;
   const agentCounts = b?.totals?.byAgent || {};
   picker(anchor, {
