@@ -11,7 +11,7 @@ const outDir = path.resolve(outIndex >= 0 ? args[outIndex + 1] : path.join(root,
 if (outIndex >= 0 && (!args[outIndex + 1] || args[outIndex + 1].startsWith('--'))) throw new Error('--outdir needs a path');
 
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-let html = boardHtml({ version: pkg.version });
+let html = boardHtml({ version: pkg.version, embedFonts: false });
 const styles = [...html.matchAll(/<style>([\s\S]*?)<\/style>/gi)];
 const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)];
 if (styles.length !== 1 || scripts.length !== 1) throw new Error('Chrome build expects one inline style block and one inline board script');
@@ -38,4 +38,6 @@ fs.writeFileSync(path.join(outDir, 'board.css'), `${css}\n`);
 fs.writeFileSync(path.join(outDir, 'board.js'), `${js}\n`);
 fs.copyFileSync(path.join(root, 'chrome', 'service-worker.js'), path.join(outDir, 'service-worker.js'));
 fs.copyFileSync(path.join(root, 'assets', 'canban.png'), path.join(outDir, 'canban.png'));
+fs.copyFileSync(path.join(root, 'assets', 'fonts', 'noto-sans-jp.woff2'), path.join(outDir, 'noto-sans-jp.woff2'));
+fs.copyFileSync(path.join(root, 'assets', 'fonts', 'OFL.txt'), path.join(outDir, 'NotoSansJP-OFL.txt'));
 process.stdout.write(`${outDir}\n`);
