@@ -37,7 +37,7 @@ try {
   fs.writeFileSync(path.join(temp, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   const html = fs.readFileSync(path.join(temp, 'board.html'), 'utf8');
   if (/<script\b(?![^>]*\bsrc=)[^>]*>/i.test(html) || /\son[a-z]+\s*=/i.test(html) || /(?:src|href)\s*=\s*["']https?:/i.test(html)) throw new Error('Extension HTML contains inline code or remote resources');
-  const files = ['manifest.json', 'board.html', 'board.css', 'board.js', 'service-worker.js', 'canban.png', ...Object.values(manifest.icons)].sort();
+  const files = ['manifest.json', 'board.html', 'board.css', 'board.js', 'service-worker.js', 'canban.png', 'noto-sans-jp.woff2', 'NotoSansJP-OFL.txt', ...Object.values(manifest.icons)].sort();
   // Explicit allowlist: never bundle the native host, session data, secrets or developer docs.
   const archive = path.join(temp, 'package.zip');
   run('zip', ['-X', '-q', archive, ...files], temp);

@@ -251,7 +251,8 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
     h('div', { class: 'th-conv', 'data-sec': 'conv' }, ...secs.conv.nodes),
     // Slack material sits beside the input it feeds (「依頼文に追加」), not in the details panel.
     h('div', { class: 'th-dock', 'data-sec': 'send' }, secs.slack ? h('details', { class: 'th-attach', 'data-sec': 'slack' }, h('summary', {}, h('span', { html: picon('message', 13) }), `Slack資料（${card.slackRefs.length}）`), ...secs.slack.nodes) : null, ...secs.send.nodes));
-  el.replaceChildren(...[head, threadStrip(p, d), title].filter(Boolean), h('div', { class: 'th-meta' }, secs.status.nodes[0], secs.continue.reason, ...chips), h('div', { class: 'th-body' }, timeline, main, side), ...paneSizeHandles('session'));
+  const crumb = compactThreadHeading(head, title);
+  el.replaceChildren(...[head, threadStrip(p, d)].filter(Boolean), h('div', { class: 'th-meta' }, crumb, secs.status.nodes[0], secs.continue.reason, ...chips), h('div', { class: 'th-body' }, timeline, main, side), ...paneSizeHandles('session'));
   paintThreadStat(p, git);
   paintThreadSide(p);
   paintThreadTimeline(p);
@@ -262,6 +263,13 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
 // attribute line, so they and the input come at once; only the conversation waits, as a few lines in its place.
 function conversationLoadingPlaceholder() {
   return h('div', { class: 'conv-wait', role: 'status', 'aria-label': '会話を読み込み中' }, ...['w1', 'w2', 'w3', 'w4'].map((w) => h('i', { class: w })));
+}
+// The title and tools share one wrapping row; the existing breadcrumb joins the attributes.
+function compactThreadHeading(head, title) {
+  const crumb = head.querySelector('.card-crumb');
+  if (crumb) crumb.remove();
+  head.prepend(title);
+  return crumb;
 }
 function renderPendingThreadPane(p, card, listId) {
   const conv = h('div', { class: 'th-conv', 'data-sec': 'conv', 'aria-busy': 'true' },
@@ -285,7 +293,8 @@ function renderPendingThreadPane(p, card, listId) {
     cardSurface(card) ? h('span', { class: 'pill', text: SURFACE_META[cardSurface(card)]?.label || cardSurface(card) }) : null,
     h('span', { class: 'row pane-status' }, h('span', { class: `sdot s-${card.status || 'idle'}` }), card.statusKnown === false ? '状態未取得' : STATUS_LABELS[card.status || 'idle']));
   const main = h('div', { class: 'th-main' }, conv, h('div', { class: 'th-dock', 'data-sec': 'send' }, renderPendingDispatch(card)));
-  p.el.replaceChildren(head, h('div', { class: 'th-title' }, h('h2', { text: card.title, title: card.title })), h('div', { class: 'th-meta' }, status, ...chips),
+  const crumb = compactThreadHeading(head, h('div', { class: 'th-title' }, h('h2', { text: card.title, title: card.title })));
+  p.el.replaceChildren(head, h('div', { class: 'th-meta' }, crumb, status, ...chips),
     h('div', { class: 'th-body' }, main), ...paneSizeHandles('session'));
   p.el.setAttribute('aria-label', `セッション詳細: ${card.title}`);
   paintThreadSide(p);
@@ -323,7 +332,8 @@ function renderTaskThreadPane(p, card, secs) {
       loopComponent(card, { compact: true }),
       taskSection('related', secs.related.title, secs.related.extra, secs.related.nodes)),
     h('div', { class: 'th-dock', 'data-sec': 'send' }, h('div', { class: 'th-sec-t' }, secs.send.title, secs.send.extra || null), ...secs.send.nodes));
-  p.el.replaceChildren(head, title, h('div', { class: 'th-meta' }, secs.status.nodes[0], ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('task'));
+  const crumb = compactThreadHeading(head, title);
+  p.el.replaceChildren(head, h('div', { class: 'th-meta' }, crumb, secs.status.nodes[0], ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('task'));
   paintThreadSide(p);
 }
 
