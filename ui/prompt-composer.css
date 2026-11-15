@@ -66,3 +66,5 @@
 .cx-wait-body ul { margin: 6px 0; padding-left: 20px; }
 .cx-wait-body small { color: var(--card-muted); }
 .cx-busy-key { white-space: nowrap; font-size: 12px; }
+
+.cx-keys[hidden], .cx-keys > .key-hint[hidden] { display: none; }

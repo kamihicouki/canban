@@ -1,5 +1,6 @@
 // Board tools: the board, search, session detail, card moves, stats, and lists / labels / categories / rules / views.
 import { buildBoard, sessionDetail, allSessions, effectiveOrder, runRules, sessionExchanges } from '../board.mjs';
+import { readSessionOrigin } from '../session-origin.mjs';
 import { RULE_TRIGGERS } from '../store.mjs';
 import { computeStats } from '../stats.mjs';
 import { sourceSelectionSchema } from '../category-bindings.mjs';
@@ -89,13 +90,14 @@ export function boardTools({ store, ICONS, UI_URI }) {
     name: 'canban_get_session',
     title: 'セッション詳細',
     description: '1 セッションの詳細（メタ情報・直近のやりとり・カンバン上のメモ・送信時の権限・依頼のキュー）を返す。',
-    inputSchema: { type: 'object', properties: { cardId: { type: 'string' }, messages: { type: 'number' } }, required: ['cardId'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { cardId: { type: 'string' }, messages: { type: 'number' }, includeOrigin: { type: 'boolean', description: '最初の依頼の原文をローカルログの先頭から上限付きで取得する' } }, required: ['cardId'], additionalProperties: false },
     annotations: { readOnlyHint: true },
     _meta: appAndModel,
-    handler: async ({ cardId, messages }) => {
+    handler: async ({ cardId, messages, includeOrigin }) => {
       const d = await sessionDetail(store, cardId, { messages: Math.min(Number(messages) || 12, 40) });
       await store.markSeen({ cardId });
       const s = d.session;
+      if (includeOrigin === true) d.origin = await readSessionOrigin(s);
       const text = [
         `${s.title} (${s.agent}, ${s.status || 'idle'})`,
         `リスト: ${d.list?.title ?? '-'} / プロジェクト: ${s.project ?? '-'} / ブランチ: ${s.branch ?? '-'}`,

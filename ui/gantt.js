@@ -49,6 +49,7 @@ function ganttRow(it, range, now) {
       Enter: () => ganttExpand(card.id), r: () => p?.el.querySelector('[data-sec="send"] textarea')?.focus(),
       d: () => p && toggleThreadSide(p, 'details'),
       ...(!isTask ? { o: () => resume(card.id), x: () => workBundlePicker(row, card.id) } : {}),
+      ...Object.fromEntries(['w','q','s','e','n'].map(key => [key, () => p && cardWorkspaceAction(key, p)])),
       ...Object.fromEntries(PANE_MODES.map(([mode], i) => [String(i + 1), () => setPaneMode(mode)])),
     }[event.key];
     if (run) { event.preventDefault(); event.stopPropagation(); run(); }

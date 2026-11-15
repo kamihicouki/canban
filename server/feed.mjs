@@ -20,7 +20,7 @@ const OUT_MAX = 600;
 export async function readLines(file, { start = null, tailBytes = FEED_TAIL_BYTES } = {}) {
   if (file && (file.includes('#composer:') || file.includes('#chatgpt:') || file.endsWith('.json'))) {
     const records = start != null && start > 0 ? [] : await readMultiAgentRecords(file);
-    return { records, offset: records.length, size: records.length, reset: false };
+    return { records, offset: records.length, size: records.length, reset: false, fromStart: false };
   }
   file = rolloutFile(file);
   const zst = file.endsWith('.zst') ? await zstdTail(file, Math.max(tailBytes, FEED_MAX_DELTA)) : null;
@@ -44,13 +44,15 @@ export async function readLines(file, { start = null, tailBytes = FEED_TAIL_BYTE
     let lines = body.split('\n');
     if (from > 0 && (start == null || reset)) lines = lines.slice(1); // started mid-line
     const records = [];
+    let validLines = true;
     for (const line of lines) {
       if (!line) continue;
       try {
         records.push(JSON.parse(line));
-      } catch {}
+      } catch { validLines = false; }
     }
-    return { records, offset: end < 0 ? from : from + end + 1, size, reset };
+    const fromStart = !zst && from === 0 && validLines && (buf.length === 0 || end === buf.length - 1);
+    return { records, offset: end < 0 ? from : from + end + 1, size, reset, fromStart };
   } finally {
     await fh?.close();
   }
@@ -355,10 +357,15 @@ export function lastSaidOf(items) {
 }
 
 // First read of a session: the tail, as folded items, and where to continue.
+// fromStart means the read began at byte zero and no feed items were dropped by
+// the item limit. Text may still be clipped by the renderer's TEXT_MAX contract.
+// Only origin.complete guarantees the complete original prompt text.
 export async function readFeed(session, { limit = FEED_ITEMS } = {}) {
-  const { records, offset, size } = await readLines(session.sourcePath);
+  const { records, offset, size, fromStart } = await readLines(session.sourcePath);
   const ctx = {};
-  return { items: foldResults(itemsFor(session.agent, records, ctx), limit), offset, size, codexItems: !!ctx.items };
+  const folded = foldResults(itemsFor(session.agent, records, ctx), Infinity);
+  const items = folded.slice(-limit);
+  return { items, offset, size, codexItems: !!ctx.items, fromStart: fromStart === true && items.length === folded.length };
 }
 
 // Items appended since `offset` (results unfolded: the client completes its tools).
