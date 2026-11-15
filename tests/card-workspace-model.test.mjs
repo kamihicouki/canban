@@ -1,0 +1,14 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const c=vm.createContext({});vm.runInContext(fs.readFileSync('ui/card-overlay-model.js','utf8')+';globalThis.api={normalizeCardShape,workspaceLastMessage,workspaceCanReuseOrigin};',c);
+test('new and unknown preferences use workspace; explicit legacy card survives',()=>{
+ assert.equal(c.api.normalizeCardShape(undefined),'workspace');assert.equal(c.api.normalizeCardShape('future'),'workspace');assert.equal(c.api.normalizeCardShape('card'),'card');
+});
+test('current position uses the last observed message without inventing progress',()=>{
+ const last=c.api.workspaceLastMessage([{k:'assistant',text:'前の返答',at:'2026-11-15T00:00:00Z'},{k:'tool',text:'tool'},{k:'user',text:'追加依頼',at:null}]);assert.equal(last.k,'user');assert.equal(last.text,'追加依頼');assert.equal(last.at,null);assert.equal(c.api.workspaceLastMessage([]),null);
+});
+test('tail first message cannot masquerade as the original prompt',()=>{
+ const it={k:'user',text:'同じ文'};assert.equal(c.api.workspaceCanReuseOrigin(false,it,[it]),false);assert.equal(c.api.workspaceCanReuseOrigin(true,it,[{k:'user',text:'異なる文'}]),false);assert.equal(c.api.workspaceCanReuseOrigin(true,it,[it]),true);
+});

@@ -16,7 +16,7 @@ import {
   multiAgentSessionMessages,
 } from './sources/multi-agents.mjs';
 import { exists, rolloutFile } from './sources/readonly.mjs';
-import { readLines, itemsFor, foldResults } from './feed.mjs';
+import { readLines, itemsFor, foldResults, FEED_ITEMS } from './feed.mjs';
 import { permissionFor } from './permissions.mjs';
 import { RequestStore, requestSummary } from './requests.mjs';
 import { listRemoteHosts } from './sources/remotes.mjs';
@@ -785,7 +785,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     if (host) recent = await pool.messages(host, s, messages);
     else if (s.sourcePath && exists(rolloutFile(String(s.sourcePath).split('#')[0]))) {
       // One tail read serves the messages, the live feed and the permissions shown for sending.
-      const { records, offset, size } = await readLines(s.sourcePath, { tailBytes: 768 * 1024 });
+      const { records, offset, size, fromStart } = await readLines(s.sourcePath, { tailBytes: 768 * 1024 });
       recent = s.agent === 'codex'
         ? codexMessagesFromRecords(records, messages)
         : s.agent === 'claude'
@@ -793,7 +793,10 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
           : await multiAgentSessionMessages(s.sourcePath, messages);
       permission = permissionFor(s, records);
       const ctx = {};
-      feed = { items: foldResults(itemsFor(s.agent, records, ctx)), offset, size, codexItems: !!ctx.items };
+      const folded = foldResults(itemsFor(s.agent, records, ctx), Infinity);
+      const items = folded.slice(-FEED_ITEMS);
+      // Match readFeed coverage. This does not guarantee unabridged message text.
+      feed = { items, offset, size, codexItems: !!ctx.items, fromStart: fromStart === true && items.length === folded.length };
     }
   } catch (e) {
     messagesError = e.message;

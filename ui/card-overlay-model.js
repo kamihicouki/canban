@@ -2,6 +2,13 @@
 // A card is shown on its own layer above the board. Its width and height are kept per kind of card —
 // "session" and "task" — and shared by every card of that kind.
 const CARD_KINDS = ['session', 'task'];
+const normalizeCardShape = value => value === 'card' ? 'card' : 'workspace';
+function workspaceLastMessage(items = []) {
+  return [...items].reverse().find(item => ['user', 'assistant', 'commentary'].includes(item.k) && typeof item.text === 'string' && item.text.trim()) || null;
+}
+function workspaceCanReuseOrigin(fromStart, origin, items = []) {
+  return fromStart === true && !!origin && items.find(item => item.k === 'user')?.text === origin.text;
+}
 const CARD_VIEW_MODES = [['full', '全画面'], ['split', 'スプリット'], ['sheet', 'シート']];
 const normalizeCardViewMode = (v) => (CARD_VIEW_MODES.some(([k]) => k === v) ? v : 'full');
 const CARD_WIDTH_DEF = { session: 1000, task: 760 };
