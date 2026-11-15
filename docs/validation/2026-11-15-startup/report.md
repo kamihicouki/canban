@@ -38,6 +38,7 @@ CIではこの起動試験と従来のboard smokeを必須ジョブで動かし�
 - 生成拡張起動試験: 登録済み0.29.90のコピーではクリック／p両方で同じ例外を再現して失敗（2.6秒）。修正後は成功（5.7秒）、未処理例外とconsole.errorは0。主担当も最終生成物を実行し成功した（11.8秒）。所要時間は環境の異なる製品速度比較ではない。
 - 独立レビューで、試験コピーのmanifestへ必ずテスト用キーを設定することと、実DOMに一致するピッカー検査を追加修正した。登録先のID・ファイルはこの試験では変更しない。
 - [実行条件と生成物SHA256](startup-metrics.json)、[取得中](pending-light.png)、[初回失敗](failed-dark.png)、[更新失敗で画面保持](refresh-failed-light.png)、[回復したボード](recovered-board-dark.png)、[時間軸ライト](recovered-timeline-light.png)、[時間軸ダーク](recovered-timeline-dark.png)。全撮影1280×800、架空データ。
+- 初回の必須browser CIは失敗して配布を止めた。setup-chromeのstable指定はLinuxでは通常Chromeのdebを取得し、拡張起動フラグを使えなかった。ローカルと同じCFT157.0.8103.78の具体版指定へ修正し、実行対象を揃える。異常系試験のskipや成功扱いへの変更はしない。
 - CIと登録先照合の最終結果は、PRと最新チェックポイントに記録する。
 
 ローカル登録先のビルドとNative読取りの照合は登録Chromeの画面確認とは別。登録済み画面の観測ができない場合は未確認のまま記録する。

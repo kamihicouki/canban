@@ -33,7 +33,8 @@ jobs:
       - uses: browser-actions/setup-chrome@v1
         id: chrome
         with:
-          chrome-version: stable
+          # A channel name installs branded Chrome on Linux; a full version resolves Chrome for Testing.
+          chrome-version: 157.0.8103.78
           install-dependencies: true
       - name: Test generated extension startup, failure and recovery
         env:
