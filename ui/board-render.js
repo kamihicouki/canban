@@ -188,6 +188,7 @@ function directoryItems(withAuto = true) {
 }
 // Choose/create a category, or explicitly opt out of the agent's automatic category.
 function directoryPicker(anchor, card, { cwd = card.cwd, explicit, after } = {}) {
+  if (!state.board) { toast(state.boardError ? 'ボードを読み込めませんでした。更新で再試行してください' : 'ボードを読み込んでいます。取得後にカテゴリを変更できます', !!state.boardError); return; }
   const cur = explicit !== undefined ? explicit || '' : card.directory?.id || '';
   const set = async (v) => {
     await act('canban_update_card', { cardId: card.id, directory: v || null }, { okMsg: v === '__none' ? `${T.category}から外しました` : v ? `📂 ${state.board.directories.find((d) => d.id === v)?.name ?? ''} に入れました` : '自動に戻しました' }).catch(() => {});
