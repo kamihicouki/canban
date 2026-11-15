@@ -353,3 +353,5 @@ Codex・Claude Code に加え、Antigravity（IDE / Brain）、Gemini CLI、Curs
 - **ガントの帯**: 作成から最終更新までの記録の範囲であり、連続して実行した時間ではない。空白期間の活動・進捗・予定を補わない。
 
 - **開いた仕事の更新**: 通常のボード再取得でも、開いている仕事の報告revisionと担当会話を反映する。報告取得中に新revisionが来た場合も後続の取得を取りこぼさず、既存下書き・履歴の開閉・読む位置を保持する。
+
+- **担当会話の取得時点の要約**（MCP `canban_get_task`）: `linkedSessions` は通常ボードで取得した会話の状態・最終返答抜粋・更新時刻、`linkedSessionContext` は出典・取得時刻・fresh/stale/unavailable・欠落・上限を示す。freshもlive保証ではない。発言時刻がない抜粋は`at:null`。raw本文やCLI起動設定を含めず、cold取得はprovider走査を起動しない。画面・レイヤー・キー体系は追加しない。
