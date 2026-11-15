@@ -5,6 +5,7 @@ import { sourceSelectionSchema } from '../category-bindings.mjs';
 import { codexLifecycle } from '../session-actions.mjs';
 import { appOnly, appAndModel, appTool, resolveList } from './shared.mjs';
 import { taskHandoffRecord } from '../task-handoff.mjs';
+import { readTaskContext } from '../task-context-cache.mjs';
 
 export function createTaskTools({ store }) {
   return [
@@ -27,10 +28,17 @@ export function taskTools({ store }) {
   return [
   {
     name: 'canban_get_task', title: 'タスクと引継ぎを読む',
-    description: '保存済みのタスク目的・所属・紐付けと追記報告を読み取り専用で取得する。セッション本文や実行状態は取得しない。nextActionは報告者の提案で、人による確認ではない。',
+    description: '保存済みのタスク目的・所属・紐付け・追記報告と、通常ボード取得で保存された担当会話の薄い要約を読み取り専用で返す。linkedSessionContextの出典・取得時刻・fresh/stale/unavailableを確認すること。freshも過去のboard snapshotでlive状態の保証ではない。キャッシュが無くてもprovider全件再走査・会話本文取得・認証は起動しない。nextActionは報告者の提案で、人による確認ではない。',
     inputSchema: { type: 'object', properties: { taskId: { type: 'string' }, after: { type: 'string', description: '直前ページのnextCursor' }, limit: { type: 'integer', minimum: 1, maximum: 20, default: 10 } }, required: ['taskId'], additionalProperties: false },
     annotations: { readOnlyHint: true }, _meta: appAndModel,
-    handler: async args => ({ text: 'タスクと引継ぎ（報告・提案）', structured: taskHandoffRecord(await store.load(), args) }),
+    handler: async args => {
+      const state = await store.load();
+      const structured = taskHandoffRecord(state, args);
+      const context = readTaskContext(store.dir, state, args.taskId);
+      structured.task.linkedSessions = context.sessions;
+      structured.task.linkedSessionContext = context.coverage;
+      return { text: 'タスクと引継ぎ（報告・提案、担当会話は取得時点のsnapshot）', structured };
+    },
   },
   {
     name: 'canban_append_task_note', title: 'タスクに引継ぎ報告を追記',
