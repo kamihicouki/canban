@@ -187,8 +187,8 @@ await step('group the fictional question with a task', async () => {
 });
 await step('time axis', () => key('i'), 1000);
 await step('task Enter and Esc preserve the draft while changing card grouping', async () => {
-  const row = document.querySelector('.iwork > .irow');
-  if (!row) throw new Error('task row missing');
+  let row;for(let i=0;i<80;i++){row=document.querySelector('.iwork > .irow[data-card-id="'+fixtureQuestionTaskId+'"]');if(row)break;await w(100);}
+  if (!row) throw new Error('task row missing after timeline refresh');
   row.click();
   for (let i=0;i<50&&!document.querySelector('.pane[data-kind="task"] [data-sec="send"] textarea');i++) await w(100);
   const task = document.querySelector('.pane[data-kind="task"]'), taskId = task.dataset.cardId;
