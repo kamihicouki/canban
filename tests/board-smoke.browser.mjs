@@ -626,6 +626,74 @@ test('the board, the ribbon, the time axis and the card layers run without page 
   const r = await cdp('Runtime.evaluate', { expression: `(async () => { ${WALK} })()`, awaitPromise: true, returnByValue: true });
   assert.equal(r.result?.exceptionDetails, undefined, JSON.stringify(r.result?.exceptionDetails));
   assert.deepEqual(r.result.result.value.errs, []);
+  if (process.env.CANBAN_READING_SHOTS) {
+    const dir=path.resolve(process.env.CANBAN_READING_SHOTS);fs.mkdirSync(dir,{recursive:true});
+    const baseline=process.env.CANBAN_READING_BASELINE ? fs.readFileSync(process.env.CANBAN_READING_BASELINE,'utf8') : null;
+    const rows=[];
+    for (const view of ['board','timeline','gantt']) for (const theme of ['light','dark']) {
+      const setup=await cdp('Runtime.evaluate',{awaitPromise:true,returnByValue:true,expression:`(async()=>{
+        document.activeElement?.blur();document.querySelector('.pane-close')?.click();
+        for(let i=0;i<3;i++){
+          const current=document.querySelector('.gantt-view')?'gantt':document.querySelector('.inbox')?'timeline':'board';
+          if(current===${JSON.stringify(view)})break;
+          document.dispatchEvent(new KeyboardEvent('keydown',{key:'i',bubbles:true}));await new Promise(r=>setTimeout(r,150));
+        }
+        if(document.querySelector('#sideBtn').getAttribute('aria-pressed')==='true')document.querySelector('#sideBtn').click();
+        document.documentElement.dataset.theme=${JSON.stringify(theme)};
+        const card=document.querySelector('[data-card-id="claude:c2"]');if(!card)throw new Error('reading fixture absent');card.click();
+        for(let i=0;i<60&&!document.querySelector('.pane .feed .fi-asst');i++)await new Promise(r=>setTimeout(r,100));
+        for(const button of document.querySelectorAll('.pane .th-tool[aria-pressed="true"]'))button.click();
+        window.__canbanSmokeReadingGroups();
+        await document.fonts.load('16px "Canban Noto Sans JP"','会話を読む');await document.fonts.ready;
+        return {fontLoaded:[...document.fonts].some(f=>f.family.includes('Canban Noto Sans JP')&&f.status==='loaded')};
+      })()`});
+      assert.equal(setup.result.exceptionDetails,undefined,JSON.stringify(setup.result.exceptionDetails));assert.equal(setup.result.result.value.fontLoaded,true);
+      const currentCss=await cdp('Runtime.evaluate',{expression:`document.querySelector('style').textContent`,returnByValue:true});
+      for(const phase of baseline?['before','after']:['after']){
+        const css=phase==='before'?baseline:currentCss.result.result.value;
+        await cdp('Runtime.evaluate',{awaitPromise:true,expression:`(async()=>{
+          const pane=document.querySelector('.pane'),head=pane.querySelector('.th-head'),meta=pane.querySelector('.th-meta'),title=pane.querySelector('.th-title'),crumb=pane.querySelector('.card-crumb');
+          if(${JSON.stringify(phase)}==='before'){head.prepend(crumb);head.after(title);}else{meta.prepend(crumb);head.prepend(title);}
+          document.querySelector('style').textContent=${JSON.stringify(css)};document.querySelector('#sideBtn').click();await new Promise(r=>setTimeout(r,100));document.querySelector('#sideBtn').click();await new Promise(r=>setTimeout(r,100));
+        })()`});
+        const measured=await cdp('Runtime.evaluate',{awaitPromise:true,returnByValue:true,expression:`(async()=>{
+          await document.fonts.ready;await new Promise(r=>setTimeout(r,300));
+          const pane=document.querySelector('.pane'),feed=pane.querySelector('.feed'),input=pane.querySelector('.th-dock textarea');
+          if(!feed||!input)throw new Error('reading content missing');
+          const f=feed.getBoundingClientRect(),p=pane.getBoundingClientRect();
+          input.value='保持する未送信の下書き';input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();input.setSelectionRange(2,5);
+          feed.scrollTop=0;const top=feed.scrollTop;
+          window.dispatchEvent(new Event('resize'));await new Promise(r=>setTimeout(r,100));
+          if(input.value!=='保持する未送信の下書き'||input.selectionStart!==2||input.selectionEnd!==5||document.activeElement!==input)throw new Error('draft/caret/focus lost');
+          if(Math.abs(feed.scrollTop-top)>1)throw new Error('reading position moved');
+          if(p.right>innerWidth+1||p.bottom>innerHeight+1)throw new Error('card outside viewport');
+          if(f.height<250)throw new Error('conversation too short: '+f.height);
+          if(${JSON.stringify(phase)}==='after' && document.querySelector('.gantt-view')){const a=document.querySelector('.gantt-calendar-track').getBoundingClientRect(),b=document.querySelector('.gantt-row-track').getBoundingClientRect();if(Math.abs(a.left-b.left)>1||Math.abs(a.right-b.right)>1)throw new Error('Gantt calendar and ranges disagree');}
+          input.blur();
+          if(${JSON.stringify(phase)}==='after'){
+            const crumb=pane.querySelector('.th-meta .card-crumb'),link=document.createElement('button');
+            link.className='link-btn';link.textContent='長い親タスクの題名'.repeat(40);crumb.append(link);
+            if(crumb.getBoundingClientRect().height>40||crumb.getBoundingClientRect().right>pane.getBoundingClientRect().right)throw new Error('long breadcrumb consumes conversation');
+            link.remove();
+          }
+          window.__canbanSmokeReadingGroups();const group=feed.querySelector('.reading-fixture-group');if(!group)throw new Error('reading group fixture absent');const button=group.querySelector('button');button.click();if(button.getAttribute('aria-expanded')!=='true')throw new Error('tool fold cannot open');button.click();
+          return {toolHeadHeight:button.getBoundingClientRect().height,toolCount:feed.querySelectorAll('.reading-fixture-group').length,feedHeight:f.height,paneWidth:p.width,feedWidth:f.width,readingFont:getComputedStyle(feed).fontFamily,fontSize:getComputedStyle(feed).fontSize,scrollDelta:feed.scrollTop-top};
+        })()`});
+        assert.equal(measured.result.exceptionDetails,undefined,JSON.stringify(measured.result.exceptionDetails));rows.push({view,theme,phase,...measured.result.result.value});
+        const shot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});fs.writeFileSync(path.join(dir,`${view}-${theme}-${phase}.png`),Buffer.from(shot.result.data,'base64'));
+      }
+      const taskCheck=await cdp('Runtime.evaluate',{awaitPromise:true,expression:`(async()=>{
+        document.querySelector('.pane-close')?.click();
+        const card=document.querySelector('#board [data-card-id^="task:"]');if(!card)throw new Error('task absent');card.click();
+        for(let i=0;i<40&&!document.querySelector('.pane[data-kind="task"] .th-conv');i++)await new Promise(r=>setTimeout(r,100));
+        const task=document.querySelector('.pane[data-kind="task"]');if(!task)throw new Error('task detail absent');
+        const input=task.querySelector('.th-conv textarea');if(input&&!getComputedStyle(input).fontFamily.includes('Canban Noto'))throw new Error('task description lacks reading face');
+        await document.fonts.ready;await new Promise(r=>setTimeout(r,200));
+      })()`});assert.equal(taskCheck.result.exceptionDetails,undefined,JSON.stringify(taskCheck.result.exceptionDetails));
+      const taskShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});fs.writeFileSync(path.join(dir,`${view}-${theme}-task.png`),Buffer.from(taskShot.result.data,'base64'));
+    }
+    fs.writeFileSync(path.join(dir,'metrics.json'),JSON.stringify({scope:'isolated fictional data,1280x800; baseline CSS and restored header structure with current behavior; sidebar closed using existing b control; not registered Chrome',rows},null,2));
+  }
   if (process.env.CANBAN_WORK_SHOTS) {
     const dir=path.resolve(process.env.CANBAN_WORK_SHOTS);fs.mkdirSync(dir,{recursive:true});
     for (const theme of ['light','dark']) {
@@ -851,5 +919,6 @@ test('the board, the ribbon, the time axis and the card layers run without page 
       await cdp('Runtime.evaluate',{expression:`window.desktopShotView.accountSwitch=true;window.dispatchEvent(new Event('focus'));`});
     }
   }
+  assert.deepEqual(pageErrors, []);
   ws.close();
 });
