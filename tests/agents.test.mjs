@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { desktopLink, resumeCommand, shq } from '../server/agents.mjs';
+import { desktopLink, fileLink, newSessionLink, resumeCommand, shq } from '../server/agents.mjs';
 import { openUrl, runInTerminal, setRunner } from '../server/launcher.mjs';
 import { LOCAL_HOST } from '../server/sources/util.mjs';
 
@@ -58,4 +58,20 @@ test('terminal launch passes the command as argv and falls back for unsupported 
   } finally {
     setRunner(prev);
   }
+});
+
+test('editor file links percent-encode each folder segment', () => {
+  assert.equal(fileLink('cursor', '/w/web'), 'cursor://file/w/web');
+  assert.equal(fileLink('cursor', 'w/web'), 'cursor://file/w/web');
+  const odd = '/w/a#b/c?d/100%/my app';
+  const url = fileLink('cursor', odd);
+  assert.equal(url, 'cursor://file/w/a%23b/c%3Fd/100%25/my%20app');
+  assert.equal(decodeURIComponent(new URL(url).pathname), odd);
+  assert.equal(new URL(url).hash, '');
+  assert.equal(new URL(url).search, '');
+  const local = { host: LOCAL_HOST, cwd: odd };
+  assert.equal(desktopLink({ ...local, agent: 'cursor' }).url, url);
+  assert.equal(desktopLink({ ...local, agent: 'antigravity' }).url, 'antigravity://file/w/a%23b/c%3Fd/100%25/my%20app');
+  assert.equal(newSessionLink('cursor', { host: LOCAL_HOST, cwd: odd }).url, url);
+  assert.equal(newSessionLink('antigravity', { host: LOCAL_HOST, cwd: odd }).url, 'antigravity://file/w/a%23b/c%3Fd/100%25/my%20app');
 });
