@@ -34,7 +34,7 @@ test('store ZIP only contains extension assets and correct-sized icons', { skip:
     assert.equal(listing.status, 0, listing.stderr);
     assert.deepEqual(listing.stdout.trim().split('\n').sort(), ['board.css', 'board.html', 'board.js', 'canban.png', 'icons/icon-128.png', 'icons/icon-16.png', 'icons/icon-48.png', 'manifest.json', 'service-worker.js', 'noto-sans-jp.woff2', 'NotoSansJP-OFL.txt'].sort());
     const manifest = JSON.parse(spawnSync('unzip', ['-p', zip, 'manifest.json'], { encoding: 'utf8' }).stdout);
-    assert.deepEqual(manifest.permissions, ['nativeMessaging']);
+    assert.deepEqual(manifest.permissions, ['nativeMessaging', 'sidePanel']);
     assert.equal(manifest.content_security_policy.extension_pages, "script-src 'self'; object-src 'none'; connect-src 'none'");
     for (const size of [16, 48, 128]) {
       const bytes = spawnSync('unzip', ['-p', zip, manifest.icons[size]]).stdout;

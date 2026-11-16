@@ -82,7 +82,10 @@ function syncCardWorkspace(p) {
     const relatedTitle = h('button', { class: 'ws-control', type: 'button', onclick: () => focusWorkspaceRelated(p) }, '関連 ', ...keycap('n'));
     const shape = h('button', { class: 'ws-control ws-shape', type: 'button', onclick: toggleCardShape, 'aria-keyshortcuts': 'w' });
     const identityTitle = h('span', { class: 'ws-current-title' }), identityState = h('span', { class: 'ws-current-state' });
-    const compact = h('div', { class: 'ws-compact' }, identityTitle, identityState,
+    // On a narrow surface the card fills it edge to edge: there is no backdrop to click, so the strip carries the close.
+    const compact = h('div', { class: 'ws-compact' },
+      h('button', { class: 'ws-control ws-close', type: 'button', title: 'カードを閉じる（Esc）', 'aria-label': '閉じる', onclick: () => closeCards(), html: picon('close', 14) }),
+      identityTitle, identityState,
       h('button', { class: 'ws-control ws-context-open', type: 'button', onclick: () => toggleWorkspaceContext(p, true) }, '文脈 ', ...keycap('q')),
       h('button', { class: 'ws-control', type: 'button', onclick: () => jumpWorkspaceOrigin(p) }, p.kind === 'task' ? '目的 ' : '起点 ', ...keycap('s')),
       h('button', { class: 'ws-control', type: 'button', onclick: () => jumpWorkspaceLatest(p) }, p.kind === 'task' ? '報告 ' : '最新 ', ...keycap('e')));

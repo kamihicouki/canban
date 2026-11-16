@@ -126,7 +126,7 @@ function sideCount(b, page) {
 function sideEntry(b, [page, icon, label, key]) {
   const n = sideCount(b, page);
   return h('button', { class: 'side-row side-entry', 'data-page': page, title: `${label}${key ? `（${key}）` : ''}`,
-    'aria-current': workspace.current() === page ? 'page' : 'false', onclick: () => (VIEW_SHEETS[page] ? toggleView(page) : workspace.toggle(page)) },
+    'aria-current': workspace.current() === page ? 'page' : 'false', onclick: () => { if (matchMedia('(max-width: 720px)').matches && state.sideOpen) toggleSidebar(false); return VIEW_SHEETS[page] ? toggleView(page) : workspace.toggle(page); } },
     h('span', { class: 'side-ic', html: picon(icon, 18) }), h('span', { class: 'grow ellipsis', text: label }),
     n == null ? null : h('span', { class: 'count', text: String(n) }));
 }
@@ -410,3 +410,7 @@ function viewsMenu(anchor) {
     h('div', { class: 'row', style: { marginTop: '8px' } }, h('button', { class: 'btn-primary', text: '保存', onclick: save })),
     h('p', { class: 'muted', text: '絞り込み・検索・スイムレーン・表示オプションを保存します。数字キー 1〜9 で切り替えられます。' })), { width: 320 });
 }
+
+document.addEventListener('pointerdown', e => {
+  if (state.sideOpen && matchMedia('(max-width: 720px)').matches && !e.target.closest('#sidebar, #sideBtn, .popover, dialog')) toggleSidebar(false);
+});

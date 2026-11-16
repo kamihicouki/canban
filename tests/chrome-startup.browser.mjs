@@ -203,6 +203,13 @@ test('the built Chrome extension survives controls before data, failed load and 
     observations.push({ theme, initialBoardNull: true, failedLoadVisible: true, retryRecovered: true, refreshRetainedCategories: true, refreshFailureRetainedDomAndInput: true, validEmptyAccepted: true });
     await capture(`empty-${theme}`);
   }
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 400, height: 800, deviceScaleFactor: 1, mobile: false });
+  await cdp('Page.navigate', { url: `${extensionOrigin}/board.html?surface=sidepanel` });
+  await until(() => run('!!window.__startupNative?.held.length'), 'side panel pending board');
+  assert.equal(await run('document.documentElement.dataset.surface'), 'sidepanel');
+  await run(`document.querySelector('#sideBtn').click(); document.dispatchEvent(new KeyboardEvent('keydown',{key:'b',bubbles:true}));`);
+  await run('window.__startupNative.release()');
+  await until(() => run('!!document.querySelector(".card.face")'), 'side panel recovered board');
   assert.deepEqual(errors, [], 'built extension has no uncaught startup/interaction errors');
   assert.deepEqual(consoleErrors, [], 'built extension has no console errors');
   if (evidenceDirectory) fs.writeFileSync(path.join(evidenceDirectory, 'startup-metrics.json'), JSON.stringify({ generatedExtension: extensionOrigin, runtimeHashes, viewport: [1280, 800], nativeTransport: 'isolated controlled fake', observations }, null, 2));

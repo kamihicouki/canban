@@ -7,7 +7,7 @@ function fitHeader() {
   if (!bar || fitting) return;
   fitting = true;
   bar.querySelectorAll('[data-pri]').forEach((el) => el.classList.remove('folded'));
-  const items = [...bar.querySelectorAll('[data-pri]')].filter((el) => !el.hidden).sort((x, y) => x.dataset.pri - y.dataset.pri);
+  const items = [...bar.querySelectorAll('[data-pri]')].filter((el) => !el.hidden && (el.id !== 'presenceBar' || innerWidth <= 720)).sort((x, y) => x.dataset.pri - y.dataset.pri);
   bar.classList.remove('compact', 'no-word');
   const more = $('#moreBtn');
   more.hidden = true;
@@ -50,3 +50,24 @@ function moreMenu(anchor) {
 const HEADER_OPEN = {};
 $('#moreBtn').addEventListener('click', (e) => moreMenu(e.currentTarget));
 if (typeof ResizeObserver === 'function') new ResizeObserver(() => fitHeader()).observe($('.topbar'));
+
+// The current window is captured before a user gesture; sidePanel.open must run synchronously on that gesture.
+const surfaceAvailable = typeof chrome !== 'undefined' && !!chrome.runtime?.id && !!chrome.sidePanel?.open;
+let surfaceWindowId = null;
+const surfaceLabel = () => SURFACE === 'sidepanel' ? 'タブで開く' : 'サイドパネルで開く';
+function openOtherSurface() {
+  if (!surfaceAvailable) return;
+  if (SURFACE === 'sidepanel') {
+    const cardId = !paneLayer.hidden && focusedPane()?.kind !== 'view' ? focusedPane()?.id : null;
+    chrome.runtime.sendMessage({ type: 'open-board-tab', cardId }).then(result => { if (result?.error) toast(result.error, true); }).catch(error => toast(error.message, true));
+  } else if (surfaceWindowId != null) {
+    chrome.sidePanel.open({ windowId: surfaceWindowId }).catch(error => toast(error.message, true));
+  } else toast('ウィンドウを取得できませんでした', true);
+}
+if (surfaceAvailable) {
+  const button = $('#surfaceBtn');
+  button.hidden = false; button.title = `${surfaceLabel()}（Alt+Shift+P）`; button.setAttribute('aria-label', surfaceLabel());
+  button.addEventListener('click', openOtherSurface);
+  chrome.windows.getCurrent().then(win => { surfaceWindowId = win.id; }).catch(error => console.warn('canban: window lookup failed', error));
+  fitHeader();
+}

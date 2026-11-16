@@ -33,7 +33,7 @@ test('shared adoption restores the individual map without rewriting the independ
  const boot=fs.readFileSync(new URL('../ui/boot.js',import.meta.url),'utf8');
  const adopter=boot.slice(boot.indexOf('function adoptSharedUi('),boot.indexOf('async function applySharedUi('));
  const state={},guide={dock:'bl',min:false},writes=[];
- const ctx=vm.createContext({state,keyGuidePlace:guide,sharedUi:{},SHARED_UI_KEYS:['auxiliaryPrefs','keyGuide'],store:{cache(){},set:(...args)=>writes.push(args)},workspace:{navigate(){}},workspacePage:()=> 'home',$:()=>null});
+ const ctx=vm.createContext({SURFACE:'page',isSurfaceLocal:()=>false,state,keyGuidePlace:guide,sharedUi:{},SHARED_UI_KEYS:['auxiliaryPrefs','keyGuide'],store:{cache(){},set:(...args)=>writes.push(args)},workspace:{navigate(){}},workspacePage:()=> 'home',$:()=>null});
  vm.runInContext(source.slice(0,source.indexOf('// Secondary chrome state'))+'\n'+adopter,ctx);
  ctx.record={revision:4,state:{auxiliaryPrefs:{ribbon:'pinned',card:'minimal',hud:'minimal',dock:'minimal'}}};
  vm.runInContext('adoptSharedUi(record)',ctx);

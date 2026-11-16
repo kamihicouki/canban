@@ -35,3 +35,10 @@
   background: color-mix(in srgb, var(--on-board) 12%, transparent); color: var(--on-board); font-size: 12px; font-weight: 700; }
 .kg-zone.hot { border-style: solid; border-color: var(--focus); background: color-mix(in srgb, var(--focus) 40%, transparent); }
 @media (prefers-reduced-motion: reduce) { .key-guide { backdrop-filter: none; } .key-guide, .kg-keys { transition: none; } }
+
+@media (max-width: 560px) {
+  .key-guide { max-width: calc(100vw - 16px); }
+  .key-guide[data-min="true"] .kg-title { display: none; }
+  .key-guide[data-min="true"] .kg-head { gap: 0; padding: 2px; }
+  .key-guide[data-min="true"] .kg-grip { min-width: 16px; }
+}

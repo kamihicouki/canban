@@ -1,3 +1,7 @@
+## 内部実装版 0.30.0
+
+- Chromeのサイドパネルで開けるようになりました（Alt+Shift+K、またはアプリバーのボタンでタブと行き来）。狭い幅でもアプリバーが切れず、カードを全幅で読めます。
+
 ## 内部実装版 0.29.91
 
 - ボード取得前の絞り込みと取得失敗時の更新通知を安全にし、生成拡張の起動試験をCIへ追加する
@@ -684,6 +688,7 @@ https://github.com/kamihicouki/canban
 
 | 権限 | 審査向け説明 |
 |---|---|
+| sidePanel | Opens the Canban board in Chrome’s side panel when the user requests it, allowing the board to remain visible beside other tabs. |
 | nativeMessaging | The extension displays and manages the user's local Codex and Claude Code sessions through the Canban companion installed by the user. Native Messaging connects only to `com.kamihicouki.canban` on the same computer. The companion reads session metadata and conversations and stores board organization locally. User-initiated session actions use the installed agent applications. The companion also retrieves subscription usage from the official providers using locally stored account credentials and runs the official CLI for user-initiated account login in a terminal or displays its authorization URL for the user to open in their chosen browser. Browser selection reads only application and profile display names, never browser cookies or credentials. Credentials are not returned to the extension or developer. No browsing history or general website content is accessed. |
 
 host_permissions、content_scripts、tabs、identity、storage 権限なし。リモート配信コードなし。拡張コードはすべて ZIP に同梱し、インラインスクリプトも除外する。
@@ -804,7 +809,7 @@ Chrome の Canban アイコンからボードを開く。認証用の Canban ア
 ## 公開前チェック
 
 - [x] GitHub OSS 公開、MIT ライセンス
-- [x] Manifest V3、nativeMessaging のみ、ローカル同梱コード
+- [x] Manifest V3、nativeMessaging / sidePanel、ローカル同梱コード
 - [x] 個別サイズの PNG、配布ファイルの allowlist、ZIP の整合性確認
 - [x] 掲載文面、権限説明、プライバシーポリシーの作成
 - [x] 拡張本体の開発変更を main に統合

@@ -2,6 +2,7 @@
 // Keyboard: global shortcuts, command palette (⌘K) and the ? overlay
 const typingIn = (t) => t?.closest?.('input, textarea, select, [contenteditable]');
 document.addEventListener('keydown', e => {
+  if (surfaceAvailable && e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey && e.code === 'KeyP' && !e.isComposing && !typingIn(e.target) && !document.querySelector('dialog[open], .popover')) { e.preventDefault(); openOtherSurface(); return; }
   if (e.altKey && !e.metaKey && !e.ctrlKey && !e.isComposing && e.code === 'KeyD' && !document.querySelector('.popover')) {
     const picker = desktopPickerElement(true);
     if (picker && !picker.disabled) { e.preventDefault(); picker.click(); }
@@ -106,7 +107,7 @@ function refreshShortcutHints() {
   const input = document.activeElement;
   const typing = typingIn(input);
   const modKey = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
-  const globalKeys = [...(inboxOn() && paneLayer.hidden ? [['Alt+U', '未整理の会話']] : []),...(!laneHides('directory') ? [['Alt+C', 'カテゴリ']] : []), ['?', 'キー一覧'], [`${modKey}K`, 'コマンド']];
+  const globalKeys = [...(surfaceAvailable ? [['Alt+Shift+P', surfaceLabel()]] : []), ...(inboxOn() && paneLayer.hidden ? [['Alt+U', '未整理の会話']] : []),...(!laneHides('directory') ? [['Alt+C', 'カテゴリ']] : []), ['?', 'キー一覧'], [`${modKey}K`, 'コマンド']];
   const inCard = overlayOpen() || inDockedPane(input);
   let entries;
   if (upper) entries = [];
@@ -141,7 +142,7 @@ document.addEventListener('focusout', () => queueMicrotask(refreshShortcutHints)
 document.addEventListener('click', refreshShortcutHints);
 const SHORTCUTS = [
   ['全体', [
-    ['/', '検索にフォーカス（Esc でクリア、↓ / Enter で最初のカードへ）'], ['⌘K / Ctrl+K', `コマンドパレット（カード・ビュー・${T.category}・操作を検索して実行）`],
+    ...(surfaceAvailable ? [['Alt+Shift+P', surfaceLabel()]] : []), ['/', '検索にフォーカス（Esc でクリア、↓ / Enter で最初のカードへ）'], ['⌘K / Ctrl+K', `コマンドパレット（カード・ビュー・${T.category}・操作を検索して実行）`],
     ['p', `${T.category}・元アプリで絞り込み`], ['b', 'サイドバーの開閉'], ['[ / ]', '前 / 次のスイムレーンへ'],
     ['c', '作成ダイアログを開く'], ['1〜9', '保存したビューに切り替え'], ['a', '分析を開く / 閉じる'], ['Shift+O', '軌道シートを開く / 閉じる'], ['Shift+L', 'タスクの改善ループへ'], ['r', '再読み込み'], ['?', 'この一覧'],
   ]],
@@ -190,6 +191,7 @@ async function commandPalette() {
   const f = state.filters;
   const workId = selectedWorkSessionId(), relationId = selectedRelatedCardId();
   const actions = [
+    ...(surfaceAvailable ? [{ label: surfaceLabel(), run: openOtherSurface, hint: 'Alt+Shift+P' }] : []),
     { label: state.auxiliaryMode === 'pinned' ? '補助表示をすべて最小にする' : '補助表示をすべて固定する', run: toggleAuxiliaryUi, hint: 'Alt+Shift+U' },
     ...auxiliaryCommands(),
     ...(!paneLayer.hidden && focusedPane()?.kind === 'task' && focusedPane()?.quoteTaskHandoff ? [
@@ -347,7 +349,7 @@ document.addEventListener('keydown', (e) => {
     '/': focusSearch, '?': showShortcuts, b: () => toggleSidebar(), '[': () => stepLane(-1), ']': () => stepLane(1),
     r: refreshBoard, a: toggleAnalytics, u: () => toggleView('usage'),
     c: quickAdd, v: () => slackUi.toggle(), p: () => scopePicker($('#logo')), i: toggleBoardView,
-    Escape: state.lens ? () => pinLens(null) : null,
+    Escape: state.lens ? () => pinLens(null) : state.sideOpen && matchMedia('(max-width: 720px)').matches ? () => toggleSidebar(false) : null,
   }[k];
   if (run) { e.preventDefault(); return run(); }
   // 1–9: switch saved views
