@@ -84,6 +84,13 @@ test('--store needs a value, so --dry-run is never taken as one', () => {
   assert.deepEqual(parseArgs(['minor', '要', '約', '--store', 'ス', '--next-free', '--strict']), { kind: 'minor', summary: '要 約', store: 'ス', nextFree: true, strict: true });
 });
 
+test('--help and unknown options never become the summary, so nothing is bumped', () => {
+  assert.deepEqual(parseArgs(['--help']), { help: true });
+  assert.deepEqual(parseArgs(['patch', '要約', '-h']), { help: true });
+  assert.throws(() => parseArgs(['--hlep']), /不明なオプション --hlep/);
+  assert.throws(() => parseArgs(['patch', '要約', '--nextfree']), /不明なオプション/);
+});
+
 test('usedVersions reads open PRs through refs/pull, covering forks, and warns about what it cannot read', () => {
   const logs = [];
   const exec = (cmd, args) => cmd === 'git' && args[0] === 'show' && args[1] === 'origin/main:package.json' ? '{"version":"0.29.22"}' : cmd === 'git' && args[0] === 'fetch' ? '' : null;
