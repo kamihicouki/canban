@@ -7,6 +7,7 @@ const categoryRelation = ref => ({
   'claude:group': 'displayedIn',
   'claude:environment': 'startedWith',
   'antigravity:brain': 'memberOf',
+  'antigravity:project': 'memberOf',
   'gemini:project': 'memberOf',
   'cursor:workspace': 'memberOf',
   'chatgpt:project': 'memberOf',

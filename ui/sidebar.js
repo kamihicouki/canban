@@ -110,9 +110,15 @@ function toggleSidebar(open = !state.sideOpen) {
 const SIDE_LOOK = [['analytics', 'chart', '分析', 'a'], ['usage', 'gauge', 'Agent Usage', ''], ['orbit', 'refresh', '軌道', 'Shift+O']];
 const SIDE_MANAGE = [['rules', 'zap', T.automation], ['labels', 'tag', 'ラベル'], ['views', 'bookmark', '保存ビュー'], ['hosts', 'server', 'マシン'], ['slack', 'message', 'Slack接続'], ['settings', 'gear', '設定']];
 // The axes a lane can follow, in the order the sidebar offers them; the rest sit behind ⋯.
-const LANE_AXES = [['', 'なし'], ['directory', T.category], ['agent', 'AI Apps'], ['host', 'マシン'], ['label', 'ラベル']];
+const LANE_AXES = [['', 'なし'], ['directory', T.category], ['repo', 'リポジトリ'], ['agent', 'AI Apps']];
 const SIDE_SOURCE_TOP = 5; // rows per 元アプリ axis before the rest fold into 「ほか N 件…」
-const LANE_MORE = [...Object.entries(SOURCE_AXES), ['account', 'アカウント']];
+const LANE_MORE = [
+  ['branch', 'ブランチ / ワークツリー'],
+  ['workingFolder', '作業フォルダ'],
+  ['host', 'マシン'],
+  ['label', 'ラベル'],
+  ['account', 'アカウント'],
+];
 function sideCount(b, page) {
   return { rules: b.settings?.rules?.length, views: b.settings?.views?.length, labels: b.labels?.length, directories: b.directories?.length,
     hosts: (b.hosts || []).filter((x) => !x.local && !x.cloud && x.enabled).length || null }[page] ?? null;
@@ -120,7 +126,7 @@ function sideCount(b, page) {
 function sideEntry(b, [page, icon, label, key]) {
   const n = sideCount(b, page);
   return h('button', { class: 'side-row side-entry', 'data-page': page, title: `${label}${key ? `（${key}）` : ''}`,
-    'aria-current': workspace.current() === page ? 'page' : 'false', onclick: () => (VIEW_SHEETS[page] ? toggleView(page) : workspace.toggle(page)) },
+    'aria-current': workspace.current() === page ? 'page' : 'false', onclick: () => { if (matchMedia('(max-width: 720px)').matches && state.sideOpen) toggleSidebar(false); return VIEW_SHEETS[page] ? toggleView(page) : workspace.toggle(page); } },
     h('span', { class: 'side-ic', html: picon(icon, 18) }), h('span', { class: 'grow ellipsis', text: label }),
     n == null ? null : h('span', { class: 'count', text: String(n) }));
 }
@@ -404,3 +410,7 @@ function viewsMenu(anchor) {
     h('div', { class: 'row', style: { marginTop: '8px' } }, h('button', { class: 'btn-primary', text: '保存', onclick: save })),
     h('p', { class: 'muted', text: '絞り込み・検索・スイムレーン・表示オプションを保存します。数字キー 1〜9 で切り替えられます。' })), { width: 320 });
 }
+
+document.addEventListener('pointerdown', e => {
+  if (state.sideOpen && matchMedia('(max-width: 720px)').matches && !e.target.closest('#sidebar, #sideBtn, .popover, dialog')) toggleSidebar(false);
+});

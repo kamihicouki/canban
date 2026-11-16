@@ -27,12 +27,13 @@ function rpc(method, params) {
 }
 await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: process.env.CANBAN_DEV_CLIENT || 'dev-host', version: '0' } });
 
-const HOST_PAGE = (theme) => `<!doctype html><meta charset="utf-8"><title>Canban dev host</title>
+const HOST_PAGE = (theme) => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Canban dev host</title>
 <style>html,body{margin:0;height:100%;background:${theme === 'dark' ? '#111' : '#eee'}}iframe{border:0;width:100%;height:100%}</style>
 <iframe id="app" sandbox="allow-scripts allow-forms allow-popups"></iframe>
 <script>
 const theme = ${JSON.stringify(theme)};
 const frame = document.getElementById('app');
+if (new URLSearchParams(location.search).get('surface') === 'sidepanel') frame.name = 'canban-surface:sidepanel';
 fetch('/resource').then(r => r.json()).then(res => { frame.srcdoc = res.contents[0].text; });
 window.addEventListener('message', async (ev) => {
   if (ev.source !== frame.contentWindow) return;

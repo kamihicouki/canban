@@ -47,7 +47,7 @@ test('switching layout changes only the screen preference and redraws cached car
 test('adopting shared layout keeps unknown values and normalizes explicit null without saving', () => {
   for (const raw of ['rail', 'future-layout', null, 42]) {
     const state = { layout: 'hud', layoutSaved: 'hud' }, writes = [], applied = [];
-    const context = vm.createContext({ state, sharedUi: {}, SHARED_UI_KEYS: ['layout'],
+    const context = vm.createContext({ SURFACE: 'page', isSurfaceLocal: () => false, state, sharedUi: {}, SHARED_UI_KEYS: ['layout'],
       workspacePage: () => 'home', workspace: { navigate() {} }, $: () => null,
       store: { cache() {}, set: (...args) => writes.push(args) }, applyLayout: () => applied.push(state.layout) });
     vm.runInContext(definitions + adopter, context);

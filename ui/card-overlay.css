@@ -71,3 +71,11 @@
 .pane-layer[data-view-mode="split"] :is(.pane-width, .pane-height, .pane-corner) { display: none; }
 
 @media (prefers-reduced-motion: reduce) { .pane-layer, .pane { transition: none; } }
+
+@media (max-width: 560px) {
+  .pane-layer .pane-bar { margin: 0; padding-inline: 8px; }
+  .pane-layer .card-board-viewport { inset-inline: 0; }
+  .pane-stage { padding-inline: 0; }
+  .pane { width: 100vw; }
+  .pane-layer :is(.pane-width, .pane-height, .pane-corner) { display: none; }
+}

@@ -1,11 +1,43 @@
 // Part of board.html: included into its script by server/ui.mjs and shares its scope.
 // Swimlanes, snippets, saved views
-const LANE_MODES = { '': 'なし', directory: `${T.category}`, ...SOURCE_AXES, project: '旧プロジェクト', section: '旧セクション', host: 'マシン', account: 'アカウント', agent: 'AI Apps', label: 'ラベル' };
+const LANE_MODES = {
+  '': 'なし',
+  directory: `${T.category}`,
+  repo: 'リポジトリ',
+  branch: 'ブランチ / ワークツリー',
+  workingFolder: '作業フォルダ',
+  agent: 'AI Apps',
+  host: 'マシン',
+  label: 'ラベル',
+  account: 'アカウント',
+  project: '旧プロジェクト',
+  section: '旧セクション',
+};
 const LANE_AGENT_LABELS = { codex: 'Codex', claude: 'Claude Code', gemini: 'Gemini CLI', antigravity: 'Antigravity', cursor: 'Cursor', chatgpt: 'ChatGPT', grok: 'Grok' };
 const NO_DIR = 'カテゴリ無し';
-function laneKey(card, mode) {
+// 手動指定と「カテゴリ無し」を優先し、未設定だけを元リポジトリでまとめる。
+function resolveDirectoryLane(card, directories = []) {
+  if (card.directory) return { id: card.directory.id, name: card.directory.name, creation: { directory: card.directory.id } };
+  if (card.directoryId !== '__none') {
+    const repo = card.repoName || card.project;
+    if (repo && repo !== 'outside-of-project') {
+      const matched = directories.find(d => d.name.trim().toLowerCase() === repo.trim().toLowerCase());
+      if (matched) return { id: matched.id, name: matched.name, creation: { directory: matched.id } };
+      return { id: `auto:${repo}`, name: `未分類（${repo}）`, creation: { directory: `auto:${repo}` } };
+    }
+  }
+  return { id: '__none', name: NO_DIR, creation: { directory: '__none' } };
+}
+function laneKey(card, mode, board = state.board) {
+  if (mode === 'repo') return card.repoName || card.project || '（リポジトリ不明）';
+  if (mode === 'branch') {
+    const b = card.branch || card.worktreeName;
+    return b ? b : '（ブランチなし）';
+  }
+  if (mode === 'directory') {
+    return resolveDirectoryLane(card, board.directories).name;
+  }
   if (SOURCE_AXES[mode]) return sourceLane(card, mode).name;
-  if (mode === 'directory') return card.directory ? card.directory.name : NO_DIR;
   if (mode === 'section') {
     const sec = card.codexSection;
     return sec ? `§ ${sec.name}` : '（セクションなし）';
@@ -20,6 +52,11 @@ function laneKey(card, mode) {
   return card.project || '（プロジェクトなし）';
 }
 function laneIdForCard(card, mode, board = state.board) {
+  if (mode === 'repo') return JSON.stringify([mode, card.repoName || card.project || '__none']);
+  if (mode === 'branch') return JSON.stringify([mode, card.branch || card.worktreeName || '__none']);
+  if (mode === 'directory') {
+    return JSON.stringify([mode, resolveDirectoryLane(card, board.directories).id]);
+  }
   if (SOURCE_AXES[mode]) return JSON.stringify([mode, sourceLane(card, mode, board.sourceFacets).id]);
   const labelId = board.labels.find(label => card.labels.includes(label.id))?.id;
   return JSON.stringify([mode, taskLaneCreation(card, mode, labelId)]);
@@ -33,16 +70,34 @@ function buildLanes(b, mode) {
   };
   for (const list of b.lists) for (const card of list.cards) {
     const labelId = b.labels.find(label => card.labels.includes(label.id))?.id;
-    const native = SOURCE_AXES[mode] ? sourceLane(card, mode, b.sourceFacets) : null;
-    const ln = native ? lane(native.creation, native.name, native.id) : lane(taskLaneCreation(card, mode, labelId), laneKey(card, mode));
+    let ln;
+    if (mode === 'repo') {
+      const rKey = card.repoName || card.project || '__none';
+      ln = lane({ context: { repo: rKey } }, laneKey(card, mode), rKey);
+    } else if (mode === 'branch') {
+      const bKey = card.branch || card.worktreeName || '__none';
+      ln = lane({ context: { branch: bKey } }, laneKey(card, mode), bKey);
+    } else if (mode === 'directory') {
+      const d = resolveDirectoryLane(card, b.directories);
+      ln = lane(d.creation, d.name, d.id);
+    } else {
+      const native = SOURCE_AXES[mode] ? sourceLane(card, mode, b.sourceFacets) : null;
+      ln = native ? lane(native.creation, native.name, native.id) : lane(taskLaneCreation(card, mode, labelId), laneKey(card, mode));
+    }
     ln.count++;
     if (card.unread) ln.unread++;
     if (card.status === 'running') ln.running++;
     if (card.status === 'waiting') ln.waiting++;
   }
+  if (mode === 'repo') {
+    lane({ context: { repo: '__none' } }, '（リポジトリ不明）', '__none');
+  }
+  if (mode === 'branch') {
+    lane({ context: { branch: '__none' } }, '（ブランチなし）', '__none');
+  }
   if (mode === 'directory') {
-    for (const d of b.directories) Object.assign(lane({ directory: d.id }, d.name), { color: d.color, dirId: d.id });
-    lane({ directory: '__none' }, NO_DIR).dirId = '__none';
+    for (const d of b.directories) Object.assign(lane({ directory: d.id }, d.name, d.id), { color: d.color, dirId: d.id });
+    lane({ directory: '__none' }, NO_DIR, '__none').dirId = '__none';
   }
   if (mode === 'label') {
     for (const label of b.labels) lane({ labels: [label.id] }, label.name).color = label.color;
@@ -75,7 +130,7 @@ function buildLanes(b, mode) {
     lane({ context: { account: null } }, 'アカウント不明');
     for (const host of b.hosts || []) if (!host.local) lane({ context: { account: null, host: host.id } }, `⌂ ${host.label}`);
   }
-  const last = name => /^（.*なし）$/.test(name);
+  const last = name => /^（.*なし）$|^（.*不明）$/.test(name);
   return [...lanes.values()].sort((a, c) => last(a.name) - last(c.name) || c.count - a.count).map(ln => ({
     ...ln, lists: b.lists.map(list => {
       const cards = list.cards.filter(card => laneIdForCard(card, mode, b) === ln.key);

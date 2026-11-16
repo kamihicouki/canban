@@ -40,3 +40,12 @@
 .shortcut-hints kbd { font: 11px/16px ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px solid currentColor; border-radius: 3px; padding: 0 4px; }
 .shortcut-hint[aria-disabled="true"] { opacity: .4; }
 .topbar.compact .board-name #logo { max-width: 104px; }
+
+@media (max-width: 560px) {
+  .topbar .board-name { min-width: 0; flex: 0 1 95px; }
+  .topbar .board-name #logo { max-width: 100%; }
+  .topbar .hsearch-wrap { min-width: 44px; flex: 1 1 80px !important; }
+  .topbar .hsearch { padding-right: 4px; text-overflow: ellipsis; }
+  .topbar .acct-btn .rings, .topbar .acct-btn .caret { display: none; }
+}
+@media (max-width: 400px) { .topbar .hsearch::placeholder { color: transparent; } } /* the icon alone names the field; half a word does not */

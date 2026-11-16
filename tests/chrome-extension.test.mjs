@@ -18,7 +18,10 @@ test('Chrome build emits an MV3 toolbar extension with an external CSP-safe boar
     assert.equal(build.status, 0, build.stderr || build.stdout);
     const manifest = JSON.parse(fs.readFileSync(path.join(out, 'manifest.json'), 'utf8'));
     assert.equal(manifest.manifest_version, 3);
-    assert.deepEqual(manifest.permissions, ['nativeMessaging']);
+    assert.deepEqual(manifest.permissions, ['nativeMessaging', 'sidePanel']);
+    assert.equal(manifest.minimum_chrome_version, '116');
+    assert.equal(manifest.side_panel.default_path, 'board.html?surface=sidepanel');
+    assert.equal(manifest.commands['open-side-panel'].suggested_key.default, 'Alt+Shift+K');
     assert.equal(manifest.background.service_worker, 'service-worker.js');
     const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
     assert.equal(manifest.name, `Canban ${version}`);
@@ -36,13 +39,16 @@ test('Chrome build emits an MV3 toolbar extension with an external CSP-safe boar
     // The worker answers the toolbar button: the open board comes forward, otherwise a new tab opens.
     const calls = [];
     let contexts = [{ contextType: 'TAB', documentUrl: 'chrome-extension://x/board.html#a', tabId: 7, windowId: 3 }];
-    let listener;
-    const chrome = { action: { onClicked: { addListener: (fn) => { listener = fn; } } },
+    let listener, command;
+    const panelCalls = [];
+    const chrome = { commands: { onCommand: { addListener: fn => { command = fn; } } }, sidePanel: { open: o => { panelCalls.push(o); return Promise.resolve(); }, setPanelBehavior: o => { assert.equal(o.openPanelOnActionClick, false); return Promise.resolve(); } }, action: { onClicked: { addListener: (fn) => { listener = fn; } } },
       runtime: { getURL: (p) => `chrome-extension://x/${p}`, getContexts: async () => contexts },
       tabs: { create: async (o) => calls.push(['create', o.url]), update: async (id, o) => calls.push(['update', id, o.active]) },
       windows: { update: async (id, o) => calls.push(['focus', id, o.focused]) } };
     new Function('chrome', worker)(chrome);
     await listener();
+    command('open-side-panel', { windowId: 3 });
+    assert.deepEqual(panelCalls, [{ windowId: 3 }]);
     contexts = [];
     await listener();
     assert.deepEqual(calls, [['update', 7, true], ['focus', 3, true], ['create', 'chrome-extension://x/board.html']]);
@@ -56,7 +62,7 @@ test('adopting shared state from an older version lands on the board: analytics 
   const adopt = html.match(/function adoptSharedUi\(record\) \{([\s\S]*?)\n\}\n\nasync function applySharedUi/);
   const pages = ['home', 'rules', 'settings'], navigated = [];
   const state = { filters: {} };
-  const context = vm.createContext({ state, sharedUi: {}, SHARED_UI_KEYS: ['workspacePage'], workspacePage: (page, fallback = 'home') => (pages.includes(page) ? page : fallback),
+  const context = vm.createContext({ SURFACE: 'page', isSurfaceLocal: () => false, state, sharedUi: {}, SHARED_UI_KEYS: ['workspacePage'], workspacePage: (page, fallback = 'home') => (pages.includes(page) ? page : fallback),
     workspace: { navigate(page) { navigated.push(page); } }, store: { cache() {} }, $: () => null });
   vm.runInContext(`function adoptSharedUi(record) {${adopt[1]}\n}\nadoptSharedUi({revision: 1, state: {view: 'analytics', workspacePage: 'analytics'}});`, context);
   assert.deepEqual(navigated, ['home']);
@@ -86,7 +92,7 @@ test('repainting adopted settings does not create an unsaved local change', () =
   const source = html.slice(html.indexOf('const SHARED_UI_KEYS ='), html.indexOf('const DEFAULT_FILTERS ='));
   const values = new Map();
   let saves = 0;
-  const context = vm.createContext({ localStorage: { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) },
+  const context = vm.createContext({ SURFACE: 'page', localStorage: { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) },
     scheduleSharedUiSave: () => saves++ });
   vm.runInContext(`${source}\nsharedUi.ready = true; store.cache('cardWidths', {}); store.set('cardWidths', {});`, context);
   assert.equal(vm.runInContext('sharedUi.dirty', context), false);
@@ -135,7 +141,7 @@ test('startup preserves pending local settings after a revision conflict', async
   const source = html.slice(html.indexOf('async function initializeSharedUi()'), html.indexOf('function hasUnsavedPaneInput()'));
   let adopted = false, conflict = false;
   const sharedUi = {};
-  const context = vm.createContext({ sharedUi, store: { get: () => ({ revision: 4 }) },
+  const context = vm.createContext({ SURFACE: 'page', sharedUi, store: { get: () => ({ revision: 4 }) },
     bridge: { callTool: async () => ({ revision: 5, state: { view: 'analytics' } }) },
     sharedUiRecord: (value) => value, adoptSharedUi: () => { adopted = true; },
     notifySharedUiConflict: () => { conflict = true; }, console });
@@ -144,4 +150,23 @@ test('startup preserves pending local settings after a revision conflict', async
   assert.equal(conflict, true);
   assert.equal(sharedUi.revision, 4);
   assert.equal(sharedUi.dirty, true);
+});
+
+test('side panel keeps six settings local and preserves the page values in shared snapshots', () => {
+  const html = boardHtml();
+  const source = html.slice(html.indexOf('const SHARED_UI_KEYS ='), html.indexOf('const DEFAULT_FILTERS ='));
+  const snapshot = html.slice(html.indexOf('function sharedUiSnapshot()'), html.indexOf('function sharedUiRecord'));
+  const values = new Map(); let saves = 0;
+  const localStorage = { getItem: k => values.get(k) ?? null, setItem: (k, v) => values.set(k, v) };
+  const preserved = { sidebar: true, workspacePage: 'settings', boardView: 'timeline', keyGuide: { min: false }, cardWidths: { task: 500 }, cardHeights: { task: 600 } };
+  const context = vm.createContext({ SURFACE: 'sidepanel', localStorage, scheduleSharedUiSave: () => saves++, state: { filters: {}, auxiliaryPrefs: {}, view: 'board', sideOpen: false }, workspace: { page: 'home' }, slackUi: {}, paneGlobal: {}, cardWidths: {}, cardHeights: {}, collapsedLanes: [], keyGuidePlace: {}, exchangeTrailView: 'center' });
+  vm.runInContext(source + snapshot, context);
+  context.preserved = preserved;
+  vm.runInContext("sharedUi.ready = true; sharedUi.preserved = preserved; for (const key of SURFACE_LOCAL_KEYS) store.set(key, 'local');", context);
+  assert.equal(saves, 0);
+  for (const key of Object.keys(preserved)) assert.equal(values.get(`sk:sidepanel:${key}`), '"local"');
+  const result = vm.runInContext('sharedUiSnapshot()', context);
+  for (const key of Object.keys(preserved)) assert.equal(JSON.stringify(result[key]), JSON.stringify(preserved[key]));
+  vm.runInContext("store.set('themePref', 'dark')", context);
+  assert.equal(saves, 1);
 });

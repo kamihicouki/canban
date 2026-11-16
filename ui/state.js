@@ -27,31 +27,34 @@ const cardSurface = (card) => {
   return AGENT_META[card.agent]?.defaultSurface || null;
 };
 const SHARED_UI_KEYS = ['filters', 'themePref', 'layout', 'boardView', 'sidebar', 'workspacePage', 'paneGlobal', 'cardWidths', 'cardHeights', 'collapsedLanes', 'keyGuide', 'exchangeTrailView', 'categoryPins', 'auxiliaryPrefs'];
-const sharedUi = { revision: null, ready: false, dirty: false, blocked: false, applying: false, inflight: false, generation: 0, timer: null, checkTimer: null };
+const SURFACE_LOCAL_KEYS = ['sidebar', 'workspacePage', 'boardView', 'keyGuide', 'cardWidths', 'cardHeights'];
+const isSurfaceLocal = k => SURFACE === 'sidepanel' && SURFACE_LOCAL_KEYS.includes(k);
+const storageKey = k => `sk:${SURFACE === 'sidepanel' && (isSurfaceLocal(k) || k === 'sharedUiPending') ? 'sidepanel:' : ''}${k}`;
+const sharedUi = { preserved: {}, revision: null, ready: false, dirty: false, blocked: false, applying: false, inflight: false, generation: 0, timer: null, checkTimer: null };
 const store = {
-  get(k, d) { try { const v = localStorage.getItem(`sk:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  get(k, d) { try { const v = localStorage.getItem(storageKey(k)); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) {
     let changed = true;
     try {
       const serialized = JSON.stringify(v);
-      changed = localStorage.getItem(`sk:${k}`) !== serialized;
-      localStorage.setItem(`sk:${k}`, serialized);
+      changed = localStorage.getItem(storageKey(k)) !== serialized;
+      localStorage.setItem(storageKey(k), serialized);
     } catch {}
-    if (changed && SHARED_UI_KEYS.includes(k) && sharedUi.ready && !sharedUi.applying) {
+    if (changed && SHARED_UI_KEYS.includes(k) && !isSurfaceLocal(k) && sharedUi.ready && !sharedUi.applying) {
       sharedUi.dirty = true;
       sharedUi.generation++;
       store.cache('sharedUiPending', { revision: sharedUi.revision });
       scheduleSharedUiSave();
     }
   },
-  cache(k, v) { try { localStorage.setItem(`sk:${k}`, JSON.stringify(v)); } catch {} },
+  cache(k, v) { try { localStorage.setItem(storageKey(k), JSON.stringify(v)); } catch {} },
 };
 const DEFAULT_FILTERS = { sourceFilters: [], cardKind: 'all', workingFolder: '', folder: '', section: '', agent: 'all', host: '', account: '', status: '', project: '', directory: '', label: '', q: '', days: 30, includeArchived: false, includeSubagents: false, dotScope: 'exclude', groupBranch: false, fulltext: false, swimlane: '', laneHeight: 'normal' };
 const LANE_HEIGHTS = { compact: ['コンパクト', '240px'], normal: ['標準', '420px'], full: ['すべて', 'none'] };
 const state = {
   board: null,
   filters: { ...DEFAULT_FILTERS, ...store.get('filters', {}) },
-  sideOpen: store.get('sidebar', window.innerWidth > 900),
+  sideOpen: store.get('sidebar', SURFACE === 'sidepanel' ? false : window.innerWidth > 900),
   themePref: store.get('themePref', 'system'),
   sideQ: '',
   categoryPins: store.get('categoryPins', null),

@@ -51,3 +51,11 @@
 
 .ws-compact .ws-control { flex: none; white-space: nowrap; }
 .ws-context .th-head > .grow { display: none; }
+
+/* Narrow surfaces (the Chrome side panel): the full-width card has no backdrop, so its strip shows the close. */
+.ws-compact .ws-close { display: none; align-items: center; justify-content: center; width: 28px; height: 26px; padding: 0; }
+@media (max-width: 560px) {
+  .ws-compact .ws-close { display: inline-flex; }
+  .ws-compact { gap: 2px; padding-inline: 4px; }
+}
+@media (max-width: 380px) { .ws-compact .ws-control .keycap { display: none; } }

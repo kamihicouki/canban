@@ -101,7 +101,7 @@ function renderCard(card, list) {
   if (source.length) foot.append(h('span', { class: 'pill ellipsis', title: sourceDetailRows(card).map(([k,v]) => `${k}: ${v}`).join('\n'), text: source.length > 1 ? `元アプリ 複数（${source.length}）` : sourceFacetLabel({ ref: source[0].ref, name: source[0].observation?.value?.name }) }));
   if (!task) {
     const exchanges = exchangePill(card); if (exchanges) foot.append(exchanges);
-    const branch = card.git?.branch || card.branch;
+    const branch = card.worktreeName ? `${card.repoName || ''} (${card.worktreeName})` : (card.git?.branch || card.branch);
     if (branch) foot.append(h('span', { class: 'fbranch ellipsis', title: gitTitleOr(card), text: branch }));
     const stat = faceStat(card);
     if (stat) foot.append(stat);

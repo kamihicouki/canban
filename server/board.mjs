@@ -37,7 +37,7 @@ import { sourceRelationsForTask, matchesSourceFilters, sourceFacetsForCards, pla
 
 import { peekGit, refreshGit } from './gitlive.mjs';
 import { RuleEngine, replayRule } from './rules.mjs';
-import { PrService } from './git.mjs';
+import { PrService, resolveRepoContext } from './git.mjs';
 import { SearchIndex } from './search.mjs';
 import { resolveDirectory } from './store.mjs';
 import { perf } from './perf.mjs';
@@ -92,6 +92,15 @@ async function readLocalSessions() {
     ...chatgpt.sessions,
     ...grok.sessions,
   ].map((s) => ({ ...s, surface: inferSurface(s) }));
+  // 全エージェントで元リポジトリを補完し、記録済みのブランチは保持する。
+  await Promise.all(allLocal.map(async (s) => {
+    if (!s.cwd || s.repoName) return;
+    const ctx = await resolveRepoContext(s.cwd);
+    s.repoRoot = ctx.repoRoot;
+    s.repoName = ctx.repoName;
+    s.worktreeName = ctx.worktreeName;
+    if (!s.branch && ctx.branch) s.branch = ctx.branch;
+  }));
   const value = {
     sessions: allLocal,
     errors: [codex.error, claude.error, antigravity.error, gemini.error, cursor.error, chatgpt.error, grok.error].filter(Boolean),
@@ -483,11 +492,15 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
       home: s.home || null,
       title: s.title,
       project: s.project,
+      repoRoot: s.repoRoot || null,
+      repoName: s.repoName || null,
+      worktreeName: s.worktreeName || null,
       folder: s.folder,
       codexProject: s.codexProject || null,
       sourceView: compactSourceView(s.sourceView || sessionSourceView(s)),
       capabilities: compactCapabilities(capabilitiesFor({ session: s })),
       directory: dirView(dir),
+      directoryId: card?.directoryId || null,
       cwd: s.cwd,
       branch: s.branch,
       model: s.model,

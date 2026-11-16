@@ -226,12 +226,16 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
   const order = [['progress', true], ['add', true], ['labels', true], ['prio', true], ['task', false], ['cardRelations', false], ['related', true], ['pr', true], ['memo', true], ['resume', true], ['detail', false], ['first', false], ['other', false], ['actions', false]];
   p.detailNodes = order.filter(([id]) => secs[id]).map(([id, open]) => detailSection(id, secs[id].title ?? secTitle(id), secs[id].nodes, { open, extra: secs[id].extra }));
   const sig = s.signals, git = d.git;
+  const projectChip = s.project && s.project !== 'outside-of-project' ? h('span', { class: 'th-proj badge-subtle', title: `プロジェクト: ${s.project}` }, s.project) : null;
+  const wtText = s.worktreeName ? `${s.repoName || ''} (${s.worktreeName})` : null;
+  const branchText = wtText || s.branch;
   const chips = [
     dotPill(s),
+    projectChip,
     card.archived || s.archived ? h('span', { class: 'th-archived', text: 'アーカイブ済み' }) : null,
     exchangePill({ ...s, kind: 'session', exchanges: p.exchangeData?.summary || (findCard(s.id)?.link || findCard(s.id)?.card)?.exchanges || { sent: 0, received: 0, total: 0 } }),
     dirPill(card.directory || { name: 'カテゴリ無し' }),
-    git ? gitPill(git, s.branch) : s.branch ? h('span', { class: 'ellipsis', title: s.branch, text: `⎇ ${s.branch}` }) : null,
+    git ? gitPill(git, branchText) : branchText ? h('span', { class: 'ellipsis', title: branchText, text: `⎇ ${branchText}` }) : null,
     d.pr ? prPill(d.pr) : null,
     ...card.labels.map((id) => state.board.labels.find((l) => l.id === id)).filter(Boolean).map((l) => h('span', { class: 'th-label', title: 'ラベル' }, h('i', { style: { background: colorVar(l.color) } }), l.name)),
     sig?.model ? h('span', { class: 'th-model', title: [sig.model, sig.effort ? `effort ${sig.effort}` : null, sig.mode ? (MODE_TEXT[sig.mode] || sig.mode) : null].filter(Boolean).join(' · '), text: [sig.model, sig.effort].filter(Boolean).join(' ') }) : null,

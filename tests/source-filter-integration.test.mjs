@@ -37,7 +37,7 @@ const cards = board => board.lists.flatMap(list => list.cards);
 const ids = board => cards(board).map(card => card.id).sort();
 function browser() {
   const values = new Map();
-  const context = vm.createContext({ window: { innerWidth: 1280 }, localStorage: { getItem: k => values.get(k) ?? null, setItem: (k, v) => values.set(k, v) },
+  const context = vm.createContext({ SURFACE: 'page', document: { addEventListener() {} }, window: { innerWidth: 1280 }, localStorage: { getItem: k => values.get(k) ?? null, setItem: (k, v) => values.set(k, v) },
     slackUi: { visible: false }, T: { category: 'カテゴリ', automation: '自動化', aiApps: 'AI Apps' }, STATUS_LABELS: {}, panes: [],
     workspace: { utilityPage: () => false, navigate() {} }, bridge: { callTool: async (name, args) => { context.lastArgs = plain(args); return call(name, args); } },
     render() {}, reconcileCards() {}, refreshShortcutHints() {}, refreshViews() {}, syncHeaderInputs() {}, picon: () => '', keycap: () => [],

@@ -147,7 +147,8 @@ export function resolveDirectory(state, card, cwd, session = null) {
     bindings: mapping?.bindings || [], legacy: { directories: state.directories || [], cwd: cwd || session?.cwd,
       cards: mapping?.legacyCards || {}, sessionId: session?.id, tombstones: mapping?.tombstones || [],
       fallbackCategoryId: legacyDirectory?.id, legacySourceKey: old?.key,
-      pathBindings: mapping?.legacyPathBindings || [], hostId: session?.host?.id || 'local', agent: session?.agent } });
+      pathBindings: mapping?.legacyPathBindings || [], hostId: session?.host?.id || 'local', agent: session?.agent,
+      repoName: session?.repoName, projectName: session?.project } });
   return result.categoryId ? state.directories.find(d => d.id === result.categoryId) || null : null;
 }
 

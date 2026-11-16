@@ -17,12 +17,17 @@ window.addEventListener('openai:set_globals', (e) => { const t = e.detail?.globa
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => applyTheme());
 
 function sharedUiSnapshot() {
-  return {
+  const snapshot = {
     slackVisible: slackUi.visible, filters: { ...state.filters }, themePref: state.themePref, layout: state.layoutSaved, boardView: state.view, sidebar: state.sideOpen, workspacePage: workspace.page,
     categoryPins: state.categoryPins, auxiliaryPrefs: { ...state.auxiliaryPrefs },
     exchangeTrailView: typeof exchangeTrailView === 'string' ? exchangeTrailView : 'center',
     paneGlobal: { ...paneGlobal }, cardWidths: { ...cardWidths }, cardHeights: { ...cardHeights }, collapsedLanes: [...collapsedLanes], keyGuide: { ...keyGuidePlace },
   };
+  if (SURFACE === 'sidepanel') for (const key of SURFACE_LOCAL_KEYS) {
+    if (Object.hasOwn(sharedUi.preserved, key)) snapshot[key] = sharedUi.preserved[key];
+    else delete snapshot[key];
+  }
+  return snapshot;
 }
 
 function sharedUiRecord(result) { return result?.result ?? result; }
@@ -33,14 +38,15 @@ function adoptSharedUi(record) {
   sharedUi.applying = true;
   try {
     let layoutChanged = false;
-    for (const key of SHARED_UI_KEYS) if (Object.hasOwn(value, key)) store.cache(key, value[key]);
+    if (SURFACE === 'sidepanel') sharedUi.preserved = Object.fromEntries(SURFACE_LOCAL_KEYS.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]]));
+    for (const key of SHARED_UI_KEYS) if (!isSurfaceLocal(key) && Object.hasOwn(value, key)) store.cache(key, value[key]);
     if (value.filters && typeof value.filters === 'object' && !Array.isArray(value.filters)) state.filters = { ...DEFAULT_FILTERS, ...value.filters };
     if (Object.hasOwn(value, 'categoryPins')) state.categoryPins = Array.isArray(value.categoryPins) ? value.categoryPins.filter(id => typeof id === 'string') : null;
     if (Object.hasOwn(value, 'auxiliaryPrefs') || Object.hasOwn(value, 'auxiliaryMode')) {
       state.auxiliaryPrefs = normalizeAuxiliaryPrefs(value.auxiliaryPrefs, value.auxiliaryMode);
       state.auxiliaryMode = auxiliaryModeSummary(state.auxiliaryPrefs);
     }
-    if (typeof value.sidebar === 'boolean') state.sideOpen = value.sidebar;
+    if (!isSurfaceLocal('sidebar') && typeof value.sidebar === 'boolean') state.sideOpen = value.sidebar;
     if (typeof value.slackVisible === 'boolean') { slackUi.visible = value.slackVisible; if (slackUi.visible) slackUi.refresh(); }
     if (typeof value.themePref === 'string') { state.themePref = value.themePref; applyTheme(); }
     if (Object.hasOwn(value, 'layout')) {
@@ -48,22 +54,22 @@ function adoptSharedUi(record) {
       layoutChanged = next !== state.layout;
       state.layoutSaved = value.layout; state.layout = next;
     }
-    if (Object.hasOwn(value, 'boardView')) state.view = ['board', 'timeline', 'gantt'].includes(value.boardView) ? value.boardView : 'board';
+    if (!isSurfaceLocal('boardView') && Object.hasOwn(value, 'boardView')) state.view = ['board', 'timeline', 'gantt'].includes(value.boardView) ? value.boardView : 'board';
     if (value.paneGlobal && typeof value.paneGlobal === 'object') {
       if (value.paneGlobal.mode) paneGlobal.mode = oneOf(value.paneGlobal.mode, PANE_MODES, PANE_DEF.mode);
       if (value.paneGlobal.shape) paneGlobal.shape = normalizeCardShape(value.paneGlobal.shape);
       if (value.paneGlobal.viewMode) paneGlobal.viewMode = oneOf(value.paneGlobal.viewMode, CARD_VIEW_MODES, 'full');
     }
     if (['spread', 'center', 'stack'].includes(value.exchangeTrailView)) { exchangeTrailView = value.exchangeTrailView; paintExchangeTrail(); }
-    if (value.cardWidths) Object.assign(cardWidths, normalizeCardWidths(value.cardWidths));
-    if (value.cardHeights) Object.assign(cardHeights, normalizeCardHeights(value.cardHeights));
-    if (Object.hasOwn(value, 'keyGuide')) keyGuidePlace = normalizeKeyGuide(value.keyGuide);
+    if (!isSurfaceLocal('cardWidths') && value.cardWidths) Object.assign(cardWidths, normalizeCardWidths(value.cardWidths));
+    if (!isSurfaceLocal('cardHeights') && value.cardHeights) Object.assign(cardHeights, normalizeCardHeights(value.cardHeights));
+    if (!isSurfaceLocal('keyGuide') && Object.hasOwn(value, 'keyGuide')) keyGuidePlace = normalizeKeyGuide(value.keyGuide);
     if (Array.isArray(value.collapsedLanes)) {
       collapsedLanes.clear();
       for (const name of value.collapsedLanes) if (typeof name === 'string') collapsedLanes.add(name);
     }
     if (layoutChanged) applyLayout();
-    workspace.navigate(workspacePage(value.workspacePage), { save: false, reload: false });
+    if (!isSurfaceLocal('workspacePage')) workspace.navigate(workspacePage(value.workspacePage), { save: false, reload: false });
     sharedUi.revision = record.revision;
     sharedUi.dirty = false;
     sharedUi.blocked = false;
@@ -150,6 +156,7 @@ async function initializeSharedUi() {
   try {
     const current = sharedUiRecord(await bridge.callTool('canban_get_ui_state'));
     const pending = store.get('sharedUiPending', null);
+    if (SURFACE === 'sidepanel' && current.state && typeof current.state === 'object') sharedUi.preserved = Object.fromEntries(SURFACE_LOCAL_KEYS.filter(key => Object.hasOwn(current.state, key)).map(key => [key, current.state[key]]));
     if (pending && Number.isSafeInteger(pending.revision)) {
       sharedUi.revision = pending.revision;
       sharedUi.dirty = true;
@@ -239,5 +246,13 @@ window.addEventListener('resize', () => bridge.reportSize());
   await load();
   live.on = true;
   liveLoop();
-  await restoreCards();
+  const hashCard = new URLSearchParams(location.hash.slice(1)).get('card');
+  if (SURFACE === 'page' && hashCard) { await openCard(hashCard); history.replaceState(null, '', location.pathname + location.search); } // a reload restores the usual cards
+  else await restoreCards();
 })();
+
+window.addEventListener('hashchange', () => {
+  if (SURFACE !== 'page') return;
+  const id = new URLSearchParams(location.hash.slice(1)).get('card');
+  if (id && state.board) { openCard(id); history.replaceState(null, '', location.pathname + location.search); }
+});

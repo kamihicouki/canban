@@ -33,7 +33,7 @@ test('older shared UI records preserve pins; an explicit empty array still clear
   const boot = fs.readFileSync(new URL('../ui/boot.js', import.meta.url), 'utf8');
   const adopt = boot.slice(boot.indexOf('function adoptSharedUi('), boot.indexOf('async function applySharedUi('));
   const state = { categoryPins: ['d8','d2'] };
-  const context = vm.createContext({ state, sharedUi: {}, SHARED_UI_KEYS: ['categoryPins'], store: { cache() {} }, workspace: { navigate() {} }, workspacePage: () => 'home', $: () => null });
+  const context = vm.createContext({ SURFACE: 'page', isSurfaceLocal: () => false, state, sharedUi: {}, SHARED_UI_KEYS: ['categoryPins'], store: { cache() {} }, workspace: { navigate() {} }, workspacePage: () => 'home', $: () => null });
   vm.runInContext(adopt + '\nadoptSharedUi({revision: 1, state: {}})', context);
   assert.deepEqual(state.categoryPins, ['d8','d2']);
   vm.runInContext('adoptSharedUi({revision: 2, state: {categoryPins: []}})', context);
