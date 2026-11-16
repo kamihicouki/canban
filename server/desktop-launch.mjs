@@ -58,11 +58,11 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, record
       await save(f.record, record);
       const cancelled = async () => !!await read(f.cancel);
       const set = async r => { record.result = r; await lease.assertHeld(); await save(f.record, record); return result(record); };
-      if (await cancelled()) return set({ state: 'cancelled', reason: '開始を取り消しました。本文と画像は保持しています' });
+      if (await cancelled()) return await set({ state: 'cancelled', reason: '開始を取り消しました。本文と画像は保持しています' });
       let target;
       try { target = await resolveTarget(payload); }
-      catch (e) { return set({ state: 'failed', reason: e.code === 'desktop_resume_unavailable' ? e.message : '開始先を確認できません。接続先を選び直してください' }); }
-      if (!target || record.target && stable(record.target) !== stable(target)) return set({ state: 'failed', reason: '開始先が変更されました。接続先を確認してください' });
+      catch (e) { return await set({ state: 'failed', reason: e.code === 'desktop_resume_unavailable' ? e.message : '開始先を確認できません。接続先を選び直してください' }); }
+      if (!target || record.target && stable(record.target) !== stable(target)) return await set({ state: 'failed', reason: '開始先が変更されました。接続先を確認してください' });
       record.target = target; await save(f.record, record);
       // Persist source selection before account switching, thread preparation or opening.
       // A retry after a failed save uses the same request ID and replaces its receipt.
@@ -74,12 +74,12 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, record
       if (payload.agent === 'claude') {
         let guard;
         try { guard = await desktopProfileLock(path.join(dir, 'reservation.lock')); }
-        catch (e) { return set({ state: e.code === 'desktop_busy' ? 'prepared' : 'failed', reason: 'ほかの Desktop 起動の状態を確認しています。起動はまだ依頼していません' }); }
+        catch (e) { return await set({ state: e.code === 'desktop_busy' ? 'prepared' : 'failed', reason: 'ほかの Desktop 起動の状態を確認しています。起動はまだ依頼していません' }); }
         try {
           const reservation = await read(path.join(dir, 'claude.reservation'));
           if (reservation?.id && reservation.id !== id) {
             const other = await read(files(reservation.id).record);
-            if (other && !await read(files(reservation.id).cancel) && (!final.has(other.result.state) || other.result.state === 'uncertain' && !other.acknowledged)) return set({ state: 'failed', reason: '別の Claude Desktop 起動が待機中、または結果未確認です。元のカード・作成画面で取消しまたは確認を済ませてください' });
+            if (other && !await read(files(reservation.id).cancel) && (!final.has(other.result.state) || other.result.state === 'uncertain' && !other.acknowledged)) return await set({ state: 'failed', reason: '別の Claude Desktop 起動が待機中、または結果未確認です。元のカード・作成画面で取消しまたは確認を済ませてください' });
           }
           await guard.assertHeld(); await save(path.join(dir, 'claude.reservation'), { id });
         } finally { await guard.release(); }
@@ -115,15 +115,15 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, record
       try {
         if (accounts && payload.agent === 'claude' && payload.account) {
           const response = await accounts.withAccount(payload.account, { requestId: id, ...record.permissions }, perform);
-          if (['waiting-for-quit', 'waiting-for-login'].includes(response?.state)) return set(response);
+          if (['waiting-for-quit', 'waiting-for-login'].includes(response?.state)) return await set(response);
           return response;
         }
         return await perform();
       } catch (e) {
-        if (record.intent) return set(unknown());
-        if (['desktop_busy', 'desktop_running'].includes(e.code)) return set({ state: 'waiting-for-quit', reason: e.message });
-        if (e.code === 'desktop_unavailable') return set({ state: 'waiting-for-login', reason: e.message });
-        return set({ state: 'failed', reason: 'Desktop の準備を完了できませんでした' });
+        if (record.intent) return await set(unknown());
+        if (['desktop_busy', 'desktop_running'].includes(e.code)) return await set({ state: 'waiting-for-quit', reason: e.message });
+        if (e.code === 'desktop_unavailable') return await set({ state: 'waiting-for-login', reason: e.message });
+        return await set({ state: 'failed', reason: 'Desktop の準備を完了できませんでした' });
       }
     } finally { await lease.release(); }
   }

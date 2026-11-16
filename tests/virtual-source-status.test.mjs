@@ -19,8 +19,8 @@ const session = (sourcePath, extra = {}) => ({ id: 'antigravity:a1', agent: 'ant
 test('readLines returns no records for a `<file>#<id>` source that is not a file', async () => {
   const { dir, sourcePath } = fixture();
   try {
-    assert.deepEqual(await readLines(sourcePath), { records: [], offset: 0, size: 0, reset: false });
-    assert.deepEqual(await readLines(sourcePath, { start: 0 }), { records: [], offset: 0, size: 0, reset: false });
+    assert.deepEqual(await readLines(sourcePath), { records: [], offset: 0, size: 0, reset: false, fromStart: false });
+    assert.deepEqual(await readLines(sourcePath, { start: 0 }), { records: [], offset: 0, size: 0, reset: false, fromStart: false });
     const feed = await readFeed(session(sourcePath));
     assert.deepEqual(feed.items, []);
     assert.equal(feed.offset, 0);

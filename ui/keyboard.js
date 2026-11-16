@@ -122,7 +122,7 @@ function refreshShortcutHints() {
   else if (inCard) {
     const docked = paneDocked();
     const cards = displayedListCards(panes[0]?.id), index = cards.findIndex(el => el.dataset.cardId === panes[0]?.id);
-    entries = [['k', '前のカード', index <= 0], ['j', '次のカード', index < 0 || index === cards.length - 1],
+    entries = [['w', '2カラム / カード型'], ['q', '文脈'], ['s', focusedPane()?.kind === 'task' ? '目的' : '起点'], ['e', focusedPane()?.kind === 'task' ? '報告' : '最新'], ['n', '関連'], ['k', '前のカード', index <= 0], ['j', '次のカード', index < 0 || index === cards.length - 1],
       ['⇧←', '左のリストへ', !adjacentPaneList(focusedPane(), -1)], ['⇧→', '右のリストへ', !adjacentPaneList(focusedPane(), 1)],
       ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
       ...(focusedPane()?.kind === 'session' ? [['o', '続ける'], ['x', '仕事にまとめる'], ['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
@@ -166,7 +166,7 @@ const SHORTCUTS = [
     ['Alt+Shift+H', 'タスク: 引継ぎを依頼欄に引用追記'], ['Alt+Shift+N', 'タスク: 依頼欄を報告として追記（エージェント送信なし）'], ['Alt+D', 'Claude Desktop の起動アカウントを選ぶ（作成ダイアログでも共通）'],
     ['Alt+a', 'Claude の実行アカウントを選ぶ（このマシンのセッション）/ タスク: 開始するアカウントを選ぶ'],
     ['Shift+← / →', '左右の隣のリストへ移動（端で停止、入力中・配置調整中は無効）'],
-    ['j / k', '表示リストの次 / 前のカードを開く（端で停止）'], ['[ / ]', '横に並んだ隣のカードへ（タスクと紐付いたセッション）'], ['v', '表示モード切替: 全画面 / スプリット / シート'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'], ['y', '思考・実行ステップタイムラインを開閉'],
+    ['j / k', '表示リストの次 / 前のカードを開く（端で停止）'], ['[ / ]', '紐付いた前後のカードへ（2カラムでは切替）'], ['w', '2カラム / カード型を切替'], ['q', '文脈を開閉'], ['s / e / n', '起点 / 最新の発言 / 関連'], ['v', '配置切替: 全画面 / スプリット / シート'], ['1 2 3', '会話の表示: テキスト / プレビュー / 要点'], ['y', '思考・実行ステップタイムラインを開閉'],
     ['z', 'エージェントのセッションをアーカイブ / 復元'], ['Delete', 'セッションと会話履歴を削除（確認あり）'], ['i', '指示の入力欄へ'], ['Tab / Enter', 'タスクの開始メニュー: 新しい依頼に切り替える（開始は⌘Enter）'], ['Alt+1〜9', 'エージェントの選択肢を入力欄へ（送信は ⌘Enter）'], ['$', '入力欄: スキルを選ぶ（⌘Kからも選択）'], ['d / f / t', 'スレッド表示: 詳細パネル / 変更 / ターミナルを開閉'], ['Shift+Esc', 'ターミナル: カードのキーへ戻る（Esc はシェルへ送る）'], ['Shift+R / Shift+X', 'カード: 終了したターミナルを開き直す / シェルを終了'], ['⌥Enter', '入力欄: キューに追加（⌘Enter は送信）'], ['o', '再開'], ['l g m', 'ラベル / ' + T.category + ' / リスト移動'], ['c', '作成ダイアログを開く'], ['⌘K', 'コマンドパレット'], ['?', 'この一覧'], ['Esc', '入力欄を抜ける → 閉じる'],
   ]],
   ['作成ダイアログ', [['⌘Enter / Ctrl+Enter', 'タスクを作成 / アプリを開く'], ['Alt+D', 'Claude Desktop の起動アカウントを選ぶ'], ['Enter', 'タイトル欄: タスクを作成'], ['Esc', '下書きを残して閉じる']]],
@@ -257,6 +257,11 @@ async function commandPalette() {
     { label: 'Slack資料の追加ボタンへ', run: () => focusedPane()?.el.querySelector('.slack-add-prompt')?.focus(), hint: 'Alt+s' },
     ...(document.querySelector('.prompt-mic') ? [{ label: voiceMode.active ? '音声対話モードを停止' : '音声対話モードを開始', run: () => voiceMode.toggle(), hint: 'Alt+M' }] : []),
     ...(!paneLayer.hidden && focusedPane()?.kind !== 'view' ? [
+      { label: cardWorkspaceOn() ? 'カード型で表示' : '2カラムのワークスペースで表示', run: toggleCardShape, hint: 'w' },
+      { label: focusedPane()?.kind === 'task' ? 'タスクの目的・説明を読む' : '起点の依頼を読む', run: () => jumpWorkspaceOrigin(focusedPane()), hint: 's' },
+      { label: focusedPane()?.kind === 'task' ? 'タスクの最新の報告へ移動' : '最新の発言へ移動', run: () => jumpWorkspaceLatest(focusedPane()), hint: 'e' },
+      { label: '関連する仕事と会話へ', run: () => focusWorkspaceRelated(focusedPane()), hint: 'n' },
+      { label: '文脈を開閉', run: () => toggleWorkspaceContext(focusedPane()), hint: 'q' },
       ...[-1, 1].filter(step => adjacentPaneList(focusedPane(), step)).map(step => {
         const p = focusedPane(), target = adjacentPaneList(p, step);
         return { label: `カードを${step < 0 ? '左' : '右'}のリスト「${target.title}」へ移動`, run: () => movePaneAdjacent(p, step), hint: `Shift+${step < 0 ? '←' : '→'}` };
@@ -340,7 +345,7 @@ document.addEventListener('keydown', (e) => {
   const run = {
     j: () => stepDisplayedCard(1), k: () => stepDisplayedCard(-1),
     '/': focusSearch, '?': showShortcuts, b: () => toggleSidebar(), '[': () => stepLane(-1), ']': () => stepLane(1),
-    r: () => load({ refresh: true }).then(() => toast('最新の状態に更新しました')), a: toggleAnalytics, u: () => toggleView('usage'),
+    r: refreshBoard, a: toggleAnalytics, u: () => toggleView('usage'),
     c: quickAdd, v: () => slackUi.toggle(), p: () => scopePicker($('#logo')), i: toggleBoardView,
     Escape: state.lens ? () => pinLens(null) : null,
   }[k];
@@ -353,7 +358,7 @@ document.addEventListener('keydown', (e) => {
 });
 $('#seenBtn').addEventListener('click', () => act('canban_mark_all_seen', {}, { okMsg: 'すべて既読にしました' }));
 $('#perfBtn').addEventListener('click', (e) => perfPanel(e.currentTarget));
-$('#refresh').addEventListener('click', () => load({ refresh: true }).then(() => toast('最新の状態に更新しました')));
+$('#refresh').addEventListener('click', refreshBoard);
 
 // board: wheel over empty space scrolls horizontally like Trello
 $('#board').addEventListener('wheel', (e) => {

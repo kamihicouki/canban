@@ -11,6 +11,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { makeFixtures } from './helpers.mjs';
+import { captureWorkspace } from './workspace-capture.mjs';
 
 const chromeBin = process.env.CANBAN_BROWSER_EXECUTABLE || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
@@ -186,8 +187,8 @@ await step('group the fictional question with a task', async () => {
 });
 await step('time axis', () => key('i'), 1000);
 await step('task Enter and Esc preserve the draft while changing card grouping', async () => {
-  const row = document.querySelector('.iwork > .irow');
-  if (!row) throw new Error('task row missing');
+  let row;for(let i=0;i<80;i++){row=document.querySelector('.iwork > .irow[data-card-id="'+fixtureQuestionTaskId+'"]');if(row)break;await w(100);}
+  if (!row) throw new Error('task row missing after timeline refresh');
   row.click();
   for (let i=0;i<50&&!document.querySelector('.pane[data-kind="task"] [data-sec="send"] textarea');i++) await w(100);
   const task = document.querySelector('.pane[data-kind="task"]'), taskId = task.dataset.cardId;
@@ -249,8 +250,9 @@ await step('conversation labels and draft', async () => {
   try {
     pane.focus(); pane.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await w(200);
     if (opens.length !== 1 || opens[0].cardId !== 'codex:t1') throw new Error('o did not use the unique continue action');
+    if(pane.dataset.shape==='workspace' && pane.dataset.contextOpen==='false')pane.querySelector('.ws-context-open').click();
     const options = pane.querySelector('.continue-options');
-    const routeRect=options.getBoundingClientRect();
+    options.scrollIntoView({block:'nearest'});await w(100);const routeRect=options.getBoundingClientRect();
     if(!options.contains(document.elementFromPoint(routeRect.x+routeRect.width/2,routeRect.y+routeRect.height/2)))throw new Error('route selector obscured by a neighboring header action');
     options.focus(); options.click(); await w(100);
     if (!document.querySelector('.continue-menu button') || !document.activeElement.closest('.popover')) throw new Error('route menu focus missing');
@@ -565,13 +567,78 @@ await step('minimal secondary chrome keeps conversation space', async () => {
   if(document.body.dataset.auxiliaryMode!=='minimal')document.querySelector('#auxiliaryBtn').click();
   if(document.querySelector('#ribbon').getBoundingClientRect().height!==0)throw new Error('minimal ribbon still reserves space');
 });
+await step('headerless workspace, legacy shape, original prompt and live latest', async()=>{
+  const api=window.__canbanSmokeWorkspace;api.shape('workspace');document.activeElement?.blur();
+  await api.open('claude:c2',{dock:false});await w(250);
+  const pane=document.querySelector('.pane[data-card-id="claude:c2"]'),feed=pane.querySelector('.feed'),input=pane.querySelector('.th-dock textarea');
+  if(pane.dataset.shape!=='workspace'||pane.querySelector(':scope > .th-head'))throw new Error('header still above conversation');
+  if(document.querySelector('.topbar').getBoundingClientRect().height>40)throw new Error('app bar is not compact');
+  for(const b of pane.querySelectorAll('.th-tool[aria-pressed="true"]'))b.click();
+  input.value='新ビューで保持する下書き';input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();input.setSelectionRange(3,7);feed.scrollTop=120;
+  const firstVisible=()=>[...feed.children].find(e=>e.getBoundingClientRect().bottom>feed.getBoundingClientRect().top);
+  const anchor=firstVisible(),offset=anchor.getBoundingClientRect().top-feed.getBoundingClientRect().top;
+  api.shape('card');await w(100);
+  if(pane.querySelector(':scope > .th-head')==null)throw new Error('legacy header unavailable');
+  const legacyHeight=feed.getBoundingClientRect().height;
+  api.shape('workspace');await w(100);
+  if(pane.querySelector('.th-dock textarea')!==input||input.value!=='新ビューで保持する下書き'||input.selectionStart!==3||input.selectionEnd!==7||document.activeElement!==input)throw new Error('view switch replaced draft or caret');
+  if(Math.abs(anchor.getBoundingClientRect().top-feed.getBoundingClientRect().top-offset)>2)throw new Error('view switch lost reading anchor');
+  if(feed.getBoundingClientRect().height<=legacyHeight)throw new Error('workspace did not recover header height');
+  const original=window.openai.callTool;let originCalls=0;
+  window.openai.callTool=async(name,args)=>{if(name==='canban_get_session'&&args.includeOrigin){originCalls++;if(originCalls===1)throw new Error('架空の起点取得エラー');}return original(name,args);};
+  try{
+    const top=feed.scrollTop;await api.origin();if(feed.scrollTop!==top||input.value!=='新ビューで保持する下書き')throw new Error('failed origin moved reading/draft');
+    if(!pane.querySelector('.ws-context').textContent.includes('架空の起点取得エラー'))throw new Error('origin failure absent');
+    await api.origin();
+    if(originCalls!==2||!pane.querySelector('.ws-origin-message .raw')?.textContent.includes('README を直して'))throw new Error('tail message mistaken for original prompt: calls='+originCalls+'; origin='+pane.querySelector('.ws-origin-message .raw')?.textContent?.slice(0,100)+'; context='+pane.querySelector('.ws-context')?.textContent.slice(-350));
+    if(!pane.querySelector('.ws-origin-gap')?.textContent.includes('中間の全発言'))throw new Error('history gap hidden');
+  }finally{window.openai.callTool=original;}
+  feed.scrollTop=120;input.focus();input.setSelectionRange(3,7);const top=feed.scrollTop;
+  api.live('架空の最新返答。根拠を確認して報告しました。');await w(100);
+  if(!pane.querySelectorAll('.ws-excerpt')[1]?.textContent.includes('架空の最新返答'))throw new Error('latest context stale');
+  if(Math.abs(feed.scrollTop-top)>1||input.selectionStart!==3||document.activeElement!==input)throw new Error('live latest moved reading/draft');
+  input.blur();pane.focus();key('e');await w(100);
+  if(feed.scrollHeight-feed.scrollTop-feed.clientHeight>3)throw new Error('latest key missed tail');
+  pane.focus();key('w');await w(50);if(pane.dataset.shape!=='card')throw new Error('shape key failed');pane.focus();key('w');await w(50);
+  window.__canbanWorkspaceMeasured={legacyHeight,workspaceHeight:feed.getBoundingClientRect().height,headerHeight:document.querySelector('.topbar').getBoundingClientRect().height,originCalls,anchorDelta:anchor.isConnected?anchor.getBoundingClientRect().top-feed.getBoundingClientRect().top-offset:null};
+});
+await step('workspace hidden linked conversation retains its reading position', async()=>{
+  const api=window.__canbanSmokeWorkspace;api.clear();api.shape('workspace');
+  const rpc=async(name,args)=>(await(await fetch('/rpc',{method:'POST',body:JSON.stringify({name,arguments:args})})).json()).result.structuredContent;
+  await rpc('canban_create_task',{title:'新しい2列の往復検証',description:'起点と末尾を読み、途中の会話位置と下書きを保つ。'});
+  const board=await rpc('canban_get_board',{days:0});const task=board.lists.flatMap(l=>l.cards).find(c=>c.title==='新しい2列の往復検証');
+  await rpc('canban_link_session',{taskId:task.id,sessionId:'claude:c2'});
+  await api.open(task.id,{dock:false});
+  const taskPane=document.querySelector('.pane[data-kind="task"]'),taskBody=taskPane.querySelector('.th-task');taskBody.scrollTop=taskBody.scrollHeight;taskPane.focus();key('s');await w(50);if(taskBody.scrollTop>4)throw new Error('task purpose key did not reach description');taskPane.focus();key('e');await w(50);if(document.activeElement!==taskPane.querySelector('.th-task > [data-sec="handoff"]'))throw new Error('task report key missed handoff');
+  const titleInput=document.querySelector('.pane[data-kind="task"] .th-title .title-input');if(titleInput){titleInput.focus();titleInput.setSelectionRange(1,4);api.shape('card');api.shape('workspace');if(document.activeElement!==titleInput||titleInput.selectionStart!==1||titleInput.selectionEnd!==4)throw new Error('title focus lost on view switch');}
+  await api.pair(task.id,'claude:c2');await w(150);
+  const child=document.querySelector('.pane[data-card-id="claude:c2"]'),feed=child.querySelector('.feed'),input=child.querySelector('.th-dock textarea');
+  input.value='非表示中も保つ下書き';input.dispatchEvent(new Event('input',{bubbles:true}));input.setSelectionRange(2,5);feed.scrollTop=180;
+  const anchor=[...feed.children].find(e=>e.getBoundingClientRect().bottom>feed.getBoundingClientRect().top),offset=anchor.getBoundingClientRect().top-feed.getBoundingClientRect().top;
+  child.focus();key('[');await w(100);if(!child.hidden)throw new Error('linked conversation not hidden');
+  api.live('非表示中に追加された架空の返答','claude:c2');api.shape('card');await w(100);
+  if(child.hidden||Math.abs(anchor.getBoundingClientRect().top-feed.getBoundingClientRect().top-offset)>2)throw new Error('hidden reading lost on legacy switch');
+  if(input.value!=='非表示中も保つ下書き'||input.selectionStart!==2||input.selectionEnd!==5)throw new Error('hidden draft lost');
+  api.shape('workspace');document.querySelector('.pane[data-kind="task"]').focus();key(']');await w(100);
+  if(child.hidden||Math.abs(anchor.getBoundingClientRect().top-feed.getBoundingClientRect().top-offset)>2)throw new Error('hidden reading lost on peer return');
+  child.focus();key('y');await w(50);child.focus();key('q');await w(50);
+  if(child.querySelector('.th-timeline:not([hidden])'))throw new Error('context and steps became three columns');
+  api.clear();
+});
 return { errs, sessionOpened: !!document.querySelector('.th-conv') || true };
 `;
 
 test('the board, the ribbon, the time axis and the card layers run without page errors', { timeout: 120000, skip: !fs.existsSync(chromeBin) && 'no Chrome' }, async (t) => {
   const fx = makeFixtures();
+  if(process.env.CANBAN_WORKSPACE_SHOTS){const file=path.join(fx.desktopDir,'a','b','local_2.json');const session=JSON.parse(fs.readFileSync(file,'utf8'));session.title='複数のエージェントを横断して仕事の起点と最新の状態を正確に把握するための長い題名';fs.writeFileSync(file,JSON.stringify(session));}
   const longStamp=new Date().toISOString();
   for(let i=0;i<220;i++)fs.appendFileSync(path.join(fx.claudeHome,'projects','-r-web','c2.jsonl'),JSON.stringify({type:i%2?'assistant':'user',timestamp:longStamp,message:{content:[{type:'text',text:'架空の長会話 '+i+'。'+('会話の読む位置と下書きを維持します。'.repeat(12))}]}})+'\n');
+  if(process.env.CANBAN_WORKSPACE_SHOTS){
+    const file=path.join(fx.claudeHome,'projects','-r-web','c2.jsonl');
+    fs.appendFileSync(file,JSON.stringify({type:'user',permissionMode:'bypassPermissions',timestamp:longStamp,message:{content:'架空のツール表示と権限表示の確認。実行や送信はしません。'}})+'\n');
+    for(let i=0;i<3;i++)fs.appendFileSync(file,JSON.stringify({type:'assistant',timestamp:longStamp,message:{content:[{type:'tool_use',id:'workspace-read-'+i,name:'Read',input:{file_path:'/fictional/README.md'}}]}})+'\n'+JSON.stringify({type:'user',timestamp:longStamp,message:{content:[{type:'tool_result',tool_use_id:'workspace-read-'+i,content:'架空のREADMEの内容'}]}})+'\n');
+    fs.appendFileSync(file,JSON.stringify({type:'assistant',timestamp:longStamp,message:{content:[{type:'text',text:'架空の表示検証です。ツール3件と制限なしの表示を確認してください。'}]}})+'\n');
+  }
   fs.appendFileSync(path.join(fx.claudeHome, 'projects', '-r-web', 'c2.jsonl'), JSON.stringify({ type: 'assistant', timestamp: new Date().toISOString(), message: { content: [{ type: 'tool_use', id: 'fixture-question', name: 'AskUserQuestion', input: { questions: [{ question: '検証方法を選んでください', options: [{ label: '実機' }, { label: '架空データ' }] }] } }] } }) + '\n');
   fs.copyFileSync(path.join(fx.claudeHome,'projects','-r-web','c2.jsonl'),path.join(fx.claudeHome,'projects','-r-web','retry-detail.jsonl'));
   const appDir = path.dirname(fx.desktopDir);
@@ -597,7 +664,7 @@ test('the board, the ribbon, the time axis and the card layers run without page 
       CANBAN_LAUNCH_DRYRUN: '1', CANBAN_SEARCH_INDEX: '0', CANBAN_BACKGROUND: '0', CANBAN_BROWSER_SMOKE: '1' } });
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-smoke-chrome-'));
   const cdpPort = port + 1000;
-  const chrome = spawn(chromeBin, ['--headless=new', `--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profile}`, '--no-first-run', 'about:blank'], { stdio: 'ignore' });
+  const chrome = spawn(chromeBin, ['--headless=new', ...(process.env.CI ? ['--no-sandbox'] : []), `--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profile}`, '--no-first-run', 'about:blank'], { stdio: 'ignore' });
   t.after(() => {
     host.kill(); chrome.kill(); fx.cleanup?.();
     setTimeout(() => { for (const d of [dataDir, profile]) try { fs.rmSync(d, { recursive: true, force: true }); } catch {} }, 300);
@@ -626,6 +693,7 @@ test('the board, the ribbon, the time axis and the card layers run without page 
   const r = await cdp('Runtime.evaluate', { expression: `(async () => { ${WALK} })()`, awaitPromise: true, returnByValue: true });
   assert.equal(r.result?.exceptionDetails, undefined, JSON.stringify(r.result?.exceptionDetails));
   assert.deepEqual(r.result.result.value.errs, []);
+  if (process.env.CANBAN_WORKSPACE_SHOTS) await captureWorkspace(cdp,process.env.CANBAN_WORKSPACE_SHOTS);
   if (process.env.CANBAN_READING_SHOTS) {
     const dir=path.resolve(process.env.CANBAN_READING_SHOTS);fs.mkdirSync(dir,{recursive:true});
     const baseline=process.env.CANBAN_READING_BASELINE ? fs.readFileSync(process.env.CANBAN_READING_BASELINE,'utf8') : null;

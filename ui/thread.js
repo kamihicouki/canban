@@ -187,6 +187,7 @@ function toggleThreadTimeline(p) {
   p.timelineHidden = !p.timelineHidden;
   $$('[data-side-tab="timeline"]', p.el).forEach(button => button.setAttribute('aria-pressed', String(!p.timelineHidden)));
   paintThreadTimeline(p);
+  if (typeof cardWorkspaceOn === 'function' && cardWorkspaceOn() && !p.timelineHidden) toggleWorkspaceContext(p, false);
 }
 function paintThreadTimeline(p) {
   if (p.timelineEl) p.timelineEl.hidden = !!p.timelineHidden;
@@ -257,6 +258,7 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
   paintThreadSide(p);
   paintThreadTimeline(p);
   paintWaitingQuestion(el, s);
+  if (typeof syncCardWorkspace === 'function') syncCardWorkspace(p);
 }
 
 // The same frame before the detail arrives: the board's card already has the title, the state and the
@@ -298,6 +300,7 @@ function renderPendingThreadPane(p, card, listId) {
     h('div', { class: 'th-body' }, main), ...paneSizeHandles('session'));
   p.el.setAttribute('aria-label', `セッション詳細: ${card.title}`);
   paintThreadSide(p);
+  if (typeof syncCardWorkspace === 'function') syncCardWorkspace(p);
 }
 
 // The thread layout of a task card, the same frame as a session's: the description is the main text, the
@@ -335,6 +338,7 @@ function renderTaskThreadPane(p, card, secs) {
   const crumb = compactThreadHeading(head, title);
   p.el.replaceChildren(head, h('div', { class: 'th-meta' }, crumb, secs.status.nodes[0], ...chips), h('div', { class: 'th-body' }, main, side), ...paneSizeHandles('task'));
   paintThreadSide(p);
+  if (typeof syncCardWorkspace === 'function') syncCardWorkspace(p);
 }
 
 // ---- the changes panel: files with +/−, and one file's diff on demand ----

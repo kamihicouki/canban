@@ -147,10 +147,12 @@ function taskHandoffSection(p, card, prompt, composer) {
         notes = [...known.values()];
         nextCursor = task.totalNotes > notes.length ? notes.at(-1)?.id || task.nextCursor : null;
         p.taskHandoffRevision = task.revision; verified = true;
+        p.workspaceTaskReport = task;
+        if (typeof paintWorkspaceContext === 'function') paintWorkspaceContext(p);
         notice.textContent = !confirmed() ? '新しい引継ぎの取得は未確認です。再読み込みしてください。' : task.totalNotes ? '報告と次の行動は提案です。承認や完了確認は行いません。' : '追記報告はまだありません。入力欄の文を報告として保存できます。';
         retry.hidden = !!confirmed();
         draw(); success = true;
-      } catch (error) { verified = false; draw(); notice.textContent = `引継ぎは未確認です: ${error.message}`; retry.hidden = false; }
+      } catch (error) { verified = false; p.workspaceTaskReport = null; if (typeof paintWorkspaceContext === 'function') paintWorkspaceContext(p); draw(); notice.textContent = `引継ぎは未確認です: ${error.message}`; retry.hidden = false; }
       finally { busy = false; more.disabled = retry.disabled = false; }
       // A board update during this read may describe a newer snapshot. Coalesce it
       // into one subsequent read rather than dropping it or repeatedly polling.

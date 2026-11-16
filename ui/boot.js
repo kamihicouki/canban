@@ -51,6 +51,7 @@ function adoptSharedUi(record) {
     if (Object.hasOwn(value, 'boardView')) state.view = ['board', 'timeline', 'gantt'].includes(value.boardView) ? value.boardView : 'board';
     if (value.paneGlobal && typeof value.paneGlobal === 'object') {
       if (value.paneGlobal.mode) paneGlobal.mode = oneOf(value.paneGlobal.mode, PANE_MODES, PANE_DEF.mode);
+      if (value.paneGlobal.shape) paneGlobal.shape = normalizeCardShape(value.paneGlobal.shape);
       if (value.paneGlobal.viewMode) paneGlobal.viewMode = oneOf(value.paneGlobal.viewMode, CARD_VIEW_MODES, 'full');
     }
     if (['spread', 'center', 'stack'].includes(value.exchangeTrailView)) { exchangeTrailView = value.exchangeTrailView; paintExchangeTrail(); }

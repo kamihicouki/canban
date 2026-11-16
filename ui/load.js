@@ -18,18 +18,28 @@ async function load({ refresh = false, throwOnError = false } = {}) {
   if (f.status) args.status = f.status;
   try {
     const board = await bridge.callTool('canban_get_board', args);
-    if (seq !== loadSeq) return;
+    if (seq !== loadSeq) return false;
     state.board = decodeSourceBoard(board);
+    state.boardError = null;
     render();
     reconcileCards(board);
     for (const p of panes) paintCardListControls(p);
     refreshShortcutHints();
     refreshViews();
+    return true;
   } catch (e) {
-    if (seq !== loadSeq) return;
-    $('#board').replaceChildren(h('div', { class: 'loading', text: `読み込みに失敗しました: ${e.message}` }));
+    if (seq !== loadSeq) return false;
+    state.boardError = e.message;
+    const message = `読み込みに失敗しました: ${e.message}`;
+    if (state.board) toast(message, true);
+    else $('#board').replaceChildren(h('div', { class: 'loading', text: message }));
     if (throwOnError) throw e;
+    return false;
   }
+}
+
+async function refreshBoard() {
+  if (await load({ refresh: true })) toast('最新の状態に更新しました');
 }
 
 function saveFilters() { store.set('filters', state.filters); }
