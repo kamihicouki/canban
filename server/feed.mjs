@@ -5,7 +5,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { clip, cleanPrompt } from './sources/util.mjs';
 import { textOf, isHumanPrompt } from './sources/claude.mjs';
-import { rolloutFile, zstdTail } from './sources/readonly.mjs';
+import { exists, rolloutFile, zstdTail } from './sources/readonly.mjs';
 import { readMultiAgentRecords } from './sources/multi-agents.mjs';
 
 export const FEED_TAIL_BYTES = 512 * 1024; // first read of a session
@@ -23,6 +23,9 @@ export async function readLines(file, { start = null, tailBytes = FEED_TAIL_BYTE
     return { records, offset: records.length, size: records.length, reset: false, fromStart: false };
   }
   file = rolloutFile(file);
+  // `<real file>#<id>` names a conversation that has no log of its own (Antigravity, known
+  // only from its summaries DB): nothing to read. A real file whose name has `#` is read.
+  if (/#[^/]+$/.test(file) && !exists(file)) return { records: [], offset: 0, size: 0, reset: false, fromStart: false };
   const zst = file.endsWith('.zst') ? await zstdTail(file, Math.max(tailBytes, FEED_MAX_DELTA)) : null;
   const fh = zst ? null : await fsp.open(file, 'r');
   try {
