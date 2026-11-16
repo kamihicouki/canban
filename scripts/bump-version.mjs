@@ -3,6 +3,7 @@
 // and add the matching entries to CHANGELOG.md and CHROMEWEBSTORE.md.
 //
 //   npm run bump -- [patch|minor|x.y.z] "変更の要約" [--store "ストア向けの要約"] [--next-free [--strict]] [--dry-run]
+//   npm run bump -- --help   (prints this usage and writes nothing)
 //
 // --next-free counts from the highest number origin/main and open PRs (gh pr list) use and
 // skips taken ones. Without gh it checks origin/main only; --strict makes that an error.
@@ -14,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const VERSION_FILES = ['package.json', 'manifest.json', '.codex-plugin/plugin.json'];
 const SEMVER = /\b(\d+)\.(\d+)\.(\d+)\b/;
+export const USAGE = 'npm run bump -- [patch|minor|x.y.z] "変更の要約" [--store "ストア向けの要約"] [--next-free [--strict]] [--dry-run]';
 
 export function parseVersion(text) {
   const m = SEMVER.exec(String(text || ''));
@@ -134,10 +136,13 @@ export function parseArgs(argv) {
     if (a === '--next-free') opts.nextFree = true;
     else if (a === '--dry-run') opts.dryRun = true;
     else if (a === '--strict') opts.strict = true;
+    else if (a === '--help' || a === '-h') return { help: true };
     else if (a === '--store') {
       opts.store = argv[++i];
       if (!opts.store?.trim() || opts.store.startsWith('--')) throw new Error('--store にはストア向けの要約を続けてください');
     }
+    // An option it does not know would otherwise become the summary and bump the version.
+    else if (/^-/.test(a)) throw new Error(`不明なオプション ${a}\n使い方: ${USAGE}`);
     else rest.push(a);
   }
   if (/^(patch|minor|\d+\.\d+\.\d+)$/.test(rest[0] || '')) opts.kind = rest.shift();
@@ -146,6 +151,10 @@ export function parseArgs(argv) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try { bump(parseArgs(process.argv.slice(2))); }
+  try {
+    const opts = parseArgs(process.argv.slice(2));
+    if (opts.help) console.log(`使い方: ${USAGE}`);
+    else bump(opts);
+  }
   catch (e) { console.error(e.message); process.exit(1); }
 }
