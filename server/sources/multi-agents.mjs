@@ -172,6 +172,10 @@ export async function listAntigravitySessions(rawOpts = {}) {
 
     const projectMap = await loadAntigravityProjects(projectsDir);
 
+    // conversation_id はアプリの DB・フォルダー名由来で、そのままパス（brain/<id>、annotations/<id>.pbtxt）と
+    // sourcePath の `<db>#<id>` に使う。`/`・`..`・`#` を含む値で別のファイルを読まないよう、1区切りの安全な名前だけ通す。
+    const isSafeConvId = (id) => typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(id);
+
     // Helper to read conversation brain data (transcript & task.md)
     async function readBrainData(convId) {
       if (!brainDir) return null;
@@ -273,7 +277,7 @@ export async function listAntigravitySessions(rawOpts = {}) {
 
     for (const row of csRows) {
       const convId = row.conversation_id;
-      if (!convId || seenIds.has(convId)) continue;
+      if (!isSafeConvId(convId) || seenIds.has(convId)) continue;
       seenIds.add(convId);
 
       const brain = await readBrainData(convId);
@@ -381,7 +385,7 @@ export async function listAntigravitySessions(rawOpts = {}) {
     if (brainDir && exists(brainDir)) {
       const convIds = await listSubdirs(brainDir);
       for (const convId of convIds) {
-        if (convId.startsWith('.') || seenIds.has(convId)) continue;
+        if (!isSafeConvId(convId) || seenIds.has(convId)) continue;
         seenIds.add(convId);
         const brain = await readBrainData(convId);
         if (!brain || (!brain.firstPrompt && !brain.lastMessage && !brain.taskHeading)) continue;

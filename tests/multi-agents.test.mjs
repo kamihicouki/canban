@@ -340,3 +340,38 @@ test('UI バンドルにマルチエージェントメタデータと利用面�
   assert.match(html, /antigravityBrain/);
   assert.match(html, /cursorWorkspace/);
 });
+
+test('Antigravity の conversation_id が1区切りの安全な名前でなければ、brain・annotations の外を読まずに飛ばす', async () => {
+  const tmpGemini = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-agy-convid-'));
+  const agyDir = path.join(tmpGemini, 'antigravity');
+  const brainDir = path.join(agyDir, 'brain');
+  fs.mkdirSync(brainDir, { recursive: true });
+  // brain の外に transcript を置く。`../outside` で読まれれば中身がタイトルに出る。
+  const outsideLogs = path.join(agyDir, 'outside', '.system_generated', 'logs');
+  fs.mkdirSync(outsideLogs, { recursive: true });
+  fs.writeFileSync(
+    path.join(outsideLogs, 'transcript.jsonl'),
+    JSON.stringify({ step_index: 0, type: 'USER_INPUT', status: 'DONE', created_at: '2026-11-10T10:00:00Z', content: '<USER_REQUEST>\nbrain の外の秘密\n</USER_REQUEST>' }) + '\n',
+  );
+
+  const db = new DatabaseSync(path.join(agyDir, 'conversation_summaries.db'));
+  db.exec(`
+    CREATE TABLE conversation_summaries (
+      conversation_id text PRIMARY KEY, title text NOT NULL DEFAULT "", preview text NOT NULL DEFAULT "",
+      step_count integer NOT NULL DEFAULT 0, last_modified_time datetime NOT NULL, workspace_uris text NOT NULL,
+      status text NOT NULL DEFAULT "", project_id text NOT NULL DEFAULT "", agent_name text NOT NULL DEFAULT "",
+      killed numeric NOT NULL DEFAULT 0, not_fully_idle numeric NOT NULL DEFAULT 0, last_user_input_time datetime NOT NULL
+    );
+  `);
+  const insert = db.prepare(`
+    INSERT INTO conversation_summaries (conversation_id, title, preview, last_modified_time, workspace_uris, last_user_input_time)
+    VALUES (?, '', '', '2026-11-10 10:19:15+00:00', '[]', '2026-11-10 10:18:00+00:00')
+  `);
+  const goodId = '0cd0a3eb-f78e-4d35-b4b0-bdd616662467';
+  for (const id of ['../outside', 'a/b', 'x#y', '..', goodId]) insert.run(id);
+  db.close();
+
+  const { sessions } = await listAntigravitySessions(agyDir);
+  assert.deepEqual(sessions.map((s) => s.nativeId ?? s.id.split(':').pop()), [goodId]);
+  for (const s of sessions) assert.doesNotMatch(JSON.stringify(s), /brain の外の秘密/);
+});
