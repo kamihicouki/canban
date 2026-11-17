@@ -105,12 +105,16 @@ export function createDesktopLaunches({ dataDir, accounts, resolveTarget, record
         if (await cancelled()) return set({ state: 'cancelled' });
         record.intent = 'open'; await set({ state: 'opening' });
         if (await cancelled()) { delete record.intent; return set({ state: 'cancelled' }); }
-        try {
-          const opened = await open(payload, target, record.thread);
-          delete record.intent;
-          if (opened?.notOpened === true) return set(opened);
-          return set({ ...opened, state: 'opened' });
-        } catch { return set(unknown()); }
+        let opened;
+        try { opened = await open(payload, target, record.thread); } catch { return set(unknown()); }
+        // Keep the open intent in memory until the outcome is durable: a failed save must be
+        // reported as an unknown result (the outer catch), never as a failure that invites a retry.
+        record.result = opened?.notOpened === true ? opened : { ...opened, state: 'opened' };
+        await lease.assertHeld();
+        const { intent: _openIntent, ...done } = record;
+        await save(f.record, done);
+        delete record.intent;
+        return result(record);
       };
       try {
         if (accounts && payload.agent === 'claude' && payload.account) {

@@ -67,6 +67,23 @@ test('unknown open and unknown thread preparation never retry', async t => {
   }
 });
 
+test('a failed save after Desktop opened reports an unknown result, never a failure, and never reopens', async t => {
+  let calls = 0;
+  const opts = await fixture(t, {
+    open: async () => {
+      calls++;
+      // The next durable write (the opened result) fails once; the external intent already happened.
+      t.mock.method(fs, 'rename', async () => { throw Object.assign(new Error('書き込み失敗'), { code: 'EIO' }); }, { times: 1 });
+      return { url: 'claude://code/new' };
+    },
+  });
+  const first = await createDesktopLaunches(opts).start(input);
+  assert.equal(first.state, 'uncertain');
+  assert.equal((await createDesktopLaunches(opts).start(input)).state, 'uncertain');
+  assert.equal((await createDesktopLaunches(opts).status(input.clientRequestId)).state, 'uncertain');
+  assert.equal(calls, 1);
+});
+
 test('cancel requires UI authority and never touches CLI or a waiting draft', async t => {
   let opens = 0;
   const a = createDesktopLaunches(await fixture(t, { accounts: { withAccount: async () => ({ state: 'waiting-for-login' }) }, open: async () => { opens++; } }));
