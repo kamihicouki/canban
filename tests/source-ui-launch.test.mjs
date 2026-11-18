@@ -77,9 +77,9 @@ test('stale or unavailable catalog ownership blocks saved-settings starts', asyn
 
 test('source labels keep paths in details and show only applicable provider defaults', () => {
   const facet = {ref,name:'同名',origins:['observed']};
-  assert.equal(ui().sourceFacetLabel(facet), 'Codexのプロジェクト: 同名');
+  assert.equal(ui().sourceFacetLabel(facet), 'プロジェクト (Codex): 同名');
   assert.equal(ui().sourceFacetHint(facet).includes('/fixture'), false);
   const rows = plain(ui().sourceDetailRows({agent:'codex',sourceView:{compact:true}}));
-  assert.deepEqual(rows.map(row=>row[0]),['Codexのプロジェクト','Codexのセクション','作業場所']);
+  assert.deepEqual(rows.map(row=>row[0]),['プロジェクト (Codex)','セクション (Codex)','作業場所']);
   assert.match(rows[0][1],/未取得/);
 });

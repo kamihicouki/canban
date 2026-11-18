@@ -8,6 +8,7 @@ document.addEventListener('keydown', e => {
   }
   if (!e.shiftKey || e.metaKey || e.ctrlKey || e.altKey || e.isComposing || typingIn(e.target) || document.querySelector('dialog[open], .popover')) return;
   if (e.code === 'KeyO') { e.preventDefault(); toggleView('orbit'); }
+  if (e.code === 'KeyG') { e.preventDefault(); laneAxisPicker($('#sideBtn')); }
   if (e.code === 'KeyL' && (openViewKind() === 'orbit' || focusedPane()?.kind === 'task' || document.activeElement?.closest?.('.card')?.dataset.cardId?.startsWith('task:'))) { e.preventDefault(); focusTaskLoop(); }
 }, true);
 document.addEventListener('keydown', e => {
@@ -142,7 +143,7 @@ document.addEventListener('click', refreshShortcutHints);
 const SHORTCUTS = [
   ['全体', [
     ['/', '検索にフォーカス（Esc でクリア、↓ / Enter で最初のカードへ）'], ['⌘K / Ctrl+K', `コマンドパレット（カード・ビュー・${T.category}・操作を検索して実行）`],
-    ['p', `${T.category}・元アプリで絞り込み`], ['b', 'サイドバーの開閉'], ['[ / ]', '前 / 次のスイムレーンへ'],
+    ['p', `${T.category}・元アプリで絞り込み`], ['b', 'サイドバーの開閉'], ['Shift+G', 'レーン（グループ分け）の軸を選ぶ'], ['[ / ]', '前 / 次のスイムレーンへ'],
     ['c', '作成ダイアログを開く'], ['1〜9', '保存したビューに切り替え'], ['a', '分析を開く / 閉じる'], ['Shift+O', '軌道シートを開く / 閉じる'], ['Shift+L', 'タスクの改善ループへ'], ['r', '再読み込み'], ['?', 'この一覧'],
   ]],
   ['時間（寿命）', [
@@ -286,7 +287,8 @@ async function commandPalette() {
       { label: 'カード: サイズを変更', run: () => focusedPane()?.el.querySelector('.pane-corner')?.focus() },
     ] : []),
     { label: '絞り込みをすべて解除', run: () => { $('#q').value = ''; f.q = ''; clearFilters(); } },
-    ...Object.entries(LANE_MODES).map(([v, t]) => ({ label: `スイムレーン: ${t}`, run: () => { f.swimlane = v; state.soloLane = null; saveFilters(); render(); } })),
+    { label: 'レーン（グループ分け）の軸を選ぶ…', run: () => laneAxisPicker($('#sideBtn')), hint: 'Shift+G' },
+    ...Object.entries(LANE_MODES).map(([v, t]) => ({ label: `スイムレーン: ${t}`, run: () => setLaneAxis(v) })),
     ...Object.entries(LANE_HEIGHTS).map(([v, [t]]) => ({ label: `レーンの高さ: ${t}`, run: () => { f.laneHeight = v; saveFilters(); render(); } })),
     { label: 'キーボードショートカット', run: showShortcuts, hint: '?' },
     ...LAYOUTS.map(([id, name]) => ({ label: `レイアウト: ${name}`, run: () => setLayout(id) })),
@@ -302,9 +304,12 @@ async function commandPalette() {
   const answerAt = items.length;
   (b.settings.views || []).forEach((v, i) => add('ビュー', 'ビュー', v.name, () => applyView(v), { hint: i < 9 ? i + 1 : '' }));
   state.lanes.forEach((l) => add('レーン', 'レーン', l.name, () => jumpToLane(l.key), { hint: l.count, color: l.color }));
-  b.directories.forEach((d) => add(`${T.category}`, '📂', d.name, () => setScope({ directory: d.id }), { hint: d.count, color: d.color }));
-  (b.sourceFacets || []).forEach(f => add('元アプリ', '', sourceFacetLabel(f, b.sourceFacets), () => toggleSourceFilter(f.ref), { hint: `${f.count}カード`, keywords: sourceFacetTitle(f) }));
-  b.labels.forEach((l) => add('ラベルで絞り込み', '🏷', l.name, () => setScope({ label: l.id }), { color: l.color }));
+  if (!laneHides('directory')) b.directories.forEach((d) => add(`${T.category}`, '📂', d.name, () => setScope({ directory: d.id }), { hint: d.count, color: d.color }));
+  if (!laneHides('repo')) (b.repos || []).forEach((r) => add('リポジトリ', '', r.name, () => setScope({ repo: r.name }), { hint: `${r.count}件` }));
+  if (!laneHides('worktree')) (b.worktrees || []).forEach((w) => add('ワークツリー', '', w.name, () => setScope({ worktree: w.key }), { hint: `${w.count}件` }));
+  if (!laneHides('dirName') && (b.dirNames || []).length > 1) (b.dirNames || []).forEach((dn) => add('ディレクトリ名', '', dn.name, () => setScope({ dirName: dn.name }), { hint: `${dn.count}件` }));
+  (b.sourceFacets || []).filter(fc => (isPrimarySourceRef(fc.ref) || sourceFilterSelected(fc.ref)) && !laneHides(sourceAxis(fc.ref))).forEach(fc => add('元アプリ', '', sourceFacetLabel(fc, b.sourceFacets), () => toggleSourceFilter(fc.ref), { hint: `${fc.count}カード`, keywords: sourceFacetTitle(fc) }));
+  if (!laneHides('label')) b.labels.forEach((l) => add('ラベルで絞り込み', '🏷', l.name, () => setScope({ label: l.id }), { color: l.color }));
   const paletteCards = paletteBoardCards(b);
   for (const c of paletteCards) {
     add('カード', c.paletteList, c.title, () => {

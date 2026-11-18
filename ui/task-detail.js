@@ -274,7 +274,7 @@ async function loadTask(p, found) {
   };
   const fillPresets = () => {
     const previous = preset.value;
-    preset.replaceChildren(h('option', { value: '__folder', text: 'フォルダを指定して開始' }), ...(agentSel.value === 'codex' ? launchTargets?.codex?.projects || [] : launchTargets?.claude?.environments || []).map(p => h('option', { value: `${agentSel.value === 'codex' ? 'project' : 'environment'}:${p.id}`, text: `${agentSel.value === 'codex' ? 'Codexのプロジェクト' : 'Claudeの環境'}: ${p.name} · ${p.hostId || p.kind}` })));
+    preset.replaceChildren(h('option', { value: '__folder', text: 'フォルダを指定して開始' }), ...(agentSel.value === 'codex' ? launchTargets?.codex?.projects || [] : launchTargets?.claude?.environments || []).map(p => h('option', { value: `${agentSel.value === 'codex' ? 'project' : 'environment'}:${p.id}`, text: `${agentSel.value === 'codex' ? 'プロジェクト (Codex)' : '環境 (Claude)'}: ${p.name} · ${p.hostId || p.kind}` })));
     if ([...preset.options].some(p => p.value === previous)) preset.value = previous;
     paintPreset();
   };

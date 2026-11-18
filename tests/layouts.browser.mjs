@@ -87,7 +87,7 @@ for (const id of ['trello', 'classic', 'rail', 'omni', 'hud']) {
     check(r.left>=a.left&&r.right<=a.right,'rail stays inside the existing sidebar width');
   }
   key('p'); await w();
-  check([...document.querySelectorAll('.picker-row')].some(el => el.textContent.includes('Codexのプロジェクト: UI検証')), 'source picker uses observed source facets: ' + id);
+  check([...document.querySelectorAll('.picker-row')].some(el => el.textContent.includes('プロジェクト (Codex): UI検証')), 'source picker uses observed source facets: ' + id);
   key('Escape'); await w();
   const rect = document.querySelector('.stage').getBoundingClientRect();
   check(rect.width > 300 && rect.height > 300, 'board surface: ' + id);

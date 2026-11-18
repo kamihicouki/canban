@@ -1,16 +1,18 @@
 // Shared browser boundary for the v1 compact wire model. No catalog lookups or source inference.
 const SOURCE_AXES = {
-  codexProject: 'Codexのプロジェクト',
-  claudeEnvironment: 'Claudeの環境',
-  codexSection: 'Codexのセクション',
-  claudeGroup: 'Claudeのグループ',
-  antigravityBrain: 'AntigravityのBrain',
-  geminiProject: 'Geminiのプロジェクト',
-  cursorWorkspace: 'Cursorのワークスペース',
-  chatgptProject: 'ChatGPTのプロジェクト',
-  grokWorkspace: 'Grokのワークスペース',
+  codexProject: 'プロジェクト (Codex)',
+  antigravityProject: 'プロジェクト (Antigravity)',
+  geminiProject: 'プロジェクト (Gemini)',
+  chatgptProject: 'プロジェクト (ChatGPT)',
+  claudeEnvironment: '環境 (Claude)',
+  claudeGroup: 'グループ (Claude)',
+  codexSection: 'セクション (Codex)',
+  cursorWorkspace: 'ワークスペース (Cursor)',
+  grokWorkspace: 'ワークスペース (Grok)',
   workingFolder: '作業フォルダ',
 };
+const SOURCE_LEGACY_AXES = { antigravityBrain: 'Brain (Antigravity)' };
+const isSourceAxis = mode => !!(SOURCE_AXES[mode] || SOURCE_LEGACY_AXES[mode]);
 const SOURCE_PROVIDER_LABELS = {
   codex: 'Codex',
   claude: 'Claude',
@@ -26,6 +28,7 @@ const sourceCategoryRelation = ref => ({
   'codex:section': 'displayedIn',
   'claude:group': 'displayedIn',
   'claude:environment': 'startedWith',
+  'antigravity:project': 'memberOf',
   'antigravity:brain': 'memberOf',
   'gemini:project': 'memberOf',
   'cursor:workspace': 'memberOf',
@@ -37,6 +40,7 @@ const sourceAxis = ref => ({
   'codex:section': 'codexSection',
   'claude:environment': 'claudeEnvironment',
   'claude:group': 'claudeGroup',
+  'antigravity:project': 'antigravityProject',
   'antigravity:brain': 'antigravityBrain',
   'gemini:project': 'geminiProject',
   'cursor:workspace': 'cursorWorkspace',
@@ -77,12 +81,18 @@ const sourceFacetName = (facet, peers = []) => {
   const same = peers.filter(p => sourceAxis(p.ref) === sourceAxis(facet.ref) && (p.name || p.ref.nativeId) === name);
   return same.length > 1 ? `${name} · ${facet.ref.nativeId.slice(-8)}${same.some(p => p.ref.nativeId === facet.ref.nativeId && sourceRefKey(p.ref) !== sourceRefKey(facet.ref)) ? ` · ${facet.ref.scopeId.slice(-12)}` : ''}` : name;
 };
-const sourceFacetLabel = (facet, peers = []) => `${SOURCE_AXES[sourceAxis(facet.ref)] || '元アプリ'}: ${sourceFacetName(facet, peers)}`;
+const sourceFacetLabel = (facet, peers = []) => `${SOURCE_AXES[sourceAxis(facet.ref)] || SOURCE_LEGACY_AXES[sourceAxis(facet.ref)] || '元アプリ'}: ${sourceFacetName(facet, peers)}`;
 const sourceFacetHint = facet => [SOURCE_PROVIDER_LABELS[facet.ref.provider] || facet.ref.provider, (facet.origins || []).map(o => o === 'planned' ? '開始予定' : '観測').join('・')].filter(Boolean).join(' · ');
 const sourceFacetTitle = facet => `${sourceFacetLabel(facet)} · ${facet.ref.scopeId} · ${facet.ref.nativeId}`;
 function cardSourceRelations(card) {
   const observed = card.sourceRelations || expandUiSourceView(card.sourceView).relations;
   return [...observed.map(r => ({ ...r, origin: 'observed' })), ...(card.sourceContext || []).map(r => ({ ...r, origin: 'planned' }))];
+}
+const isPrimarySourceRef = ref => !!SOURCE_AXES[sourceAxis(ref)];
+function visibleCardSourceRelations(card) {
+  return cardSourceRelations(card)
+    .filter(r => r.origin === 'planned' || isPrimarySourceRef(r.ref) || (typeof sourceFilterSelected === 'function' && sourceFilterSelected(r.ref)))
+    .filter((relation, index, all) => all.findIndex(r => sourceRefKey(r.ref) === sourceRefKey(relation.ref)) === index);
 }
 // Display aliases only. Never rewrite the task's raw legacy condition or create a native ref.
 function sourceFolderEntries(card) {
@@ -167,4 +177,11 @@ function sourceFilterSelected(ref) { return (state.filters.sourceFilters || []).
 function toggleSourceFilter(ref) {
   const selected = state.filters.sourceFilters || [];
   setScope({ sourceFilters: sourceFilterSelected(ref) ? selected.filter(f => sourceRefKey(f.ref) !== sourceRefKey(ref)) : [...selected, { ref }] });
+}
+function cardLocationText(card) {
+  if (!card) return '';
+  const repo = card.repoName && card.repoName !== 'outside-of-project' ? card.repoName : null;
+  const wtOrBranch = card.worktreeName || card.git?.branch || card.branch || null;
+  if (repo && wtOrBranch && repo !== wtOrBranch) return `${repo} · ⎇ ${wtOrBranch}`;
+  return repo || wtOrBranch || '';
 }

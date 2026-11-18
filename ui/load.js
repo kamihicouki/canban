@@ -12,6 +12,9 @@ async function load({ refresh = false, throwOnError = false } = {}) {
   args.cardKind = f.cardKind || 'all';
   if (f.section) args.section = f.section;
   if (f.directory) args.directory = f.directory;
+  if (f.repo) args.repo = f.repo;
+  if (f.worktree) args.worktree = f.worktree;
+  if (f.dirName) args.dirName = f.dirName;
   if (f.label) args.label = f.label;
   if (f.host) args.host = f.host;
   if (f.account) args.account = f.account;

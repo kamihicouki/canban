@@ -130,6 +130,29 @@ async function summarizeTranscript(file) {
   return s;
 }
 
+function claudeAnchorRepo(dm, cwd) {
+  const anchors = Array.isArray(dm?.gitAnchors) ? dm.gitAnchors : [];
+  const cleanCwd = typeof cwd === 'string' ? cwd.trim().replace(/\/+$/, '') : '';
+  if (!cleanCwd || !anchors.length) return { anchorRepoRoot: null, anchorRepoName: null, anchorWorktreeName: null };
+  let best = null;
+  for (const anchor of anchors) {
+    const common = typeof anchor?.commonDir === 'string' ? anchor.commonDir.trim().replace(/\/+$/, '') : '';
+    if (!common || !common.endsWith('/.git')) continue;
+    const root = common.slice(0, -'/.git'.length);
+    if (!root) continue;
+    const gitRoot = typeof anchor?.gitRoot === 'string' ? anchor.gitRoot.trim().replace(/\/+$/, '') : '';
+    const matchBase = gitRoot || root;
+    if (cleanCwd === matchBase || cleanCwd.startsWith(`${matchBase}/`)) {
+      if (!best || matchBase.length > best.matchBase.length) {
+        best = { root, gitRoot: matchBase, matchBase };
+      }
+    }
+  }
+  if (!best) return { anchorRepoRoot: null, anchorRepoName: null, anchorWorktreeName: null };
+  const wtName = best.gitRoot !== best.root ? path.basename(best.gitRoot) : null;
+  return { anchorRepoRoot: best.root, anchorRepoName: path.basename(best.root), anchorWorktreeName: wtName };
+}
+
 export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
   const firstPrompt = (s.prompts || []).map((p) => cleanPrompt(p)).find(Boolean) || '';
   if (!firstPrompt && !s.turns && !s.customTitle) return null;
@@ -137,6 +160,7 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
   const lastActivity = dm?.lastActivityAt ? Number(dm.lastActivityAt) : 0;
   const updatedAt = Math.max(s.updatedAt ?? s.fileMtimeMs ?? 0, lastActivity) || null;
   const cwd = s.cwd || dm?.cwd || null;
+  const { anchorRepoRoot, anchorRepoName, anchorWorktreeName } = claudeAnchorRepo(dm, cwd);
   const group = dm?.group;
   const groupName = typeof group === 'string' ? group.trim() : typeof group?.name === 'string' ? group.name.trim() : typeof dm?.groupName === 'string' ? dm.groupName.trim() : '';
   return {
@@ -147,6 +171,7 @@ export function normalizeClaudeSummary(s, dm, host = LOCAL_HOST) {
     desktopSessionId: typeof dm?.sessionId === 'string' && /^local_[A-Za-z0-9-]{1,64}$/.test(dm.sessionId) ? dm.sessionId : null,
     title: clip(title, 160),
     cwd,
+    ...(anchorRepoRoot ? { anchorRepoRoot, anchorRepoName, anchorWorktreeName } : {}),
     project: projectName(cwd),
     sourceMetadata: {
       claudeGroup: {

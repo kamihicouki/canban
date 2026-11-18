@@ -1,19 +1,22 @@
 // Part of board.html: included into its script by server/ui.mjs and shares its scope.
 // Sidebar: lanes (jump), directories and projects (one-click filters)
 // ---- filters in effect, as chips in the app bar (each ✕ takes one off) ----
-const FILTER_KEYS = ['sourceFilters', 'cardKind', 'workingFolder', 'agent', 'days', 'status', 'directory', 'project', 'folder', 'section', 'label', 'host', 'account', 'includeArchived', 'includeSubagents', 'dotScope', 'pinnedOnly'];
+const FILTER_KEYS = ['sourceFilters', 'cardKind', 'workingFolder', 'agent', 'days', 'status', 'directory', 'repo', 'worktree', 'dirName', 'project', 'folder', 'section', 'label', 'host', 'account', 'includeArchived', 'includeSubagents', 'dotScope', 'pinnedOnly'];
 const sameFilters = (a, b) => FILTER_KEYS.every((k) => JSON.stringify(a[k] ?? DEFAULT_FILTERS[k]) === JSON.stringify(b[k] ?? DEFAULT_FILTERS[k]));
 function activeView(b) { return (b?.settings?.views || []).find((v) => sameFilters({ ...DEFAULT_FILTERS, ...v.filters }, state.filters)); }
 // The lane axis is not also a filter: lanes by category already show every category.
-const LANE_FILTER = { directory: 'directory', agent: 'agent', host: 'host', label: 'label', project: 'project', section: 'section', account: 'account' };
+const LANE_FILTER = { directory: 'directory', repo: 'repo', worktree: 'worktree', dirName: 'dirName', status: 'status', agent: 'agent', host: 'host', label: 'label', project: 'project', section: 'section', account: 'account' };
 const laneHides = (key) => state.filters.swimlane === key || LANE_FILTER[state.filters.swimlane] === key;
 function filterChips(b) {
   const f = state.filters, out = [];
   const add = (text, patch) => out.push({ text, patch });
   const agLbl = typeof agentLabel === 'function' ? agentLabel(f.agent) : ({ codex: 'Codex', claude: 'Claude Code', antigravity: 'Antigravity', gemini: 'Gemini CLI', cursor: 'Cursor', chatgpt: 'ChatGPT', grok: 'Grok' }[f.agent] || f.agent);
   if (f.agent !== 'all' && !laneHides('agent')) add(agLbl, { agent: 'all' });
-  if (f.status) add(STATUS_LABELS[f.status] || f.status, { status: '' });
+  if (f.status && !laneHides('status')) add(STATUS_LABELS[f.status] || f.status, { status: '' });
   if (f.directory && !laneHides('directory')) add(f.directory === '__none' ? 'カテゴリ無し' : b?.directories.find((d) => d.id === f.directory)?.name || f.directory, { directory: '' });
+  if (f.repo && !laneHides('repo')) add(`リポジトリ: ${f.repo === '__none' ? '不明' : f.repo}`, { repo: '' });
+  if (f.worktree && !laneHides('worktree')) add(`ワークツリー: ${f.worktree === '__only' ? 'すべて' : f.worktree === '__none' ? 'なし' : f.worktree}`, { worktree: '' });
+  if (f.dirName && !laneHides('dirName')) add(`ディレクトリ: ${f.dirName === '__none' ? 'なし' : f.dirName}`, { dirName: '' });
   if (f.project && !laneHides('project')) add(f.project, { project: '' });
   for (const selection of f.sourceFilters || []) {
     const facet = b?.sourceFacets?.find(x => x.key === sourceRefKey(selection.ref)) || selection;
@@ -24,7 +27,10 @@ function filterChips(b) {
   if (f.cardKind && f.cardKind !== 'all') add(f.cardKind === 'task' ? 'タスクカードのみ' : 'セッションカードのみ', { cardKind: 'all' });
   if (f.section && !laneHides('section')) add(`§ ${f.section === '__none' ? 'セクションなし' : b?.codexSections?.find((x) => x.id === f.section)?.name || f.section}`, { section: '' });
   if (f.label && !laneHides('label')) add(`ラベル: ${f.label === '__none' ? 'なし' : b?.labels.find((l) => l.id === f.label)?.name || f.label}`, { label: '' });
-  if (f.host && !laneHides('host')) { const x = b?.hosts.find((y) => (y.local ? 'local' : y.id) === f.host); add(x?.local ? 'このマシン' : x?.label || f.host, { host: '' }); }
+  if (f.host && !laneHides('host')) {
+    if (f.host === 'cloud') add('環境: クラウド', { host: '' });
+    else { const x = b?.hosts.find((y) => (y.local ? 'local' : y.id) === f.host); add(x?.local ? '環境: このマシン' : `環境: ${x?.label || f.host}`, { host: '' }); }
+  }
   if (f.account && !laneHides('account')) add(`アカウント: ${f.account === '__none' ? 'アカウント不明' : accountName(f.account)}`, { account: '' });
   if (f.dotScope !== 'all') add(f.dotScope === 'only' ? 'dotだけ' : 'dotを除く', { dotScope: 'all' });
   if (f.includeArchived) add('アーカイブ済みも表示', { includeArchived: false });
@@ -45,9 +51,9 @@ function scopeLabel(b) {
   const f = state.filters;
   const dir = f.directory === '__none' ? 'カテゴリ無し' : b?.directories.find((d) => d.id === f.directory)?.name;
   const sec = f.section === '__none' ? 'セクションなし' : b?.codexSections?.find((x) => x.id === f.section)?.name;
-  const host = f.host ? b?.hosts.find((x) => (x.local ? 'local' : x.id) === f.host) : null;
-  const parts = [dir, f.project, f.folder && `旧フォルダ条件 ${f.folder}`, f.workingFolder && `作業フォルダ ${f.workingFolder}`, sec && `§ ${sec}`, f.label && `ラベル: ${f.label === '__none' ? 'なし' : b?.labels.find(l => l.id === f.label)?.name || f.label}`,
-    host && `マシン: ${host.local ? 'このマシン' : host.label}`].filter(Boolean);
+  const host = f.host === 'cloud' ? 'クラウド' : (f.host ? ((b?.hosts || []).find((x) => (x.local ? 'local' : x.id) === f.host)?.local ? 'このマシン' : (b?.hosts || []).find((x) => x.id === f.host)?.label || f.host) : null);
+  const parts = [dir, f.repo && `リポジトリ: ${f.repo}`, f.worktree && `ワークツリー: ${f.worktree}`, f.dirName && `ディレクトリ: ${f.dirName}`, f.project, f.folder && `旧フォルダ条件 ${f.folder}`, f.workingFolder && `作業フォルダ ${f.workingFolder}`, sec && `§ ${sec}`, f.label && `ラベル: ${f.label === '__none' ? 'なし' : b?.labels.find(l => l.id === f.label)?.name || f.label}`,
+    host && `環境: ${host}`].filter(Boolean);
   return parts.length ? parts.join(' · ') : 'すべて';
 }
 function toggleDotScope() { setScope({ dotScope: state.filters.dotScope === 'exclude' ? 'all' : 'exclude' }); }
@@ -65,8 +71,8 @@ function scopePicker(anchor) {
   const f = state.filters;
   const agentCounts = b?.totals?.byAgent || {};
   picker(anchor, {
-    title: `${T.category}・元アプリで絞り込み`, width: 340,
-    selected: [...(f.sourceFilters || []).map(x => `source:${sourceRefKey(x.ref)}`), f.agent && f.agent !== 'all' ? `ag:${f.agent}` : null, f.directory ? `d:${f.directory}` : null, f.project ? `p:${f.project}` : null, f.workingFolder ? `wf:${f.workingFolder}` : null, f.folder ? `f:${f.folder}` : null, f.section ? `s:${f.section}` : null, f.label ? `l:${f.label}` : null, (!f.agent || f.agent === 'all') && !f.label && !f.directory && !f.project && !f.folder && !f.workingFolder && !f.section ? '' : null].filter((x) => x != null),
+    title: `${T.category}・横断軸・元アプリで絞り込み`, width: 340,
+    selected: [...(f.sourceFilters || []).map(x => `source:${sourceRefKey(x.ref)}`), f.agent && f.agent !== 'all' ? `ag:${f.agent}` : null, f.directory ? `d:${f.directory}` : null, f.repo ? `repo:${f.repo}` : null, f.worktree ? `wt:${f.worktree}` : null, f.dirName ? `dn:${f.dirName}` : null, f.host ? `host:${f.host}` : null, f.project ? `p:${f.project}` : null, f.workingFolder ? `wf:${f.workingFolder}` : null, f.folder ? `f:${f.folder}` : null, f.section ? `s:${f.section}` : null, f.label ? `l:${f.label}` : null, (!f.agent || f.agent === 'all') && !f.label && !f.directory && !f.repo && !f.worktree && !f.dirName && !f.host && !f.project && !f.folder && !f.workingFolder && !f.section ? '' : null].filter((x) => x != null),
     items: [
       { value: '', label: 'すべて（絞り込みを解除）' },
       ...(!laneHides('agent') ? Object.entries(AGENT_META).map(([ag, meta]) => ({
@@ -77,15 +83,29 @@ function scopePicker(anchor) {
         group: T.aiApps,
       })) : []),
       ...directoryItems(false).map((it) => ({ ...it, value: `d:${it.value}`, group: `${T.category}` })),
-      ...(b.sourceFacets || []).filter(x => !laneHides(sourceAxis(x.ref))).map(x => ({ value: `source:${x.key}`, label: sourceFacetLabel(x, b.sourceFacets), description: sourceFacetHint(x), keywords: sourceFacetTitle(x), hint: `${x.count}カード`, group: '元アプリ' })),
+      ...(!laneHides('repo') ? (b.repos || []).map(r => ({ value: `repo:${r.name}`, label: r.name, hint: `${r.count}件`, group: 'リポジトリ' })) : []),
+      ...(!laneHides('worktree') ? [
+        ...(b.worktrees?.length || f.worktree ? [{ value: 'wt:__only', label: 'ワークツリーのみ（全件）', group: 'ワークツリー' }] : []),
+        ...(b.worktrees || []).map(w => ({ value: `wt:${w.key}`, label: w.name, hint: `${w.count}件`, group: 'ワークツリー' })),
+      ] : []),
+      ...(!laneHides('dirName') ? (b.dirNames || []).map(dn => ({ value: `dn:${dn.name}`, label: dn.name, hint: `${dn.count}件`, group: 'ディレクトリ名' })) : []),
+      ...(!laneHides('host') ? [
+        ...(b.hosts || []).filter(x => !x.cloud).map(x => { const id = x.local ? 'local' : x.id; return { value: `host:${id}`, label: x.local ? 'このマシン' : x.label, hint: x.count ? `${x.count}件` : '', group: '環境（マシン）' }; }),
+        ...(b.cloudCount > 0 || f.host === 'cloud' ? [{ value: 'host:cloud', label: 'クラウド', hint: `${b.cloudCount || 0}件`, group: '環境（マシン）' }] : []),
+      ] : []),
+      ...(b.sourceFacets || []).filter(x => (isPrimarySourceRef(x.ref) || sourceFilterSelected(x.ref)) && !laneHides(sourceAxis(x.ref))).map(x => ({ value: `source:${x.key}`, label: sourceFacetLabel(x, b.sourceFacets), description: sourceFacetHint(x), keywords: sourceFacetTitle(x), hint: `${x.count}カード`, group: '元アプリ' })),
       ...(!laneHides('workingFolder') ? workingFolderFacets(b) : []).map((x) => ({ value: `wf:${x.cwd}`, label: x.name, description: (x.origins || []).map(o => o === 'planned' ? '開始予定' : '観測').join('・'), keywords: x.cwd, hint: x.count, group: '作業フォルダ' })),
       { value: 'l:__none', label: 'ラベルなし', group: 'ラベル' },
       ...b.labels.map(l => ({ value: `l:${l.id}`, label: l.name, color: l.color, group: 'ラベル' })),
 
     ],
     onPick: (v) => {
-      if (!v) return setScope({ agent: 'all', directory: '', project: '', folder: '', workingFolder: '', section: '', label: '', sourceFilters: [], cardKind: 'all' });
+      if (!v) return setScope({ agent: 'all', directory: '', repo: '', worktree: '', dirName: '', host: '', project: '', folder: '', workingFolder: '', section: '', label: '', sourceFilters: [], cardKind: 'all' });
       if (v.startsWith('ag:')) return setScope({ agent: f.agent === v.slice(3) ? 'all' : v.slice(3) });
+      if (v.startsWith('repo:')) return setScope({ repo: f.repo === v.slice(5) ? '' : v.slice(5) });
+      if (v.startsWith('wt:')) return setScope({ worktree: f.worktree === v.slice(3) ? '' : v.slice(3) });
+      if (v.startsWith('dn:')) return setScope({ dirName: f.dirName === v.slice(3) ? '' : v.slice(3) });
+      if (v.startsWith('host:')) return setScope({ host: f.host === v.slice(5) ? '' : v.slice(5) });
       if (v.startsWith('source:')) return toggleSourceFilter(b.sourceFacets.find(x => x.key === v.slice(7)).ref);
       if (v.startsWith('l:')) return setScope({ label: f.label === v.slice(2) ? '' : v.slice(2) });
       if (v.startsWith('s:')) return setScope({ section: f.section === v.slice(2) ? '' : v.slice(2) });
@@ -110,15 +130,36 @@ function toggleSidebar(open = !state.sideOpen) {
 const SIDE_LOOK = [['analytics', 'chart', '分析', 'a'], ['usage', 'gauge', 'Agent Usage', ''], ['orbit', 'refresh', '軌道', 'Shift+O']];
 const SIDE_MANAGE = [['rules', 'zap', T.automation], ['labels', 'tag', 'ラベル'], ['views', 'bookmark', '保存ビュー'], ['hosts', 'server', 'マシン'], ['slack', 'message', 'Slack接続'], ['settings', 'gear', '設定']];
 // The axes a lane can follow, in the order the sidebar offers them; the rest sit behind ⋯.
-const LANE_AXES = [['', 'なし'], ['directory', T.category], ['repo', 'リポジトリ'], ['agent', 'AI Apps']];
+const LANE_AXES = [
+  ['', 'なし'],
+  ['directory', T.category],
+  ['repo', 'リポジトリ'],
+  ['host', '環境'],
+  ['status', '状態'],
+  ['agent', 'AI Apps'],
+];
 const SIDE_SOURCE_TOP = 5; // rows per 元アプリ axis before the rest fold into 「ほか N 件…」
 const LANE_MORE = [
-  ['branch', 'ブランチ / ワークツリー'],
+  ['worktree', 'ワークツリー'],
+  ['dirName', 'ディレクトリ名'],
+  ['branch', 'ブランチ'],
   ['workingFolder', '作業フォルダ'],
-  ['host', 'マシン'],
   ['label', 'ラベル'],
   ['account', 'アカウント'],
 ];
+function laneAxisPicker(anchor = null) {
+  const b = state.board;
+  if (!b) { toast(state.boardError ? 'ボードを読み込めませんでした。更新で再試行してください' : 'ボードを読み込んでいます。取得後にレーンを選べます', !!state.boardError); return; }
+  picker(anchor || $('#sideBtn'), {
+    title: 'レーン（グループ分け）の軸', width: 280,
+    selected: [state.filters.swimlane || ''],
+    items: [
+      ...LANE_AXES.map(([k, label]) => ({ value: k, label, group: '主な軸' })),
+      ...LANE_MORE.map(([k, label]) => ({ value: k, label, group: 'その他の軸' })),
+    ],
+    onPick: (v) => setLaneAxis(v),
+  });
+}
 function sideCount(b, page) {
   return { rules: b.settings?.rules?.length, views: b.settings?.views?.length, labels: b.labels?.length, directories: b.directories?.length,
     hosts: (b.hosts || []).filter((x) => !x.local && !x.cloud && x.enabled).length || null }[page] ?? null;
@@ -135,7 +176,7 @@ const sideCountEl = (n) => h('span', { class: 'count', text: String(n ?? '') });
 function setLaneAxis(mode) {
   state.filters.swimlane = mode; state.soloLane = null;
   // The axis now shown as lanes stops filtering, so every lane has its cards.
-  if (SOURCE_AXES[mode]) {
+  if (isSourceAxis(mode)) {
     const sourceFilters = (state.filters.sourceFilters || []).filter(f => sourceAxis(f.ref) !== mode);
     if (sourceFilters.length !== (state.filters.sourceFilters || []).length || mode === 'workingFolder' && (state.filters.folder || state.filters.workingFolder)) return setScope({ sourceFilters, ...(mode === 'workingFolder' ? { folder: '', workingFolder: '' } : {}) });
   }
@@ -160,14 +201,14 @@ function liveBadges(v) {
 // レーン: the axis, then one row per lane. A row jumps to its lane; ▾ folds it; ⌥ shows it alone.
 function laneSection(b, hit) {
   const f = state.filters, mode = f.swimlane || '';
-  const more = LANE_MORE.find(([k]) => k === mode);
+  const more = !LANE_AXES.some(([k]) => k === mode) && mode ? (LANE_MORE.find(([k]) => k === mode) || [mode, LANE_MODES[mode] || SOURCE_AXES[mode] || SOURCE_LEGACY_AXES[mode] || mode]) : null;
   const axes = h('div', { class: 'side-seg side-seg-wrap', role: 'group', 'aria-label': 'レーンの軸' },
     ...LANE_AXES.map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(mode === k), text: label, onclick: () => setLaneAxis(k) })),
-    h('button', { type: 'button', 'aria-pressed': String(!!more), title: 'ほかの軸（元アプリ・作業フォルダ・アカウント）', text: more ? more[1] : '⋯',
+    h('button', { type: 'button', 'aria-pressed': String(!!more), title: 'ほかの軸（ワークツリー・ディレクトリ名・ブランチ・作業フォルダ・ラベル・アカウント）', text: more ? more[1] : '⋯',
       onclick: (e) => popover(e.currentTarget, 'レーンの軸', h('div', {}, LANE_MORE.map(([k, label]) => h('button', { class: 'menu-item', text: label, onclick: () => { closePopover(); setLaneAxis(k); } }))), { width: 240 }) }));
   const tools = mode ? [h('button', { class: 'side-mini', title: 'すべて展開', text: '⊞', onclick: () => setAllLanes(false) }),
     h('button', { class: 'side-mini', title: 'すべてたたむ', text: '⊟', onclick: () => setAllLanes(true) })] : [];
-  const nodes = [sideHead('レーン', ...tools), axes];
+  const nodes = [sideHead('レーン', ...keycap('Shift+G'), ...tools), axes];
   if (!mode) nodes.push(h('label', { class: 'side-check' }, h('input', { type: 'checkbox', checked: !!f.groupBranch, onchange: (e) => { f.groupBranch = e.target.checked; saveFilters(); load(); } }), '同じリポジトリ＋ブランチをまとめる'));
   // The height of a lane's lists belongs to the lanes, so it sits with them (and only while there are lanes).
   else nodes.push(h('div', { class: 'side-seg', role: 'group', 'aria-label': 'レーン内のリストの高さ' }, Object.entries(LANE_HEIGHTS).map(([k, [label]]) =>
@@ -257,7 +298,7 @@ function filterSection(b, hit = () => true) {
   if (!laneHides('agent')) nodes.push(...aiAppsFilterNodes(b, f, hit, seg));
   const group = (title, rows, extra, always = false) => { const shown = rows.filter((r) => r && hit(r.label)); if (shown.length || always) nodes.push(sideHead(title, extra), ...shown.map((r) => r.el)); };
   const choice = (label, on, pick, lead, ...tail) => ({ label, el: h('button', { class: `side-row${on ? ' active' : ''}`, 'aria-pressed': String(on), onclick: pick }, lead, h('span', { class: 'grow ellipsis', text: label }), ...tail) });
-  group('状態', ['running', 'waiting', 'completed', 'aborted', 'idle'].filter((k) => b.statusCounts?.[k] || f.status === k).map((k) =>
+  if (!laneHides('status')) group('状態', ['running', 'waiting', 'completed', 'aborted', 'idle'].filter((k) => b.statusCounts?.[k] || f.status === k).map((k) =>
     choice(STATUS_LABELS[k], f.status === k, () => setScope({ status: f.status === k ? '' : k }), h('span', { class: `sdot s-${k}` }), sideCountEl(b.statusCounts?.[k] || 0))));
   if (!laneHides('directory')) {
     const live = liveByDirectory(b);
@@ -273,6 +314,29 @@ function filterSection(b, hit = () => true) {
     nodes.push(h('button', { type: 'button', class: 'side-row', 'data-all-categories': '', 'aria-label': 'すべてのカテゴリ…', 'aria-keyshortcuts': 'Alt+C', title: 'すべてのカテゴリ（Alt+C）', onclick: e => openCategoryPicker(e.currentTarget) },
       h('span', { class: 'side-ic', html: picon('search', 15) }), h('span', { class: 'grow', text: 'すべてのカテゴリ…' }), ...keycap('Alt+C')));
   }
+  const topCross = (list, isSelected, makeItem) => {
+    const shown = state.sideQ?.trim() ? list : list.filter((x, i) => i < SIDE_SOURCE_TOP || isSelected(x));
+    return { shown: shown.map(makeItem), rest: list.length - shown.length };
+  };
+  if (!laneHides('repo') && ((b.repos || []).length || f.repo)) {
+    const { shown, rest } = topCross(b.repos || [], r => f.repo === r.name, r =>
+      choice(r.name, f.repo === r.name, () => setScope({ repo: f.repo === r.name ? '' : r.name }), h('span', { class: 'side-ic', html: picon('folder', 15) }), sideCountEl(r.count)));
+    group('リポジトリ', [...shown, rest > 0 ? { label: '', el: h('button', { type: 'button', class: 'side-row side-more', title: 'すべてのリポジトリから選ぶ（p）', onclick: e => scopePicker(e.currentTarget) }, h('span', { class: 'grow', text: `ほか ${rest} 件…` })) } : null]);
+  }
+  if (!laneHides('worktree') && ((b.worktrees || []).length || f.worktree)) {
+    const { shown, rest } = topCross(b.worktrees || [], w => f.worktree === w.key, w =>
+      choice(w.name, f.worktree === w.key, () => setScope({ worktree: f.worktree === w.key ? '' : w.key }), null, sideCountEl(w.count)));
+    group('ワークツリー', [
+      choice('ワークツリーのみ（全件）', f.worktree === '__only', () => setScope({ worktree: f.worktree === '__only' ? '' : '__only' }), null),
+      ...shown,
+      rest > 0 ? { label: '', el: h('button', { type: 'button', class: 'side-row side-more', title: 'すべてのワークツリーから選ぶ（p）', onclick: e => scopePicker(e.currentTarget) }, h('span', { class: 'grow', text: `ほか ${rest} 件…` })) } : null,
+    ]);
+  }
+  if (!laneHides('dirName') && ((b.dirNames || []).length > 1 || f.dirName)) {
+    const { shown, rest } = topCross(b.dirNames || [], d => f.dirName === d.name, d =>
+      choice(d.name, f.dirName === d.name, () => setScope({ dirName: f.dirName === d.name ? '' : d.name }), null, sideCountEl(d.count)));
+    group('ディレクトリ名', [...shown, rest > 0 ? { label: '', el: h('button', { type: 'button', class: 'side-row side-more', title: 'すべてのディレクトリ名から選ぶ（p）', onclick: e => scopePicker(e.currentTarget) }, h('span', { class: 'grow', text: `ほか ${rest} 件…` })) } : null]);
+  }
   nodes.push(sideHead('元アプリ', keycap('p')));
   // 元アプリ: each axis shows its busiest few and whatever is chosen; the rest stay one press away in the picker (p).
   for (const [axis, label] of Object.entries(SOURCE_AXES)) if (!laneHides(axis)) {
@@ -285,9 +349,17 @@ function filterSection(b, hit = () => true) {
       (it.x.origins || []).includes('planned') ? h('span', { class: 'side-tag', title: '開始予定', text: '予定' }) : null, sideCountEl(it.x.count))),
       rest ? { label: '', el: h('button', { type: 'button', class: 'side-row side-more', title: 'すべての元アプリから選ぶ（p）', onclick: e => scopePicker(e.currentTarget) }, h('span', { class: 'grow', text: `ほか ${rest} 件…` })) } : null]);
   }
-  const hosts = (b.hosts || []).filter((x) => x.local || x.enabled);
-  if (!laneHides('host') && hosts.length > 1) group('マシン', hosts.map((x) => { const id = x.local ? 'local' : x.id;
-    return choice(x.local ? 'このマシン' : x.label, f.host === id, () => setScope({ host: f.host === id ? '' : id }), h('span', { class: 'side-ic', html: picon('server', 15) })); }));
+  const hosts = (b.hosts || []).filter((x) => (x.local || x.enabled) && !x.cloud);
+  if (!laneHides('host') && (hosts.length > 1 || b.cloudCount > 0 || f.host)) {
+    const envRows = [
+      ...hosts.map((x) => {
+        const id = x.local ? 'local' : x.id;
+        return choice(x.local ? 'このマシン' : x.label, f.host === id, () => setScope({ host: f.host === id ? '' : id }), h('span', { class: 'side-ic', html: picon('server', 15) }), x.count ? sideCountEl(x.count) : null);
+      }),
+      ...(b.cloudCount > 0 || f.host === 'cloud' ? [choice('クラウド', f.host === 'cloud', () => setScope({ host: f.host === 'cloud' ? '' : 'cloud' }), h('span', { class: 'side-ic', html: picon('server', 15) }), sideCountEl(b.cloudCount || 0))] : []),
+    ];
+    group('環境（マシン）', envRows);
+  }
   if (!laneHides('label') && b.labels.length) group('ラベル', [...b.labels.map((l) => ({ id: l.id, name: l.name, color: l.color })), { id: '__none', name: 'ラベルなし', color: null }].map((l) =>
     choice(l.name, f.label === l.id, () => setScope({ label: f.label === l.id ? '' : l.id }), h('span', { class: 'dot', style: { background: l.color ? colorVar(l.color) : 'var(--header-btn-hover)' } }))));
   const scope = (key, label) => h('label', { class: 'side-check' }, h('input', { type: 'checkbox', checked: !!f[key], onchange: (e) => setScope({ [key]: e.target.checked }) }), label);
@@ -353,7 +425,7 @@ function directoryMenu(anchor, dirId) {
   const del = h('button', { class: 'menu-item danger', text: `この${T.category}を削除…`,
     onclick: () => { if (confirmInline(del, `「${d.name}」を削除します（カードやセッションは消えず、このカテゴリの自動分類も解除されます）。`)) act('canban_delete_directory', { directoryId: d.id }, { okMsg: '削除しました' }).then(() => closePopover()); } });
   const bindings = (state.board.categoryBindings || []).filter(x => x.categoryId === d.id).map(({ ref, relation }) => ({ ref, ...(relation ? { relation } : {}) }));
-  const knownSources = new Map([...(state.board.sourceFacets || []).map(x => [x.key, x]), ...bindings.map(x => [sourceRefKey(x.ref), { key: sourceRefKey(x.ref), ref: x.ref }])]);
+  const knownSources = new Map([...(state.board.sourceFacets || []).filter(x => isPrimarySourceRef(x.ref)).map(x => [x.key, x]), ...bindings.map(x => [sourceRefKey(x.ref), { key: sourceRefKey(x.ref), ref: x.ref }])]);
   const bindingRows = [...knownSources.values()].map(facet => {
     const selected = bindings.some(x => sourceRefKey(x.ref) === facet.key);
     const input = h('input', { type: 'checkbox', checked: selected, onchange: () => {

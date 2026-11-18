@@ -20,9 +20,64 @@ async function readHeadBranch(headFilePath) {
   }
 }
 
+// 削除済み一時ワークツリーや非存在パスでもエージェントのディレクトリ規約から親リポ名・ワークツリー名を推論する。
+function inferWorktreeFromPath(dirPath) {
+  const normalized = String(dirPath || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  const claudeWt = /^(.*)\/\.claude\/worktrees\/([^/]+)(?:\/.*)?$/.exec(normalized);
+  if (claudeWt && claudeWt[1]) {
+    return {
+      isGit: false,
+      isWorktree: true,
+      wtRoot: `${claudeWt[1]}/.claude/worktrees/${claudeWt[2]}`,
+      repoRoot: claudeWt[1],
+      repoName: path.basename(claudeWt[1]),
+      worktreeName: claudeWt[2],
+      branch: null,
+    };
+  }
+  const codexWt = /^(.*\/\.codex\/worktrees\/([^/]+)\/([^/]+))(?:\/.*)?$/.exec(normalized);
+  if (codexWt) {
+    return {
+      isGit: false,
+      isWorktree: true,
+      wtRoot: codexWt[1],
+      repoRoot: codexWt[1],
+      repoName: codexWt[3],
+      worktreeName: codexWt[2],
+      branch: null,
+    };
+  }
+  const genericWt = /^(.*\/worktrees\/([^/]+)\/([^/]+))(?:\/.*)?$/.exec(normalized);
+  if (genericWt && genericWt[2] !== '.git') {
+    return {
+      isGit: false,
+      isWorktree: true,
+      wtRoot: genericWt[1],
+      repoRoot: genericWt[1],
+      repoName: genericWt[2],
+      worktreeName: genericWt[3],
+      branch: null,
+    };
+  }
+  return null;
+}
+
 async function doResolveRepoContext(dirPath) {
+  const inferred = inferWorktreeFromPath(dirPath);
+  const inferredWtRoot = inferred ? path.resolve(inferred.wtRoot) : null;
   let curr = dirPath;
   for (let i = 0; i < 10; i++) {
+    if (inferredWtRoot && curr !== inferredWtRoot && inferredWtRoot.startsWith(`${curr}${path.sep}`)) {
+      let parentIsGit = false;
+      if (inferred.repoRoot && inferred.repoRoot !== inferred.wtRoot) {
+        try {
+          const st = await fsp.stat(path.join(inferred.repoRoot, '.git'));
+          parentIsGit = st.isDirectory() || st.isFile();
+        } catch {}
+      }
+      const { wtRoot: _omit, ...rest } = inferred;
+      return { ...rest, isGit: parentIsGit };
+    }
     const gitPath = path.join(curr, '.git');
     try {
       const st = await fsp.stat(gitPath);
@@ -64,6 +119,11 @@ async function doResolveRepoContext(dirPath) {
     curr = parent;
   }
 
+  if (inferred) {
+    const { wtRoot: _omit, ...rest } = inferred;
+    return rest;
+  }
+
   return {
     isGit: false,
     isWorktree: false,
@@ -83,6 +143,74 @@ export async function resolveRepoContext(dirPath) {
     return repoContextCache.get(normalized);
   }
   const res = await doResolveRepoContext(normalized);
+  repoContextCache.set(normalized, res);
+  return res;
+}
+
+function readHeadBranchSync(headFilePath) {
+  try {
+    const content = fs.readFileSync(headFilePath, 'utf8');
+    const m = content.match(/^ref: refs\/heads\/(.+)$/m);
+    return m ? m[1].trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function doResolveRepoContextSync(dirPath) {
+  const inferred = inferWorktreeFromPath(dirPath);
+  const inferredWtRoot = inferred ? path.resolve(inferred.wtRoot) : null;
+  let curr = dirPath;
+  for (let i = 0; i < 10; i++) {
+    if (inferredWtRoot && curr !== inferredWtRoot && inferredWtRoot.startsWith(`${curr}${path.sep}`)) {
+      let parentIsGit = false;
+      if (inferred.repoRoot && inferred.repoRoot !== inferred.wtRoot) {
+        try {
+          const st = fs.statSync(path.join(inferred.repoRoot, '.git'));
+          parentIsGit = st.isDirectory() || st.isFile();
+        } catch {}
+      }
+      const { wtRoot: _omit, ...rest } = inferred;
+      return { ...rest, isGit: parentIsGit };
+    }
+    const gitPath = path.join(curr, '.git');
+    try {
+      const st = fs.statSync(gitPath);
+      if (st.isDirectory()) {
+        const branch = readHeadBranchSync(path.join(gitPath, 'HEAD'));
+        return { isGit: true, isWorktree: false, repoRoot: curr, repoName: path.basename(curr), worktreeName: null, branch };
+      } else if (st.isFile()) {
+        const content = fs.readFileSync(gitPath, 'utf8');
+        const m = content.match(/^gitdir:\s*(.+)$/m);
+        if (m) {
+          const gitDir = path.resolve(curr, m[1].trim());
+          const branch = readHeadBranchSync(path.join(gitDir, 'HEAD'));
+          const worktreesIdx = gitDir.lastIndexOf(path.sep + '.git' + path.sep + 'worktrees' + path.sep);
+          if (worktreesIdx !== -1) {
+            const repoRoot = gitDir.slice(0, worktreesIdx);
+            return { isGit: true, isWorktree: true, repoRoot, repoName: path.basename(repoRoot), worktreeName: path.basename(gitDir), branch };
+          }
+        }
+      }
+    } catch {}
+    const parent = path.dirname(curr);
+    if (!parent || parent === curr) break;
+    curr = parent;
+  }
+  if (inferred) {
+    const { wtRoot: _omit, ...rest } = inferred;
+    return rest;
+  }
+  return { isGit: false, isWorktree: false, repoRoot: dirPath, repoName: path.basename(dirPath), worktreeName: null, branch: null };
+}
+
+export function resolveRepoContextSync(dirPath) {
+  if (!dirPath || typeof dirPath !== 'string') {
+    return { isGit: false, isWorktree: false, repoRoot: '', repoName: '', worktreeName: null, branch: null };
+  }
+  const normalized = path.resolve(dirPath);
+  if (repoContextCache.has(normalized)) return repoContextCache.get(normalized);
+  const res = doResolveRepoContextSync(normalized);
   repoContextCache.set(normalized, res);
   return res;
 }

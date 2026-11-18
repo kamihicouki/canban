@@ -79,7 +79,7 @@ async function saveQuickSessionDraft(draft, { callTool, refresh, newRequestId })
 
 function taskCreationDefaults(board, filters, { listId, lane, soloLane } = {}, edits = {}) {
   const context = {};
-  for (const key of ['project', 'folder', 'section', 'agent', 'host', 'account']) {
+  for (const key of ['project', 'folder', 'repo', 'dirName', 'section', 'agent', 'host', 'account']) {
     const value = filters[key];
     if (value && !(key === 'agent' && value === 'all')) context[key] = value === '__none' ? null : value;
   }

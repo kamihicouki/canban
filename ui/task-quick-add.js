@@ -466,8 +466,11 @@ const taskQuickAdd = {
   projected(result) {
     const b = state.board, context = result.context || {};
     return { ...result, id: result.cardId, directory: b.directories.find(d => d.id === result.directoryId) || null,
-      project: context.project || null, folder: context.folder || null, agent: context.agent || context.account?.split(':')[0] || null,
-      host: context.host && context.host !== 'local' ? { id: context.host, label: b.hosts.find(h => h.id === context.host)?.label || context.host } : null,
+      project: context.project || null, folder: context.folder || null,
+      repoName: Object.hasOwn(context, 'repo') ? context.repo : (context.project || null),
+      dirName: Object.hasOwn(context, 'dirName') ? context.dirName : (context.folder && !context.folder.startsWith('/') ? context.folder : null),
+      agent: context.agent || context.account?.split(':')[0] || null,
+      host: context.host && context.host !== 'local' && context.host !== 'cloud' ? { id: context.host, label: b.hosts.find(h => h.id === context.host)?.label || context.host } : null,
       account: context.account || null, codexSection: context.section ? { id: context.section } : null, labels: result.labels || [] };
   },
   hiddenReasons(result) {
@@ -478,9 +481,9 @@ const taskQuickAdd = {
     if (f.dotScope === 'only') reasons.push('dot');
     if (f.directory && (f.directory === '__none' ? !!card.directory : card.directory?.id !== f.directory)) reasons.push('カテゴリ');
     if (f.label && (f.label === '__none' ? card.labels.length : !card.labels.includes(f.label))) reasons.push('ラベル');
-    for (const [key, label] of [['project', 'プロジェクト'], ['folder', 'フォルダ'], ['section', 'セクション'], ['agent', 'AI App'], ['host', 'マシン'], ['account', 'アカウント']]) {
+    for (const [key, label] of [['project', 'プロジェクト'], ['folder', 'フォルダ'], ['repo', 'リポジトリ'], ['dirName', 'ディレクトリ名'], ['section', 'セクション'], ['agent', 'AI App'], ['host', 'マシン'], ['account', 'アカウント']]) {
       if (!f[key] || (key === 'agent' && f[key] === 'all')) continue;
-      const value = key === 'host' ? card.host?.id || 'local' : key === 'section' ? card.codexSection?.id : card[key];
+      const value = key === 'host' ? (result.context?.host === 'cloud' ? 'cloud' : card.host?.id || 'local') : key === 'repo' ? card.repoName : key === 'section' ? card.codexSection?.id : card[key];
       if (f[key] === '__none' ? !!value : value !== f[key]) reasons.push(label);
     }
     const hay = [card.title, card.description, card.directory?.name, ...Object.values(card.context), ...card.labels.map(id => state.board.labels.find(l => l.id === id)?.name)].filter(Boolean).join('\n').toLowerCase();
@@ -493,12 +496,12 @@ const taskQuickAdd = {
     openCard(result.cardId);
   },
   summary(card) {
-    const names = { project: '旧プロジェクト', folder: '作業フォルダ', section: '旧セクション', agent: 'AI App', host: 'マシン', account: 'アカウント' };
+    const names = { project: '旧プロジェクト', folder: '作業フォルダ', repo: 'リポジトリ', dirName: 'ディレクトリ名', section: '旧セクション', agent: 'AI App', host: 'マシン', account: 'アカウント' };
     return h('div', { class: 'task-context-summary' }, Object.entries(card.context || {}).map(([key, value]) => {
       let text = value || 'なし';
       const agentNames = { codex: 'Codex', claude: 'Claude Code', antigravity: 'Antigravity', gemini: 'Gemini CLI', cursor: 'Cursor', chatgpt: 'ChatGPT', grok: 'Grok' };
       if (key === 'agent' && value) text = agentNames[value] || value;
-      if (key === 'host' && value) text = value === 'local' ? 'このマシン' : state.board.hosts.find(h => h.id === value)?.label || value;
+      if (key === 'host' && value) text = value === 'cloud' ? 'クラウド' : value === 'local' ? 'このマシン' : state.board.hosts.find(h => h.id === value)?.label || value;
       if (key === 'account' && value) text = accountName(value);
       if (key === 'section' && value) text = state.board.codexSections?.find(s => s.id === value)?.name || value;
       return h('span', { text: `${names[key]}: ${text}` });

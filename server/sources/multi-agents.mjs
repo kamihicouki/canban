@@ -31,9 +31,10 @@ function resolveSourceDir(explicitOpt, envVar, defaultPaths) {
   return defaultPaths.filter(Boolean);
 }
 
-function makeEntityObservation({ provider, scopeId, kind, nativeId, name, product, surface, cwd, hostId = 'local', updatedAt }) {
+function makeEntityObservation({ provider, scopeId, kind, nativeId, name, product, surface, cwd, roots, hostId = 'local', updatedAt }) {
   if (!nativeId || !name) return null;
   const ts = Math.round(updatedAt || Date.now());
+  const normalizedRoots = Array.isArray(roots) && roots.length ? [...new Set(roots.filter(Boolean).map(String))] : (cwd ? [String(cwd)] : []);
   return {
     status: 'known',
     source: `${provider}-${kind}`,
@@ -49,7 +50,7 @@ function makeEntityObservation({ provider, scopeId, kind, nativeId, name, produc
     name: String(name),
     product: String(product || provider),
     surface: String(surface || 'cli'),
-    roots: cwd ? [String(cwd)] : [],
+    roots: normalizedRoots,
     hostId: String(hostId || 'local'),
   };
 }
@@ -117,6 +118,8 @@ async function readAnnotationTitle(annotationPath) {
   }
 }
 
+const cleanFsPath = (p) => (typeof p === 'string' && p ? p.replace(/\/+$/, '') || '/' : null);
+
 async function loadAntigravityProjects(configProjectsDir) {
   const projects = new Map();
   if (!configProjectsDir || !exists(configProjectsDir)) return projects;
@@ -128,28 +131,68 @@ async function loadAntigravityProjects(configProjectsDir) {
       try {
         const data = await readJson(filePath);
         if (!data || !data.id) continue;
-        const mainUri = data.projectResources?.resources?.[0]?.gitFolder?.folderUri || null;
-        const mainCwd = fileUriToPath(mainUri);
+        const resources = Array.isArray(data.projectResources?.resources) ? data.projectResources.resources : [];
+        const roots = [...new Set(resources.map((r) => cleanFsPath(fileUriToPath(r?.gitFolder?.folderUri || r?.folderUri))).filter(Boolean))];
+        const mainCwd = roots[0] || null;
         const envs = new Map();
+        const envPaths = new Set();
         if (Array.isArray(data.environments?.environments)) {
           for (const env of data.environments.environments) {
-            const envUri = env.resources?.resources?.[0]?.folderUri || null;
-            const envPath = fileUriToPath(envUri);
-            if (env.id) envs.set(env.id, { id: env.id, name: env.name, path: envPath });
-            if (env.name) envs.set(env.name, { id: env.id, name: env.name, path: envPath });
+            const paths = (Array.isArray(env.resources?.resources) ? env.resources.resources : [])
+              .map((r) => cleanFsPath(fileUriToPath(r?.folderUri || r?.gitFolder?.folderUri)))
+              .filter(Boolean);
+            for (const ep of paths) envPaths.add(ep);
+            const envObj = { id: env.id, name: env.name, path: paths[0] || null, paths };
+            if (env.id) envs.set(env.id, envObj);
+            if (env.name) envs.set(env.name, envObj);
           }
         }
         projects.set(data.id, {
           id: data.id,
           name: data.name || path.basename(filePath, '.json'),
           mainCwd,
-          defaultBranch: data.projectResources?.resources?.[0]?.gitFolder?.defaultBranch || 'main',
+          roots,
+          envPaths: [...envPaths],
+          defaultBranch: resources.find((r) => r?.gitFolder?.defaultBranch)?.gitFolder?.defaultBranch || 'main',
           environments: envs,
         });
       } catch {}
     }
   } catch {}
   return projects;
+}
+
+function findAntigravityProjectForCwd(projectMap, rawCwd) {
+  const cwd = cleanFsPath(rawCwd);
+  if (!cwd || !projectMap.size) return null;
+  const matches = [];
+  for (const proj of projectMap.values()) {
+    const paths = [...proj.roots, ...(proj.envPaths || [])];
+    if (paths.some((p) => cwd === p || cwd.startsWith(`${p}/`))) {
+      matches.push(proj);
+    }
+  }
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function buildAntigravityProjectObservation({ scopeId, proj, projId, projName, cwd, host, updatedAt }) {
+  const ts = Math.round(updatedAt || Date.now());
+  if (!proj && (!projId || projId === 'outside-of-project')) {
+    return { status: 'absent', source: 'antigravity-project', observedAt: ts, sourceUpdatedAt: ts, reason: null };
+  }
+  return makeEntityObservation({
+    provider: 'antigravity',
+    scopeId,
+    kind: 'project',
+    nativeId: proj?.id || projId,
+    name: proj?.name || projName || projectName(cwd) || String(projId),
+    product: 'Antigravity',
+    surface: 'ide',
+    cwd: proj?.mainCwd || cwd,
+    roots: proj?.roots,
+    hostId: host.id || 'local',
+    updatedAt: ts,
+  });
 }
 
 // ============================================================================
@@ -287,24 +330,33 @@ export async function listAntigravitySessions(rawOpts = {}) {
       const titleCandidate = annoTitle || dbTitle || brain?.taskHeading || firstLine(brain?.firstPrompt) || firstLine(row.preview) || convId;
       const title = clip(titleCandidate, 120);
 
-      const proj = projectMap.get(row.project_id);
       let uris = [];
       try {
         uris = typeof row.workspace_uris === 'string' ? JSON.parse(row.workspace_uris) : (row.workspace_uris || []);
       } catch {}
       const firstUri = Array.isArray(uris) && uris[0] ? uris[0] : null;
       const wsPath = fileUriToPath(firstUri);
+      const explicitOutside = row.project_id === 'outside-of-project';
+      const rowProjId = row.project_id && !explicitOutside ? row.project_id : null;
+      const proj = explicitOutside
+        ? null
+        : (rowProjId ? projectMap.get(rowProjId) : null)
+          || findAntigravityProjectForCwd(projectMap, wsPath || brain?.detectedCwd)
+          || (!row.project_id && projectMap.size === 1 ? Array.from(projectMap.values())[0] : null);
 
       let cwd = wsPath || brain?.detectedCwd || proj?.mainCwd || null;
       let branch = null;
+      let envName = null;
       if (wsPath) {
         const wtMatch = /worktrees\/[^/]+\/([^/]+)/.exec(wsPath);
         if (wtMatch) branch = wtMatch[1];
       }
-      if (!branch && proj && wsPath) {
+      if (proj && wsPath) {
+        const cleanWs = cleanFsPath(wsPath);
         for (const env of proj.environments.values()) {
-          if (env.path === wsPath) {
-            branch = env.name;
+          if (env.path === cleanWs || env.paths?.includes(cleanWs)) {
+            envName = env.name;
+            if (!branch) branch = env.name;
             break;
           }
         }
@@ -317,10 +369,13 @@ export async function listAntigravitySessions(rawOpts = {}) {
       if (!branch && repoCtx.branch) {
         branch = repoCtx.branch;
       }
+      const repoRoot = repoCtx.isGit ? repoCtx.repoRoot : (proj?.mainCwd || repoCtx.repoRoot || null);
+      const repoName = repoCtx.isWorktree || repoCtx.isGit ? repoCtx.repoName : (proj?.mainCwd ? path.basename(proj.mainCwd) : repoCtx.repoName || null);
+      const worktreeName = repoCtx.worktreeName || (envName && cleanFsPath(cwd) !== proj?.mainCwd ? envName : null);
 
-      const projId = proj ? proj.id : (row.project_id && row.project_id !== 'outside-of-project' ? row.project_id : (projectMap.size === 1 ? Array.from(projectMap.values())[0].id : 'outside-of-project'));
-      const projName = proj ? proj.name : (row.project_id && row.project_id !== 'outside-of-project' ? row.project_id.slice(0, 8) : (projectMap.size === 1 ? Array.from(projectMap.values())[0].name : null));
-      const displayProject = projName || repoCtx.repoName || (cwd ? projectName(cwd) : 'Antigravity');
+      const projId = proj ? proj.id : (rowProjId || 'outside-of-project');
+      const projName = proj ? proj.name : (rowProjId ? rowProjId.slice(0, 8) : null);
+      const displayProject = projName || repoName || (cwd ? projectName(cwd) : 'Antigravity');
 
       const createdAt = toMs(row.last_user_input_time || row.last_modified_time, Date.now());
       let updatedAt = toMs(row.last_modified_time, Date.now());
@@ -335,16 +390,13 @@ export async function listAntigravitySessions(rawOpts = {}) {
       const lastPrompt = brain?.lastPrompt || firstPrompt;
       const lastMessage = brain?.lastMessage || null;
 
-      const projectObs = makeEntityObservation({
-        provider: 'antigravity',
+      const projectObs = buildAntigravityProjectObservation({
         scopeId: brainDir || agyRoot,
-        kind: 'project',
-        nativeId: projId,
-        name: displayProject,
-        product: 'Antigravity',
-        surface: 'ide',
-        cwd: proj?.mainCwd || cwd,
-        hostId: host.id || 'local',
+        proj,
+        projId,
+        projName: displayProject,
+        cwd,
+        host,
         updatedAt,
       });
 
@@ -375,9 +427,9 @@ export async function listAntigravitySessions(rawOpts = {}) {
         cwd,
         project: displayProject,
         branch,
-        repoRoot: repoCtx.repoRoot || null,
-        repoName: repoCtx.repoName || null,
-        worktreeName: repoCtx.worktreeName || null,
+        repoRoot,
+        repoName,
+        worktreeName,
         model: brain?.model || 'gemini',
         reasoningEffort: null,
         createdAt: Math.round(createdAt),
@@ -417,23 +469,24 @@ export async function listAntigravitySessions(rawOpts = {}) {
           annoTitle = await readAnnotationTitle(path.join(annotationsDir, `${convId}.pbtxt`));
         }
         const titleSource = annoTitle || brain.taskHeading || firstLine(brain.firstPrompt) || firstLine(brain.lastMessage) || convId;
-        const proj = projectMap.size === 1 ? Array.from(projectMap.values())[0] : null;
+        const proj = findAntigravityProjectForCwd(projectMap, brain.detectedCwd)
+          || (projectMap.size === 1 ? Array.from(projectMap.values())[0] : null);
         const cwd = brain.detectedCwd || proj?.mainCwd || null;
         const repoCtx = await resolveRepoContext(cwd || (proj?.mainCwd ? proj.mainCwd : null));
+        const repoRoot = repoCtx.isGit ? repoCtx.repoRoot : (proj?.mainCwd || repoCtx.repoRoot || null);
+        const repoName = repoCtx.isWorktree || repoCtx.isGit ? repoCtx.repoName : (proj?.mainCwd ? path.basename(proj.mainCwd) : repoCtx.repoName || null);
+        const worktreeName = repoCtx.worktreeName || null;
         const projId = proj ? proj.id : 'outside-of-project';
         const projName = proj ? proj.name : null;
-        const displayProject = projName || repoCtx.repoName || projectName(cwd) || 'Antigravity';
+        const displayProject = projName || repoName || projectName(cwd) || 'Antigravity';
 
-        const projectObs = makeEntityObservation({
-          provider: 'antigravity',
+        const projectObs = buildAntigravityProjectObservation({
           scopeId: brainDir,
-          kind: 'project',
-          nativeId: projId,
-          name: displayProject,
-          product: 'Antigravity',
-          surface: 'ide',
+          proj,
+          projId,
+          projName: displayProject,
           cwd,
-          hostId: host.id || 'local',
+          host,
           updatedAt: brain.transcriptUpdatedAt,
         });
 
@@ -464,9 +517,9 @@ export async function listAntigravitySessions(rawOpts = {}) {
           cwd,
           project: displayProject,
           branch: repoCtx.branch || null,
-          repoRoot: repoCtx.repoRoot || null,
-          repoName: repoCtx.repoName || null,
-          worktreeName: repoCtx.worktreeName || null,
+          repoRoot,
+          repoName,
+          worktreeName,
           model: brain.model || 'gemini',
           reasoningEffort: null,
           createdAt: Math.round(brain.transcriptUpdatedAt || Date.now()),

@@ -1,6 +1,7 @@
 import { ACCOUNT_KEY } from './accounts-settings.mjs';
 
-export const TASK_CONTEXT_KEYS = ['project', 'folder', 'section', 'agent', 'host', 'account'];
+const BASE_TASK_CONTEXT_KEYS = ['project', 'folder', 'section', 'agent', 'host', 'account'];
+export const TASK_CONTEXT_KEYS = [...BASE_TASK_CONTEXT_KEYS, 'repo', 'dirName'];
 
 const TASK_AGENTS = ['codex', 'claude', 'gemini', 'antigravity', 'cursor', 'chatgpt', 'grok'];
 
@@ -38,7 +39,11 @@ export function effectiveTaskContext(task, links = []) {
     const values = links.map(link => key === 'host' ? link.host?.id || 'local' : link[key] || null);
     if (values[0] && values.every(value => value === values[0])) fallback[key] = values[0];
   }
-  return Object.fromEntries(TASK_CONTEXT_KEYS.map(key => [key, Object.hasOwn(task.context || {}, key) ? task.context[key] : fallback[key]]));
+  const out = Object.fromEntries(BASE_TASK_CONTEXT_KEYS.map(key => [key, Object.hasOwn(task.context || {}, key) ? task.context[key] : fallback[key]]));
+  for (const key of ['repo', 'dirName']) {
+    if (Object.hasOwn(task.context || {}, key)) out[key] = task.context[key];
+  }
+  return out;
 }
 
 export const taskContextSchema = {

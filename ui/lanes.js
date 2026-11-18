@@ -4,10 +4,13 @@ const LANE_MODES = {
   '': 'なし',
   directory: `${T.category}`,
   repo: 'リポジトリ',
-  branch: 'ブランチ / ワークツリー',
+  host: '環境（マシン）',
+  status: '状態',
+  worktree: 'ワークツリー',
+  dirName: 'ディレクトリ名',
+  branch: 'ブランチ',
   workingFolder: '作業フォルダ',
   agent: 'AI Apps',
-  host: 'マシン',
   label: 'ラベル',
   account: 'アカウント',
   project: '旧プロジェクト',
@@ -15,49 +18,131 @@ const LANE_MODES = {
 };
 const LANE_AGENT_LABELS = { codex: 'Codex', claude: 'Claude Code', gemini: 'Gemini CLI', antigravity: 'Antigravity', cursor: 'Cursor', chatgpt: 'ChatGPT', grok: 'Grok' };
 const NO_DIR = 'カテゴリ無し';
+const STATUS_LANE_ORDER = { running: 0, waiting: 1, aborted: 2, completed: 3, idle: 4, unknown: 5 };
+const STATUS_LANE_LABELS = { running: '実行中', waiting: '入力待ち', aborted: '中断', completed: '応答済み', idle: '待機中', unknown: '状態未取得' };
+// 明示した repo: null / dirName: null を旧 project / cwd で補完しないための3値解決。
+function cardEffectiveRepo(card) {
+  const ctx = card?.context;
+  if (ctx && Object.hasOwn(ctx, 'repo')) {
+    const trimmed = String(ctx.repo || '').trim();
+    return trimmed && trimmed !== 'outside-of-project' ? trimmed : '';
+  }
+  if (card && Object.hasOwn(card, 'repoName') && card.kind === 'task') {
+    const trimmed = String(card.repoName || '').trim();
+    return trimmed && trimmed !== 'outside-of-project' ? trimmed : '';
+  }
+  const raw = String(card?.repoName || card?.project || '').trim();
+  return raw && raw !== 'outside-of-project' ? raw : '';
+}
+function cardEffectiveDirName(card) {
+  const ctx = card?.context;
+  if (ctx && Object.hasOwn(ctx, 'dirName')) {
+    return String(ctx.dirName || '').trim();
+  }
+  if (card && Object.hasOwn(card, 'dirName') && card.kind === 'task') {
+    return String(card.dirName || '').trim();
+  }
+  return String(card?.dirName || (card?.cwd ? card.cwd.replace(/\/+$/, '').split('/').pop() : '') || '').trim();
+}
 // 手動指定と「カテゴリ無し」を優先し、未設定だけを元リポジトリでまとめる。
 function resolveDirectoryLane(card, directories = []) {
   if (card.directory) return { id: card.directory.id, name: card.directory.name, creation: { directory: card.directory.id } };
   if (card.directoryId !== '__none') {
-    const repo = card.repoName || card.project;
-    if (repo && repo !== 'outside-of-project') {
-      const matched = directories.find(d => d.name.trim().toLowerCase() === repo.trim().toLowerCase());
+    const repo = cardEffectiveRepo(card);
+    if (repo) {
+      const matched = (directories || []).find(d => d.name.trim().toLowerCase() === repo.trim().toLowerCase());
       if (matched) return { id: matched.id, name: matched.name, creation: { directory: matched.id } };
-      return { id: `auto:${repo}`, name: `未分類（${repo}）`, creation: { directory: `auto:${repo}` } };
+      return { id: `auto:${repo}`, name: `未分類（${repo}）`, creation: { directory: null, context: { repo } } };
     }
   }
   return { id: '__none', name: NO_DIR, creation: { directory: '__none' } };
 }
+function resolveRepoLane(card) {
+  const repo = cardEffectiveRepo(card);
+  return repo
+    ? { id: repo, name: repo, creation: { context: { repo } } }
+    : { id: '__none', name: '（リポジトリ不明）', creation: { context: { repo: null } } };
+}
+function resolveWorktreeLane(card) {
+  const cleanRepo = cardEffectiveRepo(card);
+  if (card.worktreeName) {
+    return {
+      id: `${cleanRepo || '-'}/${card.worktreeName}`,
+      name: cleanRepo ? `${cleanRepo} / ${card.worktreeName}` : card.worktreeName,
+      creation: cleanRepo ? { context: { repo: cleanRepo } } : {},
+      orderGroup: 0,
+    };
+  }
+  const dn = cardEffectiveDirName(card);
+  const base = cleanRepo || dn;
+  if (base) {
+    return {
+      id: `main:${base}`,
+      name: `${base}（メイン）`,
+      creation: cleanRepo ? { context: { repo: cleanRepo } } : dn ? { context: { dirName: dn } } : {},
+      orderGroup: 1,
+    };
+  }
+  return { id: '__none', name: '（ワークツリーなし）', creation: {}, orderGroup: 2 };
+}
+function resolveDirNameLane(card) {
+  const dn = cardEffectiveDirName(card);
+  return dn
+    ? { id: dn, name: dn, creation: { context: { dirName: dn } } }
+    : { id: '__none', name: '（ディレクトリなし）', creation: { context: { dirName: null } } };
+}
+function resolveEnvironmentLane(card) {
+  const isCloud = card.environmentKey === 'cloud' || card.surface === 'cloud' || card.sourceKind === 'codex-cloud' || !!card.cloud || !!card.host?.cloud;
+  if (isCloud) return { id: 'cloud', nativeId: 'cloud', name: 'クラウド', creation: {} };
+  const hostId = card.host?.id || 'local';
+  const name = card.host?.label || (hostId === 'local' ? 'このマシン' : hostId);
+  return { id: hostId, nativeId: null, name, creation: { context: { host: hostId } } };
+}
+function resolveStatusLane(card) {
+  const st = card.statusKnown === false ? 'unknown' : (card.status || 'idle');
+  const labels = typeof STATUS_LABELS !== 'undefined' ? STATUS_LABELS : STATUS_LANE_LABELS;
+  return { id: st, name: labels[st] || STATUS_LANE_LABELS[st] || st, orderRank: STATUS_LANE_ORDER[st] ?? 9 };
+}
 function laneKey(card, mode, board = state.board) {
-  if (mode === 'repo') return card.repoName || card.project || '（リポジトリ不明）';
+  if (mode === 'repo') return resolveRepoLane(card).name;
+  if (mode === 'worktree') return resolveWorktreeLane(card).name;
+  if (mode === 'dirName') return resolveDirNameLane(card).name;
+  if (mode === 'status') return resolveStatusLane(card).name;
   if (mode === 'branch') {
     const b = card.branch || card.worktreeName;
     return b ? b : '（ブランチなし）';
   }
   if (mode === 'directory') {
-    return resolveDirectoryLane(card, board.directories).name;
+    return resolveDirectoryLane(card, board?.directories).name;
   }
-  if (SOURCE_AXES[mode]) return sourceLane(card, mode).name;
+  if (isSourceAxis(mode)) return sourceLane(card, mode).name;
   if (mode === 'section') {
     const sec = card.codexSection;
     return sec ? `§ ${sec.name}` : '（セクションなし）';
   }
   if (mode === 'agent') return card.agent ? (LANE_AGENT_LABELS[card.agent] || card.agent) : `${T.taskCard}`;
-  if (mode === 'host') return card.host?.label || 'このマシン';
+  if (mode === 'host') return resolveEnvironmentLane(card).name;
   if (mode === 'account') return accountLaneKey(card);
   if (mode === 'label') {
-    const l = state.board.labels.find((x) => card.labels.includes(x.id));
+    const l = (board?.labels || state.board.labels).find((x) => card.labels.includes(x.id));
     return l ? l.name : 'ラベルなし';
   }
   return card.project || '（プロジェクトなし）';
 }
 function laneIdForCard(card, mode, board = state.board) {
-  if (mode === 'repo') return JSON.stringify([mode, card.repoName || card.project || '__none']);
+  if (mode === 'repo') return JSON.stringify([mode, resolveRepoLane(card).id]);
+  if (mode === 'worktree') return JSON.stringify([mode, resolveWorktreeLane(card).id]);
+  if (mode === 'dirName') return JSON.stringify([mode, resolveDirNameLane(card).id]);
+  if (mode === 'status') return JSON.stringify([mode, resolveStatusLane(card).id]);
   if (mode === 'branch') return JSON.stringify([mode, card.branch || card.worktreeName || '__none']);
   if (mode === 'directory') {
-    return JSON.stringify([mode, resolveDirectoryLane(card, board.directories).id]);
+    return JSON.stringify([mode, resolveDirectoryLane(card, board?.directories).id]);
   }
-  if (SOURCE_AXES[mode]) return JSON.stringify([mode, sourceLane(card, mode, board.sourceFacets).id]);
+  if (mode === 'host') {
+    const env = resolveEnvironmentLane(card);
+    return JSON.stringify([mode, env.nativeId != null ? env.nativeId : env.creation]);
+  }
+  if (isSourceAxis(mode)) return JSON.stringify([mode, sourceLane(card, mode, board.sourceFacets).id]);
   const labelId = board.labels.find(label => card.labels.includes(label.id))?.id;
   return JSON.stringify([mode, taskLaneCreation(card, mode, labelId)]);
 }
@@ -72,17 +157,31 @@ function buildLanes(b, mode) {
     const labelId = b.labels.find(label => card.labels.includes(label.id))?.id;
     let ln;
     if (mode === 'repo') {
-      const rKey = card.repoName || card.project || '__none';
-      ln = lane({ context: { repo: rKey } }, laneKey(card, mode), rKey);
+      const r = resolveRepoLane(card);
+      ln = lane(r.creation, r.name, r.id);
+    } else if (mode === 'worktree') {
+      const wt = resolveWorktreeLane(card);
+      ln = lane(wt.creation, wt.name, wt.id);
+      ln.orderGroup = wt.orderGroup;
+    } else if (mode === 'dirName') {
+      const dn = resolveDirNameLane(card);
+      ln = lane(dn.creation, dn.name, dn.id);
+    } else if (mode === 'status') {
+      const st = resolveStatusLane(card);
+      ln = lane({}, st.name, st.id);
+      ln.orderRank = st.orderRank;
     } else if (mode === 'branch') {
       const bKey = card.branch || card.worktreeName || '__none';
-      ln = lane({ context: { branch: bKey } }, laneKey(card, mode), bKey);
+      ln = lane({}, laneKey(card, mode, b), bKey);
     } else if (mode === 'directory') {
       const d = resolveDirectoryLane(card, b.directories);
       ln = lane(d.creation, d.name, d.id);
+    } else if (mode === 'host') {
+      const env = resolveEnvironmentLane(card);
+      ln = lane(env.creation, env.name, env.nativeId);
     } else {
-      const native = SOURCE_AXES[mode] ? sourceLane(card, mode, b.sourceFacets) : null;
-      ln = native ? lane(native.creation, native.name, native.id) : lane(taskLaneCreation(card, mode, labelId), laneKey(card, mode));
+      const native = isSourceAxis(mode) ? sourceLane(card, mode, b.sourceFacets) : null;
+      ln = native ? lane(native.creation, native.name, native.id) : lane(taskLaneCreation(card, mode, labelId), laneKey(card, mode, b));
     }
     ln.count++;
     if (card.unread) ln.unread++;
@@ -90,10 +189,22 @@ function buildLanes(b, mode) {
     if (card.status === 'waiting') ln.waiting++;
   }
   if (mode === 'repo') {
-    lane({ context: { repo: '__none' } }, '（リポジトリ不明）', '__none');
+    lane({ context: { repo: null } }, '（リポジトリ不明）', '__none');
+  }
+  if (mode === 'worktree') {
+    lane({}, '（ワークツリーなし）', '__none').orderGroup = 2;
+  }
+  if (mode === 'dirName') {
+    lane({ context: { dirName: null } }, '（ディレクトリなし）', '__none');
+  }
+  if (mode === 'status') {
+    for (const st of ['running', 'waiting', 'aborted', 'completed', 'idle']) {
+      const s = resolveStatusLane({ status: st, statusKnown: true });
+      lane({}, s.name, s.id).orderRank = s.orderRank;
+    }
   }
   if (mode === 'branch') {
-    lane({ context: { branch: '__none' } }, '（ブランチなし）', '__none');
+    lane({}, '（ブランチなし）', '__none');
   }
   if (mode === 'directory') {
     for (const d of b.directories) Object.assign(lane({ directory: d.id }, d.name, d.id), { color: d.color, dirId: d.id });
@@ -123,15 +234,22 @@ function buildLanes(b, mode) {
   }
   if (mode === 'host') {
     lane({ context: { host: 'local' } }, 'このマシン');
-    for (const host of b.hosts || []) lane({ context: { host: host.local ? 'local' : host.id } }, host.local ? 'このマシン' : host.label);
+    for (const host of b.hosts || []) if (!host.cloud) lane({ context: { host: host.local ? 'local' : host.id } }, host.local ? 'このマシン' : host.label);
+    if (b.cloudCount > 0) lane({}, 'クラウド', 'cloud');
   }
   if (mode === 'account') {
     for (const account of b.accounts?.accounts || []) lane({ context: { account: account.key } }, accountName(account.key));
     lane({ context: { account: null } }, 'アカウント不明');
-    for (const host of b.hosts || []) if (!host.local) lane({ context: { account: null, host: host.id } }, `⌂ ${host.label}`);
+    for (const host of b.hosts || []) if (!host.local && !host.cloud) lane({ context: { account: null, host: host.id } }, `⌂ ${host.label}`);
   }
   const last = name => /^（.*なし）$|^（.*不明）$/.test(name);
-  return [...lanes.values()].sort((a, c) => last(a.name) - last(c.name) || c.count - a.count).map(ln => ({
+  return [...lanes.values()].sort((a, c) =>
+    mode === 'status'
+      ? (a.orderRank ?? 99) - (c.orderRank ?? 99)
+      : mode === 'worktree'
+        ? (a.orderGroup ?? 99) - (c.orderGroup ?? 99) || last(a.name) - last(c.name) || c.count - a.count
+        : last(a.name) - last(c.name) || c.count - a.count
+  ).map(ln => ({
     ...ln, lists: b.lists.map(list => {
       const cards = list.cards.filter(card => laneIdForCard(card, mode, b) === ln.key);
       return { ...list, cards, count: cards.length };

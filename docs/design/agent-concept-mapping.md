@@ -23,7 +23,8 @@
 | Codexのセクション | 元アプリの一覧上の整理 | Sidebar section | Claude Groupと自動同一視しない |
 | Claudeのグループ | 確認できた手動整理の情報 | Codex Sectionと機能が重なる部分を記録 | 手動Group。現行UI名・取得範囲が確認できない場合はその旨を表示 |
 | 開始設定 | 新しいセッションの開始条件を選ぶ共通領域の名前 | Project、Local setup、実行先、Cloud environment等の組合せ | 環境と、その環境が指す実行先・設定 |
-| 実行先 | 処理を動かす場所 | このマシン／接続マシン／クラウド | Local／SSH／WSL／Cloud／Remote Controlの実体 |
+| 実行先・環境（マシン） | 処理を動かす場所（横断分類軸としても利用） | このマシン／接続マシン／クラウド | Local／SSH／WSL／Cloud／Remote Controlの実体 |
+| ディレクトリ名 | 作業フォルダの末尾ディレクトリ名（非Git含む横断分類軸） | `basename(cwd)` | `basename(cwd)` |
 | マシン | 接続・ファイル・プロセスを持つ実機または接続先 | Local/remote host | Local/SSH/Remote Controlの接続先。Cloudを架空の実機として扱わない |
 | 作業フォルダ | 実際に読み書きするディレクトリ | cwd、Project roots | cwd、追加フォルダ。複数を保持 |
 | リポジトリ | Gitの履歴管理単位 | Repository | Repository |
@@ -36,6 +37,11 @@
 | 元アプリで開く | 元のセッション・設定等へ移る | 確認済みのdeep link/公式操作 | 確認済みのdeep link/公式操作 |
 
 「ワークスペース」はCanbanの画面構成を表す既存語の範囲に留め、Project/Environment/Organizationの総称として増やさない。「環境」は常にClaudeの名前付き環境、クラウド環境、環境変数等の意味が分かる修飾を付ける。
+
+### 2026-11-18 UI表記と横断分類の拡張（マルチエージェント・オーケストレータ方針）
+- **元アプリ固有概念の `"概念名 (Agent)"` 表記統一**: Antigravity や Codex の「プロジェクト」（複数ローカルフォルダ `roots` を登録可能）と、Claude の「環境」（ローカルおよびリモート／クラウドを含む名前付き開始設定）のように、エージェント間で意味や実体が異なる概念が Canban の共通語（「カテゴリ」等）と競合しないよう、ファセット・チップ・詳細・タスク詳細プリセット表記を `プロジェクト (Codex)`、`プロジェクト (Antigravity)`、`環境 (Claude)`、`グループ (Claude)`、`セクション (Codex)`、`プロジェクト (Gemini)`、`プロジェクト (ChatGPT)`、`ワークスペース (Cursor)`、`ワークスペース (Grok)` に統一した。新規作成ダイアログの `aria-label`（`開始設定（Claudeの環境）` / `開始設定（Codexのプロジェクト）`）は既存のUI契約を維持している。
+- **Antigravity プロジェクト複数フォルダ**: `~/.gemini/config/projects/*.json` の `projectResources.resources[]` から全ルートフォルダを `SourceEntity.roots` として保持し、実プロジェクト未所属（`outside-of-project`）は登録プロジェクトが1件のみでも `absent` を返す。
+- **全エージェント共通の横断軸（Group By / 絞り込み）**: 「カテゴリ・リポジトリ（Worktree統合）・環境（マシン／クラウド）・状態・ワークツリー・ディレクトリ名・作業フォルダ・AI Apps・ラベル・アカウント」はレーン軸と絞り込みの両方を提供し、「ブランチ」はレーン専用軸として提供する。また、`Shift+G` でレーン軸を切り替えられる。
 
 
 ## 20分野の受け持ち

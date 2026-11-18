@@ -19,7 +19,9 @@ function ganttRow(it, range, now) {
   const known = card.statusKnown !== false && !(isTask && card.links?.length && status == null);
   const waiting = rowWaitLine(card), description = ganttDescription(card, bar, due);
   const title = h('span', { class: 'gantt-row-title', text: card.title });
+  const loc = typeof cardLocationText === 'function' ? cardLocationText(card) : '';
   const meta = h('div', { class: 'gantt-row-meta' }, faceWho(isTask ? 'task' : card.agent, card),
+    loc ? h('span', { class: 'ellipsis muted', text: loc }) : null,
     card.archived ? h('span', { class: 'gantt-archived', text: 'アーカイブ済み' }) : null,
     h('time', { title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }));
   const label = h('div', { class: 'gantt-row-label' },

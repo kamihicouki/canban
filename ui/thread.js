@@ -226,7 +226,9 @@ function renderThreadPane(p, d, secs, { card, listSel }) {
   const order = [['progress', true], ['add', true], ['labels', true], ['prio', true], ['task', false], ['cardRelations', false], ['related', true], ['pr', true], ['memo', true], ['resume', true], ['detail', false], ['first', false], ['other', false], ['actions', false]];
   p.detailNodes = order.filter(([id]) => secs[id]).map(([id, open]) => detailSection(id, secs[id].title ?? secTitle(id), secs[id].nodes, { open, extra: secs[id].extra }));
   const sig = s.signals, git = d.git;
-  const projectChip = s.project && s.project !== 'outside-of-project' ? h('span', { class: 'th-proj badge-subtle', title: `プロジェクト: ${s.project}` }, s.project) : null;
+  const projRaw = s.project && s.project !== 'outside-of-project' ? String(s.project).trim() : '';
+  const dupNames = [card.directory?.name, s.repoName].filter(Boolean).map((n) => String(n).trim().toLowerCase());
+  const projectChip = projRaw && !dupNames.includes(projRaw.toLowerCase()) ? h('span', { class: 'th-proj badge-subtle', title: `プロジェクト: ${projRaw}` }, projRaw) : null;
   const wtText = s.worktreeName ? `${s.repoName || ''} (${s.worktreeName})` : null;
   const branchText = wtText || s.branch;
   const chips = [

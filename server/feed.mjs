@@ -18,7 +18,7 @@ const OUT_MAX = 600;
 // `offset` is where the next read continues; a partial last line is left for it.
 // A compressed rollout (`.jsonl.zst`) is decompressed down to the bytes that can be asked for.
 export async function readLines(file, { start = null, tailBytes = FEED_TAIL_BYTES } = {}) {
-  if (file && (file.includes('#composer:') || file.includes('#chatgpt:') || file.endsWith('.json'))) {
+  if (file && (file.includes('#composer:') || file.includes('#chatgpt:') || file.includes('.db#') || file.endsWith('.json'))) {
     const records = start != null && start > 0 ? [] : await readMultiAgentRecords(file);
     return { records, offset: records.length, size: records.length, reset: false, fromStart: false };
   }

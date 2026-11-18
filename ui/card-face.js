@@ -97,7 +97,7 @@ function renderCard(card, list) {
     if (task && card.links.length) el.append(h('div', { class: 'flinks' }, ...card.links.slice(0, 3).map((l) => h('span', { class: 'flink', title: l.title }, faceGlyph(l.status, l.statusKnown), faceWho(l.agent, l), h('span', { class: 'ellipsis', text: l.title })))));
   }
   const foot = h('div', { class: 'ffoot' }, faceWho(task ? 'task' : card.agent, card), dotPill(card), dirPill(card.directory || { name: 'カテゴリ無し' }));
-  const source = cardSourceRelations(card).filter((relation, index, all) => all.findIndex(r => sourceRefKey(r.ref) === sourceRefKey(relation.ref)) === index);
+  const source = visibleCardSourceRelations(card);
   if (source.length) foot.append(h('span', { class: 'pill ellipsis', title: sourceDetailRows(card).map(([k,v]) => `${k}: ${v}`).join('\n'), text: source.length > 1 ? `元アプリ 複数（${source.length}）` : sourceFacetLabel({ ref: source[0].ref, name: source[0].observation?.value?.name }) }));
   if (!task) {
     const exchanges = exchangePill(card); if (exchanges) foot.append(exchanges);

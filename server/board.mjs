@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { normalizeClaudeExecution } from './accounts.mjs';
 import { sessionActions } from './session-actions.mjs';
 import { capabilitiesFor, compactCapabilities } from './source-capabilities.mjs';
@@ -37,7 +38,7 @@ import { sourceRelationsForTask, matchesSourceFilters, sourceFacetsForCards, pla
 
 import { peekGit, refreshGit } from './gitlive.mjs';
 import { RuleEngine, replayRule } from './rules.mjs';
-import { PrService, resolveRepoContext } from './git.mjs';
+import { PrService, resolveRepoContext, resolveRepoContextSync } from './git.mjs';
 import { SearchIndex } from './search.mjs';
 import { resolveDirectory } from './store.mjs';
 import { perf } from './perf.mjs';
@@ -72,6 +73,23 @@ export function inferSurface(s) {
   return 'cli';
 }
 
+export function dirNameOf(cwd) {
+  if (typeof cwd !== 'string') return null;
+  const clean = cwd.trim().replace(/\/+$/, '');
+  if (!clean || clean === '/') return null;
+  return path.basename(clean) || null;
+}
+
+export function envKeyOf(s) {
+  if (isCloudSession(s) || inferSurface(s) === 'cloud' || s?.host?.cloud === true) return 'cloud';
+  if (s?.host?.id && s.host.id !== 'local') return s.host.id;
+  return 'local';
+}
+
+const cleanRepoName = (v) => (v && v !== 'outside-of-project' ? String(v).trim() || null : null);
+const sessionRepoName = (s) => cleanRepoName(s?.repoName) || cleanRepoName(s?.project);
+export const worktreeKeyOf = (repoName, worktreeName) => (worktreeName ? `${cleanRepoName(repoName) || '-'}/${worktreeName}` : null);
+
 function localSessions(options = {}) { return localSourceReads.get(options); }
 async function readLocalSessions() {
   const [codex, claude, antigravity, gemini, cursor, chatgpt, grok] = await Promise.all([
@@ -92,14 +110,35 @@ async function readLocalSessions() {
     ...chatgpt.sessions,
     ...grok.sessions,
   ].map((s) => ({ ...s, surface: inferSurface(s) }));
-  // 全エージェントで元リポジトリを補完し、記録済みのブランチは保持する。
+  // 全エージェントで元リポジトリとディレクトリ名を補完し、記録済みのブランチやGitアンカーを活かす。
   await Promise.all(allLocal.map(async (s) => {
-    if (!s.cwd || s.repoName) return;
-    const ctx = await resolveRepoContext(s.cwd);
-    s.repoRoot = ctx.repoRoot;
-    s.repoName = ctx.repoName;
-    s.worktreeName = ctx.worktreeName;
-    if (!s.branch && ctx.branch) s.branch = ctx.branch;
+    if (s.cwd && !s.repoName) {
+      const ctx = await resolveRepoContext(s.cwd);
+      if (ctx.isWorktree) {
+        s.repoRoot = ctx.repoRoot;
+        s.repoName = ctx.repoName;
+        s.worktreeName = ctx.worktreeName;
+        if (!s.branch && ctx.branch) s.branch = ctx.branch;
+      } else if (s.anchorRepoName && s.anchorWorktreeName) {
+        s.repoRoot = s.anchorRepoRoot;
+        s.repoName = s.anchorRepoName;
+        s.worktreeName = s.anchorWorktreeName;
+      } else if (ctx.isGit) {
+        s.repoRoot = ctx.repoRoot;
+        s.repoName = ctx.repoName;
+        s.worktreeName = ctx.worktreeName;
+        if (!s.branch && ctx.branch) s.branch = ctx.branch;
+      } else if (s.anchorRepoName) {
+        s.repoRoot = s.anchorRepoRoot;
+        s.repoName = s.anchorRepoName;
+        s.worktreeName = null;
+      } else {
+        s.repoRoot = ctx.repoRoot;
+        s.repoName = ctx.repoName;
+        s.worktreeName = ctx.worktreeName;
+      }
+    }
+    s.dirName ||= dirNameOf(s.cwd);
   }));
   const value = {
     sessions: allLocal,
@@ -181,7 +220,7 @@ function matches(session, card, f, labelsById, hits, dir) {
   if (f.cardKind === 'task') return false;
   if (!matchesDotScope(session, f.dotScope)) return false;
   if (f.agent && f.agent !== 'all' && session.agent !== f.agent) return false;
-  if (f.host && (session.host?.id || 'local') !== f.host) return false;
+  if (f.host && envKeyOf(session) !== f.host) return false;
   if (f.account && !matchesAccount(f.account, session)) return false;
   if (!matchesSourceFilters((session.sourceView || sessionSourceView(session)).relations, f.sourceFilters)) return false;
   if (f.project && !legacyMatches(session, 'project', f.project)) return false;
@@ -189,6 +228,18 @@ function matches(session, card, f, labelsById, hits, dir) {
   if (!matchesWorkingFolder(session, null, f.workingFolder)) return false;
   if (f.section && (f.section === '__none' ? session.codexSection : session.codexSection?.id !== f.section)) return false;
   if (!matchesDirectory(f, dir)) return false;
+  if (f.repo) {
+    const r = sessionRepoName(session);
+    if (f.repo === '__none' ? r : !r || r.toLowerCase() !== f.repo.toLowerCase()) return false;
+  }
+  if (f.worktree) {
+    const wt = worktreeKeyOf(sessionRepoName(session), session.worktreeName);
+    if (f.worktree === '__only' ? !wt : f.worktree === '__none' ? wt : wt !== f.worktree) return false;
+  }
+  if (f.dirName) {
+    const dn = session.dirName || dirNameOf(session.cwd);
+    if (f.dirName === '__none' ? dn : dn !== f.dirName) return false;
+  }
   if (f.label && (f.label === '__none' ? card?.labels?.length : !card?.labels?.includes(f.label))) return false;
   if (f.status && (session.status || 'idle') !== f.status) return false;
   if (!f.includeArchived && session.archived) return false;
@@ -199,13 +250,109 @@ function matches(session, card, f, labelsById, hits, dir) {
   if (f.q) {
     const q = f.q.toLowerCase();
     const labelNames = (card?.labels || []).map((id) => labelsById.get(id)?.name || '');
-    const hay = [session.title, session.preview, session.project, dir?.name, session.branch, session.cwd, session.host?.label, card?.note, ...labelNames]
+    const hay = [session.title, session.preview, session.project, session.repoName, session.worktreeName, session.dirName, dir?.name, session.branch, session.cwd, session.host?.label, card?.note, ...labelNames]
       .filter(Boolean)
       .join('\n')
       .toLowerCase();
     if (!hay.includes(q) && !hits?.has(session.id)) return false;
   }
   return true;
+}
+
+export function taskCrossContext(t, links = []) {
+  const ctxObj = t.context || {};
+  const hasExplicitRepo = Object.hasOwn(ctxObj, 'repo');
+  const explicitRepo = hasExplicitRepo ? cleanRepoName(ctxObj.repo) : undefined;
+  const hasExplicitDir = Object.hasOwn(ctxObj, 'dirName');
+  const explicitDir = hasExplicitDir ? (ctxObj.dirName || null) : undefined;
+  const targetCtx = t.target?.cwd ? resolveRepoContextSync(t.target.cwd) : null;
+  const targetGitRepo = (targetCtx?.isGit || targetCtx?.isWorktree) ? cleanRepoName(targetCtx.repoName) : null;
+  const legacyProjRepo = !hasExplicitRepo ? cleanRepoName(ctxObj.project) : null;
+  const fallbackRepo = targetGitRepo || legacyProjRepo || dirNameOf(t.target?.cwd);
+  const repoNames = [...new Set(links.map((x) => sessionRepoName(x)).filter(Boolean))];
+  const repoRoots = [...new Set(links.map((x) => x.repoRoot).filter(Boolean))];
+  const chosenRepo = hasExplicitRepo
+    ? explicitRepo
+    : (repoNames.length === 1 ? repoNames[0] : (links.length === 0 ? fallbackRepo : null));
+  const wtPairs = [...new Set(links.map((x) => x.worktreeName ? `${sessionRepoName(x) || '__norepo__'}/${x.worktreeName}` : '__none__'))];
+  const rawSingleWt = links.length > 0
+    ? (wtPairs.length === 1 && wtPairs[0] !== '__none__' ? { repo: sessionRepoName(links[0]), wt: links[0].worktreeName } : null)
+    : (targetCtx?.worktreeName ? { repo: targetGitRepo, wt: targetCtx.worktreeName } : null);
+  const singleWt = rawSingleWt && (!hasExplicitRepo || (chosenRepo && rawSingleWt.repo && chosenRepo.toLowerCase() === rawSingleWt.repo.toLowerCase()))
+    ? rawSingleWt.wt
+    : null;
+  const folderFallback = !hasExplicitDir
+    ? (ctxObj.folder && !ctxObj.folder.startsWith('/') ? ctxObj.folder : dirNameOf(ctxObj.folder))
+    : null;
+  const linkDirs = [...new Set(links.map((x) => x.dirName || dirNameOf(x.cwd)).filter(Boolean))];
+  const chosenDir = hasExplicitDir
+    ? explicitDir
+    : (dirNameOf(t.target?.cwd) || (linkDirs.length === 1 ? linkDirs[0] : null) || folderFallback || null);
+  const linkEnvs = [...new Set(links.map((x) => envKeyOf(x)))];
+  const explicitHost = Object.hasOwn(ctxObj, 'host') ? ctxObj.host : undefined;
+  const targetEnv = (t.target?.hostId === 'cloud' || t.target?.runOn === 'cloud') ? 'cloud' : (t.target?.hostId || 'local');
+  const environmentKey = explicitHost !== undefined
+    ? (explicitHost || 'local')
+    : links.length > 0
+      ? (linkEnvs.length === 1 ? linkEnvs[0] : (t.target?.hostId || 'local'))
+      : targetEnv;
+  return {
+    repoName: chosenRepo,
+    repoRoot: repoRoots.length === 1 ? repoRoots[0] : (links.length === 0 ? (targetCtx?.repoRoot || t.target?.cwd || null) : null),
+    worktreeName: singleWt,
+    dirName: chosenDir,
+    environmentKey,
+  };
+}
+
+function taskReposOf(t, links, cross = taskCrossContext(t, links)) {
+  const ctxObj = t.context || {};
+  if (Object.hasOwn(ctxObj, 'repo')) {
+    const r = cleanRepoName(ctxObj.repo);
+    return r ? [r] : [];
+  }
+  const targetCtx = t.target?.cwd ? resolveRepoContextSync(t.target.cwd) : null;
+  const targetGitRepo = (targetCtx?.isGit || targetCtx?.isWorktree) ? cleanRepoName(targetCtx.repoName) : null;
+  const targetRepo = targetGitRepo || cleanRepoName(ctxObj.project) || dirNameOf(t.target?.cwd);
+  const raw = links.length
+    ? [targetGitRepo || cleanRepoName(ctxObj.project), cross.repoName, ...links.map((s) => sessionRepoName(s))]
+    : [targetRepo, cross.repoName];
+  const seen = new Set(), out = [];
+  for (const r of raw) {
+    if (!r) continue;
+    const k = r.toLowerCase();
+    if (!seen.has(k)) { seen.add(k); out.push(r); }
+  }
+  return out;
+}
+
+function taskDirNamesOf(t, links, cross = taskCrossContext(t, links)) {
+  const ctxObj = t.context || {};
+  if (Object.hasOwn(ctxObj, 'dirName')) {
+    const d = ctxObj.dirName ? String(ctxObj.dirName).trim() : '';
+    return d ? [d] : [];
+  }
+  const folderFallback = ctxObj.folder && !ctxObj.folder.startsWith('/') ? ctxObj.folder : dirNameOf(ctxObj.folder);
+  return [...new Set([
+    cross.dirName,
+    dirNameOf(t.target?.cwd),
+    folderFallback,
+    ...links.map((s) => s.dirName || dirNameOf(s.cwd)),
+  ].filter(Boolean))];
+}
+
+function taskWorktreesOf(t, links) {
+  const map = new Map();
+  const add = (rName, wtName) => {
+    const wtKey = worktreeKeyOf(rName, wtName);
+    if (wtKey && !map.has(wtKey)) map.set(wtKey, { key: wtKey, name: `${rName || '-'} / ${wtName}`, repoName: rName || null, worktreeName: wtName });
+  };
+  for (const s of links) add(sessionRepoName(s), s.worktreeName);
+  if (t.target?.cwd) {
+    const tCtx = resolveRepoContextSync(t.target.cwd);
+    if (tCtx?.worktreeName) add(cleanRepoName(tCtx.repoName), tCtx.worktreeName);
+  }
+  return [...map.values()];
 }
 
 export function matchesTask(t, links, status, f, labelsById, dir) {
@@ -219,17 +366,42 @@ export function matchesTask(t, links, status, f, labelsById, dir) {
   const anyLink = (pred) => links.some(pred);
   if (f.pinnedOnly && !anyLink((s) => s.pinnedInAgent)) return false;
   const context = t.context || {};
+  const cross = taskCrossContext(t, links);
   const match = (key, legacy) => !f[key] || (key === 'agent' && f[key] === 'all') ||
     (Object.hasOwn(context, key) ? (f[key] === '__none' ? !context[key] : context[key] === f[key]) : legacy());
   if (!match('folder', () => anyLink(s => legacyMatches(s, 'folder', f.folder)))) return false;
   if (!match('section', () => anyLink(s => f.section === '__none' ? !s.codexSection : s.codexSection?.id === f.section))) return false;
   if (!match('agent', () => anyLink(s => s.agent === f.agent) || t.target?.agent === f.agent || t.context?.account?.split(':')[0] === f.agent)) return false;
-  if (!match('host', () => anyLink(s => (s.host?.id || 'local') === f.host) || (t.target?.hostId || 'local') === f.host)) return false;
+  if (f.host) {
+    if (Object.hasOwn(context, 'host')) {
+      if (f.host === '__none' ? context.host : context.host !== f.host) return false;
+    } else {
+      const ok = links.length
+        ? (anyLink((s) => envKeyOf(s) === f.host) || (!!t.target?.hostId && t.target.hostId === f.host))
+        : (cross.environmentKey === f.host);
+      if (!ok) return false;
+    }
+  }
   if (!match('account', () => anyLink(s => matchesAccount(f.account, s)))) return false;
   if (!match('project', () => anyLink(s => s.project === f.project))) return false;
+  if (f.repo) {
+    const repos = taskReposOf(t, links, cross);
+    const ok = f.repo === '__none' ? repos.length === 0 : repos.some((r) => r.toLowerCase() === f.repo.toLowerCase());
+    if (!ok) return false;
+  }
+  if (f.worktree) {
+    const wts = taskWorktreesOf(t, links);
+    const ok = f.worktree === '__only' ? wts.length > 0 : f.worktree === '__none' ? wts.length === 0 : wts.some((w) => w.key === f.worktree);
+    if (!ok) return false;
+  }
+  if (f.dirName) {
+    const dirs = taskDirNamesOf(t, links, cross);
+    const ok = f.dirName === '__none' ? dirs.length === 0 : dirs.includes(f.dirName);
+    if (!ok) return false;
+  }
   if (f.q) {
     const q = f.q.toLowerCase();
-    const hay = [t.title, t.description, t.note, dir?.name, ...Object.values(effectiveTaskContext(t, links)), ...(t.labels || []).map((id) => labelsById.get(id)?.name || ''), ...links.map((s) => s.title)]
+    const hay = [t.title, t.description, t.note, cross.repoName, cross.worktreeName, cross.dirName, dir?.name, ...Object.values(effectiveTaskContext(t, links)), ...(t.labels || []).map((id) => labelsById.get(id)?.name || ''), ...links.map((s) => s.title)]
       .filter(Boolean).join('\n').toLowerCase();
     if (!hay.includes(q)) return false;
   }
@@ -249,6 +421,9 @@ export function normalizeFilters(f = {}) {
     workingFolder: normalizeWorkingFolder(f.workingFolder),
     section: typeof f.section === 'string' && f.section ? f.section : null,
     directory: typeof f.directory === 'string' && f.directory ? f.directory : null,
+    repo: typeof f.repo === 'string' && f.repo.trim() ? f.repo.trim() : null,
+    worktree: typeof f.worktree === 'string' && f.worktree.trim() ? f.worktree.trim() : null,
+    dirName: typeof f.dirName === 'string' && f.dirName.trim() ? f.dirName.trim() : null,
     label: typeof f.label === 'string' && f.label ? f.label : null,
     status: STATUSES.includes(f.status) ? f.status : null,
     q: typeof f.q === 'string' ? f.q.trim() : '',
@@ -465,6 +640,10 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
   const sections = new Map(); // Codex sidebar sections
   const dirCounts = new Map();
   const hostCounts = new Map();
+  const repoCounts = new Map();
+  const worktreeCounts = new Map();
+  const dirNameCounts = new Map();
+  let cloudCount = 0;
   const visible = [];
 
   for (const s of sessions) {
@@ -474,8 +653,32 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
     if (s.project && visibleKind) projects.set(s.project, (projects.get(s.project) || 0) + 1);
     if (s.folder && s.folder !== s.project && visibleKind) folders.set(s.folder, (folders.get(s.folder) || 0) + 1);
     if (s.codexSection) sections.set(s.codexSection.id, { ...s.codexSection, count: (sections.get(s.codexSection.id)?.count || 0) + 1 });
-    if (visibleKind) visible.push(s);
-    if (visibleKind) hostCounts.set(s.host?.id || 'local', (hostCounts.get(s.host?.id || 'local') || 0) + 1);
+    if (visibleKind) {
+      visible.push(s);
+      hostCounts.set(s.host?.id || 'local', (hostCounts.get(s.host?.id || 'local') || 0) + 1);
+      if (!toTask.has(s.id)) {
+        if (envKeyOf(s) === 'cloud') cloudCount++;
+        const rName = sessionRepoName(s);
+        if (rName) {
+          const rKey = rName.toLowerCase();
+          const cur = repoCounts.get(rKey) || { name: rName, count: 0, running: 0, waiting: 0 };
+          cur.count++;
+          if (s.status === 'running') cur.running++;
+          if (s.status === 'waiting') cur.waiting++;
+          repoCounts.set(rKey, cur);
+        }
+        const wtKey = worktreeKeyOf(rName, s.worktreeName);
+        if (wtKey) {
+          const cur = worktreeCounts.get(wtKey) || { key: wtKey, name: `${rName || '-'} / ${s.worktreeName}`, repoName: rName || null, worktreeName: s.worktreeName, count: 0, running: 0, waiting: 0 };
+          cur.count++;
+          if (s.status === 'running') cur.running++;
+          if (s.status === 'waiting') cur.waiting++;
+          worktreeCounts.set(wtKey, cur);
+        }
+        const dn = s.dirName || dirNameOf(s.cwd);
+        if (dn) dirNameCounts.set(dn, (dirNameCounts.get(dn) || 0) + 1);
+      }
+    }
     const dir = resolveDirectory(state, card, s.cwd, s);
     if (visibleKind && !toTask.has(s.id)) dirCounts.set(dir?.id || '__none', (dirCounts.get(dir?.id || '__none') || 0) + 1);
     if (!includeLinkedSessions && toTask.has(s.id)) continue; // shown inside its task card except in cross-board search
@@ -488,13 +691,15 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
       agent: s.agent,
       surface: inferSurface(s),
       host: s.host?.local === false ? { id: s.host.id, alias: s.host.alias, label: s.host.label } : null,
+      environmentKey: envKeyOf(s),
       account: s.account || null,
       home: s.home || null,
       title: s.title,
       project: s.project,
       repoRoot: s.repoRoot || null,
-      repoName: s.repoName || null,
+      repoName: sessionRepoName(s),
       worktreeName: s.worktreeName || null,
+      dirName: s.dirName || dirNameOf(s.cwd),
       folder: s.folder,
       codexProject: s.codexProject || null,
       sourceView: compactSourceView(s.sourceView || sessionSourceView(s)),
@@ -565,6 +770,29 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
       sections.set(context.section, { ...section, count: section.count + 1 });
     }
     dirCounts.set(dir?.id || '__none', (dirCounts.get(dir?.id || '__none') || 0) + 1);
+    const cross = taskCrossContext(t, links);
+    const taskIsCloud = Object.hasOwn(t.context || {}, 'host')
+      ? t.context.host === 'cloud'
+      : (links.some((s) => envKeyOf(s) === 'cloud') || cross.environmentKey === 'cloud');
+    if (taskIsCloud) cloudCount++;
+    for (const rName of taskReposOf(t, links, cross)) {
+      const rKey = rName.toLowerCase();
+      const cur = repoCounts.get(rKey) || { name: rName, count: 0, running: 0, waiting: 0 };
+      cur.count++;
+      if (status === 'running') cur.running++;
+      if (status === 'waiting') cur.waiting++;
+      repoCounts.set(rKey, cur);
+    }
+    for (const wt of taskWorktreesOf(t, links)) {
+      const cur = worktreeCounts.get(wt.key) || { ...wt, count: 0, running: 0, waiting: 0 };
+      cur.count++;
+      if (status === 'running') cur.running++;
+      if (status === 'waiting') cur.waiting++;
+      worktreeCounts.set(wt.key, cur);
+    }
+    for (const dn of taskDirNamesOf(t, links, cross)) {
+      dirNameCounts.set(dn, (dirNameCounts.get(dn) || 0) + 1);
+    }
     if (!matchesTask(t, links, status, filters, labelsById, dir)) continue;
     const listId = t.listId && listIds.has(t.listId) ? t.listId : state.defaultListId;
     buckets.get(listId).push({
@@ -581,6 +809,11 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
       sourceRelations,
       directoryId: t.directoryId || null,
       project: context.project,
+      repoRoot: cross.repoRoot,
+      repoName: cross.repoName,
+      worktreeName: cross.worktreeName,
+      dirName: cross.dirName,
+      environmentKey: cross.environmentKey,
       folder: context.folder,
       agent: context.agent,
       host: context.host && context.host !== 'local' ? { id: context.host, label: hosts.find(h => h.id === context.host)?.label || context.host } : null,
@@ -627,6 +860,10 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
     uncategorizedCount: dirCounts.get('__none') || 0,
     defaultListId: state.defaultListId,
     projects: [...projects.entries()].sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count })),
+    repos: [...repoCounts.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
+    worktrees: [...worktreeCounts.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
+    dirNames: [...dirNameCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name, count]) => ({ name, count })),
+    cloudCount,
     codexSections: [...sections.values()].sort((a, b) => b.count - a.count),
     folders: [...folders.entries()].sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count })),
     codexProjects: codexProjectList(app, sessions).map(({ id, name, roots, hostId, count }) => ({ id, name, roots, hostId, count })),
