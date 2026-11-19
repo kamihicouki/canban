@@ -23,6 +23,23 @@ function faceWho(agent, card = null) {
     surfMeta ? h('span', { class: 'who-surf', text: surfMeta.short }) : null);
 }
 
+function sessionKindLabel(card, { short = false } = {}) {
+  if (card.sessionKind === 'subagent' || card.subagent) return 'サブエージェント';
+  if (card.sessionKind === 'created' || card.createdParent || card.createdParentId) return short ? '作成チャット' : '作成されたチャット';
+  return 'セッション';
+}
+
+function sessionKindPill(card, { compact = false } = {}) {
+  if (card.kind === 'task') return null;
+  const label = sessionKindLabel(card);
+  if (compact && (label === 'セッション' || (card.createdParent && !card.createdChats?.total))) return null;
+  return h('span', {
+    class: 'pill session-kind',
+    title: label,
+    text: sessionKindLabel(card, { short: true }),
+  });
+}
+
 const dotTitle = s => s.dot ? `${s.dot.name} ${s.dot.relation === 'created' ? 'が作成したセッション' : 'に関連するセッション'}` : '';
 const dotPill = s => s.dot ? h('span', { class: 'pill dot-pill', title: dotTitle(s), text: s.dot.name === 'dot' ? 'dot' : `dot · ${s.dot.name}` }) : null;
 
@@ -86,12 +103,13 @@ function renderCard(card, list, opts = {}) {
     if (band) el.append(band);
   }
   el.append(h('div', { class: 'frow' }, faceGlyph(card.status, card.statusKnown), h('div', { class: 'ftitle', text: card.title }), compact ? dotPill(card) : faceFlags(card),
+    compact ? sessionKindPill(card, { compact: true }) : null,
     compact ? h('i', { class: `fagent fagent-${task ? 'task' : card.agent}`, title: task ? T.taskCard : agentAppLabel(card.agent) }) : null,
     compact ? h('span', { class: 'ftime', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }) : null));
   if (compact) {
     if (card.archived) el.querySelector('.frow').append(h('span', { class: 'fflag', text: 'アーカイブ済み' }));
     if (!task && card.createdChats?.total) el.querySelector('.frow').append(h('span', { class: 'pill', title: `作成されたチャット ${card.createdChats.total}件`, text: `子 ${card.createdChats.total}` }));
-    else if (!task && card.createdParent) el.querySelector('.frow').append(h('span', { class: 'pill', title: card.createdParent.title ? `親: ${card.createdParent.title}` : '作成されたチャット', html: picon('branch', 11) }));
+    else if (!task && card.createdParent) el.querySelector('.frow').append(h('span', { class: 'pill', title: card.createdParent.title ? `作成されたチャット・親: ${card.createdParent.title}` : '作成されたチャット' }, h('span', { html: picon('branch', 11) }), '作成チャット'));
     const pill = exchangePill(card, true); if (pill) el.querySelector('.frow').append(pill);
     return finishFace(el, card, list);
   }
@@ -105,12 +123,12 @@ function renderCard(card, list, opts = {}) {
     if (!task && card.status === 'waiting') el.append(h('div', { class: 'fask' },
       card.canDesktop ? h('button', { class: 'btn-primary', type: 'button', text: 'アプリで答える', onpointerdown: (e) => e.stopPropagation(), onclick: (e) => { e.stopPropagation(); resume(card.id, { route: 'desktop' }); } }) : null,
       h('button', { class: 'btn', type: 'button', text: 'その場で読む', onpointerdown: (e) => e.stopPropagation(), onclick: (e) => { e.stopPropagation(); togglePeek(card); } })));
-    if (task && card.links.length) el.append(h('div', { class: 'flinks' }, ...card.links.slice(0, 3).map((l) => h('span', { class: 'flink', title: l.title }, faceGlyph(l.status, l.statusKnown), faceWho(l.agent, l), h('span', { class: 'ellipsis', text: l.title })))));
+    if (task && card.links.length) el.append(h('div', { class: 'flinks' }, ...card.links.slice(0, 3).map((l) => h('span', { class: 'flink', title: l.title }, faceGlyph(l.status, l.statusKnown), faceWho(l.agent, l), sessionKindPill(l), h('span', { class: 'ellipsis', text: l.title })))));
   }
   if (!task && card.createdChats?.total && typeof renderCreatedChatsBar === 'function') {
     el.append(renderCreatedChatsBar(card, opts.createdStack || null));
   }
-  const foot = h('div', { class: 'ffoot' }, faceWho(task ? 'task' : card.agent, card), dotPill(card), dirPill(card.directory || { name: 'カテゴリ無し' }));
+  const foot = h('div', { class: 'ffoot' }, faceWho(task ? 'task' : card.agent, card), sessionKindPill(card), dotPill(card), dirPill(card.directory || { name: 'カテゴリ無し' }));
   const source = visibleCardSourceRelations(card);
   if (source.length) foot.append(h('span', { class: 'pill ellipsis', title: sourceDetailRows(card).map(([k,v]) => `${k}: ${v}`).join('\n'), text: source.length > 1 ? `元アプリ 複数（${source.length}）` : sourceFacetLabel({ ref: source[0].ref, name: source[0].observation?.value?.name }) }));
   if (!task) {

@@ -297,7 +297,7 @@ function renderPendingThreadPane(p, card, listId) {
     acctChip(card),
     h('span', { class: 'th-time', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }),
   ].filter(Boolean);
-  const status = h('div', { class: 'sub row' }, h('span', { class: `badge ${card.agent}`, text: agentLabel(card.agent) }),
+  const status = h('div', { class: 'sub row' }, h('span', { class: `badge ${card.agent}`, text: agentLabel(card.agent) }), sessionKindPill(card),
     cardSurface(card) ? h('span', { class: 'pill', text: SURFACE_META[cardSurface(card)]?.label || cardSurface(card) }) : null,
     h('span', { class: 'row pane-status' }, h('span', { class: `sdot s-${card.status || 'idle'}` }), card.statusKnown === false ? '状態未取得' : STATUS_LABELS[card.status || 'idle']));
   const main = h('div', { class: 'th-main' }, conv, h('div', { class: 'th-dock', 'data-sec': 'send' }, renderPendingDispatch(card)));
@@ -426,6 +426,6 @@ function threadStrip(p, d) {
   const links = task.links.filter((l) => !l.subagent);
   return h('div', { class: 'th-threads', role: 'tablist', 'aria-label': `${T.taskCard}のスレッド` },
     ...links.map((l) => h('button', { class: 'th-thread', type: 'button', role: 'tab', 'aria-selected': String(l.id === p.id), title: l.title, onclick: () => l.id !== p.id && selectTaskThread(task.id, l.id) },
-      faceGlyph(l.status, l.statusKnown), faceWho(l.agent, l), h('span', { class: 'ellipsis', text: l.title }))),
+      faceGlyph(l.status, l.statusKnown), faceWho(l.agent, l), sessionKindPill(l), h('span', { class: 'ellipsis', text: l.title }))),
     h('button', { class: 'th-thread th-new', type: 'button', title: 'このタスクで新しいセッションを始める', onclick: () => { revealPane(task.id); requestAnimationFrame(() => panes[0]?.el.querySelector('[data-sec="send"] textarea')?.focus()); } }, h('span', { html: picon('plus', 13) }), '新しいスレッド'));
 }

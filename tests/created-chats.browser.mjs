@@ -94,6 +94,8 @@ test('案B（親子ネスト連結スタック）がボード・照らし・時�
       CANBAN_CLAUDE_HOME: fx.claudeHome,
       CANBAN_CLAUDE_DESKTOP_DIR: fx.desktopDir,
       CANBAN_LAUNCH_DRYRUN: '1',
+      ...Object.fromEntries(['ANTIGRAVITY_DIR', 'GEMINI_HOME', 'CURSOR_HOME', 'CURSOR_WORKSPACE_DIR', 'CHATGPT_DIR', 'GROK_HOME']
+        .map(key => ['CANBAN_' + key, path.join(fx.dir, 'empty')])),
       CANBAN_SEARCH_INDEX: '0',
       CANBAN_BACKGROUND: '0',
     },
@@ -123,6 +125,8 @@ test('案B（親子ネスト連結スタック）がボード・照らし・時�
   await rpc('canban_move_card', { cardId: 'codex:c2', toList: doneList.id, order: 1 });
   await rpc('canban_move_card', { cardId: 'codex:c3', toList: doneList.id, order: 2 });
   await rpc('canban_move_card', { cardId: 'codex:c4', toList: doingList.id, order: 3 });
+  const task = (await rpc('canban_create_task', { title: 'リリース前の作業', listId: doingList.id })).result.structuredContent;
+  await rpc('canban_link_session', { taskId: task.cardId, sessionId: 'codex:s1' });
 
   let target;
   for (let i = 0; i < 50 && !target; i++) {
@@ -175,6 +179,10 @@ test('案B（親子ネスト連結スタック）がボード・照らし・時�
     if (nested.length !== 1 || allC1.length !== 1) throw new Error('nested child missing or duplicated: ' + nested.length + '/' + allC1.length);
     if (remoteBands.length < 2) throw new Error('remote child parent bands missing: ' + remoteBands.length);
     if (!remoteNote) throw new Error('remote summary button missing');
+    if (pCard.querySelector('.session-kind')?.textContent !== 'セッション') throw new Error('ordinary session kind missing');
+    if (nested[0].querySelector('.session-kind')?.textContent !== '作成チャット') throw new Error('created child kind missing');
+    if (!nested[0].getAttribute('aria-label')?.includes('作成されたチャット')) throw new Error('card accessible name lacks its kind');
+    if (!document.querySelector('#board .card.task .who-task')?.textContent.includes('タスクカード')) throw new Error('task kind missing');
 
     // 照らすボタンでファミリーハイライト + アプリバーチップ + Esc解除
     remoteNote.click(); await w(150);
@@ -228,8 +236,18 @@ test('案B（親子ネスト連結スタック）がボード・照らし・時�
     await w(300);
     const subs = document.querySelectorAll('.iwork-created .irow-sub');
     if (subs.length < 1) throw new Error('timeline missing nested created chat rows');
-    subs[0].click(); await w(250);
-    if (subs[0].getAttribute('aria-selected') !== 'true') throw new Error('timeline created child selection lost');
+    if (subs[0].querySelector('.session-kind')?.textContent !== '作成チャット') throw new Error('timeline created child kind missing');
+    for (const btn of document.querySelectorAll('.iwork:not(.iwork-created) .irow-more[aria-expanded="false"]')) btn.click();
+    const linked = document.querySelector('.iwork:not(.iwork-created) .irow-sub[data-card-id="codex:s1"]');
+    if (linked?.querySelector('.session-kind')?.textContent !== 'セッション') throw new Error('linked session kind missing');
+    if (!linked.dataset.parentId?.startsWith('task:') || subs[0].dataset.parentId !== 'codex:p1') throw new Error('existing grouping changed');
+    const child = document.querySelector('.iwork-created .irow-sub');
+    const childId = child.dataset.cardId;
+    child.click(); await w(250);
+    if (document.querySelector('.iwork-created .irow-sub[data-card-id="' + childId + '"]')?.getAttribute('aria-selected') !== 'true') throw new Error('timeline created child selection lost');
+    const compactKind = () => document.querySelector('.pane[data-card-id="' + childId + '"][data-context-open="false"] .ws-current-state');
+    for (let i = 0; i < 40 && !compactKind(); i++) await w(100);
+    if (!compactKind()?.textContent.includes('作成チャット')) throw new Error('docked compact detail kind missing');
   `);
 
   if (shotsDir) {

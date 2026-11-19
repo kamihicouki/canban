@@ -17,7 +17,7 @@ function inboxRow(x) {
   const row = h('article', { class: `card irow${parentId ? ' irow-sub' : ''}${task ? ' irow-work' : ''}`, tabindex: 0, role: 'option', 'data-card-id': card.id, 'data-parent-id': parentId || '', 'data-family-id': familyId || null, 'data-family-tone': familyTone || null, 'data-life': lifeOf(card), 'data-day': daysAgo(card.updatedAt), 'data-status': statusKnown ? status || '' : 'unknown', 'aria-selected': String(state.inbox.sel === card.id), title: [card.title, waiting].filter(Boolean).join('\n') },
     task ? h('span', { class: 'irow-work-mark', html: picon('note', 14), 'aria-hidden': 'true' }) : faceGlyph(status, statusKnown),
     h('div', { class: 'irow-body grow' }, h('div', { class: 'irow-t', text: card.title }),
-      h('div', { class: 'irow-s' }, faceWho(task ? 'task' : card.agent, card), dotPill(card), h('span', { class: 'ellipsis', text: (task ? `${list.title || list.name || '仕事'}${card.autoMoved ? '（自動移動）' : ''}` : (typeof cardLocationText === 'function' ? cardLocationText(card) : card.git?.branch || card.branch || '') || card.directory?.name || '') }), card.unread ? h('span', { class: 'fflag fflag-new', text: '新着' }) : null, card.archived ? h('span', { class: 'fflag', text: 'アーカイブ済み' }) : null),
+      h('div', { class: 'irow-s' }, faceWho(task ? 'task' : card.agent, card), sessionKindPill(card), dotPill(card), h('span', { class: 'ellipsis', text: (task ? `${list.title || list.name || '仕事'}${card.autoMoved ? '（自動移動）' : ''}` : (typeof cardLocationText === 'function' ? cardLocationText(card) : card.git?.branch || card.branch || '') || card.directory?.name || '') }), card.unread ? h('span', { class: 'fflag fflag-new', text: '新着' }) : null, card.archived ? h('span', { class: 'fflag', text: 'アーカイブ済み' }) : null),
       waiting ? h('div', { class: 'irow-w', text: waiting }) : null,
       ...(task ? [
         h('div', { class: 'irow-fact', title: overview.purpose }, h('span', { text: '目的' }), h('span', { text: overview.purpose })),
@@ -107,8 +107,8 @@ function inboxTaskRows(x) {
     ...children.map((child) => inboxRow({ card: { ...child, directory: child.directory ?? card.directory }, list, parentId: card.id })));
   if (more || expanded) group.append(h('button', {
     class: 'irow-more', type: 'button', 'data-task-id': card.id, 'aria-expanded': String(expanded),
-    'aria-label': `${card.title}のセッションを${expanded ? '折りたたむ' : `ほか${more}件表示`}`,
-    text: expanded ? '会話を折りたたむ' : `会話 ${more} 件を表示`,
+    'aria-label': `${card.title}に紐付いたセッションを${expanded ? '折りたたむ' : `ほか${more}件表示`}`,
+    text: expanded ? '紐付いた会話を折りたたむ' : `紐付いた会話 ${more} 件を表示`,
     onclick: () => { if (expanded) state.inbox.expanded.delete(card.id); else state.inbox.expanded.add(card.id); refreshInboxList(); },
   }));
   return group;

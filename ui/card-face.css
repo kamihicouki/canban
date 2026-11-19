@@ -39,7 +39,10 @@
 .ffoot > * { flex: none; white-space: nowrap; }
 .ffoot > .pill, .ffoot > .dir-pill, .ffoot > .fbranch, .ffoot > .acct-chip { flex: 0 1 auto; min-width: 24px; overflow: hidden; text-overflow: ellipsis; }
 .ffoot > .pill { min-width: 0; }
+.session-kind { flex: none; color: var(--card-muted); font-size: 11px; font-weight: 600; background: var(--btn-subtle); }
+.ffoot > .session-kind { flex: none; }
 .ffoot > .dir-pill { flex-shrink: .5; min-width: 44px; max-width: 92px; }
+.ffoot:has(> .session-kind) > .dir-pill { min-width: 0; }
 .fbranch { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
 .fstat { display: inline-flex; gap: 4px; align-items: center; font-weight: 600; font-size: 12px; } .fstat .add { color: var(--tone-run); } .fstat .del { color: var(--tone-err); }
 .flabels { display: inline-flex; gap: 2px; } .flabels i { width: 6px; height: 14px; border-radius: 3px; display: block; }

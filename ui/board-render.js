@@ -137,7 +137,7 @@ function cardShell(card, extraClass) {
   return h('article', {
     class: `card${extraClass}${card.archived ? ' is-archived' : ''}${card.unread ? ' unread' : ''}`, tabindex: 0, 'data-card-id': card.id,
     'data-family-id': familyId || null, 'data-family-tone': familyTone || null,
-    'aria-label': `${card.title}（${card.kind === 'task' ? `${T.taskCard}・` : ''}${card.statusKnown === false ? '状態未取得' : STATUS_LABELS[card.status]}${card.unread ? '・新着' : ''}）`, title: card.title,
+    'aria-label': `${card.title}（${card.kind === 'task' ? T.taskCard : sessionKindLabel(card)}・${card.statusKnown === false ? '状態未取得' : STATUS_LABELS[card.status]}${card.unread ? '・新着' : ''}）`, title: card.title,
   });
 }
 

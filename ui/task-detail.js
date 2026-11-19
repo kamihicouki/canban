@@ -35,7 +35,7 @@ function taskRelatedNodes(card) {
     h('span', { class: `sdot s-${l.status}` }),
     h('div', { class: 'task-related-copy grow' },
       h('button', { class: 'link-btn', text: l.title, title: '詳細を見る', onclick: () => selectTaskThread(cardId, l.id) }),
-      h('div', { class: 'task-related-meta' }, h('span', { class: `badge ${l.agent}`, text: agentLabel(l.agent) }),
+      h('div', { class: 'task-related-meta' }, h('span', { class: `badge ${l.agent}`, text: agentLabel(l.agent) }), sessionKindPill(l),
         cardSurface(l) ? h('span', { class: 'pill', text: SURFACE_META[cardSurface(l)]?.short || cardSurface(l) }) : null,
         l.host ? h('span', { class: 'host-chip', text: l.host.label }) : null,
         h('span', { class: 'muted', text: `${STATUS_LABELS[l.status]}・${relTime(l.updatedAt)}` }))),
@@ -52,7 +52,7 @@ function taskRelatedNodes(card) {
 function paintTaskRelated(p, card) {
   const sec = $('[data-sec="related"]', p.el);
   if (!sec) return;
-  const signature = JSON.stringify([card.links.map((l) => [l.id, l.title, l.status, l.agent, l.host?.label, relTime(l.updatedAt)]), card.pending]);
+  const signature = JSON.stringify([card.links.map((l) => [l.id, l.title, l.status, l.agent, sessionKindLabel(l), l.host?.label, relTime(l.updatedAt)]), card.pending]);
   if (sec.dataset.signature === signature) return;
   sec.dataset.signature = signature;
   $('.th-sec-b', sec).replaceChildren(...taskRelatedNodes(card));

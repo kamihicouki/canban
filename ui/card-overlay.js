@@ -735,7 +735,7 @@ function sessionCardActions(p, card) {
 function renderSideChats(p, chats) {
   if (!chats?.length) return null;
   return h('div', { class: 'side-chats' },
-    h('div', { class: 'sub-h row' }, `サイド会話（${chats.length}）`, ...keycap('Alt+Shift+S')),
+    h('div', { class: 'sub-h row' }, `サイド会話（${chats.length}）`, h('span', { class: 'muted', text: '閲覧のみ' }), ...keycap('Alt+Shift+S')),
     chats.map(chat => {
       const status = h('p', { class: 'muted', role: 'status' });
       const body = h('div', { class: 'side-chat-body' }, status);
@@ -1013,10 +1013,10 @@ function renderPane(p, d) {
     ...(d.children || []).map((c) => h('button', { class: 'sub-row', onclick: () => openCard(c.id) },
       h('span', { class: `sdot s-${c.status}` }), h('span', { class: 'ellipsis grow', text: c.agentName ? `${c.agentName}: ${c.title}` : c.title }),
       h('span', { class: 'muted', text: relTime(c.updatedAt) }))),
-    d.parentId ? h('div', { class: 'msg' }, h('button', { class: 'link-btn', text: '↑ 親セッションを開く', onclick: () => openCard(d.parentId) })) : null,
+    d.parentId ? h('div', { class: 'msg' }, h('button', { class: 'link-btn', text: s.subagent ? '↑ 起動元の親セッションを開く' : '↑ 親セッションを開く', onclick: () => openCard(d.parentId) })) : null,
     d.sameBranch && d.sameBranch.length ? h('div', { class: 'sub-h', text: `同じブランチのセッション（${d.sameBranch.length}）` }) : null,
     ...(d.sameBranch || []).map((c) => h('button', { class: 'sub-row', onclick: () => openCard(c.id) },
-      h('span', { class: `sdot s-${c.status}` }), h('span', { class: `badge ${c.agent}`, text: agentLabel(c.agent) }),
+      h('span', { class: `sdot s-${c.status}` }), h('span', { class: `badge ${c.agent}`, text: agentLabel(c.agent) }), sessionKindPill(c),
       h('span', { class: 'ellipsis grow', text: c.title }), h('span', { class: 'muted', text: relTime(c.updatedAt) }))),
   ].filter(Boolean);
 
@@ -1024,7 +1024,7 @@ function renderPane(p, d) {
   const secs = {};
   secs.breadcrumb = { nodes: [cardCrumb(listSel, d.task)] };
   secs.title = { nodes: [h('h2', { text: s.title, title: s.title })] };
-  secs.status = { nodes: [h('div', { class: 'sub row' }, h('span', { class: `badge ${s.agent}`, text: agentLabel(s.agent) }),
+  secs.status = { nodes: [h('div', { class: 'sub row' }, h('span', { class: `badge ${s.agent}`, text: agentLabel(s.agent) }), sessionKindPill(s),
     cardSurface(s) ? h('span', { class: 'pill', title: SURFACE_META[cardSurface(s)]?.title || '', text: SURFACE_META[cardSurface(s)]?.label || cardSurface(s) }) : null,
     s.host ? h('span', { class: 'host-chip', text: s.host.label }) : null,
     h('span', { class: 'row pane-status' }, h('span', { class: `sdot s-${s.status || 'idle'}` }), s.statusKnown === false ? '状態未取得' : STATUS_LABELS[s.status || 'idle']), h('span', { class: 'pill viewer-pill viewers', hidden: true }))] };
