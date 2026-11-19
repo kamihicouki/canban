@@ -79,8 +79,8 @@ function viewFixture(cards) {
     focus(){document.activeElement=this;}scrollIntoView(){}
   }
   let root; const opened=[],resumed=[],bundled=[];
-  const ctx={state,document,store:{get:()=>null},h:(...a)=>new Node(...a),queueMicrotask:()=>{},
-    faceGlyph:()=>new Node('i'),faceWho:()=>new Node('span'),picon:()=>'',fmtDate:x=>String(x),relTime:x=>String(x),
+  const ctx={state,document,T:{taskCard:'タスクカード'},store:{get:()=>null},h:(...a)=>new Node(...a),queueMicrotask:()=>{},
+    faceGlyph:()=>new Node('i'),faceWho:()=>new Node('span'),sessionKindPill:()=>null,sessionKindLabel:()=> 'セッション',picon:()=>'',fmtDate:x=>String(x),relTime:x=>String(x),
     paneDocked:()=>false,panes:[],PANE_MODES:[['text','テキスト']],setPaneMode(){},
     openCard:(id,opts)=>opened.push({id,opts}),resume:id=>resumed.push(id),workBundlePicker:(_,id)=>bundled.push(id),
     $:selector=>root?.querySelector(selector.replace(/^#board /,'')),$$:selector=>root.querySelectorAll(selector.replace(/^#board /,'')),

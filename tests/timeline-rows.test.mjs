@@ -34,7 +34,7 @@ function fixture(cards) {
   const opened = [], resumed = [];
   const ctx = { state, document, CSS: { escape: x => x }, h: (...args) => new Node(...args),
     timelineOn: () => true, paneDocked: () => false, panes: [], PANE_MODES: [],
-    picon: () => '', faceGlyph: () => new Node('span'), faceWho: () => new Node('span'), dotPill: () => null, exchangePill: () => null,
+    picon: () => '', faceGlyph: () => new Node('span'), faceWho: () => new Node('span'), sessionKindPill: () => null, dotPill: () => null, exchangePill: () => null,
     fmtDate: x => String(x), relTime: x => String(x), prefetchSession() {},
     openCard: id => opened.push(id), resume: id => resumed.push(id),
     $: (selector, parent = root) => parent?.querySelector(selector.replace(/^#board /, '')),
