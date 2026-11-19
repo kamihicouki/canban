@@ -183,6 +183,10 @@ test('案B（親子ネスト連結スタック）がボード・照らし・時�
     if (nested[0].querySelector('.session-kind')?.textContent !== '作成チャット') throw new Error('created child kind missing');
     if (!nested[0].getAttribute('aria-label')?.includes('作成されたチャット')) throw new Error('card accessible name lacks its kind');
     if (!document.querySelector('#board .card.task .who-task')?.textContent.includes('タスクカード')) throw new Error('task kind missing');
+    for (const foot of document.querySelectorAll('#board .card .ffoot')) {
+      const time = foot.querySelector('.ftime').getBoundingClientRect();
+      if (time.right > foot.getBoundingClientRect().right + 1) throw new Error('card time clipped by kind or metadata');
+    }
 
     // 照らすボタンでファミリーハイライト + アプリバーチップ + Esc解除
     remoteNote.click(); await w(150);

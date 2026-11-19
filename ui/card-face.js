@@ -128,7 +128,7 @@ function renderCard(card, list, opts = {}) {
   if (!task && card.createdChats?.total && typeof renderCreatedChatsBar === 'function') {
     el.append(renderCreatedChatsBar(card, opts.createdStack || null));
   }
-  const foot = h('div', { class: 'ffoot' }, faceWho(task ? 'task' : card.agent, card), sessionKindPill(card), dotPill(card), dirPill(card.directory || { name: 'カテゴリ無し' }));
+  const foot = h('div', { class: 'ffoot-meta' }, faceWho(task ? 'task' : card.agent, card), sessionKindPill(card), dotPill(card), dirPill(card.directory || { name: 'カテゴリ無し' }));
   const source = visibleCardSourceRelations(card);
   if (source.length) foot.append(h('span', { class: 'pill ellipsis', title: sourceDetailRows(card).map(([k,v]) => `${k}: ${v}`).join('\n'), text: source.length > 1 ? `元アプリ 複数（${source.length}）` : sourceFacetLabel({ ref: source[0].ref, name: source[0].observation?.value?.name }) }));
   if (!task) {
@@ -145,8 +145,8 @@ function renderCard(card, list, opts = {}) {
   } else if (card.pr) foot.append(prPill(card.pr));
   const labels = faceLabels(card);
   if (labels) foot.append(labels);
-  foot.append(...faceExtras(card), h('span', { class: 'ftime', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }));
-  el.append(foot);
+  foot.append(...faceExtras(card));
+  el.append(h('div', { class: 'ffoot' }, foot, h('span', { class: 'ftime', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) })));
   return finishFace(el, card, list);
 }
 const gitTitleOr = (card) => (card.git ? gitTitle(card.git) : card.branch || '');
