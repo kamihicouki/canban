@@ -1,5 +1,5 @@
 // Board tools: the board, search, session detail, card moves, stats, and lists / labels / categories / rules / views.
-import { buildBoard, sessionDetail, allSessions, effectiveOrder, runRules, sessionExchanges } from '../board.mjs';
+import { buildBoard, sessionDetail, sessionSideChat, allSessions, effectiveOrder, runRules, sessionExchanges } from '../board.mjs';
 import { readSessionOrigin } from '../session-origin.mjs';
 import { RULE_TRIGGERS } from '../store.mjs';
 import { computeStats } from '../stats.mjs';
@@ -84,6 +84,18 @@ export function boardTools({ store, ICONS, UI_URI }) {
     handler: async ({ cardId }) => {
       const result = await sessionExchanges(store, cardId);
       return { text: `やり取り: ${result.events.length} 件`, structured: result };
+    },
+  },
+  {
+    name: 'canban_get_side_chat',
+    title: 'サイド会話を読む',
+    description: '親カードに保存されたCodexのサイド会話から、分岐後の質問と回答を取得する。',
+    inputSchema: { type: 'object', properties: { cardId: { type: 'string' }, sideChatId: { type: 'string' } }, required: ['cardId', 'sideChatId'], additionalProperties: false },
+    annotations: { readOnlyHint: true },
+    _meta: appOnly,
+    handler: async ({ cardId, sideChatId }) => {
+      const result = await sessionSideChat(store, cardId, sideChatId);
+      return { text: '保存済みサイド会話', structured: result };
     },
   },
   {

@@ -44,8 +44,8 @@ export function parseDotCache(raw) {
   return { dots, sessions };
 }
 
-export function mergeDotSessions(sessions, app, { includeCloud = true } = {}) {
+export function mergeDotSessions(sessions, app, { includeCloud = true, excludedIds } = {}) {
   const result = new Map(sessions.map(s => [s.id, s]));
-  if (includeCloud) for (const s of app.dotSessions || []) if (!result.has(s.id)) result.set(s.id, { ...s });
+  if (includeCloud) for (const s of app.dotSessions || []) if (!result.has(s.id) && !excludedIds?.has(s.id)) result.set(s.id, { ...s });
   return [...result.values()];
 }

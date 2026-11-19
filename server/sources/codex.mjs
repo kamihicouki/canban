@@ -3,7 +3,7 @@
 // Detail source: the thread's rollout JSONL file.
 // Row normalization and message extraction are shared with the remote collector.
 import path from 'node:path';
-import { exists, listDir, queryReadOnly, readTailJsonLines, rolloutFile, stat } from './readonly.mjs';
+import { exists, listDir, queryReadOnly, readJsonLines, readTailJsonLines, rolloutFile, stat } from './readonly.mjs';
 import { projectName, clip, cleanPrompt, firstLine, LOCAL_HOST, sessionKey } from './util.mjs';
 import { defaultCodexHome, codexHomes, refreshAccounts, sessionAccount } from '../accounts.mjs';
 import { resolveCreatedChatParents, attachCreatedChatEdges } from './codex-created-chats.mjs';
@@ -16,7 +16,7 @@ export const CODEX_COLUMNS = [
   'id', 'rollout_path', 'created_at', 'updated_at', 'created_at_ms', 'updated_at_ms', 'source', 'thread_source',
   'cwd', 'title', 'name', 'archived', 'git_branch', 'model', 'first_user_message', 'preview', 'agent_role',
   'agent_nickname', 'is_pinned', 'git_origin_url', 'tokens_used', 'sandbox_policy', 'approval_mode', 'thread_section_id',
-  'creator_account_id',
+  'creator_account_id', 'attached_thread_parent_id',
 ];
 
 // Pick the highest-numbered state_<n>.sqlite so a schema bump keeps working.
@@ -45,6 +45,7 @@ export function normalizeCodexRow(r, host = LOCAL_HOST) {
   const title = (r.name && r.name.trim()) || firstLine(cleanPrompt(r.title)) || firstLine(firstPrompt) || '(無題)';
   return {
     id: sessionKey('codex', host, r.id),
+    sideChatParentId: r.attached_thread_parent_id || undefined,
     agent: 'codex',
     nativeId: r.id,
     host,
@@ -120,21 +121,32 @@ export async function listCodexSessions({ home = null, now = Date.now() } = {}) 
   try {
     await refreshAccounts();
     const byId = new Map();
+    const attachedIds = new Set();
+    const groups = [];
     for (const h of await homesFor(home)) {
       const c = await cachedThreads(h.dir, now);
       if (!c) continue;
       const mine = [];
       for (const x of c.rows.values()) {
-        if (byId.has(x.id)) continue; // the same thread in two homes (a copied folder): the first home wins
+        if (x.sideChatParentId) attachedIds.add(x.id);
+        const previous = byId.get(x.id);
+        // An attachment edge is authoritative even if an older copy of the
+        // same row was seen first in another local home.
+        if (previous && (!x.sideChatParentId || previous.sideChatParentId)) continue;
         const s = sessionOf(c, h, x);
         byId.set(s.id, s);
         mine.push(s);
       }
-      attachSpawnEdges(mine, c.edges);
-      const createdParents = await resolveCreatedChatParents(h.dir, mine);
-      attachCreatedChatEdges(mine, createdParents);
+      groups.push({ h, c, mine });
     }
-    return { sessions: [...byId.values()], error: null };
+    const sessions = attachCodexSideChats([...byId.values()]);
+    for (const { h, c, mine } of groups) {
+      const roots = mine.filter(s => byId.get(s.id) === s && !s.sideChatParentId);
+      attachSpawnEdges(roots, c.edges);
+      const createdParents = await resolveCreatedChatParents(h.dir, roots);
+      attachCreatedChatEdges(roots, createdParents);
+    }
+    return { sessions, attachedIds, error: null };
   } catch (err) {
     return { sessions: [], error: `Codex DB 読み取り失敗: ${err.message}` };
   }
@@ -143,30 +155,41 @@ export async function listCodexSessions({ home = null, now = Date.now() } = {}) 
 // One thread from the same cache, without copying the whole listing (dispatch ticks).
 export async function findCodexSession(nativeId, { home = null, now = Date.now() } = {}) {
   await refreshAccounts();
+  let selected = null;
+  const attachments = new Map();
   for (const h of await homesFor(home)) {
     const c = await cachedThreads(h.dir, now);
-    const x = c?.rows.get(nativeId);
-    if (!x) continue;
-    const s = sessionOf(c, h, x);
-    s.subagent = s.subagent || c.edges.some((e) => e.child === nativeId);
-    const children = c.edges.filter(e => e.parent === nativeId && c.rows.has(e.child)).map(e => sessionKey('codex', LOCAL_HOST, e.child));
-    if (children.length) s.children = children;
-    const parent = c.edges.find(e => e.child === nativeId && c.rows.has(e.parent));
-    if (parent) s.parentId = sessionKey('codex', LOCAL_HOST, parent.parent);
-    const createdCandidates = [...c.rows.values()].filter((r) => !r.subagent && r.threadSource === 'agent_created_thread');
-    if (createdCandidates.length) {
-      const createdParents = await resolveCreatedChatParents(h.dir, createdCandidates);
-      const createdParent = createdParents.get(nativeId);
-      if (createdParent && createdParent !== nativeId) s.createdParentId = sessionKey('codex', LOCAL_HOST, createdParent);
-      const createdChildren = [];
-      for (const [cid, pid] of createdParents) {
-        if (pid === nativeId && cid !== nativeId && c.rows.has(cid)) createdChildren.push(sessionKey('codex', LOCAL_HOST, cid));
-      }
-      if (createdChildren.length) s.createdChildren = createdChildren;
+    if (!c) continue;
+    const x = c.rows.get(nativeId);
+    if (x?.sideChatParentId) return null;
+    if (x && !selected) selected = { c, h, x };
+    for (const row of c.attachments) {
+      if (!attachments.has(row.nativeId)) attachments.set(row.nativeId, row);
     }
-    return s;
   }
-  return null;
+  if (!selected) return null;
+  const { c, h, x } = selected;
+  const s = sessionOf(c, h, x);
+  const sideChats = [...attachments.values()].filter(row => row.sideChatParentId === nativeId).map(sideChatView);
+  if (sideChats.length) s.sideChats = sortSideChats(sideChats);
+  const visible = id => c.rows.has(id) && !attachments.has(id);
+  s.subagent = s.subagent || c.edges.some((e) => e.child === nativeId);
+  const children = c.edges.filter(e => e.parent === nativeId && visible(e.child)).map(e => sessionKey('codex', LOCAL_HOST, e.child));
+  if (children.length) s.children = children;
+  const parent = c.edges.find(e => e.child === nativeId && visible(e.parent));
+  if (parent) s.parentId = sessionKey('codex', LOCAL_HOST, parent.parent);
+  const createdCandidates = [...c.rows.values()].filter(r => !attachments.has(r.nativeId) && !r.subagent && r.threadSource === 'agent_created_thread');
+  if (createdCandidates.length) {
+    const createdParents = await resolveCreatedChatParents(h.dir, createdCandidates);
+    const createdParent = createdParents.get(nativeId);
+    if (createdParent && createdParent !== nativeId && !attachments.has(createdParent)) s.createdParentId = sessionKey('codex', LOCAL_HOST, createdParent);
+    const createdChildren = [];
+    for (const [cid, pid] of createdParents) {
+      if (pid === nativeId && cid !== nativeId && visible(cid)) createdChildren.push(sessionKey('codex', LOCAL_HOST, cid));
+    }
+    if (createdChildren.length) s.createdChildren = createdChildren;
+  }
+  return s;
 }
 
 function readThreads(dbPath, prev, sig, now) {
@@ -175,6 +198,19 @@ function readThreads(dbPath, prev, sig, now) {
     const want = CODEX_COLUMNS.filter((c) => cols.has(c));
     const hasEdges = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='thread_spawn_edges'").get();
     const edges = hasEdges ? db.prepare('SELECT parent_thread_id AS parent, child_thread_id AS child FROM thread_spawn_edges').all() : [];
+    const attachmentLinks = new Map(cols.has('attached_thread_parent_id')
+      ? db.prepare('SELECT id, attached_thread_parent_id AS parent FROM threads WHERE attached_thread_parent_id IS NOT NULL').all().map(r => [r.id, r.parent])
+      : []);
+    const finish = (rows, fullAt) => {
+      const attachments = [];
+      for (const [id, row] of rows) {
+        const parent = attachmentLinks.get(id) || undefined;
+        const current = row.sideChatParentId === parent ? row : { ...row, sideChatParentId: parent };
+        if (current !== row) rows.set(id, current);
+        if (parent) attachments.push(current);
+      }
+      return { sig, maxU, rows, edges, sections, fullAt, attachments };
+    };
     const maxU = db.prepare('SELECT max(updated_at) AS u FROM threads').get()?.u ?? 0;
     // Section membership is re-read on every change (moving a thread between sections
     // does not necessarily bump updated_at); a partial covering index makes it ~1 ms.
@@ -197,13 +233,82 @@ function readThreads(dbPath, prev, sig, now) {
       const count = db.prepare('SELECT count(*) AS n FROM threads').get().n;
       if (rows.size === count) {
         codexListCounters.delta++;
-        return { sig, maxU, rows, edges, sections, fullAt: prev.fullAt };
+        return finish(rows, prev.fullAt);
       }
     }
     codexListCounters.full++;
     const rows = new Map(db.prepare(`SELECT ${want.join(', ')} FROM threads`).all().map((r) => [r.id, normalizeCodexRow(r)]));
-    return { sig, maxU, rows, edges, sections, fullAt: now };
+    return finish(rows, now);
   });
+}
+
+function sideChatView({ id, nativeId, title, updatedAt, sourcePath }) {
+  return { id, nativeId, title, updatedAt, sourcePath };
+}
+
+function sortSideChats(chats) {
+  return chats.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+}
+
+// Use Codex's attachment link, separately from spawn and delegation edges.
+export function attachCodexSideChats(sessions) {
+  const roots = sessions.filter(s => !s.sideChatParentId);
+  const parents = new Map(roots.filter(s => s.agent === 'codex').map(s => [s.nativeId, s]));
+  for (const s of sessions) {
+    const parent = parents.get(s.sideChatParentId);
+    if (parent) (parent.sideChats ||= []).push(sideChatView(s));
+  }
+  for (const parent of parents.values()) if (parent.sideChats) sortSideChats(parent.sideChats);
+  return roots;
+}
+
+const SIDE_BOUNDARY = 'Side conversation boundary.\n\nEverything before this boundary is inherited history from the parent thread.';
+const SIDE_MESSAGE_LIMIT = 40;
+const SIDE_TEXT_LIMIT = 8000;
+const SIDE_CONTEXT_BLOCK = /^\s*<(environment_context|realtime_delegation|heartbeat)(?:\s[^>]*)?>[\s\S]*<\/\1>\s*$/;
+
+export async function readCodexSideChat(sideChat) {
+  const file = rolloutFile(sideChat.sourcePath);
+  if (!file || !exists(file)) throw new Error('サイド会話のログが見つかりません');
+  let attached = false;
+  let boundary = false;
+  let truncated = false;
+  const messages = [];
+  for await (const record of readJsonLines(file)) {
+    const p = record?.payload;
+    if (record?.type === 'session_meta') {
+      attached = p?.id === sideChat.nativeId && p?.attached_thread === true;
+      if (!attached) break;
+    }
+    if (!attached || record?.type !== 'response_item' || p?.type !== 'message') continue;
+    if (p.role !== 'user' && (p.role !== 'assistant' || (p.phase != null && !['final', 'final_answer'].includes(p.phase)))) continue;
+    const content = p.role === 'user' ? 'input_text' : 'output_text';
+    const blocks = (Array.isArray(p.content) ? p.content : [])
+      .filter(item => item?.type === content && typeof item.text === 'string')
+      .map(item => item.text);
+    if (p.role === 'user' && blocks.some(text => text.startsWith(SIDE_BOUNDARY))) {
+      boundary = true;
+      truncated = false;
+      messages.length = 0;
+      continue;
+    }
+    const text = blocks.filter(block => !SIDE_CONTEXT_BLOCK.test(block)).join('\n');
+    if (!boundary || !text.trim()) continue;
+    const chars = text.length > SIDE_TEXT_LIMIT ? [...text] : null;
+    const clipped = chars && chars.length > SIDE_TEXT_LIMIT;
+    messages.push({
+      role: p.role,
+      text: clipped ? chars.slice(0, SIDE_TEXT_LIMIT - 1).join('') + '…' : text,
+      at: typeof record.timestamp === 'string' ? record.timestamp : null,
+    });
+    if (messages.length > SIDE_MESSAGE_LIMIT) {
+      messages.shift();
+      truncated = true;
+    }
+    if (clipped) truncated = true;
+  }
+  if (!boundary) throw new Error('サイド会話の境界を確認できませんでした');
+  return { messages, truncated };
 }
 
 // Link sub-agent threads to their parent (same host): parent.children / child.parentId.

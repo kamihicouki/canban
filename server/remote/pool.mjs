@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { normalizeCodexRow, codexMessagesFromRecords, attachSpawnEdges } from '../sources/codex.mjs';
+import { normalizeCodexRow, codexMessagesFromRecords, attachCodexSideChats, attachSpawnEdges } from '../sources/codex.mjs';
 import { normalizeClaudeSummary, claudeMessagesFromRecords } from '../sources/claude.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -45,8 +45,8 @@ export class RemotePool {
         child.kill('SIGKILL');
         done({ ok: false, error: `タイムアウト（${Math.round(timeoutMs / 1000)} 秒）` });
       }, timeoutMs);
-      child.stdout.on('data', (d) => (out += d));
-      child.stderr.on('data', (d) => (err += d));
+      child.stdout.setEncoding('utf8').on('data', (d) => (out += d));
+      child.stderr.setEncoding('utf8').on('data', (d) => (err += d));
       child.on('error', (e) => done({ ok: false, error: e.message }));
       child.on('close', (code) => {
         if (!out.trim()) {
@@ -86,10 +86,10 @@ export class RemotePool {
       }
       for (const s of res.claude?.summaries || []) summaries.set(s.file, s);
       const desktop = res.claude?.desktop || {};
-      const sessions = [
+      const sessions = attachCodexSideChats([
         ...(res.codex?.rows || []).map((r) => normalizeCodexRow(r, ref)),
         ...[...summaries.values()].map((s) => normalizeClaudeSummary(s, desktop[s.sessionId], ref)).filter(Boolean),
-      ];
+      ]);
       attachSpawnEdges(sessions, res.codex?.edges, ref);
       const errors = [res.codex?.error, res.claude?.error].filter(Boolean);
       this.cache.set(host.id, { sessions, summaries, fetchedAt: Date.now(), errors });
@@ -164,5 +164,12 @@ export class RemotePool {
     const res = await this.run(host, { mode: 'messages', agent: session.agent, path: session.sourcePath });
     if (!res.ok) throw new Error(`${host.label}: ${res.error}`);
     return session.agent === 'codex' ? codexMessagesFromRecords(res.records, limit) : claudeMessagesFromRecords(res.records, limit);
+  }
+
+  async sideChatMessages(host, sideChat) {
+    if (!sideChat.sourcePath) throw new Error('保存済みサイドチャットのログが見つかりません');
+    const result = await this.run(host, { mode: 'side_chat_messages', path: sideChat.sourcePath, nativeId: sideChat.nativeId });
+    if (!result.ok) throw new Error(`${host.label}: ${result.error}`);
+    return { messages: result.messages, truncated: result.truncated };
   }
 }

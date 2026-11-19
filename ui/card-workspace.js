@@ -187,7 +187,7 @@ function focusWorkspaceRelated(p = workspacePane()) {
   if (!cardWorkspaceOn()) setCardShape('workspace');
   if (!workspaceContextOpen(p)) toggleWorkspaceContext(p, true);
   const related = p.workspaceFrame.related;
-  for (const details of related.querySelectorAll('details')) details.open = true;
+  for (const details of related.querySelectorAll('details:not(.side-chat)')) details.open = true;
   (related.querySelector('button,a,summary') || p.workspaceFrame.relatedTitle).focus();
 }
 function cardWorkspaceAction(key, p = workspacePane()) {

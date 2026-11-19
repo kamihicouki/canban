@@ -6,7 +6,7 @@ import { sessionSourceView, compactSourceView } from './source-model.mjs';
 import { leaderFor } from './leader.mjs';
 // Combines read-only session listings (local + enabled remote hosts) with the
 // Canban store into a board snapshot.
-import { listCodexSessions, findCodexSession, codexMessagesFromRecords } from './sources/codex.mjs';
+import { listCodexSessions, findCodexSession, codexMessagesFromRecords, readCodexSideChat } from './sources/codex.mjs';
 import { listClaudeSessions, claudeMessagesFromRecords } from './sources/claude.mjs';
 import {
   listAntigravitySessions,
@@ -144,6 +144,7 @@ async function readLocalSessions() {
     sessions: allLocal,
     errors: [codex.error, claude.error, antigravity.error, gemini.error, cursor.error, chatgpt.error, grok.error].filter(Boolean),
     codexAvailable: !codex.error,
+    codexAttachedIds: codex.attachedIds,
   };
   return value;
 }
@@ -172,7 +173,7 @@ async function allSessionsImpl(state, { force = false } = {}) {
   const generation = localSourceReads.generation();
   const [local, remote] = await Promise.all([localRead, perf.timed('remote.list', () => pool.sessions(enabled, { force, waitMs: force ? Infinity : REMOTE_FIRST_WAIT_MS }))]);
   const app = await codexAppState();
-  const all = mergeDotSessions([...local.sessions, ...remote], app, { includeCloud: local.codexAvailable });
+  const all = mergeDotSessions([...local.sessions, ...remote], app, { includeCloud: local.codexAvailable, excludedIds: local.codexAttachedIds });
   annotateCodexApp(all, app); // Codex projects, pins and follow-ups kept by the Codex app
   await perf.timed('status', () => annotateStatus(all));
   for (const fn of sessionHooks) fn(local.sessions);
@@ -1049,6 +1050,17 @@ export async function sessionExchanges(store, cardId) {
   return { ...exchangeIndex.view(cardId), summary: exchangeIndex.summary(cardId) };
 }
 
+export async function sessionSideChat(store, cardId, sideChatId) {
+  const { session, host } = await lookupSessionDetail(store, cardId);
+  const sideChat = session.sideChats?.find(chat => chat.id === sideChatId);
+  if (!sideChat) throw new Error('この親セッションのサイド会話が見つかりません');
+  if (session.host?.local === false) {
+    if (!host) throw new Error('サイド会話の接続先が見つかりません');
+    return pool.sideChatMessages(host, sideChat);
+  }
+  return readCodexSideChat(sideChat);
+}
+
 async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   const { session: s, state, host, sessions: relatedSource, coverage: relatedCoverage } = await lookupSessionDetail(store, cardId);
   const card = state.cards[cardId] || {};
@@ -1115,7 +1127,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     : [];
   const children = (s.children || []).map((id) => byId.get(id)).filter(Boolean)
     .map((c) => ({ id: c.id, title: c.title, status: c.status || 'idle', updatedAt: c.updatedAt, agentName: c.agentName || null }));
-  const { host: h, ...rest } = s;
+  const { host: h, sideChats, ...rest } = s;
   const labels = state.settings.accounts.labels;
   const claudeProfiles = await claudeResumeAccounts(s, labels);
   const claudeExecutionAccounts = groupClaudeResumeAccounts(claudeProfiles, accountsView(state.settings.accounts).accounts, s, card.claudeExecution);
@@ -1129,6 +1141,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     list: state.lists.find((l) => l.id === listId),
     task: taskId ? { id: taskId, title: state.cards[taskId].title } : null,
     children,
+    sideChats: (sideChats || []).map(({ id, title, updatedAt }) => ({ id, title, updatedAt })),
     createdChats,
     createdParent,
     createdSiblings,

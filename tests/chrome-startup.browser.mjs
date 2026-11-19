@@ -36,6 +36,7 @@ function nativeFixture(board, sessions) {
       if (name === 'canban_get_board') { held.push(request); return; }
       if (name === 'canban_watch') return;
       const result = name === 'canban_get_session' ? sessions[request.params.arguments.cardId]
+        : name === 'canban_get_side_chat' ? { messages: [{ role: 'assistant', text: '架空のサイド会話の回答' }], truncated: false }
         : name === 'canban_get_ui_state' ? { result: { revision: 0, state: null } }
         : name === 'canban_save_ui_state' ? { result: { saved: true, revision: 1 } }
           : {};
@@ -98,6 +99,7 @@ test('the built Chrome extension survives controls before data, failed load and 
   for (const list of board.lists) for (const card of list.cards) card.updatedAt = Date.now();
   const sessions = {};
   for (const list of board.lists) for (const card of list.cards) if (card.kind !== 'task') sessions[card.id] = await rpc('canban_get_session', { cardId: card.id });
+  sessions['codex:t1'].sideChats = [{ id: 'codex:side-test', title: '架空のサイド会話' }];
   const debugPort = port + 1000;
   chrome = spawn(chromium, ['--headless=new', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`,
     `--disable-extensions-except=${extension}`, `--load-extension=${extension}`, ...(process.env.CI && process.platform === 'linux' ? ['--no-sandbox'] : []), '--no-first-run', 'about:blank'], { stdio: ['ignore','ignore','pipe'] });
@@ -170,6 +172,13 @@ test('the built Chrome extension survives controls before data, failed load and 
     await run('window.__startupNative.release()');
     await until(() => run('!!document.querySelector(".card.face")'), 'recovered board');
     await capture(`recovered-board-${theme}`);
+    await run(`document.querySelector('[data-card-id="codex:t1"]').click()`);
+    await until(() => run(`document.querySelector('.pane[data-card-id="codex:t1"]')?.textContent.includes('架空のサイド会話')`), 'parent card with a saved side chat');
+    assert.equal(await run(`window.__startupNative.requests.some(r => r.params?.name === 'canban_get_side_chat')`), false, 'opening the parent does not request the side chat body');
+    await run(`document.querySelector('.pane').dispatchEvent(new KeyboardEvent('keydown', { key: 'S', code: 'KeyS', altKey: true, shiftKey: true, bubbles: true }))`);
+    await until(() => run(`document.querySelector('.side-chat[open] .msg')?.textContent.includes('架空のサイド会話の回答')`), 'side chat from Native Messaging');
+    assert.deepEqual(await run(`window.__startupNative.requests.find(r => r.params?.name === 'canban_get_side_chat').params.arguments`), { cardId: 'codex:t1', sideChatId: 'codex:side-test' });
+    await run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
     await run('document.querySelector("#logo").click()');
     await until(() => run('!!document.querySelector(".picker-row")'), 'recovered filter picker');
     assert.equal(await run('document.querySelector(".popover").textContent.includes("架空のカテゴリ")'), true);

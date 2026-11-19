@@ -5,12 +5,15 @@
 # Output: a single JSON document on stdout.
 #   list     -> {"ok", "codex": {"rows", "error"}, "claude": {"summaries", "unchanged", "desktop", "error"}}
 #   messages -> {"ok", "records"}   (records are raw JSON lines, pre-filtered)
+#   side_chat_messages -> {"ok", "messages", "truncated"}   (user/final assistant messages after the side boundary)
 # Keep field names in sync with server/sources/codex.mjs and server/sources/claude.mjs.
 import json
 import os
 import re
 import sqlite3
 import sys
+from collections import deque
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 HOME = os.path.expanduser("~")
@@ -26,7 +29,7 @@ CODEX_COLUMNS = [
     "id", "rollout_path", "created_at", "updated_at", "created_at_ms", "updated_at_ms", "source", "thread_source",
     "cwd", "title", "name", "archived", "git_branch", "model", "first_user_message", "preview", "agent_role",
     "agent_nickname", "is_pinned", "git_origin_url", "tokens_used", "sandbox_policy", "approval_mode", "thread_section_id",
-    "creator_account_id",
+    "creator_account_id", "attached_thread_parent_id",
 ]
 SUMMARY_PROMPTS = 3
 TAIL_BYTES = 768 * 1024
@@ -34,6 +37,13 @@ STATUS_TAIL_BYTES = 256 * 1024
 RECENT_MS = 24 * 3600 * 1000
 ASK_TOOLS = {"request_user_input", "request_user_input_async", "AskUserQuestion", "ExitPlanMode"}
 TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$")
+SIDE_BOUNDARY = (
+    "Side conversation boundary.\n\n"
+    "Everything before this boundary is inherited history from the parent thread."
+)
+SIDE_CONTEXT_RE = re.compile(r"^\s*<(environment_context|realtime_delegation|heartbeat)(?:\s[^>]*)?>[\s\S]*</\1>\s*$")
+SIDE_MESSAGE_LIMIT = 40
+SIDE_TEXT_LIMIT = 8000
 
 def is_ask_tool(name):
     return re.split(r"\.|__", str(name or ""))[-1] in ASK_TOOLS
@@ -101,11 +111,31 @@ def codex_rows():
             con.close()
         now = now_ms()
         for r in rows:
+            if r.get("attached_thread_parent_id"):
+                continue
             updated = r.get("updated_at_ms") or ((r.get("updated_at") or 0) * 1000)
             r["rawStatus"], r["statusMtimeMs"] = raw_status_for(r.get("rollout_path"), "codex", updated, now)
         return {"rows": rows, "edges": edges, "error": None}
     except Exception as e:  # noqa: BLE001
         return {"rows": [], "edges": [], "error": "Codex DB 読み取り失敗: %s" % e}
+
+def attached_codex_rollouts():
+    path = state_db()
+    if not path:
+        return set()
+    con = sqlite3.connect("file:%s?mode=ro" % path, uri=True, timeout=5)
+    try:
+        con.execute("PRAGMA query_only = ON")
+        cols = {r[1] for r in con.execute("PRAGMA table_info(threads)")}
+        if "attached_thread_parent_id" not in cols:
+            return set()
+        rows = con.execute("""
+            SELECT rollout_path FROM threads
+            WHERE attached_thread_parent_id <> '' AND rollout_path <> ''
+        """)
+        return {os.path.realpath(rollout) for (rollout,) in rows}
+    finally:
+        con.close()
 
 # ---- live status (keep in sync with server/status.mjs) ---------------------
 def now_ms():
@@ -365,6 +395,88 @@ def tail_records(path, agent):
             out.append(o)
     return out
 
+@contextmanager
+def open_side_rollout(path):
+    if not within(path, [CODEX_HOME]):
+        raise ValueError("許可されていないパスです")
+    if path.endswith(".jsonl") and not os.path.isfile(path):
+        twin = path + ".zst"
+        if os.path.isfile(twin):
+            path = twin
+    path = os.path.realpath(path)
+    if not within(path, [CODEX_HOME]) or not path.endswith((".jsonl", ".jsonl.zst")):
+        raise ValueError("許可されていないパスです")
+    open_rollout = open
+    read_errors = (OSError, EOFError)
+    if path.endswith(".jsonl.zst"):
+        try:
+            from compression import zstd
+        except ImportError:
+            raise ValueError("圧縮されたサイドチャットの読み取りにはリモート側の Python 3.14 以降が必要です") from None
+        open_rollout = zstd.open
+        read_errors += (zstd.ZstdError,)
+    try:
+        with open_rollout(path, "rt", encoding="utf-8", errors="replace") as fh:
+            yield fh
+    except FileNotFoundError:
+        raise ValueError("保存済みサイドチャットのログが見つかりません") from None
+    except read_errors:
+        raise ValueError("保存済みサイドチャットのログを読み取れません") from None
+
+
+def side_chat_messages(path, native_id):
+    messages = deque(maxlen=SIDE_MESSAGE_LIMIT)
+    attached = False
+    after_boundary = False
+    truncated = False
+    with open_side_rollout(path) as fh:
+        for line in fh:
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            payload = record.get("payload") if isinstance(record, dict) else None
+            if not isinstance(payload, dict):
+                continue
+            if record.get("type") == "session_meta":
+                attached = payload.get("id") == native_id and payload.get("attached_thread") is True
+                if not attached:
+                    break
+            if not attached or record.get("type") != "response_item" or payload.get("type") != "message":
+                continue
+            role = payload.get("role")
+            if role == "assistant" and payload.get("phase") not in (None, "final", "final_answer"):
+                continue
+            content = payload.get("content")
+            if role not in ("user", "assistant") or not isinstance(content, list):
+                continue
+            text_type = "input_text" if role == "user" else "output_text"
+            texts = [c["text"] for c in content if isinstance(c, dict) and c.get("type") == text_type and isinstance(c.get("text"), str)]
+            if role == "user" and any(t.startswith(SIDE_BOUNDARY) for t in texts):
+                # A side chat can inherit another boundary from its parent.
+                after_boundary = True
+                truncated = False
+                messages.clear()
+                continue
+            if not after_boundary:
+                continue
+            if role == "user":
+                texts = [t for t in texts if not SIDE_CONTEXT_RE.fullmatch(t)]
+            text = "\n".join(texts)
+            if not text.strip():
+                continue
+            truncated = truncated or len(messages) == SIDE_MESSAGE_LIMIT or len(text) > SIDE_TEXT_LIMIT
+            at = record.get("timestamp")
+            messages.append({
+                "role": role,
+                "text": text if len(text) <= SIDE_TEXT_LIMIT else text[:SIDE_TEXT_LIMIT - 1] + "…",
+                "at": at if isinstance(at, str) else None,
+            })
+    if not attached or not after_boundary:
+        raise ValueError("保存済みサイドチャットの会話範囲を確認できません")
+    return {"messages": list(messages), "truncated": truncated}
+
+
 def contains(path, needle):
     try:
         with open(path, "rb") as fh:
@@ -382,13 +494,21 @@ def search(q, days, limit):
     if len(q) < 3:
         return out
     cutoff = __import__("time").time() - days * 86400
-    roots = [(os.path.join(CODEX_HOME, "sessions"), "codex"), (os.path.join(CLAUDE_HOME, "projects"), "claude")]
+    roots = [(os.path.join(CLAUDE_HOME, "projects"), "claude")]
+    try:
+        attached = attached_codex_rollouts()
+        roots.insert(0, (os.path.join(CODEX_HOME, "sessions"), "codex"))
+    except sqlite3.Error:
+        # Keep Claude search available when Codex attachments cannot be identified.
+        attached = set()
     for root, agent in roots:
         for dirpath, _dirs, files in os.walk(root):
             for f in files:
                 if not f.endswith(".jsonl"):
                     continue
                 fp = os.path.join(dirpath, f)
+                if agent == "codex" and attached and os.path.realpath(fp) in attached:
+                    continue
                 try:
                     if os.stat(fp).st_mtime < cutoff:
                         continue
@@ -413,6 +533,8 @@ def main():
         result = {"ok": True, **search(args.get("q") or "", int(args.get("days") or 30), int(args.get("limit") or 100))}
     elif mode == "messages":
         result = {"ok": True, "records": tail_records(args["path"], args.get("agent", "codex"))}
+    elif mode == "side_chat_messages":
+        result = {"ok": True, **side_chat_messages(args["path"], args["nativeId"])}
     else:
         result = {"ok": False, "error": "unknown mode"}
     sys.stdout.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")))

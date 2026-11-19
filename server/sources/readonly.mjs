@@ -75,7 +75,9 @@ export async function readText(p, maxBytes = 64 * 1024) {
 
 // Iterate JSON lines of a file opened with the 'r' flag. Malformed lines are skipped.
 export async function* readJsonLines(p) {
-  const stream = fs.createReadStream(p, { flags: 'r', encoding: 'utf8' });
+  const source = fs.createReadStream(p, { flags: 'r' });
+  const stream = p.endsWith('.jsonl.zst') ? source.pipe(zlib.createZstdDecompress()) : source;
+  if (source !== stream) source.on('error', err => stream.destroy(err));
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
   try {
     for await (const line of rl) {
@@ -89,6 +91,7 @@ export async function* readJsonLines(p) {
   } finally {
     rl.close();
     stream.destroy();
+    if (stream !== source) source.destroy();
   }
 }
 

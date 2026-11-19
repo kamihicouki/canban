@@ -46,6 +46,11 @@ document.addEventListener('keydown', e => {
     const id = selectedRelatedCardId();
     if (id) { e.preventDefault(); openCardRelations(e.target.closest?.('[data-card-id]') || e.target, id); }
   }
+  if (e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.isComposing && e.code === 'KeyS'
+    && !paneLayer.hidden && (!paneDocked() || inDockedPane(e.target))
+    && !typingIn(e.target) && !e.target.closest?.('.term-host') && !document.querySelector('.popover, dialog[open]')) {
+    if (focusSideChat()) e.preventDefault();
+  }
   // Alt+1〜9: the agent's options into the input, also while typing there (⌥ digits would only type symbols).
   const digit = /^Digit([1-9])$/.exec(e.code);
   if (digit && e.altKey && !e.metaKey && !e.ctrlKey && !e.isComposing && !paneLayer.hidden && !document.querySelector('.popover')
@@ -131,7 +136,7 @@ function refreshShortcutHints() {
   else if (inCard) {
     const docked = paneDocked();
     const cards = displayedListCards(panes[0]?.id), index = cards.findIndex(el => el.dataset.cardId === panes[0]?.id);
-    entries = [['w', '2カラム / カード型'], ['q', '文脈'], ['s', focusedPane()?.kind === 'task' ? '目的' : '起点'], ['e', focusedPane()?.kind === 'task' ? '報告' : '最新'], ['n', '関連'], ['k', '前のカード', index <= 0], ['j', '次のカード', index < 0 || index === cards.length - 1],
+    entries = [['w', '2カラム / カード型'], ['q', '文脈'], ['s', focusedPane()?.kind === 'task' ? '目的' : '起点'], ['e', focusedPane()?.kind === 'task' ? '報告' : '最新'], ['n', '関連'], ...(focusedPane()?.sideChatSummary ? [['Alt+Shift+S', 'サイド会話']] : []), ['k', '前のカード', index <= 0], ['j', '次のカード', index < 0 || index === cards.length - 1],
       ['⇧←', '左のリストへ', !adjacentPaneList(focusedPane(), -1)], ['⇧→', '右のリストへ', !adjacentPaneList(focusedPane(), 1)],
       ...(panes.length > 1 ? [['[ / ]', '横のカード']] : []), ['1', 'テキスト'], ['2', 'プレビュー'], ['3', '要点'],
       ...(focusedPane()?.kind === 'session' ? [['o', '続ける'], ['x', '仕事にまとめる'], ['z', 'アーカイブ / 復元'], ['Delete', '履歴削除']] : []),
@@ -173,6 +178,7 @@ const SHORTCUTS = [
     ['o', '再開（既定）'], ['d / t', 'デスクトップ / ターミナルで再開'], ['w n s e', 'ターミナル: 新規ウィンドウ / 新規タブ / 分割 / 既存'],
   ]],
   ['カードを開いている間', [
+    ['Alt+Shift+S', '親カードのサイド会話を読む（⌘Kでも選択）'],
     ['Alt+Shift+H', 'タスク: 引継ぎを依頼欄に引用追記'], ['Alt+Shift+N', 'タスク: 依頼欄を報告として追記（エージェント送信なし）'], ['Alt+D', 'Claude Desktop の起動アカウントを選ぶ（作成ダイアログでも共通）'],
     ['Alt+a', 'Claude の実行アカウントを選ぶ（このマシンのセッション）/ タスク: 開始するアカウントを選ぶ'],
     ['Shift+← / →', '左右の隣のリストへ移動（端で停止、入力中・配置調整中は無効）'],
@@ -278,6 +284,7 @@ async function commandPalette() {
       { label: focusedPane()?.kind === 'task' ? 'タスクの目的・説明を読む' : '起点の依頼を読む', run: () => jumpWorkspaceOrigin(focusedPane()), hint: 's' },
       { label: focusedPane()?.kind === 'task' ? 'タスクの最新の報告へ移動' : '最新の発言へ移動', run: () => jumpWorkspaceLatest(focusedPane()), hint: 'e' },
       { label: '関連する仕事と会話へ', run: () => focusWorkspaceRelated(focusedPane()), hint: 'n' },
+      ...(focusedPane()?.sideChatSummary ? [{ label: 'サイド会話を読む', run: () => focusSideChat(), hint: 'Alt+Shift+S' }] : []),
       { label: '文脈を開閉', run: () => toggleWorkspaceContext(focusedPane()), hint: 'q' },
       ...[-1, 1].filter(step => adjacentPaneList(focusedPane(), step)).map(step => {
         const p = focusedPane(), target = adjacentPaneList(p, step);
