@@ -732,6 +732,43 @@ function sessionCardActions(p, card) {
   ];
 }
 
+function renderSideChats(p, chats) {
+  if (!chats?.length) return null;
+  return h('div', { class: 'side-chats' },
+    h('div', { class: 'sub-h row' }, `サイド会話（${chats.length}）`, ...keycap('Alt+Shift+S')),
+    chats.map(chat => {
+      const status = h('p', { class: 'muted', role: 'status' });
+      const body = h('div', { class: 'side-chat-body' }, status);
+      let requested = false;
+      const detail = h('details', { class: 'side-chat', ontoggle: async () => {
+        if (!detail.open || requested) return;
+        requested = true;
+        status.textContent = '会話を読み込んでいます…';
+        try {
+          const result = await bridge.callTool('canban_get_side_chat', { cardId: p.id, sideChatId: chat.id });
+          status.textContent = result.truncated ? '表示上限に達したため、古い発言または長い本文の一部を省略しています。'
+            : result.messages.length ? '' : '表示できる発言はありません。';
+          body.append(...result.messages.map(m => h('div', { class: `msg ${m.role}` },
+            h('div', { class: 'who', text: m.role === 'user' ? 'ユーザー' : 'Codex' }), m.text)));
+        } catch (e) {
+          requested = false;
+          status.textContent = `会話を取得できませんでした。閉じて開き直すと再試行できます。 ${e.message}`;
+        }
+      } }, h('summary', { 'aria-keyshortcuts': 'Enter Space', text: chat.title }), body);
+      return detail;
+    }));
+}
+
+function focusSideChat(p = focusedPane()) {
+  const summary = p?.sideChatSummary;
+  if (!summary) return false;
+  if (cardWorkspaceOn()) toggleWorkspaceContext(p, true);
+  else openThreadSide(p, 'details');
+  for (let disclosure = summary.parentElement; disclosure; disclosure = disclosure.parentElement?.closest('details')) disclosure.open = true;
+  summary.focus();
+  return true;
+}
+
 function renderPane(p, d) {
   const el = p.el;
   const s = d.session;
@@ -947,9 +984,12 @@ function renderPane(p, d) {
     : [h('p', { class: 'muted', text: d.messagesError ? `メッセージを取得できませんでした: ${d.messagesError}` : 'メッセージはありません' })];
 
   const listNameById = (lid) => (state.board?.lists || []).find((l) => l.id === lid)?.title || '';
+  const sideChats = renderSideChats(p, d.sideChats);
+  p.sideChatSummary = sideChats?.querySelector('summary');
   const related = [
     d.relatedCoverage && d.relatedCoverage.state !== 'current' ? h('p', { class: 'muted', text: d.relatedCoverage.state === 'snapshot' ? `関連セッションは保存済み一覧から表示しています（取得: ${d.relatedCoverage.at ? fmtDate(d.relatedCoverage.at) : '時刻未取得'}）。現在の全件とは限りません。` : '関連セッションは未取得です。0件と確認された状態ではありません。' }) : null,
     d.task ? h('div', { class: 'msg' }, `このセッションは${T.taskCard} `, h('button', { class: 'link-btn', text: `「${d.task.title}」`, onclick: () => openCard(d.task.id) }), ' に紐付いています。') : null,
+    sideChats,
     d.createdParent ? h('div', { class: 'sub-h', text: '作成元（親チャット）' }) : null,
     d.createdParent ? (d.createdParent.available
       ? h('button', { class: 'sub-row', onclick: () => openCard(d.createdParent.id) },

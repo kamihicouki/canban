@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { makeFixtures } from './helpers.mjs';
 import { RemotePool } from '../server/remote/pool.mjs';
 import { listCodexSessions, codexSessionMessages } from '../server/sources/codex.mjs';
@@ -71,6 +73,94 @@ test('remote messages match local extraction; paths outside agent homes are refu
   const c1 = sessions.find((s) => s.nativeId === 'c1');
   assert.deepEqual(await pool.messages(host, c1), await claudeSessionMessages(c1.sourcePath));
   await assert.rejects(pool.messages(host, { ...t1, sourcePath: '/etc/hosts' }), /許可されていないパス/);
+});
+
+test('remote Codex side chats attach to a parent and expose only bounded, side-only messages', async () => {
+  const attached = makeFixtures();
+  try {
+    const timestamp = '2026-09-20T00:00:01Z';
+    const meta = (id, attached_thread) => ({ type: 'session_meta', payload: { id, attached_thread } });
+    const message = (role, text, phase) => ({ timestamp, type: 'response_item', payload: {
+      type: 'message', role, phase, content: [{ type: role === 'assistant' ? 'output_text' : 'input_text', text }],
+    } });
+    const boundary = message('user', 'Side conversation boundary.\n\nEverything before this boundary is inherited history from the parent thread.');
+    const jsonl = records => records.map(o => JSON.stringify(o) + '\n').join('');
+    const packed = spawnSync('python3', ['-c', `import sys
+try:
+    from compression import zstd
+except ImportError:
+    sys.exit(77)
+sys.stdout.buffer.write(zstd.compress(sys.stdin.buffer.read()))`], {
+      input: jsonl([meta('packed', true), boundary, message('assistant', '保管済み', 'final')]),
+    });
+    assert.ok(packed.status === 0 || packed.status === 77, packed.stderr?.toString());
+    const db = new DatabaseSync(path.join(attached.codexHome, 'state_5.sqlite'));
+    try {
+      db.exec("ALTER TABLE threads ADD COLUMN attached_thread_parent_id TEXT; CREATE TABLE thread_spawn_edges (parent_thread_id TEXT, child_thread_id TEXT); INSERT INTO thread_spawn_edges VALUES ('t1', 'side');");
+      const insert = db.prepare('INSERT INTO threads (id, title, rollout_path, attached_thread_parent_id) VALUES (?, ?, ?, ?)');
+      const write = (id, parent, records) => {
+        const file = path.join(attached.codexHome, 'sessions', `${id}.jsonl`);
+        fs.writeFileSync(file, jsonl(records));
+        insert.run(id, id, file, parent);
+      };
+      const followup = message('user', '  追記\n');
+      followup.payload.content.unshift({ type: 'input_text', text: '<environment_context>secret</environment_context>' });
+      write('side', 't1', [
+        meta('side', true), message('user', 'inherited'), boundary, message('assistant', 'inherited side chat'), boundary,
+        ...Array.from({ length: 39 }, (_, i) => message('user', `質問 ${i}`)),
+        message('user', '<environment_context>secret</environment_context>'),
+        message('user', '<realtime_delegation>secret</realtime_delegation>'),
+        message('user', '<heartbeat>secret</heartbeat>'),
+        message('assistant', 'draft', 'commentary'),
+        { type: 'response_item', payload: { type: 'function_call_output', output: 'hidden' } },
+        { type: 'event_msg', payload: { type: 'item_completed', item: { type: 'AgentMessage' } } },
+        followup, message('assistant', '𠮷'.repeat(8010), 'final_answer'),
+      ]);
+      write('missing-boundary', 't1', [meta('missing-boundary', true), message('user', 'inherited')]);
+      write('missing-meta', 't1', [meta('missing-meta', false), boundary, message('user', 'inherited')]);
+      write('orphan', 'absent', [meta('orphan', true), boundary]);
+      const archived = path.join(attached.codexHome, 'archived_sessions');
+      fs.mkdirSync(archived);
+      const packedPath = path.join(archived, 'packed.jsonl');
+      fs.writeFileSync(packedPath + '.zst', packed.stdout);
+      insert.run('packed', 'packed', packedPath, 't1');
+    } finally { db.close(); }
+    const before = attached.snapshot();
+    attached.lock();
+    const pool = newPool({ extraArgs: { codexHome: attached.codexHome, claudeHome: attached.claudeHome, desktopDir: attached.desktopDir } });
+    const sessions = await pool.sessions([host]);
+    assert.deepEqual(sessions.filter(s => s.agent === 'codex').map(s => s.nativeId).sort(), ['t1', 't2', 't3']);
+    const parent = sessions.find(s => s.nativeId === 't1');
+    assert.deepEqual(parent.children ?? [], []);
+    const side = parent.sideChats.find(s => s.nativeId === 'side');
+    assert.equal(side.id, 'codex@fx:side');
+    const { messages, truncated } = await pool.sideChatMessages(host, side);
+    assert.equal(truncated, true);
+    assert.deepEqual(messages.slice(0, -1), [
+      ...Array.from({ length: 38 }, (_, i) => ({ role: 'user', text: `質問 ${i + 1}`, at: timestamp })),
+      { role: 'user', text: '  追記\n', at: timestamp },
+    ]);
+    assert.equal(messages.at(-1).role, 'assistant');
+    assert.equal(messages.at(-1).at, timestamp);
+    assert.equal([...messages.at(-1).text].length, 8000);
+    assert.match(messages.at(-1).text, /^𠮷{7999}…$/u);
+    for (const id of ['missing-boundary', 'missing-meta']) {
+      await assert.rejects(pool.sideChatMessages(host, parent.sideChats.find(s => s.nativeId === id)), /サイドチャット.*確認できません/);
+    }
+    await assert.rejects(pool.sideChatMessages(host, { ...side, nativeId: 'other' }), /サイドチャット.*確認できません/);
+    const claudePath = sessions.find(s => s.agent === 'claude').sourcePath;
+    await assert.rejects(pool.sideChatMessages(host, { ...side, sourcePath: claudePath }), /許可されていないパス/);
+    const packedSide = parent.sideChats.find(s => s.nativeId === 'packed');
+    if (packed.status === 0) {
+      assert.deepEqual(await pool.sideChatMessages(host, packedSide), {
+        messages: [{ role: 'assistant', text: '保管済み', at: timestamp }],
+        truncated: false,
+      });
+    } else {
+      await assert.rejects(pool.sideChatMessages(host, packedSide), /Python 3\.14 以降/);
+    }
+    assert.deepEqual(attached.snapshot(), before);
+  } finally { attached.cleanup(); }
 });
 
 test('unchanged Claude transcripts are not re-sent', async () => {

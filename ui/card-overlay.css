@@ -71,3 +71,10 @@
 .pane-layer[data-view-mode="split"] :is(.pane-width, .pane-height, .pane-corner) { display: none; }
 
 @media (prefers-reduced-motion: reduce) { .pane-layer, .pane { transition: none; } }
+
+.side-chat { border-block-end: 1px solid var(--btn-subtle); }
+.side-chat > summary { cursor: pointer; padding: 8px; overflow-wrap: anywhere; font-size: 13px; }
+.side-chat > summary:hover { background: var(--btn-subtle); }
+.side-chat-body { padding-inline: 8px; }
+.side-chat-body .msg .who { display: block; margin-block-end: 4px; }
+.side-chat-body > [role="status"]:empty { margin: 0; }

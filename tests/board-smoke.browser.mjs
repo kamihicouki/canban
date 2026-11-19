@@ -650,6 +650,21 @@ test('the board, the ribbon, the time axis and the card layers run without page 
   const peerRollout = path.join(fx.codexHome, 'sessions', 'rollout-peer.jsonl');
   fs.writeFileSync(peerRollout, JSON.stringify({ timestamp: '2026-10-14T01:44:00Z', type: 'event_msg', payload: { type: 'item_completed', item: { type: 'UserMessage', id: 'peer-request', content: [{type:'text',text:'<codex_delegation><source_thread_id>t1</source_thread_id><input>レビューしてください</input></codex_delegation>'}] } } })+'\n');
   edgeDb.prepare("UPDATE threads SET title='検証', name='検証', rollout_path=? WHERE id='t2'").run(peerRollout);
+  edgeDb.exec('ALTER TABLE threads ADD COLUMN attached_thread_parent_id TEXT');
+  const sideRollout = path.join(fx.codexHome, 'sessions', 'side-chat.jsonl');
+  const sideRecord = (type, payload) => JSON.stringify({ timestamp: longStamp, type, payload });
+  const sideMessage = (role, text) => sideRecord('response_item', {
+    type: 'message', role, content: [{ type: role === 'user' ? 'input_text' : 'output_text', text }],
+  });
+  fs.writeFileSync(sideRollout, [
+    sideRecord('session_meta', { id: 'side-fixture', attached_thread: true }),
+    sideMessage('user', '引き継いだ親の質問'),
+    sideMessage('user', 'Side conversation boundary.\n\nEverything before this boundary is inherited history from the parent thread.'),
+    sideMessage('user', 'リリース前に、どのブラウザで確認すればよいですか？'),
+    sideMessage('assistant', '登録済みのChromeと、隔離したChromeで確認します。'),
+  ].join('\n') + '\n');
+  edgeDb.prepare("INSERT INTO threads (id, rollout_path, title, updated_at_ms, archived, attached_thread_parent_id) VALUES (?, ?, ?, ?, 0, ?)")
+    .run('side-fixture', sideRollout, 'リリースの確認環境', Date.now() - 60000, 't1');
   edgeDb.close();
   for (const [source, id, minute] of [['peer-x', 'x1', 40], ['t2', 's1', 45], ['peer-x', 'x2', 48]]) {
     const envelope = `<codex_delegation><source_thread_id>${source}</source_thread_id><input>メッセージ ${id}</input></codex_delegation>`;
@@ -661,6 +676,8 @@ test('the board, the ribbon, the time axis and the card layers run without page 
   const port = 4700 + Math.floor(Math.random() * 200);
   const host = spawn(process.execPath, ['tests/dev-host.mjs', String(port)], { cwd: root, stdio: 'ignore',
     env: { ...process.env, CANBAN_DATA_DIR: dataDir, CANBAN_CODEX_HOME: fx.codexHome, CANBAN_CLAUDE_HOME: fx.claudeHome, CANBAN_CLAUDE_DESKTOP_DIR: fx.desktopDir,
+      ...Object.fromEntries(['ANTIGRAVITY_DIR', 'GEMINI_HOME', 'CURSOR_HOME', 'CURSOR_WORKSPACE_DIR', 'CHATGPT_DIR', 'GROK_HOME']
+        .map(key => ['CANBAN_' + key, path.join(fx.root, 'empty')])),
       CANBAN_LAUNCH_DRYRUN: '1', CANBAN_SEARCH_INDEX: '0', CANBAN_BACKGROUND: '0', CANBAN_BROWSER_SMOKE: '1' } });
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-smoke-chrome-'));
   const cdpPort = port + 1000;
@@ -985,6 +1002,47 @@ test('the board, the ribbon, the time axis and the card layers run without page 
       const unverifiedShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
       fs.writeFileSync(path.join(dir,`${view}-${theme}-desktop-unverified.png`),Buffer.from(unverifiedShot.result.data,'base64'));
       await cdp('Runtime.evaluate',{expression:`window.desktopShotView.accountSwitch=true;window.dispatchEvent(new Event('focus'));`});
+    }
+  }
+  const sideShots = process.env.CANBAN_SIDE_CHAT_SHOTS;
+  if (sideShots) fs.mkdirSync(sideShots, { recursive: true });
+  for (const view of ['board', 'timeline']) {
+    const checked = await cdp('Runtime.evaluate', { expression: `(async () => {
+      const api = window.__canbanSmokeWorkspace;
+      const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+      const until = async (condition, label) => {
+        for (let i = 0; i < 60; i++) {
+          const result = condition();
+          if (result) return result;
+          await wait(60);
+        }
+        throw new Error(label);
+      };
+      api.clear();
+      api.board(${JSON.stringify(view)});
+      api.shape('workspace');
+      if (document.querySelector('[data-card-id="codex:side-fixture"]')) throw new Error('Side Chat became a card');
+      await api.open('codex:t1', { dock: ${view === 'timeline'} });
+      const pane = await until(() => document.querySelector('.pane[data-card-id="codex:t1"]'), 'missing parent pane');
+      const summary = await until(() => pane.querySelector('.side-chat > summary') || (pane.dispatchEvent(new KeyboardEvent('keydown', { key: 'q', bubbles: true })), pane.querySelector('.side-chat > summary')), 'missing side chat disclosure');
+      const detail = summary.parentElement;
+      if (detail.open || detail.querySelector('.msg')) throw new Error('Side Chat body loaded before expansion');
+      if (${view === 'timeline'}) {
+        pane.focus();
+        pane.dispatchEvent(new KeyboardEvent('keydown', { key: 'S', code: 'KeyS', altKey: true, shiftKey: true, bubbles: true }));
+        if (document.activeElement !== summary) throw new Error('Side Chat shortcut did not focus summary');
+      } else summary.click();
+      await until(() => detail.querySelectorAll('.msg').length === 2, 'Side Chat body did not load');
+      if (!detail.textContent.includes('隔離したChrome') || detail.textContent.includes('引き継いだ親の質問')) throw new Error('wrong Side Chat body');
+      if (detail.querySelector('textarea, input, button, [contenteditable]')) throw new Error('Side Chat has a mutation control');
+      summary.scrollIntoView({ block: 'center' });
+      return true;
+    })()`, awaitPromise: true, returnByValue: true });
+    assert.equal(checked.result?.exceptionDetails, undefined, JSON.stringify(checked.result?.exceptionDetails));
+    if (sideShots) for (const theme of ['light', 'dark']) {
+      await cdp('Runtime.evaluate', { expression: `document.documentElement.dataset.theme = "${theme}"` });
+      const shot = await cdp('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+      fs.writeFileSync(path.join(sideShots, `${view}-${theme}.png`), Buffer.from(shot.result.data, 'base64'));
     }
   }
   assert.deepEqual(pageErrors, []);
