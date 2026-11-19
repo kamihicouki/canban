@@ -634,6 +634,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
   }
   const labelsById = new Map(state.labels.map((l) => [l.id, l]));
   const listIds = new Set(state.lists.map((l) => l.id));
+  const listOf = listResolver(state);
   const buckets = new Map(state.lists.map((l) => [l.id, []]));
   const projects = new Map();
   const folders = new Map(); // folder names hidden behind a Codex project
@@ -683,8 +684,43 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
     if (visibleKind && !toTask.has(s.id)) dirCounts.set(dir?.id || '__none', (dirCounts.get(dir?.id || '__none') || 0) + 1);
     if (!includeLinkedSessions && toTask.has(s.id)) continue; // shown inside its task card except in cross-board search
     if (!matches(s, card, filters, labelsById, hits, dir)) continue;
-    const listId = card?.listId && listIds.has(card.listId) ? card.listId : state.defaultListId;
+    const listId = listOf(s.id);
     const kids = (s.children || []).map((id) => byId.get(id)).filter(Boolean);
+    const createdKids = (s.createdChildren || []).map((id) => byId.get(id)).filter(Boolean);
+    const createdParentSession = s.createdParentId ? byId.get(s.createdParentId) : null;
+    const createdParent = s.createdParentId ? (createdParentSession ? {
+      id: s.createdParentId,
+      title: createdParentSession.title,
+      status: createdParentSession.status || 'idle',
+      statusKnown: createdParentSession.statusKnown !== false,
+      listId: listOf(createdParentSession.id),
+      archived: !!createdParentSession.archived,
+      available: true,
+    } : {
+      id: s.createdParentId,
+      title: null,
+      status: 'idle',
+      statusKnown: false,
+      listId: null,
+      archived: false,
+      available: false,
+    }) : null;
+    const createdChats = createdKids.length ? {
+      total: createdKids.length,
+      running: createdKids.filter((k) => k.status === 'running').length,
+      waiting: createdKids.filter((k) => k.status === 'waiting').length,
+      completed: createdKids.filter((k) => k.status === 'completed').length,
+      aborted: createdKids.filter((k) => k.status === 'aborted').length,
+      children: createdKids.map((k) => ({
+        id: k.id,
+        title: k.title,
+        status: k.status || 'idle',
+        statusKnown: k.statusKnown !== false,
+        listId: listOf(k.id),
+        archived: !!k.archived,
+        updatedAt: k.updatedAt,
+      })),
+    } : null;
     const launch = launchInfo(s);
     buckets.get(listId).push({
       id: s.id,
@@ -742,6 +778,8 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
       codexSection: s.codexSection || null,
       autoMoved: card?.movedBy ? { ruleId: card.movedBy.ruleId, at: card.movedBy.at } : null,
       subagents: kids.length ? { total: kids.length, running: kids.filter((k) => k.status === 'running' || k.status === 'waiting').length } : null,
+      createdParent,
+      createdChats,
       exchanges: s.agent === 'codex' ? exchangeIndex.summary(s.id) : null,
       repo: s.repo || null,
       pr: prView(s.pr),
@@ -1047,6 +1085,29 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   const listId = listCard.listId && state.lists.some((l) => l.id === listCard.listId) ? listCard.listId : state.defaultListId;
   const all = sessionCardStates(relatedSource, state);
   const byId = new Map(all.map((x) => [x.id, x]));
+  const detailListOf = listResolver(state);
+  const createdEntry = (c) => ({
+    id: c.id,
+    title: c.title,
+    status: c.status || 'idle',
+    statusKnown: c.statusKnown !== false,
+    listId: detailListOf(c.id),
+    archived: !!c.archived,
+    updatedAt: c.updatedAt,
+  });
+  const createdChats = (s.createdChildren || []).map((id) => byId.get(id)).filter(Boolean).map(createdEntry);
+  const createdParentSession = s.createdParentId ? byId.get(s.createdParentId) : null;
+  const createdParent = s.createdParentId ? {
+    id: s.createdParentId,
+    title: createdParentSession?.title || null,
+    status: createdParentSession?.status || 'idle',
+    statusKnown: !!createdParentSession && createdParentSession.statusKnown !== false,
+    listId: createdParentSession ? detailListOf(createdParentSession.id) : null,
+    available: !!createdParentSession,
+  } : null;
+  const createdSiblings = createdParentSession
+    ? (createdParentSession.createdChildren || []).filter((id) => id !== s.id).map((id) => byId.get(id)).filter(Boolean).map(createdEntry)
+    : [];
   const key = branchKey(s);
   const sameBranch = key
     ? all.filter((x) => x.id !== s.id && branchKey(x) === key).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 20)
@@ -1068,6 +1129,9 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     list: state.lists.find((l) => l.id === listId),
     task: taskId ? { id: taskId, title: state.cards[taskId].title } : null,
     children,
+    createdChats,
+    createdParent,
+    createdSiblings,
     sameBranch,
     relatedCoverage,
     pr: s.pr || null,

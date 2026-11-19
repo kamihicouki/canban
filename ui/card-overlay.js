@@ -946,9 +946,29 @@ function renderPane(p, d) {
     ? d.recentMessages.map((m) => h('div', { class: `msg ${m.role}` }, h('div', { class: 'who', text: `${m.role === 'user' ? 'ユーザー' : 'エージェント'}${m.at ? ` · ${fmtDate(Date.parse(m.at))}` : ''}` }), m.text))
     : [h('p', { class: 'muted', text: d.messagesError ? `メッセージを取得できませんでした: ${d.messagesError}` : 'メッセージはありません' })];
 
+  const listNameById = (lid) => (state.board?.lists || []).find((l) => l.id === lid)?.title || '';
   const related = [
     d.relatedCoverage && d.relatedCoverage.state !== 'current' ? h('p', { class: 'muted', text: d.relatedCoverage.state === 'snapshot' ? `関連セッションは保存済み一覧から表示しています（取得: ${d.relatedCoverage.at ? fmtDate(d.relatedCoverage.at) : '時刻未取得'}）。現在の全件とは限りません。` : '関連セッションは未取得です。0件と確認された状態ではありません。' }) : null,
     d.task ? h('div', { class: 'msg' }, `このセッションは${T.taskCard} `, h('button', { class: 'link-btn', text: `「${d.task.title}」`, onclick: () => openCard(d.task.id) }), ' に紐付いています。') : null,
+    d.createdParent ? h('div', { class: 'sub-h', text: '作成元（親チャット）' }) : null,
+    d.createdParent ? (d.createdParent.available
+      ? h('button', { class: 'sub-row', onclick: () => openCard(d.createdParent.id) },
+          h('span', { class: `sdot s-${d.createdParent.status}` }),
+          h('span', { class: 'ellipsis grow', text: d.createdParent.title || '親チャット' }),
+          d.createdParent.listId ? h('span', { class: 'muted', text: listNameById(d.createdParent.listId) }) : null)
+      : h('div', { class: 'msg muted', text: '作成元の親チャットはこの保存先にありません（未取得）' })) : null,
+    d.createdChats && d.createdChats.length ? h('div', { class: 'sub-h', text: `作成されたチャット（${d.createdChats.length}）` }) : null,
+    ...(d.createdChats || []).map((c) => h('button', { class: 'sub-row', onclick: () => openCard(c.id) },
+      h('span', { class: `sdot s-${c.status}` }),
+      h('span', { class: 'ellipsis grow', text: c.title }),
+      c.listId ? h('span', { class: 'muted', text: listNameById(c.listId) }) : null,
+      h('span', { class: 'muted', text: relTime(c.updatedAt) }))),
+    d.createdSiblings && d.createdSiblings.length ? h('div', { class: 'sub-h', text: `同じ親の作成チャット（${d.createdSiblings.length}）` }) : null,
+    ...(d.createdSiblings || []).map((c) => h('button', { class: 'sub-row', onclick: () => openCard(c.id) },
+      h('span', { class: `sdot s-${c.status}` }),
+      h('span', { class: 'ellipsis grow', text: c.title }),
+      c.listId ? h('span', { class: 'muted', text: listNameById(c.listId) }) : null,
+      h('span', { class: 'muted', text: relTime(c.updatedAt) }))),
     d.children && d.children.length ? h('div', { class: 'sub-h', text: `サブエージェント（${d.children.length}）` }) : null,
     ...(d.children || []).map((c) => h('button', { class: 'sub-row', onclick: () => openCard(c.id) },
       h('span', { class: `sdot s-${c.status}` }), h('span', { class: 'ellipsis grow', text: c.agentName ? `${c.agentName}: ${c.title}` : c.title }),

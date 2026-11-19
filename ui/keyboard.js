@@ -9,6 +9,14 @@ document.addEventListener('keydown', e => {
   if (!e.shiftKey || e.metaKey || e.ctrlKey || e.altKey || e.isComposing || typingIn(e.target) || document.querySelector('dialog[open], .popover')) return;
   if (e.code === 'KeyO') { e.preventDefault(); toggleView('orbit'); }
   if (e.code === 'KeyG') { e.preventDefault(); laneAxisPicker($('#sideBtn')); }
+  if (e.code === 'KeyP') {
+    const fam = typeof selectedCreatedFamily === 'function' ? selectedCreatedFamily() : null;
+    if (fam) {
+      e.preventDefault();
+      if (!paneLayer.hidden && !paneDocked() && fam.parentId && fam.parentAvailable) openCard(fam.parentId);
+      else toggleFamilyLens(fam.familyId, fam.title);
+    }
+  }
   if (e.code === 'KeyL' && (openViewKind() === 'orbit' || focusedPane()?.kind === 'task' || document.activeElement?.closest?.('.card')?.dataset.cardId?.startsWith('task:'))) { e.preventDefault(); focusTaskLoop(); }
 }, true);
 document.addEventListener('keydown', e => {
@@ -133,7 +141,7 @@ function refreshShortcutHints() {
   else if (typing) entries = input.id === 'q' ? [['↓ / Enter', 'カードへ'], ['Esc', '検索をクリア']] : [['⌘K / Ctrl+K', 'コマンド']];
   else if (workspace.utilityPage()) entries = [...globalKeys, ['Esc', 'パネルを閉じる']];
   else if (input?.matches('.irow, .gantt-row')) entries = [['j / k', '次 / 前'], ['Enter', '大きく開く'], ...(panes[0]?.kind === 'session' ? [['o', '続ける'], ['x', '仕事にまとめる']] : []), ['r', '返信'], ['1 2 3', 'テキスト / プレビュー / 要点'], ['d', '詳細パネル'], ['l', 'ラベル'], ['m', 'リストへ移動'], ['i', nextBoardViewLabel()], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys];
-  else if (input?.matches('.card')) entries = [['j / k', '次 / 前'], ['Enter', '開く'], ['Space', 'その場で返信'], ['l', 'ラベル'], ['m', 'リストへ移動'], ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys];
+  else if (input?.matches('.card')) entries = [['j / k', '次 / 前'], ['Enter', '開く'], ['Space', 'その場で返信'], ['l', 'ラベル'], ['m', 'リストへ移動'], ...(typeof selectedCreatedFamily === 'function' && selectedCreatedFamily() ? [['Shift+P', '親子を照らす']] : []), ...(selectedExchangeCard() ? [['Shift+M', 'やり取り']] : []), ...globalKeys];
   else entries = [['j / k', 'カード選択'], ['/', '検索'], ['c', 'タスク追加'], ['i', nextBoardViewLabel()], ...(state.lens ? [['Esc', '照らすのをやめる']] : []), ['b', 'ナビゲーション'], ['a / u', '分析 / Usage'], ['r', '更新'], ...globalKeys];
   paintKeyGuide(entries);
 }
@@ -156,6 +164,7 @@ const SHORTCUTS = [
   ['Slack', [['v', 'Slackタイムラインの表示 / 非表示（ボード）'], ['c / l / t', 'メッセージ上: タスク作成 / カードへ追加 / 返信'], ['Alt+s', 'カード内: Slack資料の追加ボタンへ'], ['Esc', 'タイムライン内: 非表示']]],
   ['カードを選択中', [
     ['Shift+M', 'セッション間のやり取り（時系列 / 相手別）'],
+    ['Shift+P', '作成されたチャットの親子を照らす / 開く'],
     ['Shift+1 / 2 / 3', '関連カードの横展開 / 中央3枚 / 重ねる（やり取りを辿るとき）'],
     ['Esc / Shift+Esc', '前 / 次の訪問（やり取りを辿るとき）'],
     ['Shift+Home', 'やり取りの起点へ戻る'],
@@ -185,6 +194,7 @@ async function commandPalette() {
   const paletteOrigin = capturePaletteOrigin();
   if (!desktopAccounts.view) await desktopAccounts.refresh().catch(() => null);
   const exchangeCard = selectedExchangeCard();
+  const createdFamily = typeof selectedCreatedFamily === 'function' ? selectedCreatedFamily() : null;
   const sessionPane = !paneLayer.hidden && focusedPane()?.kind === 'session' && focusedPane()?.d?.session ? focusedPane() : null;
   const b = state.board;
   if (!b) return;
@@ -213,6 +223,12 @@ async function commandPalette() {
       { label: 'やり取りの起点へ戻る', run: () => focusExchangeVisit(exchangeTrail.root), hint: 'Shift+Home' },
     ] : []),
     ...(exchangeCard ? [{ label: 'セッション間のやり取り', run: () => openSelectedExchanges(exchangeCard), hint: 'Shift+M' }] : []),
+    ...(createdFamily ? [
+      { label: state.lens?.family === createdFamily.familyId ? '親子の照らしを解除' : `親子「${createdFamily.title}」を照らす`, run: () => toggleFamilyLens(createdFamily.familyId, createdFamily.title), hint: 'Shift+P' },
+      ...(createdFamily.hasChildren ? [{ label: state.collapsedCreatedParents.has(createdFamily.familyId) ? '作成されたチャットを展開' : '作成されたチャットを折りたたむ', run: () => toggleCreatedParent(createdFamily.familyId) }] : []),
+      ...(createdFamily.parentId && createdFamily.parentAvailable ? [{ label: '作成元（親チャット）を開く', run: () => openCard(createdFamily.parentId) }] : []),
+    ] : []),
+    ...(state.lens?.family ? [{ label: '親子の照らしを解除', run: () => pinLens(null), hint: 'Esc' }] : []),
     ...(paneLayer.hidden || panes[0]?.kind !== 'view' ? [
       { label: paneLayer.hidden ? '次のカードにフォーカス' : '次のカードを開く', run: () => stepDisplayedCard(1), hint: 'j' },
       { label: paneLayer.hidden ? '前のカードにフォーカス' : '前のカードを開く', run: () => stepDisplayedCard(-1), hint: 'k' },

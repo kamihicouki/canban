@@ -6,6 +6,7 @@ import path from 'node:path';
 import { exists, listDir, queryReadOnly, readTailJsonLines, rolloutFile, stat } from './readonly.mjs';
 import { projectName, clip, cleanPrompt, firstLine, LOCAL_HOST, sessionKey } from './util.mjs';
 import { defaultCodexHome, codexHomes, refreshAccounts, sessionAccount } from '../accounts.mjs';
+import { resolveCreatedChatParents, attachCreatedChatEdges } from './codex-created-chats.mjs';
 
 export const codexHome = defaultCodexHome;
 
@@ -130,6 +131,8 @@ export async function listCodexSessions({ home = null, now = Date.now() } = {}) 
         mine.push(s);
       }
       attachSpawnEdges(mine, c.edges);
+      const createdParents = await resolveCreatedChatParents(h.dir, mine);
+      attachCreatedChatEdges(mine, createdParents);
     }
     return { sessions: [...byId.values()], error: null };
   } catch (err) {
@@ -150,6 +153,17 @@ export async function findCodexSession(nativeId, { home = null, now = Date.now()
     if (children.length) s.children = children;
     const parent = c.edges.find(e => e.child === nativeId && c.rows.has(e.parent));
     if (parent) s.parentId = sessionKey('codex', LOCAL_HOST, parent.parent);
+    const createdCandidates = [...c.rows.values()].filter((r) => !r.subagent && r.threadSource === 'agent_created_thread');
+    if (createdCandidates.length) {
+      const createdParents = await resolveCreatedChatParents(h.dir, createdCandidates);
+      const createdParent = createdParents.get(nativeId);
+      if (createdParent && createdParent !== nativeId) s.createdParentId = sessionKey('codex', LOCAL_HOST, createdParent);
+      const createdChildren = [];
+      for (const [cid, pid] of createdParents) {
+        if (pid === nativeId && cid !== nativeId && c.rows.has(cid)) createdChildren.push(sessionKey('codex', LOCAL_HOST, cid));
+      }
+      if (createdChildren.length) s.createdChildren = createdChildren;
+    }
     return s;
   }
   return null;

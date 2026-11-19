@@ -73,19 +73,30 @@ function faceExtras(card) {
   return out;
 }
 
-function renderCard(card, list) {
+function renderCard(card, list, opts = {}) {
   const life = lifeOf(card), kind = FACE_BY_LIFE[life];
   const task = card.kind === 'task';
-  const el = cardShell(card, ` face face-${kind} life-${life}${task ? ' task' : ''}`);
+  const nestedChild = !!opts.nestedChild;
+  const el = cardShell(card, ` face face-${kind} life-${life}${task ? ' task' : ''}${nestedChild ? ' cc-nested' : ''}`);
   el.dataset.life = life;
   el.dataset.day = daysAgo(card.updatedAt);
   const rich = kind === 'rich', compact = kind === 'compact';
+  if (!nestedChild && !compact && !task && card.createdParent && typeof renderCreatedParentBand === 'function') {
+    const band = renderCreatedParentBand(card);
+    if (band) el.append(band);
+  }
   el.append(h('div', { class: 'frow' }, faceGlyph(card.status, card.statusKnown), h('div', { class: 'ftitle', text: card.title }), compact ? dotPill(card) : faceFlags(card),
     compact ? h('i', { class: `fagent fagent-${task ? 'task' : card.agent}`, title: task ? T.taskCard : agentAppLabel(card.agent) }) : null,
     compact ? h('span', { class: 'ftime', title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }) : null));
-  if (compact) { if (card.archived) el.querySelector('.frow').append(h('span', { class: 'fflag', text: 'アーカイブ済み' })); const pill = exchangePill(card, true); if (pill) el.querySelector('.frow').append(pill); return finishFace(el, card, list); }
+  if (compact) {
+    if (card.archived) el.querySelector('.frow').append(h('span', { class: 'fflag', text: 'アーカイブ済み' }));
+    if (!task && card.createdChats?.total) el.querySelector('.frow').append(h('span', { class: 'pill', title: `作成されたチャット ${card.createdChats.total}件`, text: `子 ${card.createdChats.total}` }));
+    else if (!task && card.createdParent) el.querySelector('.frow').append(h('span', { class: 'pill', title: card.createdParent.title ? `親: ${card.createdParent.title}` : '作成されたチャット', html: picon('branch', 11) }));
+    const pill = exchangePill(card, true); if (pill) el.querySelector('.frow').append(pill);
+    return finishFace(el, card, list);
+  }
   const now = task ? faceTaskNow(card) : faceNow(card);
-  if (now && !(rich && !task && !(card.status === 'running' || card.status === 'waiting') && card.last)) el.append(now);
+  if (now && !(rich && !task && !(card.status === 'running' || card.status === 'waiting') && card.last) && !(nestedChild && card.status === 'completed')) el.append(now);
   if (rich) {
     if (!task && card.last && card.status !== 'running' && card.status !== 'waiting') el.append(h('div', { class: 'fquote', title: card.last, text: card.last }));
     const plan = card.signals?.plan;
@@ -95,6 +106,9 @@ function renderCard(card, list) {
       card.canDesktop ? h('button', { class: 'btn-primary', type: 'button', text: 'アプリで答える', onpointerdown: (e) => e.stopPropagation(), onclick: (e) => { e.stopPropagation(); resume(card.id, { route: 'desktop' }); } }) : null,
       h('button', { class: 'btn', type: 'button', text: 'その場で読む', onpointerdown: (e) => e.stopPropagation(), onclick: (e) => { e.stopPropagation(); togglePeek(card); } })));
     if (task && card.links.length) el.append(h('div', { class: 'flinks' }, ...card.links.slice(0, 3).map((l) => h('span', { class: 'flink', title: l.title }, faceGlyph(l.status, l.statusKnown), faceWho(l.agent, l), h('span', { class: 'ellipsis', text: l.title })))));
+  }
+  if (!task && card.createdChats?.total && typeof renderCreatedChatsBar === 'function') {
+    el.append(renderCreatedChatsBar(card, opts.createdStack || null));
   }
   const foot = h('div', { class: 'ffoot' }, faceWho(task ? 'task' : card.agent, card), dotPill(card), dirPill(card.directory || { name: 'カテゴリ無し' }));
   const source = visibleCardSourceRelations(card);
@@ -149,7 +163,19 @@ function repaintCard(id, { focusInput = false } = {}) {
   const hit = findCard(id), el = document.querySelector(`.card[data-card-id="${CSS.escape(id)}"]`);
   if (!hit || hit.link || !el || state.drag) return;
   const had = el.contains(document.activeElement);
-  const next = renderCard(hit.card, hit.list);
+  const nestedChild = el.classList.contains('cc-nested');
+  let createdStack = null;
+  if (hit.card.createdChats?.total && typeof groupListWithCreatedChats === 'function') {
+    const { awake, dormant } = splitByLife(hit.list.cards);
+    const n = state.shown[hit.list.id] || PAGE;
+    createdStack = groupListWithCreatedChats(awake.slice(0, n), {
+      listId: hit.list.id,
+      allLists: state.board?.lists || [],
+      dormantIds: new Set(dormant.map((c) => c.id)),
+      collapsedParents: state.collapsedCreatedParents,
+    }).find((item) => item.card.id === id) || null;
+  }
+  const next = renderCard(hit.card, hit.list, { nestedChild, createdStack });
   el.replaceWith(next);
   if (focusInput) next.querySelector('.peek-input')?.focus();
   else if (had) next.focus({ preventScroll: true });

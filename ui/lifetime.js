@@ -107,6 +107,7 @@ function renderRibbon(b) {
 }
 function lensText(lens) {
   if (!lens) return '';
+  if (lens.family) return `親子「${lens.title || ''}」を照らしています`;
   if (lens.life) return `${LIFE_LABELS[lens.life]}を照らしています`;
   return `${dayLabel(lens.day)}に動いたカード`;
 }
@@ -117,10 +118,13 @@ function previewLens(lens) {
 function pinLens(lens) {
   state.lens = lens;
   state.lensPreview = null;
-  if (state.board) renderRibbon(state.board);
+  if (state.board) {
+    renderRibbon(state.board);
+    if (typeof renderFilterChips === 'function') renderFilterChips(state.board);
+  }
   applyLens();
 }
-const lensHits = (el, lens) => (lens.life ? el.dataset.life === lens.life : Number(el.dataset.day) === lens.day);
+const lensHits = (el, lens) => (lens.family ? el.dataset.familyId === lens.family : lens.life ? el.dataset.life === lens.life : Number(el.dataset.day) === lens.day);
 // Light the cards of the chosen time; dim the rest. A fold says how many of its cards match.
 function applyLens() {
   const lens = lensActive();
@@ -128,7 +132,7 @@ function applyLens() {
   root.classList.toggle('lens-on', !!lens);
   for (const el of root.querySelectorAll('.card[data-card-id]')) el.classList.toggle('lens-hit', !!lens && lensHits(el, lens));
   for (const fold of root.querySelectorAll('.life-fold')) {
-    const hits = lens ? (fold._cards || []).filter((c) => (lens.life ? lens.life === 'dormant' : daysAgo(c.updatedAt) === lens.day)).length : 0;
+    const hits = lens ? (fold._cards || []).filter((c) => (lens.family ? (c.id === lens.family || c.createdParent?.id === lens.family) : lens.life ? lens.life === 'dormant' : daysAgo(c.updatedAt) === lens.day)).length : 0;
     fold.classList.toggle('lens-hit', hits > 0);
     const badge = fold.querySelector('.fold-hits');
     if (badge) badge.textContent = hits ? `該当 ${hits}` : '';

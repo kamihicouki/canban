@@ -37,7 +37,7 @@ function auxiliarySummary(key) {
   if (key === 'ribbon') {
     const period = Number(state.filters?.days) ? `${state.filters.days}日` : '全期間';
     const lens = state.lensPreview || state.lens;
-    const lit = lens ? lens.life ? LIFE_LABELS[lens.life] : dayLabel(lens.day) : '';
+    const lit = lens ? lens.family ? '親子' : lens.life ? LIFE_LABELS[lens.life] : dayLabel(lens.day) : '';
     return `期間 ${period}${lit ? ` · 照らし中 ${lit}` : ''}`;
   }
   if (key === 'card') return PANE_MODES.find(([mode]) => mode === paneGlobal.mode)?.[1] || 'プレビュー';

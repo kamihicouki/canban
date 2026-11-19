@@ -44,7 +44,8 @@ function clearFilters() {
 }
 function renderFilterChips(b) {
   const chips = filterChips(b);
-  $('#filterChips').replaceChildren(...chips.map(({ text, patch }) => h('button', { class: 'filter-chip', type: 'button', title: `${text} を外す`, 'aria-label': `${text} を外す`, onclick: () => setScope(patch) }, text, h('span', { class: 'x', text: '✕' }))),
+  const fam = state.lens?.family ? [h('button', { class: 'filter-chip', type: 'button', title: '親子の照らしを解除（Esc）', 'aria-label': '親子の照らしを解除', onclick: () => pinLens(null) }, `親子: ${state.lens.title || '照らし中'}`, h('span', { class: 'x', text: '✕' }))] : [];
+  $('#filterChips').replaceChildren(...fam, ...chips.map(({ text, patch }) => h('button', { class: 'filter-chip', type: 'button', title: `${text} を外す`, 'aria-label': `${text} を外す`, onclick: () => setScope(patch) }, text, h('span', { class: 'x', text: '✕' }))),
     ...(chips.length > 1 ? [h('button', { class: 'filter-chip chip-clear', type: 'button', text: 'すべて解除', onclick: clearFilters })] : []));
 }
 function scopeLabel(b) {

@@ -1,0 +1,196 @@
+/* 作成されたチャット（案B：親子ネスト連結スタック）— ui/base.css のトークンを使用。 */
+[data-family-tone="teal"] { --cc-fam: var(--codex); }
+[data-family-tone="orange"] { --cc-fam: var(--c-orange); }
+[data-family-tone="purple"] { --cc-fam: var(--c-purple); }
+[data-family-tone="sky"] { --cc-fam: var(--c-sky); }
+[data-family-tone="pink"] { --cc-fam: var(--c-pink); }
+
+.cc-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cc-stack.drag-source-stack {
+  display: none;
+}
+
+.cc-stack-children {
+  position: relative;
+  margin-left: 10px;
+  padding-left: 10px;
+  border-left: 2px solid color-mix(in srgb, var(--cc-fam, var(--accent)) 62%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.card.face.cc-nested {
+  padding: 7px 9px 6px;
+  gap: 4px;
+  border-radius: 8px;
+}
+
+.card.face.cc-nested::after {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 15px;
+  width: 10px;
+  height: 2px;
+  background: color-mix(in srgb, var(--cc-fam, var(--accent)) 62%, transparent);
+}
+
+.card.face.cc-nested .ftitle {
+  font-size: .875rem;
+  -webkit-line-clamp: 2;
+}
+
+.card.face.cc-nested .fnow {
+  font-size: 12px;
+  -webkit-line-clamp: 1;
+}
+
+.card.face.cc-nested .ffoot {
+  font-size: 11.5px;
+}
+
+.cc-parent-bar {
+  margin-left: 27px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--cc-fam, var(--accent)) 10%, var(--btn-subtle));
+  color: var(--card-fg);
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  text-align: left;
+  border: 1px solid color-mix(in srgb, var(--cc-fam, var(--accent)) 22%, transparent);
+}
+
+.cc-parent-bar:hover, .cc-parent-bar:focus-visible {
+  background: color-mix(in srgb, var(--cc-fam, var(--accent)) 18%, var(--btn-subtle-hover));
+}
+
+.cc-ic {
+  display: inline-flex;
+  flex: none;
+  color: var(--cc-fam, var(--accent));
+}
+
+.cc-bar-label {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+}
+
+.cc-bar-meta {
+  font-size: 11px;
+  color: var(--card-muted);
+  white-space: nowrap;
+  flex: none;
+}
+
+.cc-chev {
+  display: inline-flex;
+  flex: none;
+  color: var(--card-muted);
+  transition: transform .15s ease;
+}
+
+.cc-chev.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+.cc-parent-band {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: -9px -11px 2px;
+  padding: 4px 10px;
+  border-radius: 10px 10px 0 0;
+  background: color-mix(in srgb, var(--cc-fam, var(--accent)) 14%, transparent);
+  color: var(--card-fg);
+  font-size: 11.5px;
+  font-weight: 650;
+  border-bottom: 1px solid color-mix(in srgb, var(--cc-fam, var(--accent)) 26%, transparent);
+  min-width: 0;
+  text-align: left;
+}
+
+.cc-parent-band:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--cc-fam, var(--accent)) 22%, transparent);
+}
+
+.cc-parent-band:disabled {
+  cursor: default;
+  opacity: .75;
+}
+
+.cc-parent-band .ellipsis {
+  max-width: none;
+  flex: 1;
+}
+
+.card.face:has(> .cc-parent-band) .card-resume,
+.card.face:has(> .cc-parent-band) .card-peek {
+  top: 31px;
+}
+
+.cc-stack-remote {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  border: 1px dashed color-mix(in srgb, var(--cc-fam, var(--accent)) 52%, transparent);
+  background: color-mix(in srgb, var(--cc-fam, var(--accent)) 10%, transparent);
+  color: var(--card-fg);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: left;
+  min-width: 0;
+}
+
+.cc-stack-remote:hover, .cc-stack-remote.is-lit {
+  background: color-mix(in srgb, var(--cc-fam, var(--accent)) 20%, transparent);
+  border-style: solid;
+}
+
+.cc-stack-remote .ellipsis {
+  max-width: none;
+  flex: 1;
+}
+
+.cc-remote-act {
+  flex: none;
+  color: var(--cc-fam, var(--accent));
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.board:not(.lens-on) .card.face.cc-fam-hover {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--cc-fam, var(--accent)) 75%, transparent), var(--card-shadow);
+}
+
+.card.irow-sub[data-family-tone] {
+  border-left-width: 2px;
+  border-left-color: color-mix(in srgb, var(--cc-fam, var(--accent)) 72%, transparent);
+}
+
+.iwork > .irow-more.cc-irow-more,
+.iwork.iwork-created > .irow-more {
+  position: static;
+  margin: 0 0 4px 28px;
+  padding: 2px 6px;
+  font-size: 11.5px;
+  display: inline-block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-chev { transition: none; }
+}

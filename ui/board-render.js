@@ -105,9 +105,17 @@ function renderList(list, { inLane = false, lane = null } = {}) {
   const cardsEl = h('div', { class: 'cards', 'data-list-id': list.id });
   const { awake, dormant } = splitByLife(list.cards);
   const n = state.shown[list.id] || PAGE;
-  for (const card of awake.slice(0, n)) cardsEl.append(renderCard(card, list));
-  if (awake.length > n) {
-    cardsEl.append(h('button', { class: 'more-btn', text: `さらに表示（残り ${awake.length - n} 件）`,
+  const grouped = typeof groupListWithCreatedChats === 'function'
+    ? groupListWithCreatedChats(awake, {
+        listId: list.id,
+        allLists: state.board?.lists || [],
+        dormantIds: new Set(dormant.map((c) => c.id)),
+        collapsedParents: state.collapsedCreatedParents,
+      })
+    : awake.map((card) => ({ card }));
+  for (const item of grouped.slice(0, n)) cardsEl.append(typeof renderCreatedStack === 'function' ? renderCreatedStack(item, list) : renderCard(item.card, list));
+  if (grouped.length > n) {
+    cardsEl.append(h('button', { class: 'more-btn', text: `さらに表示（残り ${grouped.length - n} 件）`,
       onclick: () => { state.shown[list.id] = n + PAGE * 2; render(); } }));
   }
   if (dormant.length) cardsEl.append(dormantFold(list, dormant, lane));
@@ -124,8 +132,11 @@ function renderAddCard(list, { lane = null } = {}) {
 
 // The shell every card face shares (card-face.js draws the face by its lifetime).
 function cardShell(card, extraClass) {
+  const familyId = typeof createdFamilyIdOf === 'function' ? createdFamilyIdOf(card) : null;
+  const familyTone = familyId && typeof createdFamilyTone === 'function' ? createdFamilyTone(familyId) : null;
   return h('article', {
     class: `card${extraClass}${card.archived ? ' is-archived' : ''}${card.unread ? ' unread' : ''}`, tabindex: 0, 'data-card-id': card.id,
+    'data-family-id': familyId || null, 'data-family-tone': familyTone || null,
     'aria-label': `${card.title}（${card.kind === 'task' ? `${T.taskCard}・` : ''}${card.statusKnown === false ? '状態未取得' : STATUS_LABELS[card.status]}${card.unread ? '・新着' : ''}）`, title: card.title,
   });
 }

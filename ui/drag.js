@@ -13,11 +13,17 @@ function startCardDrag(e, card, el) {
       ghost.classList.add('ghost');
       ghost.style.width = `${rect.width}px`;
       document.body.append(ghost);
+      const stack = el.parentElement?.classList.contains('cc-stack') ? el.parentElement : null;
       const ph = h('div', { class: 'placeholder', style: { height: `${rect.height}px` } });
-      el.after(ph);
+      if (stack) {
+        stack.after(ph);
+        stack.classList.add('drag-source-stack');
+      } else {
+        el.after(ph);
+      }
       el.classList.add('drag-source');
       el.style.display = 'none';
-      state.drag = { type: 'card', card, el, ghost, ph, dx: sx - rect.left, dy: sy - rect.top, fromList: el.closest('.cards').dataset.listId };
+      state.drag = { type: 'card', card, el, stack, ghost, ph, dx: sx - rect.left, dy: sy - rect.top, fromList: el.closest('.cards').dataset.listId };
       try { el.setPointerCapture(e.pointerId); } catch {}
     }
     ev.preventDefault();
@@ -61,21 +67,34 @@ function startCardDrag(e, card, el) {
     stopAutoScroll();
     if (!started) return;
     const d = state.drag;
-    const cardsEl = d.ph.parentElement;
+    const cardsEl = d.ph.closest('.cards');
     const toList = cardsEl?.dataset.listId;
-    // Index in the full list from the placeholder's neighbours (works with swimlanes too).
+    // Index in the full list from the placeholder's neighbours (works with swimlanes and nested stacks).
     let idx = -1;
-    if (cardsEl) {
+    if (cardsEl && cardsEl === d.ph.parentElement) {
       const rest = state.board.lists.find((l) => l.id === toList).cards.filter((c) => c.id !== card.id);
-      const near = (dir) => { let n = d.ph[dir]; while (n && (!n.classList.contains('card') || n.classList.contains('drag-source'))) n = n[dir]; return n; };
+      const cardIdOfNode = (n) => n?.classList?.contains('card') ? n.dataset.cardId : n?.classList?.contains('cc-stack') ? n.querySelector(':scope > .card')?.dataset.cardId : null;
+      const near = (dir) => {
+        let n = d.ph[dir];
+        while (n) {
+          if (n.classList?.contains('card') && !n.classList.contains('drag-source')) return n;
+          if (n.classList?.contains('cc-stack') && !n.classList.contains('drag-source-stack')) return n;
+          n = n[dir];
+        }
+        return null;
+      };
       const next = near('nextElementSibling');
       const prev = near('previousElementSibling');
-      if (next) idx = rest.findIndex((c) => c.id === next.dataset.cardId);
-      else if (prev) idx = rest.findIndex((c) => c.id === prev.dataset.cardId) + 1;
+      if (next) idx = rest.findIndex((c) => c.id === cardIdOfNode(next));
+      else if (prev) idx = rest.findIndex((c) => c.id === cardIdOfNode(prev)) + 1;
       else idx = rest.length;
       if (idx < 0) idx = rest.length;
+    } else if (cardsEl) {
+      const rest = state.board.lists.find((l) => l.id === toList).cards.filter((c) => c.id !== card.id);
+      idx = rest.length;
     }
     d.ghost.remove();
+    if (d.stack) d.stack.classList.remove('drag-source-stack');
     state.drag = null;
     state.justDragged = true;
     setTimeout(() => (state.justDragged = false), 0);
@@ -111,7 +130,7 @@ function placeCardPlaceholder(x, y) {
   const listEl = listAt(x, y);
   if (!listEl) return;
   const cardsEl = $('.cards', listEl);
-  const cards = [...cardsEl.querySelectorAll(':scope > .card:not(.drag-source)')];
+  const cards = [...cardsEl.querySelectorAll(':scope > .card:not(.drag-source), :scope > .cc-stack:not(.drag-source-stack)')];
   let before = null;
   for (const c of cards) {
     const r = c.getBoundingClientRect();

@@ -3,7 +3,7 @@
 // urgent standalone sessions stay visible, and inactive unbundled conversations fold at the end. The right side is the card itself — the same card as the overlay (card-overlay.js),
 // docked on the pane layer over .inbox-main — so reading, answering and the details panel work as they do there.
 // The list follows the same filters as the board; Enter opens the card large, Esc puts it back.
-state.inbox = { sel: null, expanded: new Set(), unbundled: false, automationExpanded: new Set(), order: new Map() };
+state.inbox = { sel: null, expanded: new Set(), createdExpanded: new Set(), unbundled: false, automationExpanded: new Set(), order: new Map() };
 const inboxOn = () => timelineOn();
 const inboxRows = () => $$('#board .irow').filter(row => row.checkVisibility ? row.checkVisibility() : !row.getClientRects || row.getClientRects().length > 0);
 function inboxRow(x) {
@@ -12,7 +12,9 @@ function inboxRow(x) {
   const statusKnown = !task && card.statusKnown !== false;
   const waiting = task ? workAttention(card) : rowWaitLine(card);
   const overview = task ? workOverview(card) : null;
-  const row = h('article', { class: `card irow${parentId ? ' irow-sub' : ''}${task ? ' irow-work' : ''}`, tabindex: 0, role: 'option', 'data-card-id': card.id, 'data-parent-id': parentId || '', 'data-life': lifeOf(card), 'data-day': daysAgo(card.updatedAt), 'data-status': statusKnown ? status || '' : 'unknown', 'aria-selected': String(state.inbox.sel === card.id), title: [card.title, waiting].filter(Boolean).join('\n') },
+  const familyId = typeof createdFamilyIdOf === 'function' ? createdFamilyIdOf(card) : null;
+  const familyTone = familyId && typeof createdFamilyTone === 'function' ? createdFamilyTone(familyId) : null;
+  const row = h('article', { class: `card irow${parentId ? ' irow-sub' : ''}${task ? ' irow-work' : ''}`, tabindex: 0, role: 'option', 'data-card-id': card.id, 'data-parent-id': parentId || '', 'data-family-id': familyId || null, 'data-family-tone': familyTone || null, 'data-life': lifeOf(card), 'data-day': daysAgo(card.updatedAt), 'data-status': statusKnown ? status || '' : 'unknown', 'aria-selected': String(state.inbox.sel === card.id), title: [card.title, waiting].filter(Boolean).join('\n') },
     task ? h('span', { class: 'irow-work-mark', html: picon('note', 14), 'aria-hidden': 'true' }) : faceGlyph(status, statusKnown),
     h('div', { class: 'irow-body grow' }, h('div', { class: 'irow-t', text: card.title }),
       h('div', { class: 'irow-s' }, faceWho(task ? 'task' : card.agent, card), dotPill(card), h('span', { class: 'ellipsis', text: (task ? `${list.title || list.name || '仕事'}${card.autoMoved ? '（自動移動）' : ''}` : (typeof cardLocationText === 'function' ? cardLocationText(card) : card.git?.branch || card.branch || '') || card.directory?.name || '') }), card.unread ? h('span', { class: 'fflag fflag-new', text: '新着' }) : null, card.archived ? h('span', { class: 'fflag', text: 'アーカイブ済み' }) : null),
@@ -48,7 +50,20 @@ function inboxRow(x) {
 function inboxGroups(b) {
   // A linked session belongs under its visible task, never also as a standalone row.
   const linked = new Set(b.lists.flatMap((l) => l.cards.filter((c) => c.kind === 'task').flatMap((c) => (c.links || []).map((s) => s.id))));
-  const groups = timelineGroups({ ...b, lists: b.lists.map((l) => ({ ...l, cards: l.cards.filter((c) => c.kind === 'task' || !linked.has(c.id)) })) });
+  const visibleSessions = new Map();
+  for (const l of b.lists) for (const c of l.cards) if (c.kind !== 'task' && !linked.has(c.id)) visibleSessions.set(c.id, { card: c, list: l });
+  // 作成された子チャットは親チャットが独立セッションとして表示されているならその配下にまとめる。
+  const createdChildrenByParent = new Map();
+  const nestedCreatedIds = new Set();
+  for (const { card, list } of visibleSessions.values()) {
+    const pid = card.createdParent?.id;
+    if (!pid || pid === card.id || card.createdChats?.total > 0 || !visibleSessions.has(pid)) continue;
+    if (!createdChildrenByParent.has(pid)) createdChildrenByParent.set(pid, []);
+    createdChildrenByParent.get(pid).push({ card, list });
+    nestedCreatedIds.add(card.id);
+  }
+  state.inbox.createdByParent = createdChildrenByParent;
+  const groups = timelineGroups({ ...b, lists: b.lists.map((l) => ({ ...l, cards: l.cards.filter((c) => c.kind === 'task' || (!linked.has(c.id) && !nestedCreatedIds.has(c.id))) })) });
   // Preserve relative order inside a section across refreshes. New work joins at its end.
   const previous = state.inbox.order;
   for (const [,xs,,key] of groups) {
@@ -62,7 +77,28 @@ function inboxGroups(b) {
 function inboxTaskRows(x) {
   const { card, list } = x;
   const row = inboxRow(x);
-  if (card.kind !== 'task' || !card.links?.length) return row;
+  if (card.kind !== 'task') {
+    const kids = state.inbox.createdByParent?.get(card.id) || [];
+    if (!kids.length) return row;
+    const hasActive = kids.some((k) => k.card.status === 'running' || k.card.status === 'waiting');
+    const expanded = state.inbox.createdExpanded.has(card.id) ? true : (hasActive && !state.inbox.createdExpanded.has(`!${card.id}`));
+    const shown = expanded ? kids : kids.filter((k) => k.card.id === state.inbox.sel);
+    const more = kids.length - shown.length;
+    const group = h('div', { class: 'iwork iwork-created', role: 'group', 'aria-label': `${card.title}の作成されたチャット`, 'data-task-id': card.id },
+      row,
+      ...(more || expanded ? [h('button', {
+        class: 'irow-more', type: 'button', 'data-task-id': card.id, 'aria-expanded': String(expanded),
+        text: expanded ? `作成されたチャットを折りたたむ（${kids.length}件）` : `作成されたチャット ${more} 件を表示`,
+        onclick: () => {
+          if (expanded) { state.inbox.createdExpanded.delete(card.id); state.inbox.createdExpanded.add(`!${card.id}`); }
+          else { state.inbox.createdExpanded.delete(`!${card.id}`); state.inbox.createdExpanded.add(card.id); }
+          refreshInboxList();
+        },
+      })] : []),
+      ...shown.map((k) => inboxRow({ card: k.card, list: k.list, parentId: card.id })));
+    return group;
+  }
+  if (!card.links?.length) return row;
   const expanded = state.inbox.expanded.has(card.id);
   const result = timelineChildren(card, { expanded: true, selected: state.inbox.sel });
   const children = expanded ? result.children : result.children.filter(c => c.id === state.inbox.sel);
@@ -80,7 +116,7 @@ function inboxTaskRows(x) {
 function paintInboxList(list, groups) {
   const first = groups.flatMap((g) => g[1])[0];
   // A card opened from inside the docked one (a parent, a linked session) may not be a row: it stays where it is.
-  if (!groups.some((g) => g[1].some((x) => x.card.id === state.inbox.sel || x.card.links?.some((c) => c.id === state.inbox.sel))) && !paneDocked()) state.inbox.sel = first?.card.id ?? null;
+  if (!groups.some((g) => g[1].some((x) => x.card.id === state.inbox.sel || x.card.links?.some((c) => c.id === state.inbox.sel) || state.inbox.createdByParent?.get(x.card.id)?.some((c) => c.card.id === state.inbox.sel))) && !paneDocked()) state.inbox.sel = first?.card.id ?? null;
   list.replaceChildren();
   for (const [name, xs, more, key] of groups) {
     if (key === 'unbundled') {
