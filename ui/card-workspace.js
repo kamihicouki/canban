@@ -129,7 +129,9 @@ function paintWorkspaceContext(p) {
   const current = p.d?.session || p.pendingCard || task || {};
   frame.identityTitle.textContent = current.title || '会話を読み込み中'; frame.identityTitle.title = frame.identityTitle.textContent;
   const known = current.statusKnown !== false, currentStatus = live.feeds.get(p.id)?.status || current.status;
-  frame.identityState.textContent = `${p.kind === 'task' ? '担当会話: ' : ''}${known ? STATUS_LABELS[currentStatus] || '状態未取得' : '状態未取得'}`;
+  const kindLabel = p.kind === 'task' ? T.taskCard : sessionKindLabel(current, { short: true });
+  const statusLabel = known ? STATUS_LABELS[currentStatus] || '状態未取得' : '状態未取得';
+  frame.identityState.textContent = `${kindLabel} · ${p.kind === 'task' ? '担当会話: ' : ''}${statusLabel}`;
   const origin = p.workspaceOrigin;
   frame.origin.text.textContent = p.kind === 'task' ? task?.description || '目的・説明は未記入です' : origin?.item?.text || p.d?.session?.preview || '冒頭の依頼はまだ取得していません';
   frame.origin.meta.textContent = p.kind === 'task' ? '保存されたタスクの説明' : origin ? origin.state === 'available' ? 'ログ先頭の原文' : `${origin.state === 'partial' ? '原文の一部' : '未取得'}: ${origin.reason || ''}` : '起点の抜粋・原文は押して取得';

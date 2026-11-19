@@ -202,6 +202,12 @@ function matchesDirectory(f, dir) {
 }
 
 
+function sessionKindOf(session) {
+  if (session.subagent) return 'subagent';
+  if (session.createdParentId || session.threadSource === 'agent_created_thread') return 'created';
+  return 'session';
+}
+
 function sessionCardStates(sessions, state) {
   const receiptsBySession = new Map();
   for (const card of Object.values(state.cards)) for (const receipt of card.launchReceipts || []) {
@@ -213,7 +219,7 @@ function sessionCardStates(sessions, state) {
   }
   return sessions.map(session => {
     const launchReceipts = receiptsBySession.get(session.id) || [];
-    return { ...session, launchReceipts, sourceView: sessionSourceView(session, {}, launchReceipts) };
+    return { ...session, sessionKind: sessionKindOf(session), launchReceipts, sourceView: sessionSourceView(session, {}, launchReceipts) };
   }); // archive and deletion belong exclusively to the agent
 }
 
@@ -751,6 +757,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
       archived: !!s.archived,
       canbanArchived: !!card?.archived,
       subagent: s.subagent,
+      sessionKind: s.sessionKind,
       automation: s.automation,
       dot: s.dot || null,
       sourceKind: s.sourceKind || null,
@@ -861,7 +868,7 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
       target: t.target || null,
       launchSelection: t.launchSelection || null,
       launchReceipts: t.launchReceipts || [],
-      links: links.map((x) => ({ id: x.id, sourceView: compactSourceView(x.sourceView || sessionSourceView(x)), capabilities: compactCapabilities(capabilitiesFor({ session: x })), cwd: x.cwd || null, branch: x.branch || null, agent: x.agent, surface: inferSurface(x), account: x.account || null, title: x.title, last: x.lastSaid || null, unread: (x.updatedAt || 0) > Math.max(seenAll, state.cards[x.id]?.seenAt || 0, t.seenAt || 0), requests: reqs.get(x.id) || null, status: x.status || 'idle', statusKnown: x.statusKnown !== false, signals: cardSignals(x.signals), activity: x.activity || null, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, createdAt: x.createdAt, updatedAt: x.updatedAt })),
+      links: links.map((x) => ({ id: x.id, sourceView: compactSourceView(x.sourceView || sessionSourceView(x)), capabilities: compactCapabilities(capabilitiesFor({ session: x })), cwd: x.cwd || null, branch: x.branch || null, agent: x.agent, surface: inferSurface(x), account: x.account || null, title: x.title, last: x.lastSaid || null, unread: (x.updatedAt || 0) > Math.max(seenAll, state.cards[x.id]?.seenAt || 0, t.seenAt || 0), requests: reqs.get(x.id) || null, status: x.status || 'idle', statusKnown: x.statusKnown !== false, signals: cardSignals(x.signals), activity: x.activity || null, dot: x.dot || null, sourceKind: x.sourceKind || null, subagent: !!x.subagent, sessionKind: x.sessionKind, host: x.host?.local === false ? { id: x.host.id, label: x.host.label } : null, createdAt: x.createdAt, updatedAt: x.updatedAt })),
       linkedSessionIds: [...(t.links || [])],
       missingLinks: (t.links || []).length - allLinks.length,
       pending: (t.pending || []).map((p) => ({ agent: p.agent, startedAt: p.startedAt, expired: now - p.startedAt > PENDING_MS })),
@@ -1123,7 +1130,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   const key = branchKey(s);
   const sameBranch = key
     ? all.filter((x) => x.id !== s.id && branchKey(x) === key).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 20)
-        .map((x) => ({ id: x.id, agent: x.agent, title: x.title, status: x.status || 'idle', updatedAt: x.updatedAt }))
+        .map((x) => ({ id: x.id, agent: x.agent, title: x.title, sessionKind: x.sessionKind, status: x.status || 'idle', updatedAt: x.updatedAt }))
     : [];
   const children = (s.children || []).map((id) => byId.get(id)).filter(Boolean)
     .map((c) => ({ id: c.id, title: c.title, status: c.status || 'idle', updatedAt: c.updatedAt, agentName: c.agentName || null }));

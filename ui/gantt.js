@@ -20,7 +20,7 @@ function ganttRow(it, range, now) {
   const waiting = rowWaitLine(card), description = ganttDescription(card, bar, due);
   const title = h('span', { class: 'gantt-row-title', text: card.title });
   const loc = typeof cardLocationText === 'function' ? cardLocationText(card) : '';
-  const meta = h('div', { class: 'gantt-row-meta' }, faceWho(isTask ? 'task' : card.agent, card),
+  const meta = h('div', { class: 'gantt-row-meta' }, faceWho(isTask ? 'task' : card.agent, card), sessionKindPill(card),
     loc ? h('span', { class: 'ellipsis muted', text: loc }) : null,
     card.archived ? h('span', { class: 'gantt-archived', text: 'アーカイブ済み' }) : null,
     h('time', { title: fmtDate(card.updatedAt), text: relTime(card.updatedAt) }));
@@ -38,7 +38,7 @@ function ganttRow(it, range, now) {
   if (current >= 0 && current <= 100) track.append(h('span', { class: 'gantt-now-line', style: { left: `${current}%` } }));
   const row = h('article', { class: `card gantt-row${level ? ' is-child' : ''}`, role: 'option', tabindex: state.gantt.sel === card.id ? 0 : -1,
     'data-card-id': card.id, 'data-life': lifeOf(card), 'data-day': daysAgo(card.updatedAt), 'data-status': known ? status || '' : 'unknown', 'data-parent-id': it.parentId || '',
-    'aria-selected': String(state.gantt.sel === card.id), 'aria-label': [description, waiting].filter(Boolean).join('\n'), title: description }, label, track,
+    'aria-selected': String(state.gantt.sel === card.id), 'aria-label': [isTask ? T.taskCard : sessionKindLabel(card), description, waiting].filter(Boolean).join('\n'), title: description }, label, track,
     due ? h('span', { class: `gantt-deadline-label${due.overdue ? ' is-overdue' : ''}`, text: `${due.overdue ? '期限超過' : '期限'} ${new Date(due.at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}${due.position == null ? ' · 期間外' : ''}` }) : null);
   row.addEventListener('click', () => ganttSelect(card.id));
   row.addEventListener('dblclick', () => ganttExpand(card.id));

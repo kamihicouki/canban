@@ -148,17 +148,24 @@ test('buildBoard と sessionDetail は createdChats / createdParent / createdSib
     ins.run('c1', rolloutC1, nowSec - 90, nowSec - 5, 'vscode', 'agent_created_thread', '/r/app', '同列の子', null, 0, 'main', null, '', '', null, 0, null);
     ins.run('c2', rolloutC2, nowSec - 80, nowSec - 20, 'vscode', 'agent_created_thread', '/r/app', '別列の子', null, 0, 'main', null, '', '', null, 0, null);
     ins.run('c3', rolloutOrphan, nowSec - 70, nowSec - 30, 'vscode', 'agent_created_thread', '/r/app', '親欠損の子', null, 0, 'main', null, '', '', null, 0, null);
+    ins.run('sub1', '', nowSec - 50, nowSec - 4, 'vscode', 'subagent', '/r/app', '調査を分担', null, 0, 'main', null, '', '', 'explorer', 0, null);
+    sdb.exec("CREATE TABLE thread_spawn_edges (parent_thread_id TEXT, child_thread_id TEXT); INSERT INTO thread_spawn_edges VALUES ('p1', 'sub1')");
     sdb.close();
 
     const store = new Store(dataDir);
     const createdList = await store.createList({ title: '完了リスト', color: 'blue' });
     await store.moveCard({ cardId: 'codex:c2', toListId: createdList.id, order: 1 });
-    const board = await buildBoard(store, { days: 0 });
+    const board = await buildBoard(store, { days: 0, includeSubagents: true });
     const allCards = board.lists.flatMap((l) => l.cards);
     const parentCard = allCards.find((c) => c.id === 'codex:p1');
     const child1 = allCards.find((c) => c.id === 'codex:c1');
     const orphanCard = allCards.find((c) => c.id === 'codex:c3');
 
+    assert.equal(parentCard.sessionKind, 'session');
+    assert.equal(child1.sessionKind, 'created');
+    assert.equal(orphanCard.sessionKind, 'created');
+    assert.equal(allCards.find(c => c.id === 'codex:sub1').sessionKind, 'subagent');
+    assert.equal(parentCard.subagents.total, 1);
     assert.equal(parentCard.createdChats.total, 2);
     assert.deepEqual(parentCard.createdChats.children.map((c) => c.id).sort(), ['codex:c1', 'codex:c2']);
     assert.equal(child1.createdParent.id, 'codex:p1');
@@ -169,10 +176,20 @@ test('buildBoard と sessionDetail は createdChats / createdParent / createdSib
     const detailP = await sessionDetail(store, 'codex:p1');
     assert.equal(detailP.createdChats.length, 2);
     assert.equal(detailP.createdParent, null);
+    assert.deepEqual(detailP.children.map(child => child.id), ['codex:sub1']);
 
     const detailC = await sessionDetail(store, 'codex:c1');
+    assert.equal(detailC.session.sessionKind, 'created');
     assert.equal(detailC.createdParent.id, 'codex:p1');
     assert.deepEqual(detailC.createdSiblings.map((s) => s.id), ['codex:c2']);
+
+    const task = await store.createTask({ title: '紐付け確認' });
+    await store.linkSession({ taskId: task.cardId, sessionId: 'codex:c2' });
+    const linkedBoard = await buildBoard(store, { days: 0 });
+    const taskCard = linkedBoard.lists.flatMap(list => list.cards).find(card => card.id === task.cardId);
+    assert.equal(taskCard.kind, 'task');
+    assert.equal(taskCard.links[0].sessionKind, 'created');
+    assert.equal((await sessionDetail(store, 'codex:c2')).createdParent.id, 'codex:p1');
     await store.close();
   } finally {
     if (prevCodex === undefined) delete process.env.CANBAN_CODEX_HOME; else process.env.CANBAN_CODEX_HOME = prevCodex;
