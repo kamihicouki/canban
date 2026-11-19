@@ -24,6 +24,7 @@
     "canban_get_board",
     "canban_search",
     "canban_exchanges",
+    "canban_get_side_chat",
     "canban_get_session",
     "canban_move_card",
     "canban_update_card",
@@ -132,6 +133,7 @@
     "canban_get_board": "b43ff9587426283b7784852be759135f5d4dca4a303a8684c7f1ec2e1a5ac774",
     "canban_search": "a1589c972a4b8778fe7d5846afa6ed0c636c9a2779051772d79780b55aa13690",
     "canban_exchanges": "e86aac5979df10975d6f7aaaef189361070bdafe0e0b038918ac61c7f12f8454",
+    "canban_get_side_chat": "b450eefcb8ad5a3d0b0f95f85a4dab4472949206939f315815e4a44428c2b32a",
     "canban_get_session": "4d3147ae06b38cd243771658debf1b280ad94c29b81cdc59ccc1769ae2fe1206",
     "canban_move_card": "270bf995a56a4a11458dc0b283c4cc39eb432cfb88c6fada99224091baa8ee07",
     "canban_update_card": "a7ed83963728449a95b5884bbb506229e2cb4b3214bfebf2b208b88ed9081a69",
@@ -215,5 +217,5 @@
     "canban_get_ui_state": "3805f9b9bd60f6dc1df6bd8e58b00fcf0e0065e0354aa4e8e515df843f33b521",
     "canban_save_ui_state": "3e75c3bdc052134c461074b189d68c3520787c65e382eaf1f4391e85b0298859"
   },
-  "all": "fb9258ad0334e382fb88ababf8a108f899a724ea971997d8a11dc498fee0975c"
+  "all": "0e39184e453f0dcb6c230e5cce35e793a527c74b9f889a2d97b2fcb1583ab0e2"
 }

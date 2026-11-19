@@ -1026,8 +1026,10 @@ test('the board, the ribbon, the time axis and the card layers run without page 
       const pane = await until(() => document.querySelector('.pane[data-card-id="codex:t1"]'), 'missing parent pane');
       const summary = await until(() => pane.querySelector('.side-chat > summary') || (pane.dispatchEvent(new KeyboardEvent('keydown', { key: 'q', bubbles: true })), pane.querySelector('.side-chat > summary')), 'missing side chat disclosure');
       const detail = summary.parentElement;
+      pane.querySelector('[data-side-tab="changes"][aria-pressed="true"]')?.click();
       if (detail.open || detail.querySelector('.msg')) throw new Error('Side Chat body loaded before expansion');
       if (${view === 'timeline'}) {
+        summary.parentElement.parentElement.closest('details')?.removeAttribute('open');
         pane.focus();
         pane.dispatchEvent(new KeyboardEvent('keydown', { key: 'S', code: 'KeyS', altKey: true, shiftKey: true, bubbles: true }));
         if (document.activeElement !== summary) throw new Error('Side Chat shortcut did not focus summary');

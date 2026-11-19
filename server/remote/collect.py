@@ -111,11 +111,31 @@ def codex_rows():
             con.close()
         now = now_ms()
         for r in rows:
+            if r.get("attached_thread_parent_id"):
+                continue
             updated = r.get("updated_at_ms") or ((r.get("updated_at") or 0) * 1000)
             r["rawStatus"], r["statusMtimeMs"] = raw_status_for(r.get("rollout_path"), "codex", updated, now)
         return {"rows": rows, "edges": edges, "error": None}
     except Exception as e:  # noqa: BLE001
         return {"rows": [], "edges": [], "error": "Codex DB 読み取り失敗: %s" % e}
+
+def attached_codex_rollouts():
+    path = state_db()
+    if not path:
+        return set()
+    con = sqlite3.connect("file:%s?mode=ro" % path, uri=True, timeout=5)
+    try:
+        con.execute("PRAGMA query_only = ON")
+        cols = {r[1] for r in con.execute("PRAGMA table_info(threads)")}
+        if "attached_thread_parent_id" not in cols:
+            return set()
+        rows = con.execute("""
+            SELECT rollout_path FROM threads
+            WHERE attached_thread_parent_id <> '' AND rollout_path <> ''
+        """)
+        return {os.path.realpath(rollout) for (rollout,) in rows}
+    finally:
+        con.close()
 
 # ---- live status (keep in sync with server/status.mjs) ---------------------
 def now_ms():
@@ -474,13 +494,21 @@ def search(q, days, limit):
     if len(q) < 3:
         return out
     cutoff = __import__("time").time() - days * 86400
-    roots = [(os.path.join(CODEX_HOME, "sessions"), "codex"), (os.path.join(CLAUDE_HOME, "projects"), "claude")]
+    roots = [(os.path.join(CLAUDE_HOME, "projects"), "claude")]
+    try:
+        attached = attached_codex_rollouts()
+        roots.insert(0, (os.path.join(CODEX_HOME, "sessions"), "codex"))
+    except sqlite3.Error:
+        # Keep Claude search available when Codex attachments cannot be identified.
+        attached = set()
     for root, agent in roots:
         for dirpath, _dirs, files in os.walk(root):
             for f in files:
                 if not f.endswith(".jsonl"):
                     continue
                 fp = os.path.join(dirpath, f)
+                if agent == "codex" and attached and os.path.realpath(fp) in attached:
+                    continue
                 try:
                     if os.stat(fp).st_mtime < cutoff:
                         continue

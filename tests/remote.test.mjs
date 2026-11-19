@@ -163,6 +163,36 @@ sys.stdout.buffer.write(zstd.compress(sys.stdin.buffer.read()))`], {
   } finally { attached.cleanup(); }
 });
 
+test('remote Codex search skips attached rollouts before applying the result limit', async () => {
+  const listed = makeFixtures();
+  try {
+    const dir = path.join(listed.codexHome, 'sessions');
+    const nested = path.join(dir, 'deeper');
+    fs.mkdirSync(nested);
+    const side = path.join(dir, 'side.jsonl');
+    const ordinary = path.join(nested, 'ordinary.jsonl');
+    for (const file of [side, ordinary]) {
+      fs.writeFileSync(file, '{"type":"event_msg","payload":{"type":"task_started","text":"unique search term"}}\n');
+    }
+    const pool = newPool({ extraArgs: { codexHome: listed.codexHome, claudeHome: listed.claudeHome, desktopDir: listed.desktopDir } });
+    const args = { mode: 'search', q: 'unique search term', limit: 1 };
+    // Without the attachment column, preserve the previous search behavior.
+    assert.deepEqual((await pool.run(host, args)).codex, [side]);
+    const db = new DatabaseSync(path.join(listed.codexHome, 'state_5.sqlite'));
+    try {
+      db.exec('ALTER TABLE threads ADD COLUMN attached_thread_parent_id TEXT');
+      const insert = db.prepare('INSERT INTO threads (id, rollout_path, attached_thread_parent_id, updated_at_ms) VALUES (?, ?, ?, ?)');
+      insert.run('side', side, 't1', Date.now());
+      insert.run('ordinary', ordinary, null, Date.now());
+    } finally { db.close(); }
+    listed.lock();
+    assert.deepEqual(await pool.run(host, args), { ok: true, codex: [ordinary], claude: [] });
+    const { codex: { rows } } = await pool.run(host, { mode: 'list' });
+    assert.equal(rows.find(row => row.id === 'ordinary').rawStatus, 'running');
+    assert.equal(rows.find(row => row.id === 'side').rawStatus ?? null, null);
+  } finally { listed.cleanup(); }
+});
+
 test('unchanged Claude transcripts are not re-sent', async () => {
   const pool = newPool({ ttlMs: 0 });
   const first = await pool.sessions([host]);
