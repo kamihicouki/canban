@@ -251,6 +251,16 @@ test('dispatch.py: inspect reads only agent logs; start / poll / stop run the CL
     const [run] = fs.readFileSync(agentLog, 'utf8').trim().split('\n').map(JSON.parse);
     assert.equal(run.prompt, 'リモートへ "送る"');
     assert.equal(run.claudecode, null, 'agent env is scrubbed on the remote side too');
+    assert.equal(run.deferredResume, null);
+
+    const cid = 'req-abc-0123cccc';
+    const claudeStart = await pool.dispatch(host, { mode: 'start', id: cid, binName: 'claude', args: ['-p', '--resume', 'nid-c', '-'], cwd: tmp, prompt: 'c' });
+    for (let i = 0; i < 100; i++) {
+      if (!(await pool.dispatch(host, { mode: 'poll', runs: [{ id: cid, pid: claudeStart.pid }] })).runs[cid].alive) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const claudeRun = fs.readFileSync(agentLog, 'utf8').trim().split('\n').map(JSON.parse).at(-1);
+    assert.equal(claudeRun.deferredResume, '1', 'a remote claude turn never runs a hook-deferred tool call');
 
     process.env.FAKE_AGENT_SLEEP = '5';
     const long = await pool.dispatch(host, { mode: 'start', id: 'req-abc-0000ffff', binName: 'codex', args: ['exec', 'resume', 'nid-2', '-'], cwd: tmp, prompt: 'long' });

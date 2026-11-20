@@ -231,6 +231,8 @@ test('image-only requests and skill choices persist through the queue into the o
   assert.match(content[0].text, /\$demo/);
   assert.equal(content[1].source.data, png.toString('base64'));
   assert.ok(claudeRun.argv.includes('--input-format'));
+  assert.equal(claudeRun.deferredResume, '1', 'a sent prompt never runs a hook-deferred tool call');
+  assert.equal(codexRun.deferredResume, null);
 });
 
 test('gates: running, just-updated, changed-since-viewed, archived and task cards are refused', async () => {
