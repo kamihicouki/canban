@@ -201,10 +201,6 @@ export function signalsView(acc) {
 export const claudeSignals = (records) => signalsView(foldSignals(newAcc('claude'), records));
 export const codexSignals = (records) => signalsView(foldSignals(newAcc('codex'), records));
 
-export function signalsFor(agent, records) {
-  return agent === 'codex' ? codexSignals(records) : claudeSignals(records);
-}
-
 // The newest Codex rate-limit snapshot in the records: { at, primary, secondary, plan }.
 export function limitsFrom(records) {
   for (let i = records.length - 1; i >= 0; i--) {
