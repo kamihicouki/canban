@@ -6,7 +6,7 @@ import { dataDir } from './store.mjs';
 import { isMainThread, proxyStore } from './sqlite-client.mjs';
 import { readRequests, writeRequests, transaction, currentFence, db, sessionKey, nextGeneration } from './sqlite-backend.mjs';
 
-export const REQUEST_STATES = ['queued', 'starting', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted', 'blocked'];
+// Request states: queued → starting → running → succeeded | failed | cancelled | interrupted | blocked.
 export const ACTIVE_STATES = new Set(['starting', 'running']);
 export const FINAL_STATES = new Set(['succeeded', 'failed', 'cancelled', 'interrupted', 'blocked']);
 export const MAX_PROMPT = 20000;
