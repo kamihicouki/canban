@@ -14,22 +14,24 @@ const REVERTED_LOG = /-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}_[0-9a-f-]{36}
 const META_BYTES = 256 * 1024;
 
 // Codex restarts a thread's listed excerpt at the request after a revert. It is still the first
-// request after a revert to the very start. Where the log cannot tell, it is not claimed.
-export async function excerptIsOrigin(session) {
-  if (session?.agent !== 'codex' || !REVERTED_LOG.test(session.sourcePath || '')) return true;
-  if (session.host && session.host.local !== true) return false;
+// request after a revert to the very start. 'origin': the excerpt stands for the first request;
+// 'reverted': an earlier log holds it; 'unknown': the log cannot tell, so nothing is claimed.
+export async function originExcerptState(session) {
+  if (session?.agent !== 'codex' || !REVERTED_LOG.test(session.sourcePath || '')) return 'origin';
+  if (session.host && session.host.local !== true) return 'unknown';
   let handle;
   try {
     handle = await fsp.open(session.sourcePath, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
-    if (!(await handle.stat()).isFile()) return false;
+    if (!(await handle.stat()).isFile()) return 'unknown';
     const buffer = Buffer.alloc(META_BYTES);
     const { bytesRead } = await handle.read(buffer, 0, META_BYTES, 0);
     const end = buffer.subarray(0, bytesRead).indexOf(10);
-    if (end < 0) return false;
+    if (end < 0) return 'unknown';
     const record = JSON.parse(buffer.toString('utf8', 0, end));
-    return record?.type === 'session_meta' && !keepsEarlierHistory(record) && !unsafeHead(record);
+    if (record?.type !== 'session_meta' || unsafeHead(record)) return 'unknown';
+    return keepsEarlierHistory(record) ? 'reverted' : 'origin';
   } catch {
-    return false; // compressed, missing or mid-write
+    return 'unknown'; // compressed, missing or mid-write
   } finally {
     await handle?.close();
   }
@@ -86,7 +88,7 @@ export async function readSessionOrigin(session) {
       catch { return unavailable('会話の先頭に読み取れない行があり、最初の依頼を確認できません'); }
       if (!record || typeof record !== 'object') return unavailable('会話ログの形式を確認できません');
       if (unsafeHead(record)) return unavailable('要約または派生した会話の先頭のため、最初の依頼を確認できません');
-      if (keepsEarlierHistory(record)) return unavailable('途中まで巻き戻した会話のため、最初の依頼は以前のログにあります');
+      if (keepsEarlierHistory(record)) return unavailable('最初の依頼は巻き戻し前の会話にあります');
       const raw = humanText(session.agent, record);
       if (raw === null) continue;
       if (!raw.trim()) return unavailable('最初の依頼に読み取れるテキストがありません');

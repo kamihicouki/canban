@@ -11,8 +11,10 @@ function workspaceCanReuseOrigin(fromStart, origin, items = []) {
 }
 // The listing's excerpt, only where the server has checked that it can stand for the first request.
 function workspaceOriginExcerpt(d) {
-  return d?.excerptIsOrigin === true ? d.session?.preview || null : null;
+  return d?.originExcerpt === 'origin' ? d.session?.preview || null : null;
 }
+// Known before anything is fetched: the first request is in a log from before the revert.
+const workspaceOriginReverted = d => d?.originExcerpt === 'reverted';
 // A fetched origin belongs to the log it was read from: Codex moves a reverted thread to a new one.
 function workspaceOriginFor(fetched, session) {
   return fetched && fetched.log === (session?.sourcePath ?? null) ? fetched.origin : null;

@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-const c=vm.createContext({});vm.runInContext(fs.readFileSync('ui/card-overlay-model.js','utf8')+';globalThis.api={normalizeCardShape,workspaceLastMessage,workspaceCanReuseOrigin,workspaceOriginExcerpt,workspaceOriginFor};',c);
+const c=vm.createContext({});vm.runInContext(fs.readFileSync('ui/card-overlay-model.js','utf8')+';globalThis.api={normalizeCardShape,workspaceLastMessage,workspaceCanReuseOrigin,workspaceOriginExcerpt,workspaceOriginFor,workspaceOriginReverted};',c);
 test('new and unknown preferences use workspace; explicit legacy card survives',()=>{
  assert.equal(c.api.normalizeCardShape(undefined),'workspace');assert.equal(c.api.normalizeCardShape('future'),'workspace');assert.equal(c.api.normalizeCardShape('card'),'card');
 });
@@ -14,8 +14,10 @@ test('tail first message cannot masquerade as the original prompt',()=>{
 });
 test('the excerpt stands for the first request only when the server says so',()=>{
  const session={preview:'依頼'};
- assert.equal(c.api.workspaceOriginExcerpt({session}),null);assert.equal(c.api.workspaceOriginExcerpt({session,excerptIsOrigin:true}),'依頼');
- assert.equal(c.api.workspaceOriginExcerpt({session,excerptIsOrigin:false}),null);assert.equal(c.api.workspaceOriginExcerpt(undefined),null);
+ assert.equal(c.api.workspaceOriginExcerpt({session}),null);assert.equal(c.api.workspaceOriginExcerpt({session,originExcerpt:'origin'}),'依頼');
+ for(const originExcerpt of ['reverted','unknown','future'])assert.equal(c.api.workspaceOriginExcerpt({session,originExcerpt}),null);
+ assert.equal(c.api.workspaceOriginExcerpt(undefined),null);
+ assert.equal(c.api.workspaceOriginReverted({originExcerpt:'reverted'}),true);assert.equal(c.api.workspaceOriginReverted({originExcerpt:'unknown'}),false);assert.equal(c.api.workspaceOriginReverted(undefined),false);
 });
 test('a fetched origin is dropped once the thread moves to another log',()=>{
  const origin={item:{text:'旧い起点'}},fetched={log:'/a.jsonl',origin};
@@ -40,4 +42,16 @@ test('an origin inserted from a replaced log leaves the conversation even when t
  run({id:'codex:a'});assert.deepEqual(removed,['.ws-origin-message','.ws-origin-gap']);run({id:'codex:missing'});
  const paint=src.slice(src.indexOf('function paintWorkspaceContext('),src.indexOf('function dropInsertedOrigin('));
  assert.match(paint,/if \(p\.workspaceOrigin && !origin\) dropInsertedOrigin\(p\)/);
+});
+test('a refresh that keeps the conversation does not write the old reading position back',()=>{
+ const src=fs.readFileSync('ui/card-overlay.js','utf8');
+ const body=src.slice(src.indexOf('function renderPaneKeepingDrafts('),src.indexOf('async function changeSessionCardState('));
+ const run=feed=>{
+  const list={scrollTop:100},conv={replaceChildren(){}};
+  const ctx={live:{feeds:new Map([['codex:a',{list}]])},$:q=>q==='.th-conv'?conv:q==='.feed'?list:null,atFeedEnd:()=>false,renderFeed:()=>'feed',paintWorkspaceContext:()=>{list.scrollTop=40;}};
+  vm.runInNewContext(body+'\nrenderPaneKeepingDrafts',ctx)({id:'codex:a',el:{querySelector:()=>({})}},{session:{},feed});
+  return list.scrollTop;
+ };
+ assert.equal(run(null),40,'removing the inserted origin has already moved the scroll position with the text');
+ assert.equal(run({}),100,'a rebuilt conversation returns to where it was read');
 });

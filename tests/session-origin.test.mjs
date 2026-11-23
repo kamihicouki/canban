@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readSessionOrigin, excerptIsOrigin, ORIGIN_HEAD_BYTES, ORIGIN_TEXT_MAX } from '../server/session-origin.mjs';
+import { readSessionOrigin, originExcerptState, ORIGIN_HEAD_BYTES, ORIGIN_TEXT_MAX } from '../server/session-origin.mjs';
 
 const line = value => `${JSON.stringify(value)}\n`;
 const prompt = (text, timestamp = '2026-11-15T00:00:00Z') => ({ type: 'event_msg', timestamp, payload: { type: 'user_message', message: text } });
@@ -182,17 +182,17 @@ test('the listed excerpt is not the origin of a reverted thread unless it kept n
   const base = { thread_id: id, end_ordinal_exclusive: 5, end_byte_offset: 900 };
   try {
     const kept = write(`${id}_01a00000-0000-7000-8000-00000000000b`, reverted(base) + line(prompt('後')));
-    assert.equal(await excerptIsOrigin(kept), false);
+    assert.equal(await originExcerptState(kept), 'reverted');
     const start = write(`${id}_01a00000-0000-7000-8000-00000000000c`, reverted(undefined) + line(prompt('最初')));
-    assert.equal(await excerptIsOrigin(start), true);
-    assert.equal(await excerptIsOrigin({ ...start, host: { id: 'r', local: false } }), false, 'a remote log cannot tell');
-    assert.equal(await excerptIsOrigin(write(`${id}_01a00000-0000-7000-8000-00000000000d`, '{broken')), false);
+    assert.equal(await originExcerptState(start), 'origin');
+    assert.equal(await originExcerptState({ ...start, host: { id: 'r', local: false } }), 'unknown', 'a remote log cannot tell');
+    assert.equal(await originExcerptState(write(`${id}_01a00000-0000-7000-8000-00000000000d`, '{broken')), 'unknown');
     fs.mkdirSync(at(`${id}_01a00000-0000-7000-8000-00000000000f`));
-    assert.equal(await excerptIsOrigin({ agent: 'codex', sourcePath: at(`${id}_01a00000-0000-7000-8000-00000000000f`) }), false, 'not a regular file');
-    assert.equal(await excerptIsOrigin({ agent: 'codex', sourcePath: at(`${id}_01a00000-0000-7000-8000-00000000000e`) }), false, 'compressed or missing');
-    assert.equal(await excerptIsOrigin({ agent: 'codex', sourcePath: `${start.sourcePath}.zst` }), false, 'compressed path');
-    assert.equal(await excerptIsOrigin({ agent: 'codex', sourcePath: at(id) }), true, 'ordinary logs are not opened');
-    assert.equal(await excerptIsOrigin({ agent: 'claude', sourcePath: '/p/a_b.jsonl' }), true);
-    assert.equal(await excerptIsOrigin({ agent: 'codex', sourcePath: null }), true);
+    assert.equal(await originExcerptState({ agent: 'codex', sourcePath: at(`${id}_01a00000-0000-7000-8000-00000000000f`) }), 'unknown', 'not a regular file');
+    assert.equal(await originExcerptState({ agent: 'codex', sourcePath: at(`${id}_01a00000-0000-7000-8000-00000000000e`) }), 'unknown', 'compressed or missing');
+    assert.equal(await originExcerptState({ agent: 'codex', sourcePath: `${start.sourcePath}.zst` }), 'unknown', 'compressed path');
+    assert.equal(await originExcerptState({ agent: 'codex', sourcePath: at(id) }), 'origin', 'ordinary logs are not opened');
+    assert.equal(await originExcerptState({ agent: 'claude', sourcePath: '/p/a_b.jsonl' }), 'origin');
+    assert.equal(await originExcerptState({ agent: 'codex', sourcePath: null }), 'origin');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
