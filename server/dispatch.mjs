@@ -344,8 +344,10 @@ export class Dispatcher {
     try {
       fs.mkdirSync(this.requests.runsDir, { recursive: true });
       fd = fs.openSync(logPath, 'a', 0o600);
-      const env = { ...cleanEnv(), ...homeEnv(session) };
-      child = spawner(bin, h.args, { cwd: session.cwd, env: session.agent === 'claude' && session.homeDir ? isolatedClaudeEnvironment(env, session.claudeDefaultConfig ? null : session.homeDir) : env, stdio: ['pipe', fd, fd], detached: true });
+      const base = { ...cleanEnv(), ...homeEnv(session) };
+      // The headless env goes last: cleanEnv and the Claude isolation drop CLAUDE_CODE_*.
+      const env = { ...(session.agent === 'claude' && session.homeDir ? isolatedClaudeEnvironment(base, session.claudeDefaultConfig ? null : session.homeDir) : base), ...h.env };
+      child = spawner(bin, h.args, { cwd: session.cwd, env, stdio: ['pipe', fd, fd], detached: true });
     } catch (error) {
       throw Object.assign(error, {code:'pre_spawn'});
     } finally {

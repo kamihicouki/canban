@@ -127,6 +127,9 @@ export const HEADLESS = {
     bin: 'claude',
     // `json` prints one result object at the end, which keeps run logs small.
     args: (s, p) => ['-p', '--resume', s.resumePath || s.nativeId, '--output-format', 'json', '--permission-mode', p.mode],
+    // A tool call that a hook deferred waits for its host's decision; a prompt sent from
+    // Canban is not that decision, so resuming must not run it (Claude Code 2.1.328+).
+    env: { CLAUDE_CODE_DISABLE_DEFERRED_TOOL_RESUME: '1' },
   },
 };
 
@@ -140,7 +143,7 @@ export function headlessArgs(s, permission, { images = [] } = {}) {
     args[args.indexOf('--output-format') + 1] = 'stream-json';
     args.push('--input-format', 'stream-json', '--verbose');
   }
-  return { bin: h.bin, args };
+  return { bin: h.bin, args, env: { ...h.env } };
 }
 
 // A session from another config folder (CLAUDE_CONFIG_DIR / CODEX_HOME profile) resumes there.

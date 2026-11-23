@@ -169,6 +169,10 @@ def start(a):
     prune_logs()
     env = {k: v for k, v in os.environ.items() if not DROP_ENV.match(k)}
     env["PATH"] = os.pathsep.join([env.get("PATH", "")] + EXTRA_PATH)
+    if name == "claude":
+        # Same as HEADLESS.claude.env in server/agents.mjs: a sent prompt must not run a
+        # tool call that a hook deferred (Claude Code 2.1.328+; older versions ignore it).
+        env["CLAUDE_CODE_DISABLE_DEFERRED_TOOL_RESUME"] = "1"
     out = open(log_path(rid), "ab")
     proc = subprocess.Popen([exe] + argv, cwd=cwd, env=env, stdin=subprocess.PIPE, stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
     proc.stdin.write(str(a.get("prompt") or "").encode("utf-8"))
