@@ -9,6 +9,17 @@ function workspaceLastMessage(items = []) {
 function workspaceCanReuseOrigin(fromStart, origin, items = []) {
   return fromStart === true && !!origin && items.find(item => item.k === 'user')?.text === origin.text;
 }
+// The listing's excerpt, only where the server has checked that it can stand for the first request.
+function workspaceOriginExcerpt(d) {
+  return d?.originExcerpt === 'origin' ? d.session?.preview || null : null;
+}
+// Known before anything is fetched: the first request is in a log from before the revert.
+const WORKSPACE_ORIGIN_REVERTED = '最初の依頼は巻き戻し前の会話にあります';
+const workspaceOriginReverted = d => d?.originExcerpt === 'reverted';
+// A fetched origin belongs to the log it was read from: Codex moves a reverted thread to a new one.
+function workspaceOriginFor(fetched, session) {
+  return fetched && fetched.log === (session?.sourcePath ?? null) ? fetched.origin : null;
+}
 const CARD_VIEW_MODES = [['full', '全画面'], ['split', 'スプリット'], ['sheet', 'シート']];
 const normalizeCardViewMode = (v) => (CARD_VIEW_MODES.some(([k]) => k === v) ? v : 'full');
 const CARD_WIDTH_DEF = { session: 1000, task: 760 };

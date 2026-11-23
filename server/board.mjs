@@ -45,6 +45,7 @@ import { perf } from './perf.mjs';
 import { exchangeIndex } from './exchanges.mjs';
 import { createSourceReadCache } from './source-read-cache.mjs';
 import { taskHandoffSummary } from './task-handoff.mjs';
+import { originExcerptState } from './session-origin.mjs';
 import { publishTaskContexts, taskContextScope } from './task-context-cache.mjs';
 import { createSessionDetailLookup, sessionSnapshotKey, matchingSessionSnapshot } from './session-detail-lookup.mjs';
 
@@ -1162,6 +1163,7 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
     settings: state.settings,
     terminals: installedTerminals(),
     recentMessages: recent,
+    originExcerpt: await originExcerptState(s),
     messagesError: isCloudSession(s) ? '会話本文は保存済み情報に含まれていません。Codexで開いて確認してください。' : messagesError,
     feed,
     git,

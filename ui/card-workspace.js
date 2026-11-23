@@ -132,9 +132,14 @@ function paintWorkspaceContext(p) {
   const kindLabel = p.kind === 'task' ? T.taskCard : sessionKindLabel(current, { short: true });
   const statusLabel = known ? STATUS_LABELS[currentStatus] || '状態未取得' : '状態未取得';
   frame.identityState.textContent = `${kindLabel} · ${p.kind === 'task' ? '担当会話: ' : ''}${statusLabel}`;
-  const origin = p.workspaceOrigin;
-  frame.origin.text.textContent = p.kind === 'task' ? task?.description || '目的・説明は未記入です' : origin?.item?.text || p.d?.session?.preview || '冒頭の依頼はまだ取得していません';
-  frame.origin.meta.textContent = p.kind === 'task' ? '保存されたタスクの説明' : origin ? origin.state === 'available' ? 'ログ先頭の原文' : `${origin.state === 'partial' ? '原文の一部' : '未取得'}: ${origin.reason || ''}` : '起点の抜粋・原文は押して取得';
+  const origin = workspaceOriginFor(p.workspaceOrigin, p.d?.session), excerpt = workspaceOriginExcerpt(p.d);
+  if (p.workspaceOrigin && !origin) dropInsertedOrigin(p); // read from a log this thread no longer uses
+  frame.origin.text.textContent = p.kind === 'task' ? task?.description || '目的・説明は未記入です' : origin?.item?.text || excerpt || (origin ? '冒頭の依頼は取得できませんでした' : '冒頭の依頼はまだ取得していません');
+  frame.origin.meta.textContent = p.kind === 'task' ? '保存されたタスクの説明' : origin ? origin.state === 'available' ? 'ログ先頭の原文' : `${origin.state === 'partial' ? '原文の一部' : '未取得'}: ${origin.reason || ''}` : p.d?.session?.host ? `${excerpt ? '起点の抜粋・' : ''}リモートの会話の原文は取得できません` : excerpt ? '起点の抜粋・原文は押して取得' : '原文は押して取得';
+  if (p.kind !== 'task' && workspaceOriginReverted(p.d)) {
+    frame.origin.text.textContent = WORKSPACE_ORIGIN_REVERTED;
+    frame.origin.meta.textContent = 'Canbanでは表示できません';
+  }
   frame.origin.button.disabled = !!p.workspaceOriginLoading;
   if (p.workspaceOriginLoading) frame.origin.meta.textContent = 'ログ先頭の原文を取得中…';
   const feed = live.feeds.get(p.id), last = feed?.workspaceLast || workspaceLastMessage(p.d?.feed?.items);
@@ -149,23 +154,31 @@ function paintWorkspaceContext(p) {
     frame.latest.meta.textContent = last ? `${last.k === 'user' ? 'あなた' : last.k === 'commentary' ? 'エージェント（作業中の発言）' : 'エージェント'} · ${at}` : '未取得を完了と扱いません';
   }
 }
+function dropInsertedOrigin(p) {
+  for (const el of live.feeds.get(p.id)?.list.querySelectorAll('.ws-origin-message,.ws-origin-gap') || []) el.remove();
+}
 async function jumpWorkspaceOrigin(p = workspacePane()) {
   if (!p) return;
   if (p.kind === 'task') { p.el.querySelector('.th-task > [data-sec="conv"]')?.scrollIntoView({ block: 'start' }); return; }
+  if (workspaceOriginReverted(p.d)) { toast(WORKSPACE_ORIGIN_REVERTED); return; } // a known limit: nothing to fetch, nothing that failed
   let feed = live.feeds.get(p.id);
-  if (!feed) { toast('会話が取得できてから起点を開けます', true); return; }
+  if (!feed) { toast(p.d?.session?.host ? 'リモートの会話の原文は取得できません' : '会話が取得できてから起点を開けます', true); return; }
   if (p.workspaceOriginLoading) return;
-  if (!p.workspaceOrigin?.item || p.workspaceOrigin.state === 'unavailable') {
+  const known = workspaceOriginFor(p.workspaceOrigin, p.d?.session);
+  if (!known?.item || known.state === 'unavailable') {
+    const log = p.d?.session?.sourcePath ?? null;
     p.workspaceOriginLoading = true; paintWorkspaceContext(p);
     try {
       const response = await bridge.callTool('canban_get_session', { cardId: p.id, messages: 1, includeOrigin: true });
       const data = response.result || response;
-      p.workspaceOrigin = data.origin || { state: 'unavailable', item: null, reason: '接続先は起点の原文取得に未対応です' };
-    } catch (e) { p.workspaceOrigin = { state: 'unavailable', item: null, reason: e.message }; }
+      const origin = data.origin || { state: 'unavailable', item: null, reason: '接続先は起点の原文取得に未対応です' };
+      p.workspaceOrigin = { log: data.session?.sourcePath ?? null, origin };
+    } catch (e) { p.workspaceOrigin = { log, origin: { state: 'unavailable', item: null, reason: e.message } }; }
     finally { p.workspaceOriginLoading = false; paintWorkspaceContext(p); }
   }
-  const origin = p.workspaceOrigin;
-  if (!origin?.item) { toast(origin?.reason || '起点の原文は取得できませんでした', true); return; }
+  const origin = workspaceOriginFor(p.workspaceOrigin, p.d?.session);
+  if (!origin) { toast('会話のログが切り替わりました。カードを開き直してください', true); return; }
+  if (!origin.item) { toast(origin.reason || '起点の原文は取得できませんでした', true); return; }
   if (!p.el.isConnected || p.el.hidden) return;
   feed = live.feeds.get(p.id);
   if (!feed) return; // a reload may own a new list; navigate only the currently mounted feed

@@ -650,8 +650,10 @@ function renderPaneKeepingDrafts(p, d) {
     // Keep the request editor while rebuilding a reset conversation cursor.
     p.d = d;
     const conversation = $('.th-conv', el);
-    if (conversation && d.feed) conversation.replaceChildren(renderFeed(d, p));
-    restoreReading();
+    const rebuilt = conversation && d.feed;
+    if (rebuilt) conversation.replaceChildren(renderFeed(d, p));
+    if (typeof paintWorkspaceContext === 'function') paintWorkspaceContext(p);
+    if (rebuilt) restoreReading(); // a kept conversation keeps its own position, also when an inserted origin leaves it
     return;
   }
   const drafts = [...el.querySelectorAll('input,textarea,select')].filter(input => {

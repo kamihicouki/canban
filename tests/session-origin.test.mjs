@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readSessionOrigin, ORIGIN_HEAD_BYTES, ORIGIN_TEXT_MAX } from '../server/session-origin.mjs';
+import { readSessionOrigin, originExcerptState, ORIGIN_HEAD_BYTES, ORIGIN_TEXT_MAX } from '../server/session-origin.mjs';
 
 const line = value => `${JSON.stringify(value)}\n`;
 const prompt = (text, timestamp = '2026-11-15T00:00:00Z') => ({ type: 'event_msg', timestamp, payload: { type: 'user_message', message: text } });
@@ -139,4 +139,60 @@ test('an image request with context-only text remains unavailable instead of ski
   await withLog(line(first) + line(later), async session => {
     assert.equal((await readSessionOrigin(session)).state, 'unavailable');
   }, { agent: 'claude' });
+});
+
+// Codex 0.171 revert: a new rollout file that keeps a prefix of an older one (`history_base`).
+const reverted = base => line({ type: 'session_meta', payload: { id: 'a', history_mode: 'paginated', ...(base === undefined ? {} : { history_base: base }) } });
+
+test('a reverted Codex thread cannot present the request after the revert as the initial one', async () => {
+  const base = { thread_id: 'a', end_ordinal_exclusive: 5, end_byte_offset: 900 };
+  await withLog(reverted(base) + line(prompt('巻き戻し後の依頼')), async session => {
+    const origin = await readSessionOrigin(session);
+    assert.equal(origin.state, 'unavailable');
+    assert.equal(origin.item, null);
+    assert.equal(origin.complete, false);
+    assert.match(origin.reason, /巻き戻/);
+  });
+});
+
+test('a paginated log without a kept prefix still starts at its own first request', async () => {
+  for (const base of [undefined, null]) {
+    await withLog(reverted(base) + line(prompt('最初の依頼')), async session => {
+      const origin = await readSessionOrigin(session);
+      assert.equal(origin.state, 'available');
+      assert.equal(origin.item.text, '最初の依頼');
+    });
+  }
+});
+
+test('a fork that inherits a prefix is explained as a fork, not as a revert', async () => {
+  const meta = line({ type: 'session_meta', payload: { id: 'b', forked_from_id: 'a', history_base: { thread_id: 'a', end_ordinal_exclusive: 5, end_byte_offset: 900 } } });
+  await withLog(meta + line(prompt('fork 後の依頼')), async session => {
+    const origin = await readSessionOrigin(session);
+    assert.equal(origin.state, 'unavailable');
+    assert.match(origin.reason, /派生/);
+  });
+});
+
+test('the listed excerpt is not the origin of a reverted thread unless it kept nothing', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-origin-'));
+  const id = '01a00000-0000-7000-8000-00000000000a';
+  const at = name => path.join(dir, `rollout-2026-11-21T10-00-00-${name}.jsonl`);
+  const write = (name, body) => { fs.writeFileSync(at(name), body); return { agent: 'codex', sourcePath: at(name) }; };
+  const base = { thread_id: id, end_ordinal_exclusive: 5, end_byte_offset: 900 };
+  try {
+    const kept = write(`${id}_01a00000-0000-7000-8000-00000000000b`, reverted(base) + line(prompt('後')));
+    assert.equal(await originExcerptState(kept), 'reverted');
+    const start = write(`${id}_01a00000-0000-7000-8000-00000000000c`, reverted(undefined) + line(prompt('最初')));
+    assert.equal(await originExcerptState(start), 'origin');
+    assert.equal(await originExcerptState({ ...start, host: { id: 'r', local: false } }), 'unknown', 'a remote log cannot tell');
+    assert.equal(await originExcerptState(write(`${id}_01a00000-0000-7000-8000-00000000000d`, '{broken')), 'unknown');
+    fs.mkdirSync(at(`${id}_01a00000-0000-7000-8000-00000000000f`));
+    assert.equal(await originExcerptState({ agent: 'codex', sourcePath: at(`${id}_01a00000-0000-7000-8000-00000000000f`) }), 'unknown', 'not a regular file');
+    assert.equal(await originExcerptState({ agent: 'codex', sourcePath: at(`${id}_01a00000-0000-7000-8000-00000000000e`) }), 'unknown', 'compressed or missing');
+    assert.equal(await originExcerptState({ agent: 'codex', sourcePath: `${start.sourcePath}.zst` }), 'unknown', 'compressed path');
+    assert.equal(await originExcerptState({ agent: 'codex', sourcePath: at(id) }), 'origin', 'ordinary logs are not opened');
+    assert.equal(await originExcerptState({ agent: 'claude', sourcePath: '/p/a_b.jsonl' }), 'origin');
+    assert.equal(await originExcerptState({ agent: 'codex', sourcePath: null }), 'origin');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
