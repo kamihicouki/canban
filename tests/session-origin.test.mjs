@@ -140,3 +140,36 @@ test('an image request with context-only text remains unavailable instead of ski
     assert.equal((await readSessionOrigin(session)).state, 'unavailable');
   }, { agent: 'claude' });
 });
+
+// Codex 0.171 revert: a new rollout file that keeps a prefix of an older one (`history_base`).
+const reverted = base => line({ type: 'session_meta', payload: { id: 'a', history_mode: 'paginated', ...(base === undefined ? {} : { history_base: base }) } });
+
+test('a reverted Codex thread cannot present the request after the revert as the initial one', async () => {
+  const base = { thread_id: 'a', end_ordinal_exclusive: 5, end_byte_offset: 900 };
+  await withLog(reverted(base) + line(prompt('巻き戻し後の依頼')), async session => {
+    const origin = await readSessionOrigin(session);
+    assert.equal(origin.state, 'unavailable');
+    assert.equal(origin.item, null);
+    assert.equal(origin.complete, false);
+    assert.match(origin.reason, /巻き戻/);
+  });
+});
+
+test('a paginated log without a kept prefix still starts at its own first request', async () => {
+  for (const base of [undefined, null]) {
+    await withLog(reverted(base) + line(prompt('最初の依頼')), async session => {
+      const origin = await readSessionOrigin(session);
+      assert.equal(origin.state, 'available');
+      assert.equal(origin.item.text, '最初の依頼');
+    });
+  }
+});
+
+test('a fork that inherits a prefix is explained as a fork, not as a revert', async () => {
+  const meta = line({ type: 'session_meta', payload: { id: 'b', forked_from_id: 'a', history_base: { thread_id: 'a', end_ordinal_exclusive: 5, end_byte_offset: 900 } } });
+  await withLog(meta + line(prompt('fork 後の依頼')), async session => {
+    const origin = await readSessionOrigin(session);
+    assert.equal(origin.state, 'unavailable');
+    assert.match(origin.reason, /派生/);
+  });
+});

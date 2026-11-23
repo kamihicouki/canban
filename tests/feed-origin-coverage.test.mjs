@@ -64,3 +64,16 @@ test('compressed rollouts cannot claim head coverage even when their tail contai
     assert.equal(feed.fromStart, false);
   });
 });
+
+test('a reverted Codex log that keeps an earlier prefix does not cover the beginning', async () => {
+  const meta = base => line({ type: 'session_meta', payload: { id: 'a', history_mode: 'paginated', history_base: base } });
+  await withLog(meta({ thread_id: 'a', end_ordinal_exclusive: 5, end_byte_offset: 900 }) + line(user('後')), async session => {
+    assert.equal((await readLines(session.sourcePath)).fromStart, false);
+    const feed = await readFeed(session);
+    assert.equal(feed.fromStart, false);
+    assert.equal(feed.items[0].text, '後', 'the messages themselves are still shown');
+  });
+  await withLog(meta(null) + line(user('先頭')), async session => {
+    assert.equal((await readFeed(session)).fromStart, true);
+  });
+});

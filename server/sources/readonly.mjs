@@ -132,6 +132,11 @@ export function rolloutFile(p) {
   return exists(`${p}.zst`) ? `${p}.zst` : p;
 }
 
+// Codex (0.171) reverts (and forks) a thread by starting a new rollout that keeps a prefix of an
+// older file (`history_base`), so the file's first request is not the thread's. A revert to the
+// very start keeps nothing and has no base.
+export const keepsEarlierHistory = (record) => record?.type === 'session_meta' && !!record.payload?.history_base;
+
 // The last `keep` bytes of a zstd file's content and the content's size, decompressed as a
 // stream so a large log is never held whole.
 export async function zstdTail(p, keep) {

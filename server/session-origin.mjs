@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { keepsEarlierHistory } from './sources/readonly.mjs';
 import { isHumanPrompt, textOf } from './sources/claude.mjs';
 import { cleanPrompt } from './sources/util.mjs';
 
@@ -60,6 +61,7 @@ export async function readSessionOrigin(session) {
       catch { return unavailable('会話の先頭に読み取れない行があり、最初の依頼を確認できません'); }
       if (!record || typeof record !== 'object') return unavailable('会話ログの形式を確認できません');
       if (unsafeHead(record)) return unavailable('要約または派生した会話の先頭のため、最初の依頼を確認できません');
+      if (keepsEarlierHistory(record)) return unavailable('途中まで巻き戻した会話のため、最初の依頼は以前のログにあります');
       const raw = humanText(session.agent, record);
       if (raw === null) continue;
       if (!raw.trim()) return unavailable('最初の依頼に読み取れるテキストがありません');

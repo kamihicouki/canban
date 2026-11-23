@@ -5,7 +5,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { clip, cleanPrompt } from './sources/util.mjs';
 import { textOf, isHumanPrompt } from './sources/claude.mjs';
-import { rolloutFile, zstdTail } from './sources/readonly.mjs';
+import { rolloutFile, zstdTail, keepsEarlierHistory } from './sources/readonly.mjs';
 import { readMultiAgentRecords } from './sources/multi-agents.mjs';
 
 export const FEED_TAIL_BYTES = 512 * 1024; // first read of a session
@@ -51,7 +51,7 @@ export async function readLines(file, { start = null, tailBytes = FEED_TAIL_BYTE
         records.push(JSON.parse(line));
       } catch { validLines = false; }
     }
-    const fromStart = !zst && from === 0 && validLines && (buf.length === 0 || end === buf.length - 1);
+    const fromStart = !zst && from === 0 && validLines && (buf.length === 0 || end === buf.length - 1) && !records.some(keepsEarlierHistory);
     return { records, offset: end < 0 ? from : from + end + 1, size, reset, fromStart };
   } finally {
     await fh?.close();
