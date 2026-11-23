@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.30.9 — 2026-11-21
+
+- どこからも使われていない内部の export（signalsFor・REQUEST_STATES）を削除
+
 ## 0.30.8 — 2026-11-20
 
 - Canbanから送る依頼で、Claudeのフックが保留したツール呼び出しを再開時に実行しない
