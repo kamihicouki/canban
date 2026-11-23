@@ -55,3 +55,16 @@ test('a refresh that keeps the conversation does not write the old reading posit
  assert.equal(run(null),40,'removing the inserted origin has already moved the scroll position with the text');
  assert.equal(run({}),100,'a rebuilt conversation returns to where it was read');
 });
+test('s on a reverted thread tells the known limit without a request; a real failure elsewhere is still an error',async()=>{
+ const src=fs.readFileSync('ui/card-workspace.js','utf8');
+ const body=src.slice(src.indexOf('async function jumpWorkspaceOrigin('),src.indexOf('function jumpWorkspaceLatest('));
+ const press=async originExcerpt=>{
+  const calls=[],toasts=[];
+  const ctx=vm.createContext({live:{feeds:new Map([['codex:a',{list:{}}]])},bridge:{callTool:async name=>{calls.push(name);throw new Error('通信に失敗しました');}},toast:(text,error)=>toasts.push([text,!!error]),paintWorkspaceContext(){},workspacePane(){}});
+  vm.runInContext(fs.readFileSync('ui/card-overlay-model.js','utf8')+body+'\nglobalThis.jump=jumpWorkspaceOrigin;',ctx);
+  await ctx.jump({id:'codex:a',kind:'session',d:{originExcerpt,session:{sourcePath:'/a.jsonl'}}});
+  return JSON.parse(JSON.stringify({calls,toasts}));
+ };
+ assert.deepEqual(await press('reverted'),{calls:[],toasts:[['最初の依頼は巻き戻し前の会話にあります',false]]});
+ assert.deepEqual(await press('unknown'),{calls:['canban_get_session'],toasts:[['通信に失敗しました',true]]});
+});

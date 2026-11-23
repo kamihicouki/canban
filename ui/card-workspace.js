@@ -136,8 +136,8 @@ function paintWorkspaceContext(p) {
   if (p.workspaceOrigin && !origin) dropInsertedOrigin(p); // read from a log this thread no longer uses
   frame.origin.text.textContent = p.kind === 'task' ? task?.description || '目的・説明は未記入です' : origin?.item?.text || excerpt || (origin ? '冒頭の依頼は取得できませんでした' : '冒頭の依頼はまだ取得していません');
   frame.origin.meta.textContent = p.kind === 'task' ? '保存されたタスクの説明' : origin ? origin.state === 'available' ? 'ログ先頭の原文' : `${origin.state === 'partial' ? '原文の一部' : '未取得'}: ${origin.reason || ''}` : p.d?.session?.host ? `${excerpt ? '起点の抜粋・' : ''}リモートの会話の原文は取得できません` : excerpt ? '起点の抜粋・原文は押して取得' : '原文は押して取得';
-  if (p.kind !== 'task' && !origin?.item && workspaceOriginReverted(p.d)) {
-    frame.origin.text.textContent = '最初の依頼は巻き戻し前の会話にあります';
+  if (p.kind !== 'task' && workspaceOriginReverted(p.d)) {
+    frame.origin.text.textContent = WORKSPACE_ORIGIN_REVERTED;
     frame.origin.meta.textContent = 'Canbanでは表示できません';
   }
   frame.origin.button.disabled = !!p.workspaceOriginLoading;
@@ -160,6 +160,7 @@ function dropInsertedOrigin(p) {
 async function jumpWorkspaceOrigin(p = workspacePane()) {
   if (!p) return;
   if (p.kind === 'task') { p.el.querySelector('.th-task > [data-sec="conv"]')?.scrollIntoView({ block: 'start' }); return; }
+  if (workspaceOriginReverted(p.d)) { toast(WORKSPACE_ORIGIN_REVERTED); return; } // a known limit: nothing to fetch, nothing that failed
   let feed = live.feeds.get(p.id);
   if (!feed) { toast(p.d?.session?.host ? 'リモートの会話の原文は取得できません' : '会話が取得できてから起点を開けます', true); return; }
   if (p.workspaceOriginLoading) return;
@@ -177,7 +178,7 @@ async function jumpWorkspaceOrigin(p = workspacePane()) {
   }
   const origin = workspaceOriginFor(p.workspaceOrigin, p.d?.session);
   if (!origin) { toast('会話のログが切り替わりました。カードを開き直してください', true); return; }
-  if (!origin.item) { toast(origin.reason || '起点の原文は取得できませんでした', !workspaceOriginReverted(p.d)); return; } // a known limit is told, not reported as a failure
+  if (!origin.item) { toast(origin.reason || '起点の原文は取得できませんでした', true); return; }
   if (!p.el.isConnected || p.el.hidden) return;
   feed = live.feeds.get(p.id);
   if (!feed) return; // a reload may own a new list; navigate only the currently mounted feed
