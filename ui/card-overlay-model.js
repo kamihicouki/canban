@@ -9,9 +9,9 @@ function workspaceLastMessage(items = []) {
 function workspaceCanReuseOrigin(fromStart, origin, items = []) {
   return fromStart === true && !!origin && items.find(item => item.k === 'user')?.text === origin.text;
 }
-// The listing's excerpt, only where the server finds it can stand for the first request (older servers do not say).
+// The listing's excerpt, only where the server has checked that it can stand for the first request.
 function workspaceOriginExcerpt(d) {
-  return d?.excerptIsOrigin === false ? null : d?.session?.preview || null;
+  return d?.excerptIsOrigin === true ? d.session?.preview || null : null;
 }
 // A fetched origin belongs to the log it was read from: Codex moves a reverted thread to a new one.
 function workspaceOriginFor(fetched, session) {

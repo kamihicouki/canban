@@ -12,9 +12,9 @@ test('current position uses the last observed message without inventing progress
 test('tail first message cannot masquerade as the original prompt',()=>{
  const it={k:'user',text:'同じ文'};assert.equal(c.api.workspaceCanReuseOrigin(false,it,[it]),false);assert.equal(c.api.workspaceCanReuseOrigin(true,it,[{k:'user',text:'異なる文'}]),false);assert.equal(c.api.workspaceCanReuseOrigin(true,it,[it]),true);
 });
-test('the excerpt stands for the first request unless the server says it does not',()=>{
+test('the excerpt stands for the first request only when the server says so',()=>{
  const session={preview:'依頼'};
- assert.equal(c.api.workspaceOriginExcerpt({session}),'依頼');assert.equal(c.api.workspaceOriginExcerpt({session,excerptIsOrigin:true}),'依頼');
+ assert.equal(c.api.workspaceOriginExcerpt({session}),null);assert.equal(c.api.workspaceOriginExcerpt({session,excerptIsOrigin:true}),'依頼');
  assert.equal(c.api.workspaceOriginExcerpt({session,excerptIsOrigin:false}),null);assert.equal(c.api.workspaceOriginExcerpt(undefined),null);
 });
 test('a fetched origin is dropped once the thread moves to another log',()=>{

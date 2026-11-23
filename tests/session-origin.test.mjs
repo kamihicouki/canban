@@ -187,6 +187,8 @@ test('the listed excerpt is not the origin of a reverted thread unless it kept n
     assert.equal(await excerptIsOrigin(start), true);
     assert.equal(await excerptIsOrigin({ ...start, host: { id: 'r', local: false } }), false, 'a remote log cannot tell');
     assert.equal(await excerptIsOrigin(write(`${id}_01a00000-0000-7000-8000-00000000000d`, '{broken')), false);
+    fs.mkdirSync(at(`${id}_01a00000-0000-7000-8000-00000000000f`));
+    assert.equal(await excerptIsOrigin({ agent: 'codex', sourcePath: at(`${id}_01a00000-0000-7000-8000-00000000000f`) }), false, 'not a regular file');
     assert.equal(await excerptIsOrigin({ agent: 'codex', sourcePath: at(`${id}_01a00000-0000-7000-8000-00000000000e`) }), false, 'compressed or missing');
     assert.equal(await excerptIsOrigin({ agent: 'codex', sourcePath: at(id) }), true, 'ordinary logs are not opened');
     assert.equal(await excerptIsOrigin({ agent: 'claude', sourcePath: '/p/a_b.jsonl' }), true);

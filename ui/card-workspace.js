@@ -157,13 +157,14 @@ async function jumpWorkspaceOrigin(p = workspacePane()) {
   if (p.workspaceOriginLoading) return;
   const known = workspaceOriginFor(p.workspaceOrigin, p.d?.session);
   if (!known?.item || known.state === 'unavailable') {
+    const log = p.d?.session?.sourcePath ?? null;
     p.workspaceOriginLoading = true; paintWorkspaceContext(p);
     try {
       const response = await bridge.callTool('canban_get_session', { cardId: p.id, messages: 1, includeOrigin: true });
       const data = response.result || response;
       const origin = data.origin || { state: 'unavailable', item: null, reason: '接続先は起点の原文取得に未対応です' };
       p.workspaceOrigin = { log: data.session?.sourcePath ?? null, origin };
-    } catch (e) { p.workspaceOrigin = { log: p.d?.session?.sourcePath ?? null, origin: { state: 'unavailable', item: null, reason: e.message } }; }
+    } catch (e) { p.workspaceOrigin = { log, origin: { state: 'unavailable', item: null, reason: e.message } }; }
     finally { p.workspaceOriginLoading = false; paintWorkspaceContext(p); }
   }
   const origin = workspaceOriginFor(p.workspaceOrigin, p.d?.session);

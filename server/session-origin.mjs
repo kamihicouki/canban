@@ -20,7 +20,8 @@ export async function excerptIsOrigin(session) {
   if (session.host && session.host.local !== true) return false;
   let handle;
   try {
-    handle = await fsp.open(session.sourcePath, 'r');
+    handle = await fsp.open(session.sourcePath, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
+    if (!(await handle.stat()).isFile()) return false;
     const buffer = Buffer.alloc(META_BYTES);
     const { bytesRead } = await handle.read(buffer, 0, META_BYTES, 0);
     const end = buffer.subarray(0, bytesRead).indexOf(10);
