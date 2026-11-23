@@ -32,3 +32,12 @@ test('refreshing a card whose queued request is being edited repaints the origin
  vm.runInNewContext(body+'\nrenderPaneKeepingDrafts',ctx)({id:'codex:a',el,d:{session:{sourcePath:'/a.jsonl'}}},{session:{sourcePath:'/b.jsonl'},feed:{}});
  assert.deepEqual([...conv.kids],['feed']);assert.deepEqual(painted,['/b.jsonl']);
 });
+test('an origin inserted from a replaced log leaves the conversation even when the new one is unreadable',()=>{
+ const src=fs.readFileSync('ui/card-workspace.js','utf8');
+ const body=src.slice(src.indexOf('function dropInsertedOrigin('),src.indexOf('async function jumpWorkspaceOrigin('));
+ const removed=[];const list={querySelectorAll:q=>q.split(',').map(name=>({remove:()=>removed.push(name)}))};
+ const run=vm.runInNewContext(body+'\ndropInsertedOrigin',{live:{feeds:new Map([['codex:a',{list}]])}});
+ run({id:'codex:a'});assert.deepEqual(removed,['.ws-origin-message','.ws-origin-gap']);run({id:'codex:missing'});
+ const paint=src.slice(src.indexOf('function paintWorkspaceContext('),src.indexOf('function dropInsertedOrigin('));
+ assert.match(paint,/if \(p\.workspaceOrigin && !origin\) dropInsertedOrigin\(p\)/);
+});

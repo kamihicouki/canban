@@ -133,6 +133,7 @@ function paintWorkspaceContext(p) {
   const statusLabel = known ? STATUS_LABELS[currentStatus] || '状態未取得' : '状態未取得';
   frame.identityState.textContent = `${kindLabel} · ${p.kind === 'task' ? '担当会話: ' : ''}${statusLabel}`;
   const origin = workspaceOriginFor(p.workspaceOrigin, p.d?.session), excerpt = workspaceOriginExcerpt(p.d);
+  if (p.workspaceOrigin && !origin) dropInsertedOrigin(p); // read from a log this thread no longer uses
   frame.origin.text.textContent = p.kind === 'task' ? task?.description || '目的・説明は未記入です' : origin?.item?.text || excerpt || (origin ? '冒頭の依頼は取得できませんでした' : '冒頭の依頼はまだ取得していません');
   frame.origin.meta.textContent = p.kind === 'task' ? '保存されたタスクの説明' : origin ? origin.state === 'available' ? 'ログ先頭の原文' : `${origin.state === 'partial' ? '原文の一部' : '未取得'}: ${origin.reason || ''}` : p.d?.session?.host ? `${excerpt ? '起点の抜粋・' : ''}リモートの会話の原文は取得できません` : excerpt ? '起点の抜粋・原文は押して取得' : '原文は押して取得';
   frame.origin.button.disabled = !!p.workspaceOriginLoading;
@@ -148,6 +149,9 @@ function paintWorkspaceContext(p) {
     const at = last?.at && Number.isFinite(Date.parse(last.at)) ? fmtDate(Date.parse(last.at)) : '発言時刻は未取得';
     frame.latest.meta.textContent = last ? `${last.k === 'user' ? 'あなた' : last.k === 'commentary' ? 'エージェント（作業中の発言）' : 'エージェント'} · ${at}` : '未取得を完了と扱いません';
   }
+}
+function dropInsertedOrigin(p) {
+  for (const el of live.feeds.get(p.id)?.list.querySelectorAll('.ws-origin-message,.ws-origin-gap') || []) el.remove();
 }
 async function jumpWorkspaceOrigin(p = workspacePane()) {
   if (!p) return;
