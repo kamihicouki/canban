@@ -10,7 +10,7 @@ import { cleanPrompt } from './sources/util.mjs';
 export const ORIGIN_HEAD_BYTES = 1024 * 1024;
 export const ORIGIN_TEXT_MAX = 100000;
 // `rollout-<time>-<thread>_<log>.jsonl`: Codex names only the log a revert creates this way.
-const REVERTED_LOG = /-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}_[0-9a-f-]{36}\.jsonl$/;
+const REVERTED_LOG = /-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}_[0-9a-f-]{36}\.jsonl(?:\.zst)?$/;
 const META_BYTES = 256 * 1024;
 
 // Codex restarts a thread's listed excerpt at the request after a revert. It is still the first

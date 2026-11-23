@@ -651,6 +651,7 @@ function renderPaneKeepingDrafts(p, d) {
     p.d = d;
     const conversation = $('.th-conv', el);
     if (conversation && d.feed) conversation.replaceChildren(renderFeed(d, p));
+    if (typeof paintWorkspaceContext === 'function') paintWorkspaceContext(p);
     restoreReading();
     return;
   }

@@ -22,3 +22,13 @@ test('a fetched origin is dropped once the thread moves to another log',()=>{
  assert.equal(c.api.workspaceOriginFor(fetched,{sourcePath:'/a.jsonl'}),origin);assert.equal(c.api.workspaceOriginFor(fetched,{sourcePath:'/b.jsonl'}),null);
  assert.equal(c.api.workspaceOriginFor(undefined,{sourcePath:'/a.jsonl'}),null);assert.equal(c.api.workspaceOriginFor({log:null,origin},{}),origin);
 });
+test('refreshing a card whose queued request is being edited repaints the origin with the conversation',()=>{
+ const src=fs.readFileSync('ui/card-overlay.js','utf8');
+ const body=src.slice(src.indexOf('function renderPaneKeepingDrafts('),src.indexOf('async function changeSessionCardState('));
+ const painted=[];
+ const conv={replaceChildren(...kids){this.kids=kids;}};
+ const el={querySelector:q=>q==='.req-row textarea'?{}:null};
+ const ctx={live:{feeds:new Map()},$:q=>q==='.th-conv'?conv:null,renderFeed:()=>'feed',paintWorkspaceContext:p=>painted.push(p.d.session.sourcePath)};
+ vm.runInNewContext(body+'\nrenderPaneKeepingDrafts',ctx)({id:'codex:a',el,d:{session:{sourcePath:'/a.jsonl'}}},{session:{sourcePath:'/b.jsonl'},feed:{}});
+ assert.deepEqual([...conv.kids],['feed']);assert.deepEqual(painted,['/b.jsonl']);
+});
