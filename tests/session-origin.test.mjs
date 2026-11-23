@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readSessionOrigin, ORIGIN_HEAD_BYTES, ORIGIN_TEXT_MAX } from '../server/session-origin.mjs';
+import { readSessionOrigin, excerptIsOrigin, ORIGIN_HEAD_BYTES, ORIGIN_TEXT_MAX } from '../server/session-origin.mjs';
 
 const line = value => `${JSON.stringify(value)}\n`;
 const prompt = (text, timestamp = '2026-11-15T00:00:00Z') => ({ type: 'event_msg', timestamp, payload: { type: 'user_message', message: text } });
@@ -172,4 +172,24 @@ test('a fork that inherits a prefix is explained as a fork, not as a revert', as
     assert.equal(origin.state, 'unavailable');
     assert.match(origin.reason, /派生/);
   });
+});
+
+test('the listed excerpt is not the origin of a reverted thread unless it kept nothing', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-origin-'));
+  const id = '01a00000-0000-7000-8000-00000000000a';
+  const at = name => path.join(dir, `rollout-2026-11-21T10-00-00-${name}.jsonl`);
+  const write = (name, body) => { fs.writeFileSync(at(name), body); return { agent: 'codex', sourcePath: at(name) }; };
+  const base = { thread_id: id, end_ordinal_exclusive: 5, end_byte_offset: 900 };
+  try {
+    const kept = write(`${id}_01a00000-0000-7000-8000-00000000000b`, reverted(base) + line(prompt('後')));
+    assert.equal(await excerptIsOrigin(kept), false);
+    const start = write(`${id}_01a00000-0000-7000-8000-00000000000c`, reverted(undefined) + line(prompt('最初')));
+    assert.equal(await excerptIsOrigin(start), true);
+    assert.equal(await excerptIsOrigin({ ...start, host: { id: 'r', local: false } }), false, 'a remote log cannot tell');
+    assert.equal(await excerptIsOrigin(write(`${id}_01a00000-0000-7000-8000-00000000000d`, '{broken')), false);
+    assert.equal(await excerptIsOrigin({ agent: 'codex', sourcePath: at(`${id}_01a00000-0000-7000-8000-00000000000e`) }), false, 'compressed or missing');
+    assert.equal(await excerptIsOrigin({ agent: 'codex', sourcePath: at(id) }), true, 'ordinary logs are not opened');
+    assert.equal(await excerptIsOrigin({ agent: 'claude', sourcePath: '/p/a_b.jsonl' }), true);
+    assert.equal(await excerptIsOrigin({ agent: 'codex', sourcePath: null }), true);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

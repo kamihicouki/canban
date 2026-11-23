@@ -9,11 +9,13 @@ function workspaceLastMessage(items = []) {
 function workspaceCanReuseOrigin(fromStart, origin, items = []) {
   return fromStart === true && !!origin && items.find(item => item.k === 'user')?.text === origin.text;
 }
-// The listing's excerpt, only where it can stand for the first request. Codex names a reverted thread's
-// new log `rollout-<time>-<thread>_<log>.jsonl` and restarts the excerpt at the request after the revert.
-function workspaceOriginExcerpt(session) {
-  if (session?.agent === 'codex' && /-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}_[0-9a-f-]{36}\.jsonl$/.test(session.sourcePath || '')) return null;
-  return session?.preview || null;
+// The listing's excerpt, only where the server finds it can stand for the first request (older servers do not say).
+function workspaceOriginExcerpt(d) {
+  return d?.excerptIsOrigin === false ? null : d?.session?.preview || null;
+}
+// A fetched origin belongs to the log it was read from: Codex moves a reverted thread to a new one.
+function workspaceOriginFor(fetched, session) {
+  return fetched && fetched.log === (session?.sourcePath ?? null) ? fetched.origin : null;
 }
 const CARD_VIEW_MODES = [['full', '全画面'], ['split', 'スプリット'], ['sheet', 'シート']];
 const normalizeCardViewMode = (v) => (CARD_VIEW_MODES.some(([k]) => k === v) ? v : 'full');

@@ -9,6 +9,30 @@ import { cleanPrompt } from './sources/util.mjs';
 
 export const ORIGIN_HEAD_BYTES = 1024 * 1024;
 export const ORIGIN_TEXT_MAX = 100000;
+// `rollout-<time>-<thread>_<log>.jsonl`: Codex names only the log a revert creates this way.
+const REVERTED_LOG = /-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}_[0-9a-f-]{36}\.jsonl$/;
+const META_BYTES = 256 * 1024;
+
+// Codex restarts a thread's listed excerpt at the request after a revert. It is still the first
+// request after a revert to the very start. Where the log cannot tell, it is not claimed.
+export async function excerptIsOrigin(session) {
+  if (session?.agent !== 'codex' || !REVERTED_LOG.test(session.sourcePath || '')) return true;
+  if (session.host && session.host.local !== true) return false;
+  let handle;
+  try {
+    handle = await fsp.open(session.sourcePath, 'r');
+    const buffer = Buffer.alloc(META_BYTES);
+    const { bytesRead } = await handle.read(buffer, 0, META_BYTES, 0);
+    const end = buffer.subarray(0, bytesRead).indexOf(10);
+    if (end < 0) return false;
+    const record = JSON.parse(buffer.toString('utf8', 0, end));
+    return record?.type === 'session_meta' && !keepsEarlierHistory(record) && !unsafeHead(record);
+  } catch {
+    return false; // compressed, missing or mid-write
+  } finally {
+    await handle?.close();
+  }
+}
 
 function unsafeHead(record) {
   return record.type === 'compacted' || record.subtype === 'compact_boundary' || record.isCompactSummary ||
