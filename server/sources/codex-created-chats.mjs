@@ -11,14 +11,13 @@ const contentText = (content) => Array.isArray(content)
   ? content.map((c) => (typeof c?.text === 'string' ? c.text : '')).join('\n')
   : (typeof content === 'string' ? content : '');
 
-const DORMANT_MISS_MS = 24 * 3600e3;
-const homeCaches = new Map(); // homeDir -> { dirMtimeMs, histDb, resolved: Map<nativeId, parentNativeId>, miss: Map<nativeId, { histSig, rolloutSig, sourcePath, updatedAt }> }
+const homeCaches = new Map(); // homeDir -> { resolved: Map<nativeId, parentNativeId>, miss: Map<nativeId, { histSig, rolloutSig }> }
 
 function cacheFor(home) {
   const key = home || '__default';
   let entry = homeCaches.get(key);
   if (!entry) {
-    entry = { dirMtimeMs: null, histDb: undefined, resolved: new Map(), miss: new Map() };
+    entry = { resolved: new Map(), miss: new Map() };
     homeCaches.set(key, entry);
   }
   return entry;
@@ -113,14 +112,6 @@ export function readCreatedParentFromRolloutHead(rolloutPath, childNativeId = nu
  */
 export async function findHistoryDb(home) {
   if (!home) return null;
-  const cache = cacheFor(home);
-  const dirStat = await stat(home);
-  if (!dirStat) {
-    cache.dirMtimeMs = null;
-    cache.histDb = null;
-    return null;
-  }
-  if (cache.histDb !== undefined && cache.dirMtimeMs === dirStat.mtimeMs) return cache.histDb;
   const entries = await listDir(home);
   let best = null;
   for (const e of entries) {
@@ -129,24 +120,22 @@ export async function findHistoryDb(home) {
       best = { n: Number(m[1]), file: path.join(home, e.name) };
     }
   }
-  cache.dirMtimeMs = dirStat.mtimeMs;
-  cache.histDb = best?.file ?? null;
-  return cache.histDb;
+  return best?.file ?? null;
 }
 
 async function fileSigAsync(p) {
   if (!p) return '-';
   const st = await stat(p);
-  return st ? `${st.mtimeMs}:${st.size}` : '-';
+  return st ? `${st.ino}:${st.mtimeMs}:${st.size}` : '-';
 }
 
 async function rolloutSigAsync(sourcePath) {
   if (!sourcePath) return '-';
   const direct = await stat(sourcePath);
-  if (direct) return `${direct.mtimeMs}:${direct.size}`;
+  if (direct) return `raw:${direct.ino}:${direct.mtimeMs}:${direct.size}`;
   if (sourcePath.endsWith('.jsonl')) {
     const zst = await stat(`${sourcePath}.zst`);
-    if (zst) return `zst:${zst.mtimeMs}:${zst.size}`;
+    if (zst) return `zst:${zst.ino}:${zst.mtimeMs}:${zst.size}`;
   }
   return '-';
 }
@@ -161,9 +150,11 @@ export async function resolveCreatedChatParents(home, sessions) {
   if (!candidates.length) return result;
 
   const cache = cacheFor(home);
+  const liveIds = new Set(candidates.map((s) => s.nativeId));
+  for (const id of cache.miss.keys()) if (!liveIds.has(id)) cache.miss.delete(id);
+
   const histDb = await findHistoryDb(home);
   const histSig = histDb ? `${histDb}|${await fileSigAsync(histDb)}|${await fileSigAsync(`${histDb}-wal`)}` : '-';
-  const now = Date.now();
   const pending = [];
 
   await Promise.all(candidates.map(async (s) => {
@@ -172,22 +163,13 @@ export async function resolveCreatedChatParents(home, sessions) {
       result.set(s.nativeId, hit);
       return;
     }
-    const miss = cache.miss.get(s.nativeId);
-    if (
-      miss &&
-      miss.histSig === histSig &&
-      miss.sourcePath === (s.sourcePath || null) &&
-      typeof s.updatedAt === 'number' &&
-      miss.updatedAt === s.updatedAt &&
-      now - s.updatedAt > DORMANT_MISS_MS
-    ) {
-      return;
-    }
     const rSig = await rolloutSigAsync(s.sourcePath);
+    const miss = cache.miss.get(s.nativeId);
     if (miss && miss.histSig === histSig && miss.rolloutSig === rSig) return;
     pending.push({ s, rSig });
   }));
 
+  let histReadOk = !histDb;
   if (pending.length && histDb) {
     try {
       queryReadOnly(histDb, (db) => {
@@ -212,8 +194,10 @@ export async function resolveCreatedChatParents(home, sessions) {
           }
         }
       });
+      histReadOk = true;
     } catch {
-      // thread_history がロック・破損している場合もフォールバックで続行
+      // thread_history がロック・破損している場合は miss を固定せずフォールバックのみ試行
+      histReadOk = false;
     }
   }
 
@@ -224,8 +208,8 @@ export async function resolveCreatedChatParents(home, sessions) {
       cache.resolved.set(s.nativeId, parent);
       cache.miss.delete(s.nativeId);
       result.set(s.nativeId, parent);
-    } else {
-      cache.miss.set(s.nativeId, { histSig, rolloutSig: rSig, sourcePath: s.sourcePath || null, updatedAt: s.updatedAt ?? null });
+    } else if (histReadOk) {
+      cache.miss.set(s.nativeId, { histSig, rolloutSig: rSig });
     }
   }
 

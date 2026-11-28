@@ -415,7 +415,7 @@ document.addEventListener('keydown', e => {
     if (adjacentPaneList(p, step)) run = () => movePaneAdjacent(p, step);
   }
   else if (k === '?') run = showShortcuts;
-  else if (k === 'r') run = () => openCard(panes[0].id);
+  else if (k === 'r') run = () => (state.boardError || live.syncError ? refreshBoard() : openCard(panes[0].id));
   else if (k === 'a' || k === 'u') run = () => toggleView(k === 'a' ? 'analytics' : 'usage');
   else if (p && p.kind !== 'view') {
     if (k === 'j' || k === 'k') run = () => stepOpenCard(k === 'j' ? 1 : -1);
@@ -524,7 +524,11 @@ async function loadSession(p, { restore = false } = {}) {
   } catch (e) {
     if (!panes.includes(p)) return;
     if (restore && e.message.startsWith('セッションが見つかりません:')) return closeCards();
-    if (p.d) return toast(e.message, true);
+    if (p.d) {
+      const f = live.feeds.get(p.id);
+      if (f && (f.sourcePath ?? null) !== (p.d.session?.sourcePath ?? null)) live.feeds.delete(p.id);
+      return toast(e.message, true);
+    }
     const snapshot = p.pendingCard?.last;
     const failed = [
       typeof snapshot === 'string' && snapshot ? h('div', { class: 'msg assistant' }, h('div', { class: 'who', text: '一覧に保存された最終返答 · 発言時刻は未取得' }), snapshot) : null,
@@ -655,11 +659,11 @@ function renderPaneKeepingDrafts(p, d) {
     const conversation = $('.th-conv', el);
     const rebuilt = conversation && d.feed;
     if (rebuilt) conversation.replaceChildren(renderFeed(d, p));
-    else if (conversation && logSwitched) {
+    else if (conversation && (logSwitched || Boolean(d.messagesError))) {
       live.feeds.delete(p.id);
-      const text = d.messagesError
-        ? `切り替え後の会話を取得できませんでした: ${d.messagesError}`
-        : '会話のログが切り替わりましたが、本文を取得できませんでした';
+      const text = logSwitched
+        ? (d.messagesError ? `切り替え後の会話を取得できませんでした: ${d.messagesError}` : '会話のログが切り替わりましたが、本文を取得できませんでした')
+        : `会話を取得できませんでした: ${d.messagesError}`;
       conversation.replaceChildren(typeof h === 'function' ? h('p', { class: 'muted', role: 'status', text }) : text);
     }
     if (typeof paintWorkspaceContext === 'function') paintWorkspaceContext(p);
@@ -1088,7 +1092,10 @@ function renderPane(p, d) {
   p.status = s.status || 'idle';
   paintContinue();
   p.activity = activityText(s.activity, p.status, s.signals);
-  if (!d.feed) p.lastText = s.preview || '';
+  if (!d.feed) {
+    live.feeds.delete(s.id);
+    p.lastText = s.preview || '';
+  }
   el.setAttribute('aria-label', `セッション詳細: ${s.title}`);
   applyPaneAttrs(p);
   renderThreadPane(p, d, secs, { card, listSel });

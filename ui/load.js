@@ -47,7 +47,21 @@ async function load({ refresh = false, throwOnError = false } = {}) {
 }
 
 async function refreshBoard() {
-  if (await load({ refresh: true })) toast('最新の状態に更新しました');
+  const hadSyncError = typeof live !== 'undefined' && Boolean(live.syncError);
+  const boardOk = await load({ refresh: true });
+  if (hadSyncError && typeof watchOnce === 'function') {
+    try { await watchOnce(0, { fromRefresh: true }); } catch {}
+  }
+  if (typeof loadSession === 'function' && Array.isArray(panes)) {
+    const busy = typeof paneBusyForReload === 'function' ? paneBusyForReload : () => false;
+    await Promise.all(panes.filter((p) => p?.kind === 'session' && !busy(p)).map((p) => loadSession(p).catch(() => {})));
+  }
+  if (!boardOk) return;
+  if (typeof live !== 'undefined' && live.syncError) {
+    toast('ボードを更新しました（リアルタイム更新は再接続中です）');
+  } else {
+    toast('最新の状態に更新しました');
+  }
 }
 
 function saveFilters() { store.set('filters', state.filters); }

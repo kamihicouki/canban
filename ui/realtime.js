@@ -107,7 +107,11 @@ function paintLiveBadges() {
 }
 
 function applyFeed(f, feed) {
-  if (feed.reset) { openCard(f.cardId); return; }
+  if (feed.reset) {
+    live.feeds.delete(f.cardId);
+    openCard(f.cardId);
+    return;
+  }
   const hiddenReading = f.pane?.el?.hidden && f.pane.workspaceReading;
   const stick = hiddenReading ? hiddenReading.following : atFeedEnd(f.list);
   let added = 0, newAssistantText = '';
@@ -294,7 +298,15 @@ function watchArgs(timeoutMs) {
   return args;
 }
 
-async function watchOnce(timeoutMs) {
+function paneBusyForReload(p) {
+  const el = p?.el;
+  if (!el) return false;
+  const active = el.ownerDocument?.activeElement;
+  if (active && el.contains(active) && active.matches?.('input, textarea, select, [contenteditable="true"]')) return true;
+  return !!el.querySelector?.('.prompt-skill-picker:not([hidden]), .prompt-composer[aria-busy="true"], .side-chat[open], .req-row textarea');
+}
+
+async function watchOnce(timeoutMs, { fromRefresh = false } = {}) {
   const args = watchArgs(timeoutMs);
   live.inflight++;
   try {
@@ -307,9 +319,9 @@ async function watchOnce(timeoutMs) {
     const hadSyncError = !!live.syncError;
     if (hadSyncError || live.off) setLiveSyncState({ syncError: null, off: false });
     applyLive(r, args);
-    if (hadSyncError) {
+    if (hadSyncError && !fromRefresh) {
       scheduleLoad(0);
-      for (const p of panes) if (p.kind === 'session') loadSession(p).catch(() => {});
+      for (const p of panes) if (p.kind === 'session' && !paneBusyForReload(p)) loadSession(p).catch(() => {});
     }
     return true;
   } catch (e) {

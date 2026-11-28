@@ -2,6 +2,8 @@
 /* A shape of the shared thread, independent of its full/split/sheet placement. */
 .ws-control { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; padding: 3px 8px; border-radius: 6px; background: var(--btn-subtle); color: var(--card-fg); font: inherit; font-size: 12px; white-space: nowrap; }
 .ws-control:hover { background: var(--btn-subtle-hover); }
+.ws-control[aria-disabled="true"] { opacity: 0.6; cursor: default; }
+.ws-control[aria-disabled="true"]:hover { background: var(--btn-subtle); }
 .ws-control:focus-visible, .ws-jump:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .pane[data-shape="workspace"] { display: grid; grid-template-columns: clamp(240px, 22vw, 300px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); border-radius: 0; box-shadow: none; }
 .pane[data-shape="workspace"][hidden], .ws-context[hidden], .ws-compact[hidden] { display: none; }
@@ -17,6 +19,9 @@
 .ws-context .th-threads { padding: 4px 0; flex-wrap: wrap; }
 .ws-jump { display: flex; flex-direction: column; gap: 6px; width: 100%; min-width: 0; text-align: left; padding: 12px 4px; border-bottom: 1px solid var(--btn-subtle-hover); color: var(--card-fg); }
 .ws-jump:hover { background: var(--btn-subtle); }
+.ws-jump[aria-disabled="true"] { cursor: default; }
+.ws-jump[aria-disabled="true"]:hover { background: transparent; }
+.ws-jump[aria-disabled="true"] .ws-section-title, .ws-jump[aria-disabled="true"] .keycap, .ws-control[aria-disabled="true"] .keycap { color: var(--card-muted); opacity: 0.72; }
 .ws-section-title { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; }
 .ws-excerpt { font-family: var(--reading-font); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; line-clamp: 3; overflow: clip; }
 .ws-observed { color: var(--card-muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }

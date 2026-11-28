@@ -10,6 +10,7 @@ import { buildBoard, sessionDetail, dropLocalCache } from '../server/board.mjs';
 import { LiveHub } from '../server/live.mjs';
 import { createWatch } from '../server/watch.mjs';
 import { readFeed, readFeedDelta } from '../server/feed.mjs';
+import { resolveCreatedChatParents, resetCreatedChatCache } from '../server/sources/codex-created-chats.mjs';
 import {
   listAntigravitySessions,
   listGeminiSessions,
@@ -28,7 +29,7 @@ test('readFeedDelta detects sourcePath switch even when the new log is larger th
     fs.writeFileSync(
       logA,
       jline({ timestamp: '2026-11-28T00:00:00Z', type: 'session_meta', payload: { id: 't1' } }) +
-        jline({ timestamp: '2026-11-28T00:00:01Z', type: 'event_msg', payload: { type: 'item_completed', item: { type: 'UserMessage', id: 'u1', content: [{ type: 'text', text: '旧ログの依頼' }] } } }),
+        jline({ timestamp: '2026-11-28T00:00:01Z', type: 'event_msg', payload: { type: 'UserMessage', item: { type: 'UserMessage', id: 'u1', content: [{ type: 'text', text: '旧ログの依頼' }] } } }).replace('"type":"UserMessage","item"', '"type":"item_completed","item"'),
     );
     // Make logB larger than logA so size >= oldOffset would NOT trigger byte-size reset without sourcePath check
     fs.writeFileSync(
@@ -151,48 +152,109 @@ test('watch detects Codex rollout_path switch on an open card and sessionDetail 
   }
 });
 
-test('UI: renderPaneKeepingDrafts drops stale conversation when switched log is unreadable while preserving request editor', () => {
-  const src = fs.readFileSync('ui/card-overlay.js', 'utf8');
-  const body = src.slice(src.indexOf('function renderPaneKeepingDrafts('), src.indexOf('async function changeSessionCardState('));
+test('UI: applyFeed reset and renderPaneKeepingDrafts clear stale feed cursors to prevent infinite watch loops', () => {
+  const rtSrc = fs.readFileSync('ui/realtime.js', 'utf8');
+  const applySlice = rtSrc.slice(rtSrc.indexOf('function applyFeed('), rtSrc.indexOf('// ---- the long poll ----'));
+  const opened = [];
+  const feeds = new Map([['codex:t1', { cardId: 'codex:t1', offset: 120, sourcePath: '/a.jsonl' }]]);
+  const applyFeed = vm.runInNewContext(`${applySlice}\napplyFeed`, {
+    live: { feeds },
+    openCard: (id) => opened.push(id),
+  });
+  applyFeed(feeds.get('codex:t1'), { reset: true, sourcePath: '/missing.jsonl' });
+  assert.equal(feeds.has('codex:t1'), false, 'applyFeed deletes stale cursor before openCard so missing log cannot tight-loop');
+  assert.deepEqual(opened, ['codex:t1']);
+
+  const overlaySrc = fs.readFileSync('ui/card-overlay.js', 'utf8');
+  const body = overlaySrc.slice(overlaySrc.indexOf('function renderPaneKeepingDrafts('), overlaySrc.indexOf('async function changeSessionCardState('));
   const conv = { kids: ['old-feed-node'], replaceChildren(...kids) { this.kids = kids; } };
   const el = { querySelector: (q) => (q === '.req-row textarea' ? { value: '編集中の依頼' } : null) };
-  const feeds = new Map([['codex:t1', { sourcePath: '/a.jsonl' }]]);
+  const feeds2 = new Map([['codex:t1', { sourcePath: '/a.jsonl' }]]);
   const ctx = {
-    live: { feeds },
+    live: { feeds: feeds2 },
     $: (q) => (q === '.th-conv' ? conv : null),
     h: (_tag, props) => props,
     renderFeed: () => 'new-feed',
     paintWorkspaceContext() {},
   };
   const renderPaneKeepingDrafts = vm.runInNewContext(`${body}\nrenderPaneKeepingDrafts`, ctx);
+
+  // Case 1: Switched log is unreadable
   renderPaneKeepingDrafts(
     { id: 'codex:t1', el, d: { session: { sourcePath: '/a.jsonl' } } },
     { session: { sourcePath: '/b.jsonl' }, feed: null, messagesError: '会話ログが見つかりません' },
   );
-  assert.equal(feeds.has('codex:t1'), false, 'stale feed entry is removed');
-  assert.equal(conv.kids.length, 1);
+  assert.equal(feeds2.has('codex:t1'), false);
   assert.match(conv.kids[0].text, /切り替え後の会話を取得できませんでした.*会話ログが見つかりません/);
+
+  // Case 2: Same-path log deleted/unreadable while editing queued request
+  feeds2.set('codex:t1', { sourcePath: '/b.jsonl' });
+  conv.kids = ['old-feed-node'];
+  renderPaneKeepingDrafts(
+    { id: 'codex:t1', el, d: { session: { sourcePath: '/b.jsonl' } } },
+    { session: { sourcePath: '/b.jsonl' }, feed: null, messagesError: '会話ログが見つかりません' },
+  );
+  assert.equal(feeds2.has('codex:t1'), false, 'same-path unreadable log also removes stale feed cursor');
+  assert.match(conv.kids[0].text, /^会話を取得できませんでした: 会話ログが見つかりません/);
 });
 
-test('UI: syncStatusModel and kickLive coalescing report sync failures accurately and collapse bursts', async () => {
+test('UI: syncStatusModel, single-entry errbar, unified refreshBoard, and kickLive coalescing work accurately', async () => {
   const brSrc = fs.readFileSync('ui/board-render.js', 'utf8');
-  const modelFn = brSrc.slice(brSrc.indexOf('function syncStatusModel('), brSrc.indexOf('function paintSyncStatus('));
-  const syncStatusModel = vm.runInNewContext(`${modelFn}\nsyncStatusModel`, { fmtClock: () => '15:30' });
-
-  assert.equal(syncStatusModel({ board: null, boardError: '失敗' }).hidden, true, 'initial failure uses #board, not duplicate #errbar');
-  assert.equal(syncStatusModel({ board: { errors: [], generatedAt: 1000 }, boardError: null }).hidden, true);
-
-  const stale = syncStatusModel({
-    board: { errors: ['SSH タイムアウト'], generatedAt: 1700000000000 },
-    boardError: 'Native 切断',
-    liveSyncError: 'watch 失敗',
+  const syncSlice = brSrc.slice(brSrc.indexOf('function syncStatusModel('), brSrc.indexOf('// Part of board.html:'));
+  const errbarChildren = [];
+  const errbarEl = {
+    hidden: true,
+    attrs: {},
+    setAttribute(k, v) { this.attrs[k] = v; },
+    replaceChildren(...kids) { errbarChildren.splice(0, errbarChildren.length, ...kids.filter(Boolean)); },
+  };
+  const syncCtx = vm.createContext({
+    fmtClock: () => '15:30',
+    state: { board: { errors: ['SSH タイムアウト'], generatedAt: 1700000000000 }, boardError: 'Native 切断' },
+    live: { syncError: 'watch 失敗', off: false },
+    $: (q) => (q === '#errbar' ? errbarEl : null),
+    h: (tag, props) => ({ tag, ...props }),
   });
-  assert.equal(stale.hidden, false);
-  assert.equal(stale.canRetry, true);
-  assert.equal(stale.messages.length, 3);
-  assert.match(stale.messages[0], /15:30 時点の表示を保持中.*Native 切断/);
-  assert.match(stale.messages[1], /リアルタイム更新が中断しています.*watch 失敗/);
-  assert.match(stale.messages[2], /一部のデータを取得できませんでした.*SSH タイムアウト/);
+  vm.runInContext(`${syncSlice}\nglobalThis.syncStatusModel = syncStatusModel; globalThis.paintSyncStatus = paintSyncStatus;`, syncCtx);
+
+  assert.equal(syncCtx.syncStatusModel({ board: null, boardError: '失敗' }).hidden, true, 'initial failure uses #board, not duplicate #errbar');
+  syncCtx.paintSyncStatus();
+  assert.equal(errbarEl.hidden, false);
+  assert.equal(errbarChildren.some((c) => c.tag === 'button'), false, '#errbar must not render a duplicate refresh button');
+  assert.equal(errbarChildren.some((c) => c.class === 'errbar-hint'), true, '#errbar points to the single appbar refresh button');
+
+  // Verify unified refreshBoard reports honest status when live.syncError persists vs recovers, and skips busy panes
+  const loadSrc = fs.readFileSync('ui/load.js', 'utf8');
+  const toasts = [];
+  const reloadedSessions = [];
+  const loadCtx = vm.createContext({
+    state: { board: null, boardError: 'old', filters: {} },
+    panes: [
+      { id: 'codex:idle', kind: 'session', busy: false },
+      { id: 'codex:typing', kind: 'session', busy: true },
+    ],
+    live: { syncError: 'watch 切断' },
+    bridge: { callTool: async () => ({ lists: [] }) },
+    decodeSourceBoard: (b) => b,
+    render() {}, reconcileCards() {}, paintCardListControls() {}, refreshShortcutHints() {}, refreshViews() {},
+    paneBusyForReload: (p) => p.busy,
+    loadSession: async (p) => { reloadedSessions.push(p.id); },
+    watchOnce: async () => { throw new Error('still disconnected'); },
+    toast: (msg, err) => toasts.push([msg, !!err]),
+    h: (_tag, props) => props,
+    $: () => ({ replaceChildren() {} }),
+  });
+  vm.runInContext(`${loadSrc}\nglobalThis.refreshBoard = refreshBoard;`, loadCtx);
+
+  await loadCtx.refreshBoard();
+  assert.deepEqual(reloadedSessions, ['codex:idle'], 'busy session pane is protected during refresh');
+  assert.deepEqual(toasts, [['ボードを更新しました（リアルタイム更新は再接続中です）', false]], 'does not falsely claim full sync while watch is broken');
+
+  toasts.length = 0;
+  reloadedSessions.length = 0;
+  loadCtx.watchOnce = async () => { loadCtx.live.syncError = null; return true; };
+  await loadCtx.refreshBoard();
+  assert.deepEqual(toasts, [['最新の状態に更新しました', false]], 'announces full sync once watch also recovers');
 
   // Verify kickLive coalesces synchronous bursts into a single watchOnce(0) call
   const rtSrc = fs.readFileSync('ui/realtime.js', 'utf8');
@@ -211,7 +273,52 @@ test('UI: syncStatusModel and kickLive coalescing report sync failures accuratel
   assert.equal(watchCalls, 1, 'three synchronous kickLive calls coalesce into one watchOnce(0)');
 });
 
-test('Multi-agent readers skip unchanged streams and fold appended JSONL lines incrementally', async () => {
+test('UI: workspace origin and latest controls mark aria-disabled and report missing-log reason accurately', async () => {
+  const wsSrc = fs.readFileSync('ui/card-workspace.js', 'utf8');
+  const slice = wsSrc.slice(wsSrc.indexOf('function paintWorkspaceContext('), wsSrc.indexOf('function focusWorkspaceRelated('));
+  const attrs = { origin: {}, compactOrigin: {}, latest: {}, compactLatest: {} };
+  const btn = (bucket) => ({ disabled: false, setAttribute: (k, v) => { bucket[k] = v; } });
+  const toasts = [];
+  const ctx = vm.createContext({
+    live: { feeds: new Map() },
+    T: { taskCard: 'タスクカード' },
+    STATUS_LABELS: { idle: '待機' },
+    WORKSPACE_ORIGIN_REVERTED: '最初の依頼は巻き戻し前の会話にあります',
+    sessionKindLabel: () => 'Codex',
+    fmtDate: () => '2026/11/28',
+    toast: (msg, err) => toasts.push([msg, !!err]),
+    workspacePane: () => null,
+  });
+  vm.runInContext(`${fs.readFileSync('ui/card-overlay-model.js', 'utf8')}\n${slice}\nglobalThis.paintWorkspaceContext = paintWorkspaceContext; globalThis.jumpWorkspaceOrigin = jumpWorkspaceOrigin; globalThis.jumpWorkspaceLatest = jumpWorkspaceLatest;`, ctx);
+
+  const pane = {
+    id: 'codex:missing',
+    kind: 'session',
+    d: { session: { title: '欠損ログ', status: 'idle', sourcePath: '/missing.jsonl' }, feed: null, messagesError: '会話ログが見つかりません' },
+    workspaceFrame: {
+      identityTitle: { textContent: '', title: '' },
+      identityState: { textContent: '' },
+      origin: { button: btn(attrs.origin), text: { textContent: '' }, meta: { textContent: '' } },
+      latest: { button: btn(attrs.latest), text: { textContent: '' }, meta: { textContent: '' } },
+      compactOrigin: btn(attrs.compactOrigin),
+      compactLatest: btn(attrs.compactLatest),
+    },
+  };
+  ctx.paintWorkspaceContext(pane);
+  assert.equal(attrs.origin['aria-disabled'], 'true');
+  assert.equal(attrs.compactOrigin['aria-disabled'], 'true');
+  assert.equal(attrs.latest['aria-disabled'], 'true');
+  assert.equal(attrs.compactLatest['aria-disabled'], 'true');
+
+  await ctx.jumpWorkspaceOrigin(pane);
+  ctx.jumpWorkspaceLatest(pane);
+  assert.deepEqual(toasts, [
+    ['会話を取得できないため起点の原文は取得できません: 会話ログが見つかりません', true],
+    ['最新の発言へ移動できません: 会話ログが見つかりません', true],
+  ]);
+});
+
+test('Multi-agent readers skip unchanged streams, fold appended JSONL lines, and re-parse from byte 0 on overwrite', async () => {
   resetMultiAgentCaches();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-ma-cache-'));
   let streamCount = 0;
@@ -276,9 +383,60 @@ test('Multi-agent readers skip unchanged streams and fold appended JSONL lines i
     assert.equal(gemAfter.sessions[0].turns, 2);
     assert.equal(gemAfter.sessions[0].lastMessage, '追記された応答');
     assert.equal(gemAfter.sessions[0].lastPrompt, '2回目の依頼');
+
+    // Overwrite file via O_TRUNC to a larger payload with different prefix -> must re-read from byte 0, not incremental append
+    streamCount = 0;
+    lastStartOffset = -1;
+    fs.writeFileSync(
+      gemFile,
+      jline({ role: 'user', text: '上書き後の新しい先頭依頼 ' + 'w'.repeat(240), timestamp: 1790000100 }),
+    );
+    const gemRewritten = await listGeminiSessions(gemDir);
+    assert.equal(streamCount, 1);
+    assert.equal(lastStartOffset, 0, 'O_TRUNC rewrite invalidates incremental cursor via header prefix check');
+    assert.equal(gemRewritten.sessions[0].turns, 1);
+    assert.match(gemRewritten.sessions[0].firstPrompt, /^上書き後の新しい先頭依頼/);
   } finally {
     fs.createReadStream = origStream;
     resetMultiAgentCaches();
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('codex-created-chats does not negative-cache when thread_history read fails transiently', async () => {
+  resetCreatedChatCache();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-cc-transient-'));
+  try {
+    const dbPath = path.join(home, 'thread_history_1.sqlite');
+    const db = new DatabaseSync(dbPath);
+    db.exec('CREATE TABLE thread_items (thread_id TEXT, item_type TEXT, rollout_ordinal INTEGER, item_json TEXT)');
+    const delegation = '<codex_delegation><source_thread_id>parent-1</source_thread_id><input>依頼</input></codex_delegation>';
+    db.prepare('INSERT INTO thread_items VALUES (?, ?, ?, ?)').run(
+      'child-1',
+      'userMessage',
+      0,
+      JSON.stringify({ type: 'userMessage', content: [{ type: 'text', text: delegation }] }),
+    );
+    db.close();
+
+    const validBytes = fs.readFileSync(dbPath);
+    const origStat = fs.statSync(dbPath);
+    // Corrupt in-place with identical inode, size, and mtimeMs so histSig stays identical
+    fs.writeFileSync(dbPath, Buffer.alloc(validBytes.length, 0x58));
+    fs.utimesSync(dbPath, origStat.atime, origStat.mtime);
+
+    const sessions = [{ agent: 'codex', nativeId: 'child-1', threadSource: 'agent_created_thread', sourcePath: path.join(home, 'missing-rollout.jsonl'), updatedAt: 1790000000000 }];
+    const first = await resolveCreatedChatParents(home, sessions);
+    assert.equal(first.size, 0, 'corrupt DB fails gracefully without throwing');
+
+    // Restore valid bytes in-place with the exact same inode, size, and mtimeMs
+    fs.writeFileSync(dbPath, validBytes);
+    fs.utimesSync(dbPath, origStat.atime, origStat.mtime);
+
+    const second = await resolveCreatedChatParents(home, sessions);
+    assert.equal(second.get('child-1'), 'parent-1', 'transient failure was not negative-cached under identical histSig');
+  } finally {
+    resetCreatedChatCache();
+    fs.rmSync(home, { recursive: true, force: true });
   }
 });

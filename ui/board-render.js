@@ -8,12 +8,13 @@ function syncStatusModel({ board, boardError, liveSyncError, liveOff, clock = fm
   if (liveSyncError) {
     messages.push(`リアルタイム更新が中断しています（自動再接続中）: ${liveSyncError}`);
   } else if (liveOff) {
-    messages.push('自動更新は無効です（最新の状態は再読み込みで取得できます）');
+    messages.push('自動更新は無効です（右上の「再読み込み」で最新の状態を取得できます）');
   }
   if (board.errors?.length) {
     messages.push(`一部のデータを取得できませんでした: ${board.errors.join(' / ')}`);
   }
-  return { hidden: messages.length === 0, messages, canRetry: messages.length > 0 };
+  const showRefreshHint = Boolean(boardError || liveSyncError || board.errors?.length);
+  return { hidden: messages.length === 0, messages, canRetry: messages.length > 0, showRefreshHint };
 }
 
 function paintSyncStatus() {
@@ -32,9 +33,8 @@ function paintSyncStatus() {
   } else {
     eb.setAttribute('role', 'status');
     eb.setAttribute('aria-live', 'polite');
-    const retry = h('button', { class: 'errbar-btn', type: 'button', onclick: () => refreshBoard() },
-      '再読み込み ', ...(typeof keycap === 'function' ? keycap('r') : []));
-    eb.replaceChildren(h('span', { class: 'errbar-text', text: model.messages.join(' ／ ') }), retry);
+    const hint = model.showRefreshHint ? h('span', { class: 'errbar-hint', text: '右上の「再読み込み」で再試行できます' }) : null;
+    eb.replaceChildren(h('span', { class: 'errbar-text', text: model.messages.join(' ／ ') }), hint);
   }
   if (wasHidden !== eb.hidden && typeof paneMetrics === 'function') paneMetrics();
 }

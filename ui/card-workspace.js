@@ -82,13 +82,15 @@ function syncCardWorkspace(p) {
     const relatedTitle = h('button', { class: 'ws-control', type: 'button', onclick: () => focusWorkspaceRelated(p) }, '関連 ', ...keycap('n'));
     const shape = h('button', { class: 'ws-control ws-shape', type: 'button', onclick: toggleCardShape, 'aria-keyshortcuts': 'w' });
     const identityTitle = h('span', { class: 'ws-current-title' }), identityState = h('span', { class: 'ws-current-state' });
+    const compactOrigin = h('button', { class: 'ws-control', type: 'button', onclick: () => jumpWorkspaceOrigin(p) }, p.kind === 'task' ? '目的 ' : '起点 ', ...keycap('s'));
+    const compactLatest = h('button', { class: 'ws-control', type: 'button', onclick: () => jumpWorkspaceLatest(p) }, p.kind === 'task' ? '報告 ' : '最新 ', ...keycap('e'));
     const compact = h('div', { class: 'ws-compact' }, identityTitle, identityState,
       h('button', { class: 'ws-control ws-context-open', type: 'button', onclick: () => toggleWorkspaceContext(p, true) }, '文脈 ', ...keycap('q')),
-      h('button', { class: 'ws-control', type: 'button', onclick: () => jumpWorkspaceOrigin(p) }, p.kind === 'task' ? '目的 ' : '起点 ', ...keycap('s')),
-      h('button', { class: 'ws-control', type: 'button', onclick: () => jumpWorkspaceLatest(p) }, p.kind === 'task' ? '報告 ' : '最新 ', ...keycap('e')));
+      compactOrigin,
+      compactLatest);
     const footer = h('div', { class: 'ws-footer' });
     const controls = h('div', { class: 'ws-top-controls' }, collapse);
-    frame = p.workspaceFrame = { body, head, meta, strip, aside, compact, collapse, origin, latest, related, relatedTitle, shape, footer, controls, identityTitle, identityState, detailNodes: p.detailNodes || [], relationNodes: [] };
+    frame = p.workspaceFrame = { body, head, meta, strip, aside, compact, compactOrigin, compactLatest, collapse, origin, latest, related, relatedTitle, shape, footer, controls, identityTitle, identityState, detailNodes: p.detailNodes || [], relationNodes: [] };
     frame.relationNodes = frame.detailNodes.filter(node => ['related', 'cardRelations', 'pr', 'task'].includes(node.dataset.sec));
     aside.append(controls, head, meta, ...[strip].filter(Boolean), origin.button, latest.button, relatedTitle, related, footer);
   }
@@ -151,6 +153,17 @@ function paintWorkspaceContext(p) {
   }
   frame.origin.button.disabled = !!p.workspaceOriginLoading;
   if (p.workspaceOriginLoading) frame.origin.meta.textContent = 'ログ先頭の原文を取得中…';
+  const originUnavailable = p.kind !== 'task' && (
+    workspaceOriginReverted(p.d) ||
+    Boolean(p.d?.session?.host) ||
+    (!feed && Boolean(p.d?.messagesError)) ||
+    origin?.state === 'unavailable'
+  );
+  const latestUnavailable = p.kind !== 'task' && !feed && Boolean(p.d?.messagesError);
+  frame.origin.button.setAttribute?.('aria-disabled', String(originUnavailable));
+  frame.compactOrigin?.setAttribute?.('aria-disabled', String(originUnavailable));
+  frame.latest.button.setAttribute?.('aria-disabled', String(latestUnavailable));
+  frame.compactLatest?.setAttribute?.('aria-disabled', String(latestUnavailable));
   if (p.kind === 'task') {
     const handoff = p.workspaceTaskReport || task?.handoff;
     frame.latest.text.textContent = handoff?.latestNoteSummary?.text || handoff?.nextAction?.text || (typeof handoff?.nextAction === 'string' ? handoff.nextAction : '') || '最新の報告・次の行動は未取得です';
@@ -170,7 +183,15 @@ async function jumpWorkspaceOrigin(p = workspacePane()) {
   if (p.kind === 'task') { p.el.querySelector('.th-task > [data-sec="conv"]')?.scrollIntoView({ block: 'start' }); return; }
   if (workspaceOriginReverted(p.d)) { toast(WORKSPACE_ORIGIN_REVERTED); return; } // a known limit: nothing to fetch, nothing that failed
   let feed = live.feeds.get(p.id);
-  if (!feed) { toast(p.d?.session?.host ? 'リモートの会話の原文は取得できません' : '会話が取得できてから起点を開けます', true); return; }
+  if (!feed) {
+    const msg = p.d?.session?.host
+      ? 'リモートの会話の原文は取得できません'
+      : p.d?.messagesError
+        ? `会話を取得できないため起点の原文は取得できません: ${p.d.messagesError}`
+        : '会話が取得できてから起点を開けます';
+    toast(msg, true);
+    return;
+  }
   if (p.workspaceOriginLoading) return;
   const known = workspaceOriginFor(p.workspaceOrigin, p.d?.session);
   if (!known?.item || known.state === 'unavailable') {
@@ -203,7 +224,8 @@ function jumpWorkspaceLatest(p = workspacePane()) {
   if (!p) return;
   const feed = live.feeds.get(p.id);
   if (feed) { scrollFeedToEnd(feed); const last = [...feed.list.querySelectorAll('.fi-user,.fi-asst,.fi-note')].filter(el => !el.classList.contains('ws-origin-message')).at(-1); if (last) { last.tabIndex = -1; last.focus({ preventScroll: true }); } }
-  else { const report = p.el.querySelector('.th-task > [data-sec="handoff"]'); if (report) { report.scrollIntoView({block:'start'}); report.tabIndex = -1; report.focus({preventScroll:true}); } }
+  else if (p.kind === 'task') { const report = p.el.querySelector('.th-task > [data-sec="handoff"]'); if (report) { report.scrollIntoView({block:'start'}); report.tabIndex = -1; report.focus({preventScroll:true}); } }
+  else if (p.d?.messagesError) { toast(`最新の発言へ移動できません: ${p.d.messagesError}`, true); }
 }
 function focusWorkspaceRelated(p = workspacePane()) {
   if (!p?.workspaceFrame) return;

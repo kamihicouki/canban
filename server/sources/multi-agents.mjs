@@ -47,8 +47,30 @@ async function sqliteSig(dbPath) {
   return `${mainSt.ino}:${mainSt.mtimeMs}:${mainSt.size}|${walSt ? `${walSt.mtimeMs}:${walSt.size}` : '-'}`;
 }
 
-const cursorRawCache = new Map(); // dbPath -> { sig, compById, prompts, generations }
-const chatgptRawCache = new Map(); // filePath -> { ino, mtimeMs, size, list }
+const MAX_SUMMARY_CACHE = 2500;
+const MAX_RAW_CACHE = 4;
+const RAW_CACHE_TTL_MS = 5000;
+const HEAD_CHECK_BYTES = 512;
+const cursorRawCache = new Map(); // dbPath -> { sig, at, compById, prompts, generations }
+const chatgptRawCache = new Map(); // filePath -> { ino, mtimeMs, size, at, list }
+
+function setBounded(map, key, value, max = MAX_SUMMARY_CACHE) {
+  if (map.has(key)) map.delete(key);
+  map.set(key, value);
+  while (map.size > max) {
+    const oldest = map.keys().next().value;
+    if (oldest === undefined) break;
+    map.delete(oldest);
+  }
+}
+
+function getShortRaw(map, key, now = Date.now()) {
+  for (const [k, v] of map) {
+    if (now - v.at > RAW_CACHE_TTL_MS) map.delete(k);
+  }
+  const hit = map.get(key);
+  return hit && now - hit.at <= RAW_CACHE_TTL_MS ? hit : null;
+}
 
 async function mapPool(items, limit, fn) {
   const out = new Array(items.length);
@@ -160,12 +182,12 @@ async function readAnnotationTitle(annotationPath) {
     return null;
   }
   const hit = annotationTitleCache.get(annotationPath);
-  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.title;
+  if (hit && hit.ino === st.ino && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.title;
   try {
     const text = await readText(annotationPath, 4096);
     const m = /title:\s*"([^"]+)"/.exec(text);
     const title = m ? m[1].trim() : null;
-    annotationTitleCache.set(annotationPath, { mtimeMs: st.mtimeMs, size: st.size, title });
+    setBounded(annotationTitleCache, annotationPath, { ino: st.ino, mtimeMs: st.mtimeMs, size: st.size, title });
     return title;
   } catch {
     return null;
@@ -185,14 +207,14 @@ async function loadAntigravityProjects(configProjectsDir) {
       const st = await stat(filePath);
       if (!st) continue;
       const hit = antigravityProjectFileCache.get(filePath);
-      if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) {
+      if (hit && hit.ino === st.ino && hit.mtimeMs === st.mtimeMs && hit.size === st.size) {
         if (hit.proj) projects.set(hit.proj.id, hit.proj);
         continue;
       }
       try {
         const data = await readJson(filePath);
         if (!data || !data.id) {
-          antigravityProjectFileCache.set(filePath, { mtimeMs: st.mtimeMs, size: st.size, proj: null });
+          setBounded(antigravityProjectFileCache, filePath, { ino: st.ino, mtimeMs: st.mtimeMs, size: st.size, proj: null }, 500);
           continue;
         }
         const resources = Array.isArray(data.projectResources?.resources) ? data.projectResources.resources : [];
@@ -220,7 +242,7 @@ async function loadAntigravityProjects(configProjectsDir) {
           defaultBranch: resources.find((r) => r?.gitFolder?.defaultBranch)?.gitFolder?.defaultBranch || 'main',
           environments: envs,
         };
-        antigravityProjectFileCache.set(filePath, { mtimeMs: st.mtimeMs, size: st.size, proj });
+        setBounded(antigravityProjectFileCache, filePath, { ino: st.ino, mtimeMs: st.mtimeMs, size: st.size, proj }, 500);
         projects.set(proj.id, proj);
       } catch {}
     }
@@ -310,20 +332,26 @@ async function readAntigravityTranscriptSummary(transcriptPath) {
   if (hit && hit.ino === st.ino && hit.mtimeMs === st.mtimeMs && hit.size === st.size) {
     return { ...hit.data, transcriptUpdatedAt: Math.max(st.mtimeMs, hit.data.maxStepTs) };
   }
-  const grown = hit && hit.ino === st.ino && st.size >= hit.offset && hit.offset > 0;
+  let head = '';
+  let grown = false;
+  if (hit && hit.ino === st.ino && st.size > hit.size && hit.offset > 0 && hit.head !== undefined) {
+    head = await readText(transcriptPath, Math.min(HEAD_CHECK_BYTES, st.size)).catch(() => '');
+    grown = head.slice(0, hit.head.length) === hit.head;
+  }
   const state = grown ? structuredClone(hit.data) : newAntigravityTranscriptState();
   let offset = grown ? hit.offset : 0;
   if (st.size > offset) {
-    for await (const { value, end } of readJsonLinesFrom(transcriptPath, offset)) {
+    for await (const { value, end } of readJsonLinesFrom(transcriptPath, offset, grown ? null : (h) => { head = h; })) {
       foldAntigravityStep(state, value);
       offset = end;
     }
   }
-  antigravityTranscriptCache.set(transcriptPath, {
+  setBounded(antigravityTranscriptCache, transcriptPath, {
     ino: st.ino,
     mtimeMs: st.mtimeMs,
     size: st.size,
     offset,
+    head,
     data: state,
   });
   return { ...state, transcriptUpdatedAt: Math.max(st.mtimeMs, state.maxStepTs) };
@@ -332,9 +360,9 @@ async function readAntigravityTranscriptSummary(transcriptPath) {
 async function readAntigravityTaskMeta(convPath, convStat) {
   const taskPath = path.join(convPath, 'task.md');
   const taskStat = await stat(taskPath);
-  const taskSig = taskStat ? `${taskStat.mtimeMs}:${taskStat.size}` : '-';
+  const taskSig = taskStat ? `${taskStat.ino}:${taskStat.mtimeMs}:${taskStat.size}` : '-';
   const hit = antigravityTaskCache.get(convPath);
-  if (hit && hit.dirMtimeMs === convStat.mtimeMs && hit.taskSig === taskSig) {
+  if (hit && hit.dirIno === convStat.ino && hit.dirMtimeMs === convStat.mtimeMs && hit.taskSig === taskSig) {
     return hit;
   }
   let planSteps = null;
@@ -352,8 +380,8 @@ async function readAntigravityTaskMeta(convPath, convStat) {
       if (hMatch) taskHeading = hMatch[1].trim();
     }
   } catch {}
-  const entry = { dirMtimeMs: convStat.mtimeMs, taskSig, artifacts, planSteps, taskHeading };
-  antigravityTaskCache.set(convPath, entry);
+  const entry = { dirIno: convStat.ino, dirMtimeMs: convStat.mtimeMs, taskSig, artifacts, planSteps, taskHeading };
+  setBounded(antigravityTaskCache, convPath, entry);
   return entry;
 }
 
@@ -435,7 +463,7 @@ export async function listAntigravitySessions(rawOpts = {}) {
               `)
               .all()
           ) || [];
-          antigravityDbCache.set(csDbPath, { sig: dbSig, rows: csRows });
+          setBounded(antigravityDbCache, csDbPath, { sig: dbSig, rows: csRows }, 32);
         } catch {}
       }
     } else {
@@ -818,28 +846,36 @@ async function parseGenericSessionFile(filePath, defaultMeta = {}) {
   }
 
   if (filePath.endsWith('.jsonl')) {
-    const grown =
+    let head = '';
+    let grown = false;
+    if (
       hit &&
       hit.state &&
       hit.ino === st.ino &&
-      st.size >= hit.offset &&
+      st.size > hit.size &&
       hit.offset > 0 &&
+      hit.head !== undefined &&
       hit.defaultCwd === defaultCwd &&
-      hit.defaultModel === defaultModel;
+      hit.defaultModel === defaultModel
+    ) {
+      head = await readText(filePath, Math.min(HEAD_CHECK_BYTES, st.size)).catch(() => '');
+      grown = head.slice(0, hit.head.length) === hit.head;
+    }
     const state = grown ? structuredClone(hit.state) : newGenericFoldState(defaultMeta);
     let offset = grown ? hit.offset : 0;
     if (st.size > offset) {
-      for await (const { value, end } of readJsonLinesFrom(filePath, offset)) {
+      for await (const { value, end } of readJsonLinesFrom(filePath, offset, grown ? null : (h) => { head = h; })) {
         foldGenericRecord(state, value, true);
         offset = end;
       }
     }
     const parsed = finalizeGenericSession(filePath, st, state);
-    genericSessionCache.set(filePath, {
+    setBounded(genericSessionCache, filePath, {
       ino: st.ino,
       mtimeMs: st.mtimeMs,
       size: st.size,
       offset,
+      head,
       defaultCwd,
       defaultModel,
       state,
@@ -868,7 +904,7 @@ async function parseGenericSessionFile(filePath, defaultMeta = {}) {
     return null;
   }
   const parsed = finalizeGenericSession(filePath, st, state);
-  genericSessionCache.set(filePath, {
+  setBounded(genericSessionCache, filePath, {
     ino: st.ino,
     mtimeMs: st.mtimeMs,
     size: st.size,
@@ -890,11 +926,11 @@ async function readGeminiProjectRoot(projectDir) {
     return null;
   }
   const hit = geminiRootFileCache.get(rootFile);
-  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.cwd;
+  if (hit && hit.ino === st.ino && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.cwd;
   try {
     const rootText = (await readText(rootFile, 1024)).trim();
     const cwd = rootText.startsWith('/') ? rootText : null;
-    geminiRootFileCache.set(rootFile, { mtimeMs: st.mtimeMs, size: st.size, cwd });
+    setBounded(geminiRootFileCache, rootFile, { ino: st.ino, mtimeMs: st.mtimeMs, size: st.size, cwd }, 500);
     return cwd;
   } catch {
     return null;
@@ -975,7 +1011,7 @@ async function readCursorVscdbEntry(wsDir, dbPath) {
   }
   const wsJsonPath = path.join(wsDir, 'workspace.json');
   const wsStat = await stat(wsJsonPath);
-  const wsSig = wsStat ? `${wsStat.mtimeMs}:${wsStat.size}` : '-';
+  const wsSig = wsStat ? `${wsStat.ino}:${wsStat.mtimeMs}:${wsStat.size}` : '-';
   const hit = cursorVscdbCache.get(dbPath);
   if (hit && hit.sig === dbSig && hit.wsSig === wsSig) return hit;
 
@@ -999,7 +1035,7 @@ async function readCursorVscdbEntry(wsDir, dbPath) {
   const byKey = Object.fromEntries(rows.map((r) => [r.key, r.value]));
   if (!byKey['composer.composerData']) {
     const emptyEntry = { sig: dbSig, wsSig, cwd, composers: [], prompts: [], generations: [] };
-    cursorVscdbCache.set(dbPath, emptyEntry);
+    setBounded(cursorVscdbCache, dbPath, emptyEntry, 256);
     return emptyEntry;
   }
   let composerData;
@@ -1027,7 +1063,7 @@ async function readCursorVscdbEntry(wsDir, dbPath) {
     promptCount: prompts.length,
     generations: generations.length ? [generations[0]] : [],
   };
-  cursorVscdbCache.set(dbPath, entry);
+  setBounded(cursorVscdbCache, dbPath, entry, 256);
   return entry;
 }
 
@@ -1380,7 +1416,7 @@ export async function listChatGptSessions(rawOpts = {}) {
           if (file.endsWith('.data')) {
             const head = (await readText(file, 16)).trimStart();
             if (!head.startsWith('{') && !head.startsWith('[')) {
-              chatgptFileCache.set(file, { ino: st.ino, mtimeMs: st.mtimeMs, size: st.size, projKey, items: [] });
+              setBounded(chatgptFileCache, file, { ino: st.ino, mtimeMs: st.mtimeMs, size: st.size, projKey, items: [] }, 500);
               continue;
             }
           }
@@ -1390,7 +1426,7 @@ export async function listChatGptSessions(rawOpts = {}) {
           convList = list
             .map((item) => parseChatGptConversationObject(item, fallbackId, st.mtimeMs, proj, { includeMessages: false }))
             .filter(Boolean);
-          chatgptFileCache.set(file, { ino: st.ino, mtimeMs: st.mtimeMs, size: st.size, projKey, items: convList });
+          setBounded(chatgptFileCache, file, { ino: st.ino, mtimeMs: st.mtimeMs, size: st.size, projKey, items: convList }, 500);
         }
         for (const conv of convList) {
           if (seen.has(conv.nativeId)) continue;
@@ -1539,7 +1575,7 @@ export async function readMultiAgentRecords(sourceOrSession) {
       return [];
     }
     try {
-      let cached = cursorRawCache.get(dbPath);
+      let cached = getShortRaw(cursorRawCache, dbPath);
       if (!cached || cached.sig !== dbSig) {
         const rows = queryReadOnly(dbPath, (db) =>
           db
@@ -1551,8 +1587,8 @@ export async function readMultiAgentRecords(sourceOrSession) {
         const compById = new Map((compData.allComposers || []).filter(Boolean).map((c) => [c.composerId, c]));
         const prompts = JSON.parse(byKey['aiService.prompts'] || '[]');
         const generations = JSON.parse(byKey['aiService.generations'] || '[]');
-        cached = { sig: dbSig, compById, prompts, generations };
-        cursorRawCache.set(dbPath, cached);
+        cached = { sig: dbSig, at: Date.now(), compById, prompts, generations };
+        setBounded(cursorRawCache, dbPath, cached, MAX_RAW_CACHE);
       }
       const comp = cached.compById.get(composerId);
       const { prompts, generations } = cached;
@@ -1590,12 +1626,12 @@ export async function readMultiAgentRecords(sourceOrSession) {
       return [];
     }
     try {
-      let cached = chatgptRawCache.get(filePath);
+      let cached = getShortRaw(chatgptRawCache, filePath);
       if (!cached || cached.ino !== st.ino || cached.mtimeMs !== st.mtimeMs || cached.size !== st.size) {
         const json = await readJson(filePath);
         const list = Array.isArray(json) ? json : Array.isArray(json?.conversations) ? json.conversations : [json];
-        cached = { ino: st.ino, mtimeMs: st.mtimeMs, size: st.size, list };
-        chatgptRawCache.set(filePath, cached);
+        cached = { ino: st.ino, mtimeMs: st.mtimeMs, size: st.size, at: Date.now(), list };
+        setBounded(chatgptRawCache, filePath, cached, MAX_RAW_CACHE);
       }
       const { list } = cached;
       const item = list.find((c) => String(c?.id || c?.conversation_id) === convId) || list[0];

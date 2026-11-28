@@ -4,7 +4,6 @@ import { createHash } from 'node:crypto';
 import { stat } from './sources/readonly.mjs';
 import { readLines, FEED_MAX_DELTA } from './feed.mjs';
 
-const DORMANT_EXCHANGE_MS = 24 * 3600e3;
 const digest = value => createHash('sha256').update(value).digest('hex').slice(0, 24);
 const textOf = content => (Array.isArray(content) ? content : []).map(c => typeof c?.text === 'string' ? c.text : '').join('\n');
 const decode = text => text.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
@@ -79,11 +78,10 @@ export class ExchangeIndex {
         dirty = true;
       }
     }
-    const now = Date.now();
     let next = 0;
     await Promise.all(Array.from({ length: Math.min(6, local.length) }, async () => {
       while (next < local.length) {
-        if (await this.read(local[next++], now)) dirty = true;
+        if (await this.read(local[next++])) dirty = true;
       }
     }));
     if (!dirty && this.identitySig === identitySig) return;
@@ -106,45 +104,34 @@ export class ExchangeIndex {
     for (const [id, rows] of this.rows) this.rows.set(id, [...new Map(rows.map(e => [e.id, e])).values()].sort(newer));
   }
 
-  async read(session, now = Date.now()) {
+  async read(session) {
     const scope = scopeOf(session);
+    let targetFile = session.sourcePath;
     const old = this.files.get(session.id);
-    if (
-      old &&
-      !old.error &&
-      old.sourcePath === session.sourcePath &&
-      old.scope === scope &&
-      typeof session.updatedAt === 'number' &&
-      old.sessionUpdatedAt === session.updatedAt &&
-      session.status !== 'running' &&
-      session.status !== 'waiting' &&
-      now - session.updatedAt > DORMANT_EXCHANGE_MS
-    ) {
-      return false;
+    let st = await stat(targetFile);
+    if (!st && targetFile.endsWith('.jsonl')) {
+      const zstFile = `${targetFile}.zst`;
+      const zstSt = await stat(zstFile);
+      if (zstSt) { targetFile = zstFile; st = zstSt; }
     }
-    const st = await stat(session.sourcePath);
     if (!st) {
       if (old?.error && old.events.length === 0 && !old.partial) return false;
-      this.files.set(session.id, { events: [], partial: false, error: true, sourcePath: session.sourcePath, scope, sessionUpdatedAt: session.updatedAt ?? null });
+      this.files.set(session.id, { events: [], partial: false, error: true });
       return true;
     }
-    const sig = `${session.sourcePath}:${scope}:${st.dev}:${st.ino}`;
-    if (old?.sig === sig && old.size === st.size && old.mtime === st.mtimeMs) {
-      old.sessionUpdatedAt = session.updatedAt ?? null;
-      return false;
-    }
-    const append = old?.sig === sig && st.size > old.size && st.size - old.offset <= FEED_MAX_DELTA;
+    const sig = `${targetFile}:${scope}:${st.dev}:${st.ino}`;
+    if (old?.sig === sig && old.size === st.size && old.mtime === st.mtimeMs) return false;
+    const append = !targetFile.endsWith('.zst') && old?.sig === sig && st.size > old.size && st.size - old.offset <= FEED_MAX_DELTA;
     try {
       const tail = await readLines(session.sourcePath, append ? { start: old.offset } : { tailBytes: this.tailBytes });
       const rows = new Map((append && !tail.reset ? old.events : []).map(e => [e.id, e]));
       for (const event of parseExchangeRecords(tail.records, session)) rows.set(event.id, event);
       const all = mergeEvents([...rows.values()]).sort(newer);
       this.files.set(session.id, { sig, size: st.size, mtime: st.mtimeMs, offset: tail.offset,
-        sourcePath: session.sourcePath, scope, sessionUpdatedAt: session.updatedAt ?? null,
-        events: all.slice(0, this.maxEvents), partial: (append && !tail.reset ? old.partial : st.size > this.tailBytes) || all.length > this.maxEvents, error: false });
+        events: all.slice(0, this.maxEvents), partial: (append && !tail.reset ? old.partial : tail.size > this.tailBytes) || all.length > this.maxEvents, error: false });
       return true;
     } catch {
-      this.files.set(session.id, { events: [], partial: false, error: true, sourcePath: session.sourcePath, scope, sessionUpdatedAt: session.updatedAt ?? null });
+      this.files.set(session.id, { events: [], partial: false, error: true });
       return true;
     }
   }
