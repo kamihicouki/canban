@@ -147,7 +147,7 @@
     "canban_update_request": "f0ba7abe633a3abe282f3608893beee7cad5d396f9b0df32b1e299b2e7a0fd5a",
     "canban_resume_queue": "b57892c3c61cef27b34dc82339758cd700f3e9c43fcd01317491c6af96d86827",
     "canban_update_dispatch_settings": "527cbe7adc75b0858bc5dc4d20497f924338bb3126fea07dcac172179a121763",
-    "canban_watch": "3b5c01529a9fbeb05784588642af13860e6daa9ac37fec9efa79773d4ab0832a",
+    "canban_watch": "7b0afc6f8fea337aa2092f5d2ff5487f263915521ee8c81e6415f2f1a2f3d417",
     "canban_get_perf": "7d54e57f318b47b8630f3cfc85b39f84d9642e647ed9e677acd109f6e2d4f247",
     "canban_list_hosts": "0062a61bbe00cc834e7949526353f1783755aa88fe4a63b0392a966327d92684",
     "canban_set_remote_host": "39cb5715c83bbe1b343c251ceed7ecf2015173d2f0585108b68dbf574fcda322",
@@ -217,5 +217,5 @@
     "canban_get_ui_state": "3805f9b9bd60f6dc1df6bd8e58b00fcf0e0065e0354aa4e8e515df843f33b521",
     "canban_save_ui_state": "3e75c3bdc052134c461074b189d68c3520787c65e382eaf1f4391e85b0298859"
   },
-  "all": "0e39184e453f0dcb6c230e5cce35e793a527c74b9f889a2d97b2fcb1583ab0e2"
+  "all": "8b8efc0d8104809edde3cebe65a862d577a430ff1b52407e0adb85d920fbc63b"
 }

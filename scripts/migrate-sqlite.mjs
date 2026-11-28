@@ -13,6 +13,12 @@ const index = args.indexOf('--data-dir');
 const dir = path.resolve(index >= 0 ? args[index+1] : dataDir());
 const apply = args.includes('--apply'), exporting = args.includes('--export');
 function read(name, fallback) { const file=path.join(dir,name); return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file,'utf8')) : fallback; }
+function processCwd(pid) {
+  if (process.platform === 'linux') {
+    try { return fs.readlinkSync(`/proc/${pid}/cwd`); } catch {}
+  }
+  return execFileSync('lsof',['-a','-p',pid,'-d','cwd','-Fn'],{encoding:'utf8'}).split('\n').find(l=>l.startsWith('n'))?.slice(1);
+}
 function activeServers() {
   const rows = execFileSync('ps',['-axo','pid=,command='],{encoding:'utf8'}).split('\n');
   return rows.filter((line) => {
@@ -22,7 +28,7 @@ function activeServers() {
     let canban = /canban\/(?:[^/\s]+\/)*(?:server\/index|scripts\/chrome-native-host)\.mjs/.test(match[2]);
     if (!canban) {
       try {
-        const cwd = execFileSync('lsof',['-a','-p',pid,'-d','cwd','-Fn'],{encoding:'utf8'}).split('\n').find(l=>l.startsWith('n'))?.slice(1);
+        const cwd = processCwd(pid);
         canban = cwd && JSON.parse(fs.readFileSync(path.join(cwd,'package.json'),'utf8')).name === 'canban';
       } catch { return dir === path.resolve(dataDir()); }
     }

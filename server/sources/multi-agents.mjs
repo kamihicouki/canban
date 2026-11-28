@@ -11,10 +11,56 @@ import {
   readJson,
   readText,
   readJsonLines,
+  readJsonLinesFrom,
   queryReadOnly,
 } from './readonly.mjs';
 import { projectName, clip, cleanPrompt, firstLine, LOCAL_HOST, sessionKey } from './util.mjs';
 import { resolveRepoContext } from '../git.mjs';
+
+const annotationTitleCache = new Map(); // annotationPath -> { mtimeMs, size, title }
+const antigravityProjectFileCache = new Map(); // filePath -> { mtimeMs, size, proj }
+const antigravityTranscriptCache = new Map(); // transcriptPath -> { ino, mtimeMs, size, offset, data }
+const antigravityTaskCache = new Map(); // convPath -> { dirMtimeMs, taskSig, artifacts, planSteps, taskHeading }
+const antigravityDbCache = new Map(); // csDbPath -> { sig, rows }
+const genericSessionCache = new Map(); // filePath -> { ino, mtimeMs, size, offset, defaultCwd, defaultModel, state, parsed }
+const geminiRootFileCache = new Map(); // rootFilePath -> { mtimeMs, size, cwd }
+const cursorVscdbCache = new Map(); // dbPath -> { sig, wsSig, cwd, composers, prompts, generations }
+const chatgptFileCache = new Map(); // filePath -> { ino, mtimeMs, size, projKey, items }
+
+export function resetMultiAgentCaches() {
+  annotationTitleCache.clear();
+  antigravityProjectFileCache.clear();
+  antigravityTranscriptCache.clear();
+  antigravityTaskCache.clear();
+  antigravityDbCache.clear();
+  genericSessionCache.clear();
+  geminiRootFileCache.clear();
+  cursorVscdbCache.clear();
+  chatgptFileCache.clear();
+  cursorRawCache.clear();
+  chatgptRawCache.clear();
+}
+
+async function sqliteSig(dbPath) {
+  const [mainSt, walSt] = await Promise.all([stat(dbPath), stat(`${dbPath}-wal`)]);
+  if (!mainSt) return null;
+  return `${mainSt.ino}:${mainSt.mtimeMs}:${mainSt.size}|${walSt ? `${walSt.mtimeMs}:${walSt.size}` : '-'}`;
+}
+
+const cursorRawCache = new Map(); // dbPath -> { sig, compById, prompts, generations }
+const chatgptRawCache = new Map(); // filePath -> { ino, mtimeMs, size, list }
+
+async function mapPool(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const idx = next++;
+      out[idx] = await fn(items[idx], idx);
+    }
+  }));
+  return out;
+}
 
 function isIsolatedTestEnv() {
   return Boolean(
@@ -108,11 +154,19 @@ function fileUriToPath(uri) {
 }
 
 async function readAnnotationTitle(annotationPath) {
-  if (!exists(annotationPath)) return null;
+  const st = await stat(annotationPath);
+  if (!st) {
+    annotationTitleCache.delete(annotationPath);
+    return null;
+  }
+  const hit = annotationTitleCache.get(annotationPath);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.title;
   try {
     const text = await readText(annotationPath, 4096);
     const m = /title:\s*"([^"]+)"/.exec(text);
-    return m ? m[1].trim() : null;
+    const title = m ? m[1].trim() : null;
+    annotationTitleCache.set(annotationPath, { mtimeMs: st.mtimeMs, size: st.size, title });
+    return title;
   } catch {
     return null;
   }
@@ -128,9 +182,19 @@ async function loadAntigravityProjects(configProjectsDir) {
     for (const f of files) {
       if (!f.isFile() || !f.name.endsWith('.json')) continue;
       const filePath = path.join(configProjectsDir, f.name);
+      const st = await stat(filePath);
+      if (!st) continue;
+      const hit = antigravityProjectFileCache.get(filePath);
+      if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) {
+        if (hit.proj) projects.set(hit.proj.id, hit.proj);
+        continue;
+      }
       try {
         const data = await readJson(filePath);
-        if (!data || !data.id) continue;
+        if (!data || !data.id) {
+          antigravityProjectFileCache.set(filePath, { mtimeMs: st.mtimeMs, size: st.size, proj: null });
+          continue;
+        }
         const resources = Array.isArray(data.projectResources?.resources) ? data.projectResources.resources : [];
         const roots = [...new Set(resources.map((r) => cleanFsPath(fileUriToPath(r?.gitFolder?.folderUri || r?.folderUri))).filter(Boolean))];
         const mainCwd = roots[0] || null;
@@ -147,7 +211,7 @@ async function loadAntigravityProjects(configProjectsDir) {
             if (env.name) envs.set(env.name, envObj);
           }
         }
-        projects.set(data.id, {
+        const proj = {
           id: data.id,
           name: data.name || path.basename(filePath, '.json'),
           mainCwd,
@@ -155,7 +219,9 @@ async function loadAntigravityProjects(configProjectsDir) {
           envPaths: [...envPaths],
           defaultBranch: resources.find((r) => r?.gitFolder?.defaultBranch)?.gitFolder?.defaultBranch || 'main',
           environments: envs,
-        });
+        };
+        antigravityProjectFileCache.set(filePath, { mtimeMs: st.mtimeMs, size: st.size, proj });
+        projects.set(proj.id, proj);
       } catch {}
     }
   } catch {}
@@ -195,6 +261,102 @@ function buildAntigravityProjectObservation({ scopeId, proj, projId, projName, c
   });
 }
 
+function newAntigravityTranscriptState() {
+  return {
+    firstPrompt: '',
+    lastPrompt: '',
+    lastMessage: '',
+    detectedCwd: null,
+    turns: 0,
+    lastStep: null,
+    model: 'gemini',
+    maxStepTs: 0,
+  };
+}
+
+function foldAntigravityStep(state, step) {
+  if (!step || typeof step !== 'object') return;
+  state.lastStep = {
+    type: step.type || null,
+    status: step.status || null,
+    tool_calls: Array.isArray(step.tool_calls) ? step.tool_calls : null,
+  };
+  const ts = toMs(step.created_at, 0);
+  if (ts && ts > state.maxStepTs) state.maxStepTs = ts;
+  if (step.model && typeof step.model === 'string') state.model = step.model;
+  if (step.type === 'USER_INPUT' || step.source === 'USER_EXPLICIT') {
+    const cwdFromStep = extractAntigravityCwd(step.content);
+    if (cwdFromStep) state.detectedCwd = cwdFromStep;
+    const clean = extractAntigravityUserText(step.content);
+    if (clean) {
+      if (!state.firstPrompt) state.firstPrompt = clean;
+      state.lastPrompt = clean;
+      state.turns++;
+    }
+  } else if (step.type === 'PLANNER_RESPONSE' || step.source === 'MODEL') {
+    if (typeof step.content === 'string' && step.content.trim()) {
+      state.lastMessage = step.content.trim();
+    }
+  }
+}
+
+async function readAntigravityTranscriptSummary(transcriptPath) {
+  const st = await stat(transcriptPath);
+  if (!st) {
+    antigravityTranscriptCache.delete(transcriptPath);
+    return null;
+  }
+  const hit = antigravityTranscriptCache.get(transcriptPath);
+  if (hit && hit.ino === st.ino && hit.mtimeMs === st.mtimeMs && hit.size === st.size) {
+    return { ...hit.data, transcriptUpdatedAt: Math.max(st.mtimeMs, hit.data.maxStepTs) };
+  }
+  const grown = hit && hit.ino === st.ino && st.size >= hit.offset && hit.offset > 0;
+  const state = grown ? structuredClone(hit.data) : newAntigravityTranscriptState();
+  let offset = grown ? hit.offset : 0;
+  if (st.size > offset) {
+    for await (const { value, end } of readJsonLinesFrom(transcriptPath, offset)) {
+      foldAntigravityStep(state, value);
+      offset = end;
+    }
+  }
+  antigravityTranscriptCache.set(transcriptPath, {
+    ino: st.ino,
+    mtimeMs: st.mtimeMs,
+    size: st.size,
+    offset,
+    data: state,
+  });
+  return { ...state, transcriptUpdatedAt: Math.max(st.mtimeMs, state.maxStepTs) };
+}
+
+async function readAntigravityTaskMeta(convPath, convStat) {
+  const taskPath = path.join(convPath, 'task.md');
+  const taskStat = await stat(taskPath);
+  const taskSig = taskStat ? `${taskStat.mtimeMs}:${taskStat.size}` : '-';
+  const hit = antigravityTaskCache.get(convPath);
+  if (hit && hit.dirMtimeMs === convStat.mtimeMs && hit.taskSig === taskSig) {
+    return hit;
+  }
+  let planSteps = null;
+  let taskHeading = '';
+  let artifacts = [];
+  try {
+    const dirEntries = await listDir(convPath);
+    artifacts = dirEntries
+      .filter((e) => e.isFile() && e.name.endsWith('.md'))
+      .map((e) => e.name);
+    if (taskStat && artifacts.includes('task.md')) {
+      const taskText = await readText(taskPath, 32 * 1024);
+      planSteps = parseMarkdownChecklist(taskText);
+      const hMatch = /^#\s+(.+)$/m.exec(taskText);
+      if (hMatch) taskHeading = hMatch[1].trim();
+    }
+  } catch {}
+  const entry = { dirMtimeMs: convStat.mtimeMs, taskSig, artifacts, planSteps, taskHeading };
+  antigravityTaskCache.set(convPath, entry);
+  return entry;
+}
+
 // ============================================================================
 // 1. Antigravity IDE / Brain reader (agent: 'antigravity')
 // ============================================================================
@@ -212,15 +374,17 @@ export async function listAntigravitySessions(rawOpts = {}) {
     const brainDir = exists(path.join(agyRoot, 'brain')) ? path.join(agyRoot, 'brain') : (exists(root) ? root : null);
     const csDbPath = path.join(agyRoot, 'conversation_summaries.db');
     const annotationsDir = path.join(agyRoot, 'annotations');
+    const hasAnnotationsDir = exists(annotationsDir);
     const projectsDir = path.join(path.dirname(agyRoot), 'config', 'projects');
 
     const projectMap = await loadAntigravityProjects(projectsDir);
 
-    // Helper to read conversation brain data (transcript & task.md)
+    // Helper to read conversation brain data (transcript & task.md) with incremental caching
     async function readBrainData(convId) {
       if (!brainDir) return null;
       const convPath = path.join(brainDir, convId);
-      if (!exists(convPath)) return null;
+      const convStat = await stat(convPath);
+      if (!convStat || !convStat.isDirectory()) return null;
       const logDir = path.join(convPath, '.system_generated', 'logs');
       const transcriptPath = exists(path.join(logDir, 'transcript.jsonl'))
         ? path.join(logDir, 'transcript.jsonl')
@@ -230,102 +394,71 @@ export async function listAntigravitySessions(rawOpts = {}) {
             ? path.join(convPath, 'transcript.jsonl')
             : null;
 
-      let firstPrompt = '';
-      let lastPrompt = '';
-      let lastMessage = '';
-      let detectedCwd = null;
-      let turns = 0;
-      let lastStep = null;
-      let model = 'gemini';
-      let transcriptUpdatedAt = 0;
-
-      if (transcriptPath) {
-        const st = await stat(transcriptPath);
-        if (st) transcriptUpdatedAt = st.mtimeMs;
-        for await (const step of readJsonLines(transcriptPath)) {
-          if (!step || typeof step !== 'object') continue;
-          lastStep = step;
-          const ts = toMs(step.created_at, 0);
-          if (ts && ts > transcriptUpdatedAt) transcriptUpdatedAt = ts;
-          if (step.model && typeof step.model === 'string') model = step.model;
-          if (step.type === 'USER_INPUT' || step.source === 'USER_EXPLICIT') {
-            const cwdFromStep = extractAntigravityCwd(step.content);
-            if (cwdFromStep) detectedCwd = cwdFromStep;
-            const clean = extractAntigravityUserText(step.content);
-            if (clean) {
-              if (!firstPrompt) firstPrompt = clean;
-              lastPrompt = clean;
-              turns++;
-            }
-          } else if (step.type === 'PLANNER_RESPONSE' || step.source === 'MODEL') {
-            if (typeof step.content === 'string' && step.content.trim()) {
-              lastMessage = step.content.trim();
-            }
-          }
-        }
-      }
-
-      let planSteps = null;
-      let taskHeading = '';
-      let artifacts = [];
-      try {
-        const dirEntries = await listDir(convPath);
-        artifacts = dirEntries
-          .filter((e) => e.isFile() && e.name.endsWith('.md'))
-          .map((e) => e.name);
-        if (artifacts.includes('task.md')) {
-          const taskText = await readText(path.join(convPath, 'task.md'), 32 * 1024);
-          planSteps = parseMarkdownChecklist(taskText);
-          const hMatch = /^#\s+(.+)$/m.exec(taskText);
-          if (hMatch) taskHeading = hMatch[1].trim();
-        }
-      } catch {}
+      const [tSummary, taskMeta] = await Promise.all([
+        transcriptPath ? readAntigravityTranscriptSummary(transcriptPath) : Promise.resolve(null),
+        readAntigravityTaskMeta(convPath, convStat),
+      ]);
 
       return {
         convPath,
         transcriptPath,
-        firstPrompt,
-        lastPrompt,
-        lastMessage,
-        detectedCwd,
-        turns,
-        lastStep,
-        model,
-        transcriptUpdatedAt,
-        planSteps,
-        taskHeading,
-        artifacts,
+        firstPrompt: tSummary?.firstPrompt || '',
+        lastPrompt: tSummary?.lastPrompt || '',
+        lastMessage: tSummary?.lastMessage || '',
+        detectedCwd: tSummary?.detectedCwd || null,
+        turns: tSummary?.turns || 0,
+        lastStep: tSummary?.lastStep || null,
+        model: tSummary?.model || 'gemini',
+        transcriptUpdatedAt: tSummary?.transcriptUpdatedAt || 0,
+        planSteps: taskMeta.planSteps,
+        taskHeading: taskMeta.taskHeading,
+        artifacts: taskMeta.artifacts,
       };
     }
 
-    // 1. Primary: load from conversation_summaries.db
+    // 1. Primary: load from conversation_summaries.db (cached by DB + WAL signature)
     let csRows = [];
-    if (exists(csDbPath)) {
-      try {
-        csRows = queryReadOnly(csDbPath, (db) =>
-          db
-            .prepare(`
-              SELECT conversation_id, title, preview, step_count, last_modified_time, last_user_input_time,
-                     workspace_uris, status, project_id, agent_name, killed, not_fully_idle
-              FROM conversation_summaries
-              ORDER BY last_modified_time DESC
-            `)
-            .all()
-        ) || [];
-      } catch {}
+    const dbSig = await sqliteSig(csDbPath);
+    if (dbSig) {
+      const dbHit = antigravityDbCache.get(csDbPath);
+      if (dbHit && dbHit.sig === dbSig) {
+        csRows = dbHit.rows;
+      } else {
+        try {
+          csRows = queryReadOnly(csDbPath, (db) =>
+            db
+              .prepare(`
+                SELECT conversation_id, title, preview, step_count, last_modified_time, last_user_input_time,
+                       workspace_uris, status, project_id, agent_name, killed, not_fully_idle
+                FROM conversation_summaries
+                ORDER BY last_modified_time DESC
+              `)
+              .all()
+          ) || [];
+          antigravityDbCache.set(csDbPath, { sig: dbSig, rows: csRows });
+        } catch {}
+      }
+    } else {
+      antigravityDbCache.delete(csDbPath);
     }
 
+    const uniqueRows = [];
     for (const row of csRows) {
       const convId = row.conversation_id;
       if (!convId || seenIds.has(convId)) continue;
       seenIds.add(convId);
+      uniqueRows.push(row);
+    }
+    const rowMeta = await mapPool(uniqueRows, 8, async (row) => {
+      const convId = row.conversation_id;
+      const [brain, annoTitle] = await Promise.all([
+        readBrainData(convId),
+        hasAnnotationsDir ? readAnnotationTitle(path.join(annotationsDir, `${convId}.pbtxt`)) : Promise.resolve(null),
+      ]);
+      return { row, convId, brain, annoTitle };
+    });
 
-      const brain = await readBrainData(convId);
-
-      let annoTitle = null;
-      if (exists(annotationsDir)) {
-        annoTitle = await readAnnotationTitle(path.join(annotationsDir, `${convId}.pbtxt`));
-      }
+    for (const { row, convId, brain, annoTitle } of rowMeta) {
       const dbTitle = row.title ? row.title.trim() : null;
       const titleCandidate = annoTitle || dbTitle || brain?.taskHeading || firstLine(brain?.firstPrompt) || firstLine(row.preview) || convId;
       const title = clip(titleCandidate, 120);
@@ -437,7 +570,7 @@ export async function listAntigravitySessions(rawOpts = {}) {
         archived: isKilled,
         subagent: false,
         turns: Math.max(1, brain?.turns || row.step_count || 1),
-        sourcePath: brain?.transcriptPath || (exists(csDbPath) ? `${csDbPath}#${convId}` : null),
+        sourcePath: brain?.transcriptPath || (dbSig ? `${csDbPath}#${convId}` : null),
         sourceMetadata: {
           antigravityProject: projectObs,
           antigravityBrain: brainObs,
@@ -465,7 +598,7 @@ export async function listAntigravitySessions(rawOpts = {}) {
         if (!brain || (!brain.firstPrompt && !brain.lastMessage && !brain.taskHeading)) continue;
 
         let annoTitle = null;
-        if (exists(annotationsDir)) {
+        if (hasAnnotationsDir) {
           annoTitle = await readAnnotationTitle(path.join(annotationsDir, `${convId}.pbtxt`));
         }
         const titleSource = annoTitle || brain.taskHeading || firstLine(brain.firstPrompt) || firstLine(brain.lastMessage) || convId;
@@ -597,84 +730,175 @@ function extractMessageText(msg) {
   return '';
 }
 
-async function parseGenericSessionFile(filePath, defaultMeta = {}) {
-  const st = await stat(filePath);
-  if (!st) return null;
-  const records = [];
-  let header = {};
-  if (filePath.endsWith('.jsonl')) {
-    for await (const rec of readJsonLines(filePath)) {
-      if (!rec || typeof rec !== 'object') continue;
-      if (rec.type === 'session_meta' || rec.type === 'meta' || (!rec.role && !rec.type && (rec.cwd || rec.title || rec.model))) {
-        header = { ...header, ...rec };
-      }
-      records.push(rec);
-    }
-  } else {
-    try {
-      const data = await readJson(filePath);
-      if (Array.isArray(data)) {
-        records.push(...data);
-      } else if (data && typeof data === 'object') {
-        header = data;
-        const list = data.messages || data.history || data.turns || data.items || [];
-        if (Array.isArray(list)) records.push(...list);
-      }
-    } catch {
-      return null;
-    }
+function newGenericFoldState(defaultMeta) {
+  return {
+    header: {},
+    firstPrompt: '',
+    lastPrompt: '',
+    lastMessage: '',
+    cwd: defaultMeta.cwd || null,
+    branch: null,
+    model: defaultMeta.model || null,
+    maxRecordTs: 0,
+    turns: 0,
+  };
+}
+
+function foldGenericRecord(state, r, isJsonlHeaderCandidate = false) {
+  if (!r || typeof r !== 'object') return;
+  if (isJsonlHeaderCandidate && (r.type === 'session_meta' || r.type === 'meta' || (!r.role && !r.type && (r.cwd || r.title || r.model)))) {
+    const { messages: _m, history: _h, turns: _t, items: _i, ...meta } = r;
+    state.header = { ...state.header, ...meta };
+    if (meta.cwd || meta.workingDirectory) state.cwd = meta.cwd || meta.workingDirectory;
+    if (meta.gitBranch || meta.branch) state.branch = meta.gitBranch || meta.branch;
+    if (meta.model) state.model = meta.model;
   }
-
-  let firstPrompt = '';
-  let lastPrompt = '';
-  let lastMessage = '';
-  let cwd = header.cwd || header.workingDirectory || defaultMeta.cwd || null;
-  let branch = header.gitBranch || header.branch || null;
-  let model = header.model || defaultMeta.model || null;
-  let createdAt = toMs(header.createdAt || header.created_at || header.startTime, st.birthtimeMs || st.mtimeMs);
-  let updatedAt = toMs(header.updatedAt || header.updated_at || header.lastUpdatedAt, st.mtimeMs);
-  let turns = 0;
-
-  for (const r of records) {
-    if (!r || typeof r !== 'object') continue;
-    if (r.cwd && typeof r.cwd === 'string') cwd = r.cwd;
-    if (r.gitBranch && typeof r.gitBranch === 'string') branch = r.gitBranch;
-    if (r.model && typeof r.model === 'string') model = r.model;
-    const ts = toMs(r.timestamp || r.createdAt || r.created_at || r.time, 0);
-    if (ts > updatedAt) updatedAt = ts;
-    const role = String(r.role || r.author?.role || r.sender || r.type || '').toLowerCase();
-    const text = extractMessageText(r.message || r);
-    if (role === 'user' || role === 'human') {
-      const clean = cleanPrompt(text);
-      if (clean) {
-        if (!firstPrompt) firstPrompt = clean;
-        lastPrompt = clean;
-        turns++;
-      }
-    } else if (role === 'assistant' || role === 'model' || role === 'agent' || role === 'bot' || role === 'gemini' || role === 'grok') {
-      if (text.trim()) lastMessage = text.trim();
+  if (r.cwd && typeof r.cwd === 'string') state.cwd = r.cwd;
+  if (r.gitBranch && typeof r.gitBranch === 'string') state.branch = r.gitBranch;
+  if (r.model && typeof r.model === 'string') state.model = r.model;
+  const ts = toMs(r.timestamp || r.createdAt || r.created_at || r.time, 0);
+  if (ts > state.maxRecordTs) state.maxRecordTs = ts;
+  const role = String(r.role || r.author?.role || r.sender || r.type || '').toLowerCase();
+  const text = extractMessageText(r.message || r);
+  if (role === 'user' || role === 'human') {
+    const clean = cleanPrompt(text);
+    if (clean) {
+      if (!state.firstPrompt) state.firstPrompt = clean;
+      state.lastPrompt = clean;
+      state.turns++;
     }
+  } else if (role === 'assistant' || role === 'model' || role === 'agent' || role === 'bot' || role === 'gemini' || role === 'grok') {
+    if (text.trim()) state.lastMessage = text.trim();
   }
+}
 
-  const title = header.title || header.name || firstLine(firstPrompt) || firstLine(lastMessage);
+function finalizeGenericSession(filePath, st, state) {
+  const header = state.header || {};
+  const createdAt = toMs(header.createdAt || header.created_at || header.startTime, st.birthtimeMs || st.mtimeMs);
+  const headerUpdated = toMs(header.updatedAt || header.updated_at || header.lastUpdatedAt, st.mtimeMs);
+  const updatedAt = Math.max(headerUpdated, state.maxRecordTs);
+  const title = header.title || header.name || firstLine(state.firstPrompt) || firstLine(state.lastMessage);
   if (!title) return null;
   const nativeId = String(header.id || header.sessionId || header.conversationId || path.basename(filePath, path.extname(filePath)));
   return {
     nativeId,
     title: clip(title, 120),
-    firstPrompt: clip(firstPrompt, 240) || null,
-    lastPrompt: clip(lastPrompt, 240) || null,
-    lastMessage: clip(firstLine(lastMessage), 200) || null,
-    cwd,
-    branch,
-    model,
+    firstPrompt: clip(state.firstPrompt, 240) || null,
+    lastPrompt: clip(state.lastPrompt, 240) || null,
+    lastMessage: clip(firstLine(state.lastMessage), 200) || null,
+    cwd: state.cwd,
+    branch: state.branch,
+    model: state.model,
     createdAt: Math.round(createdAt),
     updatedAt: Math.round(updatedAt),
-    turns: Math.max(1, turns),
+    turns: Math.max(1, state.turns),
     archived: Boolean(header.archived),
-    records,
-    header,
+    header: { workspace: header.workspace || null, surface: header.surface || null, bot: Boolean(header.bot) },
   };
+}
+
+async function parseGenericSessionFile(filePath, defaultMeta = {}) {
+  const st = await stat(filePath);
+  if (!st) {
+    genericSessionCache.delete(filePath);
+    return null;
+  }
+  const defaultCwd = defaultMeta.cwd || null;
+  const defaultModel = defaultMeta.model || null;
+  const hit = genericSessionCache.get(filePath);
+  if (
+    hit &&
+    hit.ino === st.ino &&
+    hit.mtimeMs === st.mtimeMs &&
+    hit.size === st.size &&
+    hit.defaultCwd === defaultCwd &&
+    hit.defaultModel === defaultModel
+  ) {
+    return hit.parsed;
+  }
+
+  if (filePath.endsWith('.jsonl')) {
+    const grown =
+      hit &&
+      hit.state &&
+      hit.ino === st.ino &&
+      st.size >= hit.offset &&
+      hit.offset > 0 &&
+      hit.defaultCwd === defaultCwd &&
+      hit.defaultModel === defaultModel;
+    const state = grown ? structuredClone(hit.state) : newGenericFoldState(defaultMeta);
+    let offset = grown ? hit.offset : 0;
+    if (st.size > offset) {
+      for await (const { value, end } of readJsonLinesFrom(filePath, offset)) {
+        foldGenericRecord(state, value, true);
+        offset = end;
+      }
+    }
+    const parsed = finalizeGenericSession(filePath, st, state);
+    genericSessionCache.set(filePath, {
+      ino: st.ino,
+      mtimeMs: st.mtimeMs,
+      size: st.size,
+      offset,
+      defaultCwd,
+      defaultModel,
+      state,
+      parsed,
+    });
+    return parsed;
+  }
+
+  const state = newGenericFoldState(defaultMeta);
+  try {
+    const data = await readJson(filePath);
+    if (Array.isArray(data)) {
+      for (const r of data) foldGenericRecord(state, r, false);
+    } else if (data && typeof data === 'object') {
+      const { messages, history, turns, items, ...headerMeta } = data;
+      state.header = headerMeta;
+      state.cwd = headerMeta.cwd || headerMeta.workingDirectory || state.cwd;
+      state.branch = headerMeta.gitBranch || headerMeta.branch || null;
+      state.model = headerMeta.model || state.model;
+      const list = messages || history || turns || items || [];
+      if (Array.isArray(list)) {
+        for (const r of list) foldGenericRecord(state, r, false);
+      }
+    }
+  } catch {
+    return null;
+  }
+  const parsed = finalizeGenericSession(filePath, st, state);
+  genericSessionCache.set(filePath, {
+    ino: st.ino,
+    mtimeMs: st.mtimeMs,
+    size: st.size,
+    offset: st.size,
+    defaultCwd,
+    defaultModel,
+    state: null,
+    parsed,
+  });
+  return parsed;
+}
+
+async function readGeminiProjectRoot(projectDir) {
+  if (!projectDir) return null;
+  const rootFile = path.join(projectDir, '.project_root');
+  const st = await stat(rootFile);
+  if (!st) {
+    geminiRootFileCache.delete(rootFile);
+    return null;
+  }
+  const hit = geminiRootFileCache.get(rootFile);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.cwd;
+  try {
+    const rootText = (await readText(rootFile, 1024)).trim();
+    const cwd = rootText.startsWith('/') ? rootText : null;
+    geminiRootFileCache.set(rootFile, { mtimeMs: st.mtimeMs, size: st.size, cwd });
+    return cwd;
+  } catch {
+    return null;
+  }
 }
 
 export async function listGeminiSessions(rawOpts = {}) {
@@ -687,15 +911,12 @@ export async function listGeminiSessions(rawOpts = {}) {
   for (const home of roots) {
     if (!exists(home)) continue;
     const entries = await collectGeminiSessionFiles(home);
-    for (const { file, projectDir } of entries) {
-      let defaultCwd = null;
-      if (projectDir && exists(path.join(projectDir, '.project_root'))) {
-        try {
-          const rootText = (await readText(path.join(projectDir, '.project_root'), 1024)).trim();
-          if (rootText.startsWith('/')) defaultCwd = rootText;
-        } catch {}
-      }
+    const parsedEntries = await mapPool(entries, 8, async ({ file, projectDir }) => {
+      const defaultCwd = await readGeminiProjectRoot(projectDir);
       const parsed = await parseGenericSessionFile(file, { cwd: defaultCwd, model: 'gemini-2.5-pro' });
+      return { file, projectDir, parsed };
+    });
+    for (const { file, projectDir, parsed } of parsedEntries) {
       if (!parsed) continue;
       const projLabel = projectName(parsed.cwd) || (projectDir ? path.basename(projectDir) : null);
       sessions.push({
@@ -746,6 +967,70 @@ export async function listGeminiSessions(rawOpts = {}) {
 // 3. Cursor IDE & CLI reader (agent: 'cursor')
 // ============================================================================
 
+async function readCursorVscdbEntry(wsDir, dbPath) {
+  const dbSig = await sqliteSig(dbPath);
+  if (!dbSig) {
+    cursorVscdbCache.delete(dbPath);
+    return null;
+  }
+  const wsJsonPath = path.join(wsDir, 'workspace.json');
+  const wsStat = await stat(wsJsonPath);
+  const wsSig = wsStat ? `${wsStat.mtimeMs}:${wsStat.size}` : '-';
+  const hit = cursorVscdbCache.get(dbPath);
+  if (hit && hit.sig === dbSig && hit.wsSig === wsSig) return hit;
+
+  let cwd = null;
+  if (wsStat) {
+    try {
+      const wsMeta = await readJson(wsJsonPath);
+      cwd = fileUriToPath(wsMeta?.folder || wsMeta?.workspace);
+    } catch {}
+  }
+  let rows = [];
+  try {
+    rows = queryReadOnly(dbPath, (db) =>
+      db
+        .prepare("SELECT key, value FROM ItemTable WHERE key IN ('composer.composerData', 'aiService.prompts', 'aiService.generations')")
+        .all()
+    );
+  } catch {
+    return null;
+  }
+  const byKey = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  if (!byKey['composer.composerData']) {
+    const emptyEntry = { sig: dbSig, wsSig, cwd, composers: [], prompts: [], generations: [] };
+    cursorVscdbCache.set(dbPath, emptyEntry);
+    return emptyEntry;
+  }
+  let composerData;
+  try {
+    composerData = JSON.parse(byKey['composer.composerData']);
+  } catch {
+    return null;
+  }
+  let prompts = [];
+  let generations = [];
+  try {
+    if (byKey['aiService.prompts']) prompts = JSON.parse(byKey['aiService.prompts']) || [];
+  } catch {}
+  try {
+    if (byKey['aiService.generations']) generations = JSON.parse(byKey['aiService.generations']) || [];
+  } catch {}
+
+  const composers = Array.isArray(composerData?.allComposers) ? composerData.allComposers : [];
+  const entry = {
+    sig: dbSig,
+    wsSig,
+    cwd,
+    composers,
+    prompts: prompts.length ? [prompts[0], prompts.at(-1)].filter(Boolean) : [],
+    promptCount: prompts.length,
+    generations: generations.length ? [generations[0]] : [],
+  };
+  cursorVscdbCache.set(dbPath, entry);
+  return entry;
+}
+
 export async function listCursorSessions(rawOpts = {}, extraWsDir = null) {
   const opts = typeof rawOpts === 'string' ? { cursorHome: rawOpts, cursorWorkspaceDir: extraWsDir } : rawOpts || {};
   const host = opts.host || LOCAL_HOST;
@@ -789,8 +1074,11 @@ export async function listCursorSessions(rawOpts = {}, extraWsDir = null) {
         }
       }
     }
-    for (const { file, surface, wsName } of transcriptFiles) {
-      const parsed = await parseGenericSessionFile(file, { model: 'cursor-agent' });
+    const parsedTranscripts = await mapPool(transcriptFiles, 8, async (item) => ({
+      ...item,
+      parsed: await parseGenericSessionFile(item.file, { model: 'cursor-agent' }),
+    }));
+    for (const { file, surface, wsName, parsed } of parsedTranscripts) {
       if (!parsed) continue;
       if (seenIds.has(parsed.nativeId)) continue;
       seenIds.add(parsed.nativeId);
@@ -845,43 +1133,10 @@ export async function listCursorSessions(rawOpts = {}, extraWsDir = null) {
       if (wsHash.startsWith('.')) continue;
       const wsDir = path.join(wsRoot, wsHash);
       const dbPath = path.join(wsDir, 'state.vscdb');
-      if (!exists(dbPath)) continue;
-      const wsJsonPath = path.join(wsDir, 'workspace.json');
-      let cwd = null;
-      if (exists(wsJsonPath)) {
-        try {
-          const wsMeta = await readJson(wsJsonPath);
-          cwd = fileUriToPath(wsMeta?.folder || wsMeta?.workspace);
-        } catch {}
-      }
-      let rows = [];
-      try {
-        rows = queryReadOnly(dbPath, (db) =>
-          db
-            .prepare("SELECT key, value FROM ItemTable WHERE key IN ('composer.composerData', 'aiService.prompts', 'aiService.generations')")
-            .all()
-        );
-      } catch {
-        continue;
-      }
-      const byKey = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-      if (!byKey['composer.composerData']) continue;
-      let composerData;
-      try {
-        composerData = JSON.parse(byKey['composer.composerData']);
-      } catch {
-        continue;
-      }
-      let prompts = [];
-      let generations = [];
-      try {
-        if (byKey['aiService.prompts']) prompts = JSON.parse(byKey['aiService.prompts']) || [];
-      } catch {}
-      try {
-        if (byKey['aiService.generations']) generations = JSON.parse(byKey['aiService.generations']) || [];
-      } catch {}
+      const vscdbEntry = await readCursorVscdbEntry(wsDir, dbPath);
+      if (!vscdbEntry || !vscdbEntry.composers.length) continue;
+      const { cwd, composers, prompts, promptCount = 0, generations } = vscdbEntry;
 
-      const composers = Array.isArray(composerData?.allComposers) ? composerData.allComposers : [];
       const wsLabel = projectName(cwd) || wsHash.slice(0, 8);
       for (const comp of composers) {
         if (!comp || !comp.composerId) continue;
@@ -916,7 +1171,7 @@ export async function listCursorSessions(rawOpts = {}, extraWsDir = null) {
           updatedAt,
           archived: Boolean(comp.isArchived),
           subagent: false,
-          turns: Math.max(1, prompts.length || 1),
+          turns: Math.max(1, promptCount || 1),
           sourcePath: `${dbPath}#composer:${comp.composerId}`,
           sourceMetadata: {
             cursorWorkspace: makeEntityObservation({
@@ -950,7 +1205,7 @@ export async function listCursorSessions(rawOpts = {}, extraWsDir = null) {
 // ============================================================================
 // 4. ChatGPT Desktop reader (agent: 'chatgpt')
 // ============================================================================
-function parseChatGptConversationObject(conv, fallbackId, fallbackTime, projectMeta = null) {
+function parseChatGptConversationObject(conv, fallbackId, fallbackTime, projectMeta = null, { includeMessages = true } = {}) {
   if (!conv || typeof conv !== 'object') return null;
   const nativeId = String(conv.id || conv.conversation_id || fallbackId);
   let firstPrompt = '';
@@ -960,7 +1215,7 @@ function parseChatGptConversationObject(conv, fallbackId, fallbackTime, projectM
   let createdAt = toMs(conv.create_time || conv.createdAt || conv.created_at, fallbackTime);
   let updatedAt = toMs(conv.update_time || conv.updatedAt || conv.updated_at, createdAt);
   let turns = 0;
-  const normalizedMessages = [];
+  const normalizedMessages = includeMessages ? [] : null;
 
   if (conv.mapping && typeof conv.mapping === 'object') {
     const nodes = Object.values(conv.mapping)
@@ -975,7 +1230,7 @@ function parseChatGptConversationObject(conv, fallbackId, fallbackTime, projectM
       if (!text) continue;
       const ts = toMs(m.create_time, updatedAt);
       if (ts > updatedAt) updatedAt = ts;
-      normalizedMessages.push({ role, text, timestamp: ts });
+      if (normalizedMessages) normalizedMessages.push({ role, text, timestamp: ts });
       if (role === 'user') {
         const clean = cleanPrompt(text);
         if (!firstPrompt) firstPrompt = clean;
@@ -994,7 +1249,7 @@ function parseChatGptConversationObject(conv, fallbackId, fallbackTime, projectM
       if (!text) continue;
       const ts = toMs(m.timestamp || m.createdAt || m.create_time, updatedAt);
       if (ts > updatedAt) updatedAt = ts;
-      normalizedMessages.push({ role, text, timestamp: ts });
+      if (normalizedMessages) normalizedMessages.push({ role, text, timestamp: ts });
       if (role === 'user') {
         if (!firstPrompt) firstPrompt = text;
         lastPrompt = text;
@@ -1024,7 +1279,7 @@ function parseChatGptConversationObject(conv, fallbackId, fallbackTime, projectM
     archived: Boolean(conv.is_archived || conv.archived),
     turns: Math.max(1, turns),
     chatgptProject: projId || projName ? { id: String(projId || projName), name: String(projName || projId) } : null,
-    messages: normalizedMessages,
+    ...(normalizedMessages ? { messages: normalizedMessages } : {}),
   };
 }
 
@@ -1069,15 +1324,6 @@ export async function listChatGptSessions(rawOpts = {}) {
     for (const { file, proj } of candidateFiles) {
       const st = await stat(file);
       if (!st || st.size < 2) continue;
-      // Only parse .data files if they start with JSON '{' or '[' (skip encrypted binary cache files)
-      if (file.endsWith('.data')) {
-        try {
-          const head = (await readText(file, 16)).trimStart();
-          if (!head.startsWith('{') && !head.startsWith('[')) continue;
-        } catch {
-          continue;
-        }
-      }
       try {
         if (file.endsWith('.jsonl')) {
           const parsed = await parseGenericSessionFile(file, { model: 'gpt-4o' });
@@ -1124,12 +1370,30 @@ export async function listChatGptSessions(rawOpts = {}) {
           });
           continue;
         }
-        const json = await readJson(file);
-        const list = Array.isArray(json) ? json : Array.isArray(json?.conversations) ? json.conversations : [json];
-        for (const item of list) {
+        const projKey = proj ? `${proj.id}:${proj.name}` : '';
+        const hit = chatgptFileCache.get(file);
+        let convList;
+        if (hit && hit.ino === st.ino && hit.mtimeMs === st.mtimeMs && hit.size === st.size && hit.projKey === projKey) {
+          convList = hit.items;
+        } else {
+          // Only parse .data files if they start with JSON '{' or '[' (skip encrypted binary cache files)
+          if (file.endsWith('.data')) {
+            const head = (await readText(file, 16)).trimStart();
+            if (!head.startsWith('{') && !head.startsWith('[')) {
+              chatgptFileCache.set(file, { ino: st.ino, mtimeMs: st.mtimeMs, size: st.size, projKey, items: [] });
+              continue;
+            }
+          }
+          const json = await readJson(file);
+          const list = Array.isArray(json) ? json : Array.isArray(json?.conversations) ? json.conversations : [json];
           const fallbackId = path.basename(file, path.extname(file));
-          const conv = parseChatGptConversationObject(item, fallbackId, st.mtimeMs, proj);
-          if (!conv || seen.has(conv.nativeId)) continue;
+          convList = list
+            .map((item) => parseChatGptConversationObject(item, fallbackId, st.mtimeMs, proj, { includeMessages: false }))
+            .filter(Boolean);
+          chatgptFileCache.set(file, { ino: st.ino, mtimeMs: st.mtimeMs, size: st.size, projKey, items: convList });
+        }
+        for (const conv of convList) {
+          if (seen.has(conv.nativeId)) continue;
           seen.add(conv.nativeId);
           sessions.push({
             id: sessionKey('chatgpt', host, conv.nativeId),
@@ -1206,8 +1470,11 @@ export async function listGrokSessions(rawOpts = {}) {
         }
       }
     }
-    for (const file of files) {
-      const parsed = await parseGenericSessionFile(file, { model: 'grok-3' });
+    const parsedFiles = await mapPool(files, 8, async (file) => ({
+      file,
+      parsed: await parseGenericSessionFile(file, { model: 'grok-3' }),
+    }));
+    for (const { file, parsed } of parsedFiles) {
       if (!parsed || seen.has(parsed.nativeId)) continue;
       seen.add(parsed.nativeId);
       const wsLabel = projectName(parsed.cwd) || parsed.header?.workspace || 'Grok';
@@ -1266,18 +1533,29 @@ export async function readMultiAgentRecords(sourceOrSession) {
   const cursorMatch = /^(.*state\.vscdb)#composer:(.+)$/.exec(sourcePath);
   if (cursorMatch) {
     const [, dbPath, composerId] = cursorMatch;
-    if (!exists(dbPath)) return [];
+    const dbSig = await sqliteSig(dbPath);
+    if (!dbSig) {
+      cursorRawCache.delete(dbPath);
+      return [];
+    }
     try {
-      const rows = queryReadOnly(dbPath, (db) =>
-        db
-          .prepare("SELECT key, value FROM ItemTable WHERE key IN ('composer.composerData', 'aiService.prompts', 'aiService.generations')")
-          .all()
-      );
-      const byKey = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-      const compData = JSON.parse(byKey['composer.composerData'] || '{}');
-      const comp = (compData.allComposers || []).find((c) => c.composerId === composerId);
-      const prompts = JSON.parse(byKey['aiService.prompts'] || '[]');
-      const generations = JSON.parse(byKey['aiService.generations'] || '[]');
+      let cached = cursorRawCache.get(dbPath);
+      if (!cached || cached.sig !== dbSig) {
+        const rows = queryReadOnly(dbPath, (db) =>
+          db
+            .prepare("SELECT key, value FROM ItemTable WHERE key IN ('composer.composerData', 'aiService.prompts', 'aiService.generations')")
+            .all()
+        );
+        const byKey = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+        const compData = JSON.parse(byKey['composer.composerData'] || '{}');
+        const compById = new Map((compData.allComposers || []).filter(Boolean).map((c) => [c.composerId, c]));
+        const prompts = JSON.parse(byKey['aiService.prompts'] || '[]');
+        const generations = JSON.parse(byKey['aiService.generations'] || '[]');
+        cached = { sig: dbSig, compById, prompts, generations };
+        cursorRawCache.set(dbPath, cached);
+      }
+      const comp = cached.compById.get(composerId);
+      const { prompts, generations } = cached;
       const out = [];
       if (comp?.name) {
         out.push({ role: 'user', text: comp.name, timestamp: toMs(comp.createdAt, 0) });
@@ -1306,12 +1584,22 @@ export async function readMultiAgentRecords(sourceOrSession) {
   const chatgptMatch = /^(.*)#chatgpt:(.+)$/.exec(sourcePath);
   if (chatgptMatch) {
     const [, filePath, convId] = chatgptMatch;
-    if (!exists(filePath)) return [];
+    const st = await stat(filePath);
+    if (!st) {
+      chatgptRawCache.delete(filePath);
+      return [];
+    }
     try {
-      const json = await readJson(filePath);
-      const list = Array.isArray(json) ? json : Array.isArray(json?.conversations) ? json.conversations : [json];
+      let cached = chatgptRawCache.get(filePath);
+      if (!cached || cached.ino !== st.ino || cached.mtimeMs !== st.mtimeMs || cached.size !== st.size) {
+        const json = await readJson(filePath);
+        const list = Array.isArray(json) ? json : Array.isArray(json?.conversations) ? json.conversations : [json];
+        cached = { ino: st.ino, mtimeMs: st.mtimeMs, size: st.size, list };
+        chatgptRawCache.set(filePath, cached);
+      }
+      const { list } = cached;
       const item = list.find((c) => String(c?.id || c?.conversation_id) === convId) || list[0];
-      const parsed = parseChatGptConversationObject(item, convId, 0);
+      const parsed = parseChatGptConversationObject(item, convId, 0, null, { includeMessages: true });
       return parsed?.messages || [];
     } catch {
       return [];

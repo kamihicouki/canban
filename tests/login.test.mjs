@@ -74,7 +74,7 @@ test('login environment isolates the selected home and removes inherited authent
   assert.doesNotMatch(JSON.stringify(env), /secret|old/);
 });
 test('a browser that stays running is accepted without killing it on launch timeout', async (t) => {
-  const root = fs.mkdtempSync(path.join('/tmp', 'canban-open-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'canban-open-'));
   const file = path.join(root, 'browser with spaces'), pidFile = path.join(root, 'pid');
   fs.writeFileSync(file, `#!/bin/sh\necho $$ > '${pidFile}'\nsleep 15\n`, { mode: 0o700 });
   let pid;

@@ -34,8 +34,13 @@ async function load({ refresh = false, throwOnError = false } = {}) {
     if (seq !== loadSeq) return false;
     state.boardError = e.message;
     const message = `読み込みに失敗しました: ${e.message}`;
-    if (state.board) toast(message, true);
-    else $('#board').replaceChildren(h('div', { class: 'loading', text: message }));
+    if (state.board) {
+      if (typeof paintSyncStatus === 'function') paintSyncStatus();
+      toast(message, true);
+    } else {
+      if (typeof paintSyncStatus === 'function') paintSyncStatus();
+      $('#board').replaceChildren(h('div', { class: 'loading', text: message }));
+    }
     if (throwOnError) throw e;
     return false;
   }

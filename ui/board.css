@@ -14,7 +14,11 @@
 .seg button:hover { background: var(--header-btn-hover); }
 .seg button[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-fg); }
 .stat { font-size: 12px; opacity: 0.9; white-space: nowrap; }
-.errbar { background: var(--warn-bg); color: var(--warn-fg); padding: 6px 12px; font-size: 13px; }
+.errbar { background: var(--warn-bg); color: var(--warn-fg); padding: 5px 12px; font-size: 12.5px; display: flex; align-items: center; gap: 10px; }
+.errbar[hidden] { display: none; }
+.errbar-text { flex: 1; min-width: 0; }
+.errbar-btn { height: 24px; padding: 0 8px; border-radius: 5px; border: 1px solid currentColor; background: transparent; color: inherit; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.errbar-btn:hover { background: var(--btn-subtle-hover); }
 
 /* ---------- board ---------- */
 .board {
@@ -197,6 +201,8 @@ textarea.note { width: 100%; min-height: 96px; resize: vertical; padding: 8px 12
 .viewer-pill { background: var(--c-purple); color: var(--on-solid); }
 .live-badge { font-size: 11px; font-weight: 600; color: var(--list-muted); display: inline-flex; align-items: center; gap: 4px; }
 .live-badge.on::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--c-green); }
+.live-badge.stale { color: var(--warn-fg); }
+.live-badge.stale::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--warn-fg); }
 .feed-wrap { position: relative; margin-bottom: 8px; }
 .feed { max-height: min(460px, 55vh); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 8px; background: var(--modal-panel); font-size: 13px; }
 .fi { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }

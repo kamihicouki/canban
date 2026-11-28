@@ -33,7 +33,24 @@ function renderFeed(d, p) {
   const list = h('div', { class: 'feed', role: 'log', 'aria-live': 'polite', 'aria-label': 'セッションの会話' });
   const foot = h('div', { class: 'feed-foot' });
   const newBtn = h('button', { class: 'feed-new', text: '↓ 新着', hidden: true, onclick: () => scrollFeedToEnd(f) });
-  const f = { fromStart: d.feed.fromStart === true, workspaceLast: typeof workspaceLastMessage === 'function' ? workspaceLastMessage(d.feed.items) : null, pane: p, cardId: d.session.id, offset: d.feed.offset, size: d.feed.size, codexItems: d.feed.codexItems, list, foot, newBtn, tools: new Map(), status: d.session.status || 'idle', activity: d.session.activity || null, signals: d.session.signals || null, git: d.git || null };
+  const f = {
+    fromStart: d.feed.fromStart === true,
+    workspaceLast: typeof workspaceLastMessage === 'function' ? workspaceLastMessage(d.feed.items) : null,
+    pane: p,
+    cardId: d.session.id,
+    offset: d.feed.offset,
+    size: d.feed.size,
+    codexItems: d.feed.codexItems,
+    sourcePath: d.feed.sourcePath ?? d.session.sourcePath ?? null,
+    list,
+    foot,
+    newBtn,
+    tools: new Map(),
+    status: d.session.status || 'idle',
+    activity: d.session.activity || null,
+    signals: d.session.signals || null,
+    git: d.git || null,
+  };
   list.addEventListener('scroll', () => { if (atFeedEnd(list)) newBtn.hidden = true; });
   list.append(editSummary(f).el);
   for (const it of d.feed.items) feedPush(f, it);
@@ -60,14 +77,33 @@ function scrollFeedToEnd(f) {
 
 function paintFeedFoot(f) {
   const st = f.status;
-  if (st === 'running') f.foot.replaceChildren(h('span', { class: 'sdot s-running' }), h('span', { class: 'grow', title: f.activity || '' }, h('span', { class: 'dots', text: '作業中' }), h('span', { class: 'elapsed num', text: f.turnStart ? ` ${fmtElapsed(Date.now() - f.turnStart)}` : '' }), f.activity ? `  ${f.activity}` : ''));
-  else if (st === 'waiting') f.foot.replaceChildren(h('span', { class: 'sdot s-waiting' }), h('span', { class: 'grow', text: `${WAIT_TEXT[f.signals?.wait] || '入力待ち'}${f.activity ? `  ${f.activity}` : ''}（アプリで答えてください）` }));
-  else f.foot.replaceChildren(h('span', { class: `sdot s-${st}` }), h('span', { class: 'grow', text: STATUS_LABELS[st] || '' }));
+  const syncSuffix = live.syncError ? ' · 同期中断（再接続中）' : live.off ? ' · 自動更新オフ' : '';
+  if (st === 'running') f.foot.replaceChildren(h('span', { class: 'sdot s-running' }), h('span', { class: 'grow', title: f.activity || '' }, h('span', { class: 'dots', text: '作業中' }), h('span', { class: 'elapsed num', text: f.turnStart ? ` ${fmtElapsed(Date.now() - f.turnStart)}` : '' }), f.activity ? `  ${f.activity}` : '', syncSuffix));
+  else if (st === 'waiting') f.foot.replaceChildren(h('span', { class: 'sdot s-waiting' }), h('span', { class: 'grow', text: `${WAIT_TEXT[f.signals?.wait] || '入力待ち'}${f.activity ? `  ${f.activity}` : ''}（アプリで答えてください）${syncSuffix}` }));
+  else f.foot.replaceChildren(h('span', { class: `sdot s-${st}` }), h('span', { class: 'grow', text: `${STATUS_LABELS[st] || ''}${syncSuffix}` }));
   const p = f.pane;
   const hdr = p.el.querySelector('.pane-status');
   if (hdr) hdr.replaceChildren(h('span', { class: `sdot s-${st}` }), STATUS_LABELS[st] || '');
   p.status = st;
   p.activity = activityText(f.activity, st, f.signals);
+}
+
+function paintLiveBadges() {
+  for (const el of document.querySelectorAll('.live-badge')) {
+    if (live.syncError) {
+      el.className = 'live-badge stale';
+      el.textContent = '同期中断';
+      el.title = `リアルタイム更新が中断しています: ${live.syncError}`;
+    } else if (live.on && !live.off) {
+      el.className = 'live-badge on';
+      el.textContent = 'ライブ';
+      el.title = 'セッションの変化をそのまま表示します';
+    } else {
+      el.className = 'live-badge';
+      el.textContent = live.off ? '手動更新' : '';
+      el.title = live.off ? '自動更新は無効です。再読み込み（r）で更新できます' : '';
+    }
+  }
 }
 
 function applyFeed(f, feed) {
@@ -96,6 +132,7 @@ function applyFeed(f, feed) {
   f.offset = feed.offset;
   f.size = feed.size;
   f.codexItems = feed.codexItems;
+  if (feed.sourcePath !== undefined) f.sourcePath = feed.sourcePath;
   if (feed.status) {
     if (feed.status !== f.status) refreshDispatch(f); // "busy" rules for sending follow the status
     f.status = feed.status;
@@ -129,9 +166,18 @@ function applyFeed(f, feed) {
 }
 
 // ---- the long poll ----
-const live = { on: false, seq: null, feeds: new Map(), mode: 'long', inflight: 0, lastLoad: 0, loadTimer: null, dirty: false, ownActAt: 0, lastWatchEnd: 0, presence: [], viewers: new Map() };
+const live = { on: false, off: false, syncError: null, seq: null, feeds: new Map(), mode: 'long', inflight: 0, lastLoad: 0, loadTimer: null, dirty: false, ownActAt: 0, lastWatchEnd: 0, presence: [], viewers: new Map() };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const liveIdle = () => !state.drag && !document.querySelector('.popover, .list-title-input, .composer, .peek-input:focus');
+
+function setLiveSyncState({ syncError = live.syncError, off = live.off } = {}) {
+  if (live.syncError === syncError && live.off === off) return;
+  live.syncError = syncError;
+  live.off = off;
+  if (typeof paintSyncStatus === 'function') paintSyncStatus();
+  for (const f of live.feeds.values()) paintFeedFoot(f);
+  paintLiveBadges();
+}
 
 // Rebuild the board soon (coalesced, at most once every 1.5 s), when nothing is being edited.
 function scheduleLoad(delay = 0) {
@@ -238,13 +284,13 @@ function applyLive(r, args) {
   for (const [id, feed] of Object.entries(r.feeds || {})) {
     const f = live.feeds.get(id);
     const sent = args.feeds?.find((x) => x.cardId === id);
-    if (f && sent && f.offset === sent.offset) applyFeed(f, feed);
+    if (f && sent && f.offset === sent.offset && (sent.sourcePath ?? null) === (f.sourcePath ?? null)) applyFeed(f, feed);
   }
 }
 
 function watchArgs(timeoutMs) {
   const args = { since: live.seq, timeoutMs };
-  if (live.feeds.size) args.feeds = [...live.feeds.values()].map((f) => ({ cardId: f.cardId, offset: f.offset, size: f.size ?? null, codexItems: !!f.codexItems }));
+  if (live.feeds.size) args.feeds = [...live.feeds.values()].map((f) => ({ cardId: f.cardId, offset: f.offset, size: f.size ?? null, codexItems: !!f.codexItems, sourcePath: f.sourcePath ?? null }));
   return args;
 }
 
@@ -253,18 +299,37 @@ async function watchOnce(timeoutMs) {
   live.inflight++;
   try {
     const r = await bridge.callTool('canban_watch', args);
-    if (r?.off) { live.on = false; return false; }
+    if (r?.off) {
+      live.on = false;
+      setLiveSyncState({ syncError: null, off: true });
+      return false;
+    }
+    const hadSyncError = !!live.syncError;
+    if (hadSyncError || live.off) setLiveSyncState({ syncError: null, off: false });
     applyLive(r, args);
+    if (hadSyncError) {
+      scheduleLoad(0);
+      for (const p of panes) if (p.kind === 'session') loadSession(p).catch(() => {});
+    }
     return true;
+  } catch (e) {
+    setLiveSyncState({ syncError: e?.message || '接続が切れました' });
+    throw e;
   } finally {
     live.inflight--;
     live.lastWatchEnd = performance.now();
   }
 }
 
-// The detail view opened or changed: tell the server now instead of after the pending wait.
+// The detail view opened or changed: coalesce same-turn notifications into one immediate watch.
+let kickQueued = false;
 function kickLive() {
-  if (live.on && live.seq != null) watchOnce(0).catch(() => {});
+  if (!live.on || live.seq == null || kickQueued) return;
+  kickQueued = true;
+  queueMicrotask(() => {
+    kickQueued = false;
+    if (live.on && live.seq != null) watchOnce(0).catch(() => {});
+  });
 }
 
 // Unknown hosts may serialize calls. Native Messaging multiplexes them, so a slow

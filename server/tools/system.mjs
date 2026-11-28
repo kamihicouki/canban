@@ -19,9 +19,10 @@ export function systemTools({ store, watch, live, getLeader, getClient }) {
         offset: { type: ['number', 'null'], description: 'そのセッションのログの読み取り位置' },
         size: { type: ['number', 'null'], description: '前回見たログのサイズ' },
         codexItems: { type: 'boolean' },
+        sourcePath: { type: ['string', 'null'], description: '前回読んだログのパス（ログ切り替え検知用）' },
         feeds: {
-          type: 'array', maxItems: 8, description: '詳細を開いているセッションが複数あるとき。cardId / offset / size / codexItems の組',
-          items: { type: 'object', properties: { cardId: { type: 'string' }, offset: { type: ['number', 'null'] }, size: { type: ['number', 'null'] }, codexItems: { type: 'boolean' } }, required: ['cardId'], additionalProperties: false },
+          type: 'array', maxItems: 8, description: '詳細を開いているセッションが複数あるとき。cardId / offset / size / codexItems / sourcePath の組',
+          items: { type: 'object', properties: { cardId: { type: 'string' }, offset: { type: ['number', 'null'] }, size: { type: ['number', 'null'] }, codexItems: { type: 'boolean' }, sourcePath: { type: ['string', 'null'] } }, required: ['cardId'], additionalProperties: false },
         },
         timeoutMs: { type: 'number' },
       },

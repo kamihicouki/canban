@@ -1,3 +1,44 @@
+function syncStatusModel({ board, boardError, liveSyncError, liveOff, clock = fmtClock } = {}) {
+  if (!board) return { hidden: true, messages: [], canRetry: false };
+  const messages = [];
+  if (boardError) {
+    const heldAt = board.generatedAt ? `${clock(board.generatedAt)} 時点の表示を保持中` : '前回の表示を保持中';
+    messages.push(`最新の状態に同期できていません（${heldAt}）: ${boardError}`);
+  }
+  if (liveSyncError) {
+    messages.push(`リアルタイム更新が中断しています（自動再接続中）: ${liveSyncError}`);
+  } else if (liveOff) {
+    messages.push('自動更新は無効です（最新の状態は再読み込みで取得できます）');
+  }
+  if (board.errors?.length) {
+    messages.push(`一部のデータを取得できませんでした: ${board.errors.join(' / ')}`);
+  }
+  return { hidden: messages.length === 0, messages, canRetry: messages.length > 0 };
+}
+
+function paintSyncStatus() {
+  const eb = $('#errbar');
+  if (!eb) return;
+  const model = syncStatusModel({
+    board: state.board,
+    boardError: state.boardError,
+    liveSyncError: typeof live !== 'undefined' ? live.syncError : null,
+    liveOff: typeof live !== 'undefined' ? live.off : false,
+  });
+  const wasHidden = eb.hidden;
+  eb.hidden = model.hidden;
+  if (model.hidden) {
+    eb.replaceChildren();
+  } else {
+    eb.setAttribute('role', 'status');
+    eb.setAttribute('aria-live', 'polite');
+    const retry = h('button', { class: 'errbar-btn', type: 'button', onclick: () => refreshBoard() },
+      '再読み込み ', ...(typeof keycap === 'function' ? keycap('r') : []));
+    eb.replaceChildren(h('span', { class: 'errbar-text', text: model.messages.join(' ／ ') }), retry);
+  }
+  if (wasHidden !== eb.hidden && typeof paneMetrics === 'function') paneMetrics();
+}
+
 // Part of board.html: included into its script by server/ui.mjs and shares its scope.
 // Rendering
 function render() {
@@ -17,9 +58,7 @@ function render() {
   fitHeader();
   announceAutoMoves(b);
   workspace.render(b);
-  const eb = $('#errbar');
-  eb.hidden = !b.errors.length;
-  eb.textContent = b.errors.join(' / ');
+  paintSyncStatus();
 
   const boardEl = $('#board');
   const scroll = boardEl.scrollLeft;

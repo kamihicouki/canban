@@ -365,14 +365,25 @@ export async function readFeed(session, { limit = FEED_ITEMS } = {}) {
   const ctx = {};
   const folded = foldResults(itemsFor(session.agent, records, ctx), Infinity);
   const items = folded.slice(-limit);
-  return { items, offset, size, codexItems: !!ctx.items, fromStart: fromStart === true && items.length === folded.length };
+  return { items, offset, size, codexItems: !!ctx.items, fromStart: fromStart === true && items.length === folded.length, sourcePath: session.sourcePath || null };
 }
 
 // Items appended since `offset` (results unfolded: the client completes its tools).
-export async function readFeedDelta(session, offset, { codexItems: seenItems = false } = {}) {
+// When `sourcePath` is supplied and no longer matches `session.sourcePath` (e.g. a reverted rollout),
+// never read the new log from the previous log's byte offset: reset from the switched log instead.
+export async function readFeedDelta(session, offset, { codexItems: seenItems = false, sourcePath = undefined } = {}) {
+  const currentPath = session.sourcePath || null;
+  if (sourcePath !== undefined && sourcePath !== currentPath) {
+    if (!currentPath) return { reset: true, items: [], offset: 0, size: 0, codexItems: false, fromStart: false, sourcePath: null };
+    try {
+      return { reset: true, ...(await readFeed(session)) };
+    } catch {
+      return { reset: true, items: [], offset: 0, size: 0, codexItems: false, fromStart: false, sourcePath: currentPath };
+    }
+  }
   const { records, offset: next, size, reset } = await readLines(session.sourcePath, { start: offset });
   if (reset) return { reset: true, ...(await readFeed(session)) };
   const ctx = { items: seenItems };
   const items = itemsFor(session.agent, records, ctx).filter((it) => !(it.k === 'turn' && it.state === 'started'));
-  return { items, offset: next, size, codexItems: !!ctx.items };
+  return { items, offset: next, size, codexItems: !!ctx.items, sourcePath: currentPath };
 }

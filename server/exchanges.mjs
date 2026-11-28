@@ -1,9 +1,10 @@
 // Confirmed message provenance, independent of task links and spawn edges.
 // Files are read only. Large initial histories are explicitly marked partial.
 import { createHash } from 'node:crypto';
-import { stat } from 'node:fs/promises';
+import { stat } from './sources/readonly.mjs';
 import { readLines, FEED_MAX_DELTA } from './feed.mjs';
 
+const DORMANT_EXCHANGE_MS = 24 * 3600e3;
 const digest = value => createHash('sha256').update(value).digest('hex').slice(0, 24);
 const textOf = content => (Array.isArray(content) ? content : []).map(c => typeof c?.text === 'string' ? c.text : '').join('\n');
 const decode = text => text.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
@@ -55,6 +56,7 @@ export class ExchangeIndex {
     this.tailBytes = tailBytes; this.maxEvents = maxEvents;
     this.files = new Map(); this.sessions = new Map(); this.byNative = new Map();
     this.rows = new Map(); this.incomplete = new Set(); this.pending = null;
+    this.identitySig = null;
   }
 
   async sync(sessions) {
@@ -67,13 +69,25 @@ export class ExchangeIndex {
     const codex = sessions.filter(s => s.agent === 'codex');
     this.sessions = new Map(codex.map(s => [s.id, s]));
     this.byNative = new Map(codex.map(s => [nativeKey(scopeOf(s), s.nativeId), s]));
+    const identitySig = codex.map(s => `${s.id}\u0000${s.nativeId}\u0000${scopeOf(s)}`).join('\n');
     const local = codex.filter(s => s.sourcePath && s.host?.local !== false && !s.cloud);
     const live = new Set(local.map(s => s.id));
-    for (const id of this.files.keys()) if (!live.has(id)) this.files.delete(id);
+    let dirty = false;
+    for (const id of this.files.keys()) {
+      if (!live.has(id)) {
+        this.files.delete(id);
+        dirty = true;
+      }
+    }
+    const now = Date.now();
     let next = 0;
     await Promise.all(Array.from({ length: Math.min(6, local.length) }, async () => {
-      while (next < local.length) await this.read(local[next++]);
+      while (next < local.length) {
+        if (await this.read(local[next++], now)) dirty = true;
+      }
     }));
+    if (!dirty && this.identitySig === identitySig) return;
+    this.identitySig = identitySig;
     this.rows = new Map(); this.incomplete = new Set();
     for (const [owner, file] of this.files) {
       const scope = scopeOf(this.sessions.get(owner));
@@ -92,14 +106,33 @@ export class ExchangeIndex {
     for (const [id, rows] of this.rows) this.rows.set(id, [...new Map(rows.map(e => [e.id, e])).values()].sort(newer));
   }
 
-  async read(session) {
-    let st;
-    try { st = await stat(session.sourcePath); } catch {
-      this.files.set(session.id, { events: [], partial: false, error: true }); return;
-    }
+  async read(session, now = Date.now()) {
+    const scope = scopeOf(session);
     const old = this.files.get(session.id);
-    const sig = `${session.sourcePath}:${scopeOf(session)}:${st.dev}:${st.ino}`;
-    if (old?.sig === sig && old.size === st.size && old.mtime === st.mtimeMs) return;
+    if (
+      old &&
+      !old.error &&
+      old.sourcePath === session.sourcePath &&
+      old.scope === scope &&
+      typeof session.updatedAt === 'number' &&
+      old.sessionUpdatedAt === session.updatedAt &&
+      session.status !== 'running' &&
+      session.status !== 'waiting' &&
+      now - session.updatedAt > DORMANT_EXCHANGE_MS
+    ) {
+      return false;
+    }
+    const st = await stat(session.sourcePath);
+    if (!st) {
+      if (old?.error && old.events.length === 0 && !old.partial) return false;
+      this.files.set(session.id, { events: [], partial: false, error: true, sourcePath: session.sourcePath, scope, sessionUpdatedAt: session.updatedAt ?? null });
+      return true;
+    }
+    const sig = `${session.sourcePath}:${scope}:${st.dev}:${st.ino}`;
+    if (old?.sig === sig && old.size === st.size && old.mtime === st.mtimeMs) {
+      old.sessionUpdatedAt = session.updatedAt ?? null;
+      return false;
+    }
     const append = old?.sig === sig && st.size > old.size && st.size - old.offset <= FEED_MAX_DELTA;
     try {
       const tail = await readLines(session.sourcePath, append ? { start: old.offset } : { tailBytes: this.tailBytes });
@@ -107,8 +140,13 @@ export class ExchangeIndex {
       for (const event of parseExchangeRecords(tail.records, session)) rows.set(event.id, event);
       const all = mergeEvents([...rows.values()]).sort(newer);
       this.files.set(session.id, { sig, size: st.size, mtime: st.mtimeMs, offset: tail.offset,
+        sourcePath: session.sourcePath, scope, sessionUpdatedAt: session.updatedAt ?? null,
         events: all.slice(0, this.maxEvents), partial: (append && !tail.reset ? old.partial : st.size > this.tailBytes) || all.length > this.maxEvents, error: false });
-    } catch { this.files.set(session.id, { events: [], partial: false, error: true }); }
+      return true;
+    } catch {
+      this.files.set(session.id, { events: [], partial: false, error: true, sourcePath: session.sourcePath, scope, sessionUpdatedAt: session.updatedAt ?? null });
+      return true;
+    }
   }
 
   relation(from, peer) {

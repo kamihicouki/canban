@@ -89,15 +89,25 @@ export function createWatch(hub, { presence = null } = {}) {
 
   async function codexChanges() {
     const { sessions } = await listCodexSessions(); // delta by updated_at; nothing when unchanged
-    const out = { reload: false, ids: [] };
+    const out = { reload: false, ids: [], switched: false };
     for (const s of sessions) {
       const known = byId.get(s.id);
       if (!known) {
         if (!s.subagent && !s.archived) out.reload = true;
         continue;
       }
-      if ((s.updatedAt || 0) > (known.updatedAt || 0) || s.title !== known.title || s.archived !== known.archived) {
-        if (s.title !== known.title || s.archived !== known.archived) out.reload = true;
+      const pathChanged = (s.sourcePath || null) !== (known.sourcePath || null);
+      if ((s.updatedAt || 0) > (known.updatedAt || 0) || s.title !== known.title || s.archived !== known.archived || pathChanged) {
+        if (s.title !== known.title || s.archived !== known.archived || pathChanged) out.reload = true;
+        if (pathChanged) {
+          if (known.sourcePath && byPath.get(known.sourcePath) === s.id) byPath.delete(known.sourcePath);
+          known.sourcePath = s.sourcePath;
+          if (s.sourcePath) byPath.set(s.sourcePath, s.id);
+          out.switched = true;
+        }
+        known.updatedAt = Math.max(known.updatedAt || 0, s.updatedAt || 0);
+        known.title = s.title;
+        known.archived = s.archived;
         out.ids.push(s.id);
       }
     }
@@ -120,12 +130,13 @@ export function createWatch(hub, { presence = null } = {}) {
     return !s.desktopKnown || (j.isArchived === true) !== !!s.archived || (j.title ?? null) !== (s.desktopTitle ?? null) || status !== (s.desktopStatus ?? null);
   }
 
-  // feeds: the sessions open in detail panes, [{ cardId, offset, size, codexItems }]
+  // feeds: the sessions open in detail panes, [{ cardId, offset, size, codexItems, sourcePath }]
   //   offset: where the client's feed continues; size: the log size it last saw (a partial
   //   last line keeps size > offset without anything new to show).
-  // cardId / offset / size / codexItems alone are the same thing for one session.
-  return async function watch({ since = null, cardId = null, offset = null, size = null, codexItems = false, feeds = null, timeoutMs = 20000 } = {}) {
-    const asked = (Array.isArray(feeds) ? feeds : cardId ? [{ cardId, offset, size, codexItems }] : []).filter((f) => f && typeof f.cardId === 'string').slice(0, MAX_FOCUS);
+  //   sourcePath: the log file the client's cursor belongs to (a mismatch triggers reset).
+  // cardId / offset / size / codexItems / sourcePath alone are the same thing for one session.
+  return async function watch({ since = null, cardId = null, offset = null, size = null, codexItems = false, sourcePath = undefined, feeds = null, timeoutMs = 20000 } = {}) {
+    const asked = (Array.isArray(feeds) ? feeds : cardId ? [{ cardId, offset, size, codexItems, ...(sourcePath !== undefined ? { sourcePath } : {}) }] : []).filter((f) => f && typeof f.cardId === 'string').slice(0, MAX_FOCUS);
     const foci = asked.map((f) => ({ ...f, s: byId.get(f.cardId) })).filter((f) => f.s);
     const focusIds = new Set(foci.map((f) => f.s.id));
     hub.focus(foci.map((f) => f.s.sourcePath));
@@ -138,8 +149,10 @@ export function createWatch(hub, { presence = null } = {}) {
       sentPresence = JSON.stringify(p);
       return { seq: hub.seq, reload: false, requests: false, patches: [], feed: null, feeds: {}, presence: p };
     }
-    // An open session's log grew since the client's offset (e.g. while it was opening): answer now.
+    const cursorMismatch = (f) => f.sourcePath !== undefined && f.sourcePath !== (f.s.sourcePath || null);
+    // An open session's log grew or switched since the client's cursor: answer now.
     const behindOne = async (f) => {
+      if (cursorMismatch(f)) return true;
       if (!f.s.sourcePath || f.offset == null) return false;
       const st = await stat(f.s.sourcePath);
       return !!st && st.size !== Number(f.size ?? f.offset);
@@ -179,6 +192,7 @@ export function createWatch(hub, { presence = null } = {}) {
         else if (e.kind === 'codex') {
           const c = await codexChanges();
           if (c.reload) res.reload = relist = true;
+          if (c.switched) hub.focus(foci.map((f) => f.s.sourcePath));
           for (const id of c.ids) changed.add(id);
         } else if (e.kind === 'git') {
           const dir = byGitDir.has(e.path) ? e.path : path.dirname(e.path);
@@ -196,9 +210,10 @@ export function createWatch(hub, { presence = null } = {}) {
         if (p) res.patches.push(p);
       }
       for (const f of foci) {
-        if (f.offset == null || !(events === null || changed.has(f.s.id) || (await behindOne(f)))) continue;
+        const mismatch = cursorMismatch(f);
+        if ((f.offset == null && !mismatch) || !(events === null || mismatch || changed.has(f.s.id) || (await behindOne(f)))) continue;
         try {
-          const feed = await readFeedDelta(f.s, Number(f.offset), { codexItems: !!f.codexItems });
+          const feed = await readFeedDelta(f.s, Number(f.offset ?? 0), { codexItems: !!f.codexItems, sourcePath: f.sourcePath });
           const p = res.patches.find((x) => x.id === f.s.id) || (await patchFor(f.s, { focused: true }));
           if (p) Object.assign(feed, { status: p.status, activity: p.activity, signals: p.full, git: p.git });
           res.feeds[f.cardId] = feed;

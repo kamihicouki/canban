@@ -645,7 +645,6 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
   const listOf = listResolver(state);
   const buckets = new Map(state.lists.map((l) => [l.id, []]));
   const projects = new Map();
-  const folders = new Map(); // folder names hidden behind a Codex project
   const sections = new Map(); // Codex sidebar sections
   const dirCounts = new Map();
   const hostCounts = new Map();
@@ -660,7 +659,6 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
     const visibleKind = matchesDotScope(s, filters.dotScope) && (filters.includeSubagents || !s.subagent) && (filters.includeArchived || !s.archived);
     if (visibleKind) statusCounts[s.status || 'idle']++;
     if (s.project && visibleKind) projects.set(s.project, (projects.get(s.project) || 0) + 1);
-    if (s.folder && s.folder !== s.project && visibleKind) folders.set(s.folder, (folders.get(s.folder) || 0) + 1);
     if (s.codexSection) sections.set(s.codexSection.id, { ...s.codexSection, count: (sections.get(s.codexSection.id)?.count || 0) + 1 });
     if (visibleKind) {
       visible.push(s);
@@ -811,7 +809,6 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
         cwd: t.target?.cwd || links.find((x) => x.cwd)?.cwd, tombstones: state.categoryMapping?.tombstones || [] } });
     const dir = state.directories.find(d => d.id === category.categoryId) || null;
     if (t.context?.project) projects.set(context.project, (projects.get(context.project) || 0) + 1);
-    if (t.context?.folder) folders.set(context.folder, (folders.get(context.folder) || 0) + 1);
     if (t.context?.section) {
       const section = sections.get(context.section) || { id: context.section, name: context.section, count: 0 };
       sections.set(context.section, { ...section, count: section.count + 1 });
@@ -912,7 +909,6 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
     dirNames: [...dirNameCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name, count]) => ({ name, count })),
     cloudCount,
     codexSections: [...sections.values()].sort((a, b) => b.count - a.count),
-    folders: [...folders.entries()].sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count })),
     codexProjects: codexProjectList(app, sessions).map(({ id, name, roots, hostId, count }) => ({ id, name, roots, hostId, count })),
     hosts: [{ ...LOCAL_HOST, enabled: true, status: { state: 'ok' }, count: hostCounts.get('local') || 0 }, ...hosts.map((h) => ({ ...hostView(h), count: hostCounts.get(h.id) || 0 }))],
     settings: state.settings,
@@ -927,28 +923,33 @@ async function buildBoardImpl(store, rawFilters = {}, { force = false, readOnly 
     recentAutoMoves: Object.entries(state.cards)
       .filter(([, c]) => c.movedBy && Date.now() - c.movedBy.at < 5 * 60e3)
       .map(([cardId, c]) => ({ cardId, toListId: c.listId, ruleId: c.movedBy.ruleId, at: c.movedBy.at, title: byId.get(cardId)?.title || state.cards[cardId]?.title || cardId })),
-    totals: {
-      sessions: sessions.length,
-      codex: sessions.filter((s) => s.agent === 'codex').length,
-      claude: sessions.filter((s) => s.agent === 'claude').length,
-      byAgent: Object.fromEntries(
-        KNOWN_AGENTS.map((ag) => {
-          const list = visible.filter((s) => s.agent === ag);
-          return [
-            ag,
-            {
-              total: list.length,
-              running: list.filter((s) => s.status === 'running').length,
-              waiting: list.filter((s) => s.status === 'waiting').length,
-            },
-          ];
-        })
-      ),
-      bySurface: Object.fromEntries(
-        KNOWN_SURFACES.map((sf) => [sf, visible.filter((s) => inferSurface(s) === sf).length])
-      ),
-      shown: lists.reduce((n, l) => n + l.count, 0),
-    },
+    totals: (() => {
+      let codex = 0, claude = 0;
+      for (const s of sessions) {
+        if (s.agent === 'codex') codex++;
+        else if (s.agent === 'claude') claude++;
+      }
+      const byAgent = Object.fromEntries(KNOWN_AGENTS.map((ag) => [ag, { total: 0, running: 0, waiting: 0 }]));
+      const bySurface = Object.fromEntries(KNOWN_SURFACES.map((sf) => [sf, 0]));
+      for (const s of visible) {
+        const ag = byAgent[s.agent];
+        if (ag) {
+          ag.total++;
+          if (s.status === 'running') ag.running++;
+          else if (s.status === 'waiting') ag.waiting++;
+        }
+        const sf = inferSurface(s);
+        if (bySurface[sf] !== undefined) bySurface[sf]++;
+      }
+      return {
+        sessions: sessions.length,
+        codex,
+        claude,
+        byAgent,
+        bySurface,
+        shown: lists.reduce((n, l) => n + l.count, 0),
+      };
+    })(),
     errors,
     perf: { slow: perf.recentSlow() },
   };
@@ -1078,20 +1079,24 @@ async function sessionDetailImpl(store, cardId, { messages = 12 } = {}) {
   let feed = null; // local: the live conversation and where canban_watch continues it
   try {
     if (host) recent = await pool.messages(host, s, messages);
-    else if (s.sourcePath && exists(rolloutFile(String(s.sourcePath).split('#')[0]))) {
-      // One tail read serves the messages, the live feed and the permissions shown for sending.
-      const { records, offset, size, fromStart } = await readLines(s.sourcePath, { tailBytes: 768 * 1024 });
-      recent = s.agent === 'codex'
-        ? codexMessagesFromRecords(records, messages)
-        : s.agent === 'claude'
-          ? claudeMessagesFromRecords(records, messages)
-          : await multiAgentSessionMessages(s.sourcePath, messages);
-      permission = permissionFor(s, records);
-      const ctx = {};
-      const folded = foldResults(itemsFor(s.agent, records, ctx), Infinity);
-      const items = folded.slice(-FEED_ITEMS);
-      // Match readFeed coverage. This does not guarantee unabridged message text.
-      feed = { items, offset, size, codexItems: !!ctx.items, fromStart: fromStart === true && items.length === folded.length };
+    else if (s.sourcePath) {
+      if (exists(rolloutFile(String(s.sourcePath).split('#')[0]))) {
+        // One tail read serves the messages, the live feed and the permissions shown for sending.
+        const { records, offset, size, fromStart } = await readLines(s.sourcePath, { tailBytes: 768 * 1024 });
+        recent = s.agent === 'codex'
+          ? codexMessagesFromRecords(records, messages)
+          : s.agent === 'claude'
+            ? claudeMessagesFromRecords(records, messages)
+            : await multiAgentSessionMessages(s.sourcePath, messages);
+        permission = permissionFor(s, records);
+        const ctx = {};
+        const folded = foldResults(itemsFor(s.agent, records, ctx), Infinity);
+        const items = folded.slice(-FEED_ITEMS);
+        // Match readFeed coverage. This does not guarantee unabridged message text.
+        feed = { items, offset, size, codexItems: !!ctx.items, fromStart: fromStart === true && items.length === folded.length, sourcePath: s.sourcePath };
+      } else if (!isCloudSession(s)) {
+        messagesError = '会話ログが見つかりません（移動または削除された可能性があります）';
+      }
     }
   } catch (e) {
     messagesError = e.message;

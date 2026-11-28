@@ -648,10 +648,20 @@ function renderPaneKeepingDrafts(p, d) {
   };
   if (el.querySelector('.req-row textarea')) {
     // Keep the request editor while rebuilding a reset conversation cursor.
+    const prevSourcePath = p.d?.session?.sourcePath ?? null;
+    const nextSourcePath = d.session?.sourcePath ?? null;
+    const logSwitched = p.d?.session !== undefined && prevSourcePath !== nextSourcePath;
     p.d = d;
     const conversation = $('.th-conv', el);
     const rebuilt = conversation && d.feed;
     if (rebuilt) conversation.replaceChildren(renderFeed(d, p));
+    else if (conversation && logSwitched) {
+      live.feeds.delete(p.id);
+      const text = d.messagesError
+        ? `切り替え後の会話を取得できませんでした: ${d.messagesError}`
+        : '会話のログが切り替わりましたが、本文を取得できませんでした';
+      conversation.replaceChildren(typeof h === 'function' ? h('p', { class: 'muted', role: 'status', text }) : text);
+    }
     if (typeof paintWorkspaceContext === 'function') paintWorkspaceContext(p);
     if (rebuilt) restoreReading(); // a kept conversation keeps its own position, also when an inserted origin leaves it
     return;
@@ -1032,7 +1042,11 @@ function renderPane(p, d) {
     h('span', { class: 'row pane-status' }, h('span', { class: `sdot s-${s.status || 'idle'}` }), s.statusKnown === false ? '状態未取得' : STATUS_LABELS[s.status || 'idle']), h('span', { class: 'pill viewer-pill viewers', hidden: true }))] };
   secs.actions = { nodes: sessionCardActions(p, card) };
   secs.conv = { title: d.feed ? '会話' : '直近のやりとり', nodes: d.feed ? [renderFeed(d, p)] : msgs,
-    extra: d.feed ? h('span', { class: `live-badge${live.on ? ' on' : ''}`, title: live.on ? 'セッションの変化をそのまま表示します' : '', text: live.on ? 'ライブ' : '' }) : null };
+    extra: d.feed ? h('span', {
+      class: `live-badge${live.syncError ? ' stale' : live.on && !live.off ? ' on' : ''}`,
+      title: live.syncError ? `リアルタイム更新が中断しています: ${live.syncError}` : live.on && !live.off ? 'セッションの変化をそのまま表示します' : live.off ? '自動更新は無効です。再読み込み（r）で更新できます' : '',
+      text: live.syncError ? '同期中断' : live.on && !live.off ? 'ライブ' : live.off ? '手動更新' : '',
+    }) : null };
   if (d.feed) secs.progress = { nodes: [renderSignals(s.signals, d.git)] };
   secs.send = { nodes: [renderDispatch(d)], extra: d.dispatch.settings.enabled ? keycap('i') : null };
   if (card.slackRefs?.length) secs.slack = { nodes: [slackUi.sources(s.id, secs.send.nodes[0].querySelector('textarea'))] };

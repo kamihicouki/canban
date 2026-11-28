@@ -135,14 +135,22 @@ function paintWorkspaceContext(p) {
   const origin = workspaceOriginFor(p.workspaceOrigin, p.d?.session), excerpt = workspaceOriginExcerpt(p.d);
   if (p.workspaceOrigin && !origin) dropInsertedOrigin(p); // read from a log this thread no longer uses
   frame.origin.text.textContent = p.kind === 'task' ? task?.description || '目的・説明は未記入です' : origin?.item?.text || excerpt || (origin ? '冒頭の依頼は取得できませんでした' : '冒頭の依頼はまだ取得していません');
-  frame.origin.meta.textContent = p.kind === 'task' ? '保存されたタスクの説明' : origin ? origin.state === 'available' ? 'ログ先頭の原文' : `${origin.state === 'partial' ? '原文の一部' : '未取得'}: ${origin.reason || ''}` : p.d?.session?.host ? `${excerpt ? '起点の抜粋・' : ''}リモートの会話の原文は取得できません` : excerpt ? '起点の抜粋・原文は押して取得' : '原文は押して取得';
+  const feed = live.feeds.get(p.id), last = feed?.workspaceLast || workspaceLastMessage(p.d?.feed?.items);
+  frame.origin.meta.textContent = p.kind === 'task'
+    ? '保存されたタスクの説明'
+    : origin
+      ? origin.state === 'available' ? 'ログ先頭の原文' : `${origin.state === 'partial' ? '原文の一部' : '未取得'}: ${origin.reason || ''}`
+      : p.d?.session?.host
+        ? `${excerpt ? '起点の抜粋・' : ''}リモートの会話の原文は取得できません`
+        : !feed && p.d?.messagesError
+          ? `${excerpt ? '起点の抜粋・' : ''}会話未取得のため原文は取得できません`
+          : excerpt ? '起点の抜粋・原文は押して取得' : '原文は押して取得';
   if (p.kind !== 'task' && workspaceOriginReverted(p.d)) {
     frame.origin.text.textContent = WORKSPACE_ORIGIN_REVERTED;
     frame.origin.meta.textContent = 'Canbanでは表示できません';
   }
   frame.origin.button.disabled = !!p.workspaceOriginLoading;
   if (p.workspaceOriginLoading) frame.origin.meta.textContent = 'ログ先頭の原文を取得中…';
-  const feed = live.feeds.get(p.id), last = feed?.workspaceLast || workspaceLastMessage(p.d?.feed?.items);
   if (p.kind === 'task') {
     const handoff = p.workspaceTaskReport || task?.handoff;
     frame.latest.text.textContent = handoff?.latestNoteSummary?.text || handoff?.nextAction?.text || (typeof handoff?.nextAction === 'string' ? handoff.nextAction : '') || '最新の報告・次の行動は未取得です';

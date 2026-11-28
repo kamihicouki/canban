@@ -2,7 +2,7 @@
 // thread_spawn_edges（サブエージェント）や attached_thread_parent_id（サイドチャット）とは独立に扱う。
 import fs from 'node:fs';
 import path from 'node:path';
-import { listDir, queryReadOnly, rolloutFile } from './readonly.mjs';
+import { listDir, queryReadOnly, rolloutFile, stat } from './readonly.mjs';
 import { LOCAL_HOST, sessionKey } from './util.mjs';
 
 const DELEGATION_ENVELOPE = /^<codex_delegation>\s*<source_thread_id>([^<>]+)<\/source_thread_id>\s*<input>[\s\S]*?<\/input>\s*<\/codex_delegation>$/;
@@ -11,13 +11,14 @@ const contentText = (content) => Array.isArray(content)
   ? content.map((c) => (typeof c?.text === 'string' ? c.text : '')).join('\n')
   : (typeof content === 'string' ? content : '');
 
-const homeCaches = new Map(); // homeDir -> { resolved: Map<nativeId, parentNativeId>, miss: Map<nativeId, { histSig, rolloutSig }> }
+const DORMANT_MISS_MS = 24 * 3600e3;
+const homeCaches = new Map(); // homeDir -> { dirMtimeMs, histDb, resolved: Map<nativeId, parentNativeId>, miss: Map<nativeId, { histSig, rolloutSig, sourcePath, updatedAt }> }
 
 function cacheFor(home) {
   const key = home || '__default';
   let entry = homeCaches.get(key);
   if (!entry) {
-    entry = { resolved: new Map(), miss: new Map() };
+    entry = { dirMtimeMs: null, histDb: undefined, resolved: new Map(), miss: new Map() };
     homeCaches.set(key, entry);
   }
   return entry;
@@ -112,6 +113,14 @@ export function readCreatedParentFromRolloutHead(rolloutPath, childNativeId = nu
  */
 export async function findHistoryDb(home) {
   if (!home) return null;
+  const cache = cacheFor(home);
+  const dirStat = await stat(home);
+  if (!dirStat) {
+    cache.dirMtimeMs = null;
+    cache.histDb = null;
+    return null;
+  }
+  if (cache.histDb !== undefined && cache.dirMtimeMs === dirStat.mtimeMs) return cache.histDb;
   const entries = await listDir(home);
   let best = null;
   for (const e of entries) {
@@ -120,17 +129,26 @@ export async function findHistoryDb(home) {
       best = { n: Number(m[1]), file: path.join(home, e.name) };
     }
   }
-  return best?.file ?? null;
+  cache.dirMtimeMs = dirStat.mtimeMs;
+  cache.histDb = best?.file ?? null;
+  return cache.histDb;
 }
 
-function fileSig(p) {
+async function fileSigAsync(p) {
   if (!p) return '-';
-  try {
-    const st = fs.statSync(p);
-    return `${st.mtimeMs}:${st.size}`;
-  } catch {
-    return '-';
+  const st = await stat(p);
+  return st ? `${st.mtimeMs}:${st.size}` : '-';
+}
+
+async function rolloutSigAsync(sourcePath) {
+  if (!sourcePath) return '-';
+  const direct = await stat(sourcePath);
+  if (direct) return `${direct.mtimeMs}:${direct.size}`;
+  if (sourcePath.endsWith('.jsonl')) {
+    const zst = await stat(`${sourcePath}.zst`);
+    if (zst) return `zst:${zst.mtimeMs}:${zst.size}`;
   }
+  return '-';
 }
 
 /**
@@ -144,20 +162,31 @@ export async function resolveCreatedChatParents(home, sessions) {
 
   const cache = cacheFor(home);
   const histDb = await findHistoryDb(home);
-  const histSig = histDb ? `${histDb}|${fileSig(histDb)}|${fileSig(`${histDb}-wal`)}` : '-';
+  const histSig = histDb ? `${histDb}|${await fileSigAsync(histDb)}|${await fileSigAsync(`${histDb}-wal`)}` : '-';
+  const now = Date.now();
   const pending = [];
 
-  for (const s of candidates) {
+  await Promise.all(candidates.map(async (s) => {
     const hit = cache.resolved.get(s.nativeId);
     if (hit) {
       result.set(s.nativeId, hit);
-      continue;
+      return;
     }
-    const rSig = fileSig(rolloutFile(s.sourcePath));
     const miss = cache.miss.get(s.nativeId);
-    if (miss && miss.histSig === histSig && miss.rolloutSig === rSig) continue;
+    if (
+      miss &&
+      miss.histSig === histSig &&
+      miss.sourcePath === (s.sourcePath || null) &&
+      typeof s.updatedAt === 'number' &&
+      miss.updatedAt === s.updatedAt &&
+      now - s.updatedAt > DORMANT_MISS_MS
+    ) {
+      return;
+    }
+    const rSig = await rolloutSigAsync(s.sourcePath);
+    if (miss && miss.histSig === histSig && miss.rolloutSig === rSig) return;
     pending.push({ s, rSig });
-  }
+  }));
 
   if (pending.length && histDb) {
     try {
@@ -196,7 +225,7 @@ export async function resolveCreatedChatParents(home, sessions) {
       cache.miss.delete(s.nativeId);
       result.set(s.nativeId, parent);
     } else {
-      cache.miss.set(s.nativeId, { histSig, rolloutSig: rSig });
+      cache.miss.set(s.nativeId, { histSig, rolloutSig: rSig, sourcePath: s.sourcePath || null, updatedAt: s.updatedAt ?? null });
     }
   }
 
